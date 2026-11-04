@@ -362,3 +362,61 @@ def test_real_tool_call_visible_in_chat_fragment(config):
         assert len(completions) == 2
         assert completions[1]["messages"][-1]["tool_call_id"] == "test-call"
         assert '<details class="tool-call">' in client.get("/sessions/evening").text
+        client.post("/sessions/evening/archive")
+        archived = client.get("/sessions/evening/archives/1")
+        assert archived.status_code == 200
+        assert '<details class="tool-call">' in archived.text
+        assert "&lt;script&gt;example&lt;/script&gt;" in archived.text
+        assert 'id="composer"' not in archived.text
+
+
+def test_ui_archive_confirmation_browsing_and_secret_masking(config, mock_model):
+    app = create_app(config=config, model=mock_model)
+    with TestClient(app) as client:
+        assert (
+            client.post("/sessions/evening/archive", follow_redirects=False).headers[
+                "location"
+            ]
+            == "/login"
+        )
+        sign_in(client)
+        new_session(client)
+        client.post(
+            "/sessions/evening/messages",
+            data={
+                "message": "Archived <script>text</script> operator-test-token",
+            },
+        )
+        failed = Run(
+            session="evening",
+            profile="interactive",
+            origin=Origin(),
+            status=RunStatus.failed,
+            error="Earlier failed attempt",
+        )
+        app.state.store.save_run(failed)
+        confirmation = client.get("/sessions/evening/archive")
+        assert confirmation.status_code == 200
+        assert "Archive and start fresh" in confirmation.text
+        assert client.get("/api/sessions/evening").json()["messages"]
+        result = client.post("/sessions/evening/archive", follow_redirects=False)
+        assert result.status_code == 303
+        current = client.get("/sessions/evening")
+        assert "A new conversation." in current.text
+        assert "Earlier failed attempt" not in current.text
+        assert 'id="composer"' in current.text
+        assert "/sessions/evening/archives/1" in current.text
+        archived = client.get("/sessions/evening/archives/1")
+        assert archived.status_code == 200
+        assert "Archive 1 · read only" in archived.text
+        assert 'id="composer"' not in archived.text
+        assert "&lt;script&gt;text&lt;/script&gt;" in archived.text
+        assert "operator-test-token" not in archived.text
+        assert "[redacted]" in archived.text
+        assert (
+            client.get("/api/sessions/evening/archives/1")
+            .json()[0]["content"]
+            .endswith("operator-test-token")
+        )
+        assert client.get("/sessions/evening/archives/99").status_code == 404
+        assert client.get("/sessions/evening/archives/0").status_code == 404

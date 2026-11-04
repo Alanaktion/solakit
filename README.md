@@ -59,7 +59,7 @@ and shows calls as expandable redacted argument/result cards. Chat fills the vie
 message bubbles, and a bottom-anchored composer; on mobile, the conversation takes
 the full width with a back link to sessions. Sessions use their configured default
 profile for chat.
-Prompt/run inspectors, archive browsing, and jobs/channels controls are deferred.
+Prompt/run inspectors and jobs/channels controls are deferred.
 
 Login exchanges the token for an opaque, HttpOnly, SameSite=Lax cookie valid for
 seven days (Secure on HTTPS). Sign out revokes it; server restarts invalidate all
@@ -92,6 +92,18 @@ Inspect `/api/sessions`, `/api/sessions/{id}`, `/api/runs`, and `/api/runs/{id}`
 Run inspection includes prompt, messages, tool calls, diagnostics, memory and
 send evidence. Session inspection lists numbered archives, available through
 `GET /api/sessions/{id}/archives/{number}`. The old scaffold routes are retired.
+
+`POST /api/sessions/{id}/archive` saves the current transcript byte-for-byte in the
+next numbered archive and starts a fresh transcript in the **same session**.
+Its profile, memory scope and channel binding stay unchanged. The next turn uses
+the normal prompt/recall, without the old transcript; existing memory is retained,
+and archiving makes no new memory/model requests. Empty transcripts are a no-op.
+Queued/running turns return HTTP 409: wait for them to finish first.
+In chat, choose **Archive conversation**, review the explanation and confirm.
+The history picker switches between the current conversation and read-only
+archives, including compaction archives. Nothing is deleted or editable.
+A failed prepared rotation blocks further transcript writes; restart after fixing
+storage to finish recovery. See [archival plan](docs/plan/13-session-archival.md).
 
 Per-session FIFO workers feed a global inference semaphore (default one). Model
 preflight and the first validated completion precede transcript mutation. Tool-call

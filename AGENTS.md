@@ -30,7 +30,8 @@ not proof that a live integration or production acceptance gate has passed.
   evidence; the UI must not reconstruct or rewrite them.
 - `core/store.py`, `core/schemas.py`, `core/io.py`: immutable JSONL evidence,
   atomic metadata, durable I/O, exclusive data ownership and rebuildable SQLite
-  index. `core/compaction.py` rotates immutable archives with recovery metadata.
+  index. `core/compaction.py` and `core/archival.py` rotate immutable archives with
+  recovery metadata. Operator archival rejects busy sessions and preserves bindings.
 - `core/memory.py`, `core/memory_ops.py`: scope-bound OpenViking REST access,
   recall, explicit commit/extraction tracking, compaction and operator scratch
   verification. Startup only performs authenticated read-only root checks.
@@ -103,8 +104,8 @@ without force. No public deployment is implied by local implementation.
 
 P1 UI (sessions/chat/status) is implemented, plus read-only tools inspection.
 `docs/plan/11-ui-p2-evidence.md` and `12-ui-p3-operations.md` describe deferred
-prompt/run/archive inspection and job/channel controls. Markdown, per-message
-profile selection, SSE and shared UI/Discord session archival are separate v2
-work. Phase 6 live scratch-memory verification and later acceptance/pilot gates
+prompt/run inspection and job/channel controls. Operator API/UI archival and
+read-only archive browsing are implemented; see `docs/plan/13-session-archival.md`. Discord
+archival exposure, markdown, per-message profile selection and SSE remain deferred. Phase 6 live scratch-memory verification and later acceptance/pilot gates
 remain distinct from local mock-tested implementation. Check the phase plans
 before expanding scope or claiming a phase complete.

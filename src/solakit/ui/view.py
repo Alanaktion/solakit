@@ -34,10 +34,16 @@ def argument_text(value):
     )
 
 
-def turns(session: dict, runs: list[dict], evidence: dict[str, dict]) -> list[dict]:
+def turns(
+    session: dict,
+    runs: list[dict],
+    evidence: dict[str, dict],
+    *,
+    include_empty_runs: bool = True,
+) -> list[dict]:
     metadata = {run["id"]: run for run in runs if run["session"] == session["id"]}
     grouped, boundaries = {}, []
-    cutoff = 0
+    cutoff = timestamp(session.get("context_started_at"))
     for message in session["messages"]:
         if message.get("kind") == "compaction":
             cutoff = max(cutoff, timestamp(message["ts"]))
@@ -51,7 +57,11 @@ def turns(session: dict, runs: list[dict], evidence: dict[str, dict]) -> list[di
             continue
         grouped.setdefault(message["run_id"], []).append(message)
     for identity, run in metadata.items():
-        if run["status"] != "completed" and timestamp(run["created_at"]) >= cutoff:
+        if (
+            include_empty_runs
+            and run["status"] != "completed"
+            and timestamp(run["created_at"]) >= cutoff
+        ):
             grouped.setdefault(identity, [])
     result = boundaries
     for identity, messages in grouped.items():

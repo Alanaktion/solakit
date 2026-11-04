@@ -128,11 +128,18 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
             status,
         )
 
-    async def conversation(request, identity):
+    async def conversation(request, identity, number=None):
         data, records = await asyncio.gather(
             api(request, "GET", f"/api/sessions/{quote(identity, safe='')}"),
             api(request, "GET", "/api/runs"),
         )
+        if number is not None:
+            archived = await api(
+                request,
+                "GET",
+                f"/api/sessions/{quote(identity, safe='')}/archives/{number}",
+            )
+            data = {**data, "messages": archived, "context_started_at": None}
         with_tools = {m["run_id"] for m in data["messages"] if m.get("tool_calls")}
         logs = await asyncio.gather(
             *(
@@ -141,7 +148,10 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
             )
         )
         return data, turns(
-            data, records, dict(zip(sorted(with_tools), logs, strict=True))
+            data,
+            records,
+            dict(zip(sorted(with_tools), logs, strict=True)),
+            include_empty_runs=number is None,
         )
 
     async def chat_context(request, data, history, error=None):
@@ -267,6 +277,47 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
                 "chat.html",
                 await chat_context(request, data, history),
             )
+        except APIError as exc:
+            return render(request, "error.html", {"error": exc.detail}, exc.status)
+
+    @router.get("/sessions/{identity}/archive")
+    async def archive_confirmation(request: Request, identity: str):
+        if not logged_in(request):
+            return login_redirect(request)
+        try:
+            data = await api(
+                request, "GET", f"/api/sessions/{quote(identity, safe='')}"
+            )
+            return render(
+                request,
+                "archive_confirm.html",
+                {"session": data, "health": await health(request)},
+            )
+        except APIError as exc:
+            return render(request, "error.html", {"error": exc.detail}, exc.status)
+
+    @router.post("/sessions/{identity}/archive")
+    async def archive_session(request: Request, identity: str):
+        if not logged_in(request):
+            return login_redirect(request)
+        try:
+            await api(
+                request, "POST", f"/api/sessions/{quote(identity, safe='')}/archive"
+            )
+            return RedirectResponse(
+                f"/sessions/{quote(identity, safe='')}", 303, headers=HEADERS
+            )
+        except APIError as exc:
+            return render(request, "error.html", {"error": exc.detail}, exc.status)
+
+    @router.get("/sessions/{identity}/archives/{number}")
+    async def archived_chat(request: Request, identity: str, number: int):
+        if not logged_in(request):
+            return login_redirect(request)
+        try:
+            data, history = await conversation(request, identity, number)
+            context = await chat_context(request, data, history)
+            return render(request, "chat.html", {**context, "archive_number": number})
         except APIError as exc:
             return render(request, "error.html", {"error": exc.detail}, exc.status)
 

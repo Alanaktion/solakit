@@ -6,6 +6,7 @@ import logging
 import traceback
 from dataclasses import dataclass
 
+from solakit.core.archival import archive_session
 from solakit.core.compaction import Compactor, ContextLimit, request_bytes
 from solakit.core.config import Config
 from solakit.core.io import durable
@@ -81,6 +82,20 @@ class Execution:
                 self.workers[session_id] = asyncio.create_task(self._worker(queue))
         # A client disconnect does not silently cancel an accepted run.
         return await asyncio.shield(pending.future)
+
+    async def archive_session(self, session_id: str) -> dict:
+        async with self.submit_lock:
+            if self.closing:
+                raise ValueError("Runtime is shutting down")
+            await durable(self.store.session, session_id)
+            if any(
+                pending.run.session == session_id and not pending.future.done()
+                for pending in self.pending.values()
+            ):
+                raise ValueError("Wait for queued or running turns before archiving")
+            # Cancellation waits for rotation before releasing admission: no late
+            # file operation can race a new turn or runtime shutdown.
+            return await durable(archive_session, self.store, session_id)
 
     async def _worker(self, queue: asyncio.Queue) -> None:
         while True:

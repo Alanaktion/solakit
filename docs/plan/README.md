@@ -91,3 +91,8 @@ implemented. [P2 evidence](11-ui-p2-evidence.md) and
 [P3 operations](12-ui-p3-operations.md) have separate deferred plans. They do not
 advance existing live-integration gates. Markdown/profile selection and shared
 UI/Discord session archival remain separate v2 decisions.
+
+[13: session archival](13-session-archival.md) adds operator API/UI archival and
+read-only numbered archive browsing, preserving bindings and existing evidence.
+This supersedes the earlier UI deferral for these surfaces only; Discord archival
+exposure, prompt/run inspectors, markdown and profile selection remain deferred.

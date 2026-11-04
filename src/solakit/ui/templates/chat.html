@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% block title %}{{ session.title or session.id }} · Solakit{% endblock %}
+{% block title %}{% if archive_number %}Archive {{ archive_number }} · {% endif %}{{ session.title or session.id }} · Solakit{% endblock %}
 {% block body_class %}chat-app{% endblock %}
 {% block footer %}{% endblock %}
 {% block page_class %}chat-page{% endblock %}
@@ -23,7 +23,19 @@
     <div class="chat-title"><h1>{{ session.title or session.id }}</h1><p>Sola · {{ session.default_profile }}</p></div>
     <div class="session-badges"><a class="subtle-tag" href="/tools#profile-{{ session.default_profile|urlencode }}">{{ tool_count }} tool{% if tool_count != 1 %}s{% endif %}</a><span class="subtle-tag">{{ session.memory_scope }} memory</span>{% if session.bound_channel %}<span class="subtle-tag">{{ session.bound_channel }}</span>{% endif %}</div>
   </header>
+  <div class="archive-toolbar">
+    <details class="archive-menu"><summary>{% if archive_number %}Archive {{ archive_number }} · read only{% else %}Current conversation{% endif %} <span aria-hidden="true">⌄</span></summary>
+      <nav aria-label="Conversation history">
+        <a href="/sessions/{{ session.id|urlencode }}" {% if not archive_number %}aria-current="page"{% endif %}>Current conversation</a>
+        {% for archive in session.archives %}{% set n = archive.rsplit('.', 1)[1] %}<a href="/sessions/{{ session.id|urlencode }}/archives/{{ n }}" {% if archive_number|string == n %}aria-current="page"{% endif %}>Archive {{ n }}</a>{% endfor %}
+      </nav>
+    </details>
+    {% if not archive_number %}<a class="archive-action" href="/sessions/{{ session.id|urlencode }}/archive">Archive conversation <span aria-hidden="true">↗</span></a>{% endif %}
+  </div>
   <div id="conversation" class="conversation" role="log" aria-label="Message history" aria-live="polite" aria-relevant="additions text">{% include 'fragments/message_tail.html' %}</div>
+  {% if archive_number %}
+  <div class="archive-readonly">This archive is read only. <a href="/sessions/{{ session.id|urlencode }}">Return to the current conversation →</a></div>
+  {% else %}
   <div class="composer-wrap">
     <p id="connection-error" class="notice notice-error" role="alert" hidden>The request could not finish. Reload to check the run before sending again.</p>
     <p id="pending" class="pending" role="status" hidden><span class="thinking-dot" aria-hidden="true"></span>Waiting for Sola <span id="elapsed" aria-live="off">0:00</span></p>
@@ -33,5 +45,6 @@
       <div class="composer-bottom"><small id="composer-hint">Enter for a new line · ⌘ / Ctrl ↵ to send</small><button class="primary-button" type="submit">Send <span aria-hidden="true">↗</span></button></div>
     </form>
   </div>
+  {% endif %}
 </section>
 {% endblock %}

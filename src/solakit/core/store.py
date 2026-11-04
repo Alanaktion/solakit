@@ -324,19 +324,38 @@ class Store:
             except (ValueError, UnicodeDecodeError) as exc:
                 raise self._corruption(path, "invalid_metadata") from exc
 
+    def context_started_at(self, session_id: str) -> str | None:
+        """Last operator archival boundary; not a synthetic model message."""
+        with self.lock:
+            path = self._path("sessions", session_id, ".archive.json")
+            if not path.exists():
+                return None
+            try:
+                manifest = json.loads(path.read_bytes())
+                if manifest["stage"] != "committed":
+                    raise ValueError("Archive rotation is pending")
+                return manifest["created_at"]
+            except (ValueError, KeyError, TypeError) as exc:
+                raise self._corruption(path, "archive_recovery_required") from exc
+
     def append_message(self, session_id: str, message: Message) -> None:
-        self.session(session_id)
-        self._append(
-            self._path("sessions", session_id, ".jsonl"),
-            message.model_dump(mode="json"),
-        )
+        with self.lock:
+            self.session(session_id)
+            # Refuse writes after a failed rotation.
+            self.context_started_at(session_id)
+            self._append(
+                self._path("sessions", session_id, ".jsonl"),
+                message.model_dump(mode="json"),
+            )
 
     def transcript(self, session_id: str) -> list[dict]:
         with self.lock:
             self.session(session_id)
+            self.context_started_at(session_id)
             path = self._path("sessions", session_id, ".jsonl")
             manifest = self._path("sessions", session_id, ".compaction.json")
-            if not path.exists() and manifest.exists():
+            manual = self._path("sessions", session_id, ".archive.json")
+            if not path.exists() and (manifest.exists() or manual.exists()):
                 raise self._corruption(path, "missing_active_transcript")
             records = self._read(path)
             try:

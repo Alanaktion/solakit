@@ -338,9 +338,27 @@ def create_app(
                 **metadata,
                 "messages": app.state.store.transcript(session_id),
                 "archives": app.state.store.archives(session_id),
+                "context_started_at": app.state.store.context_started_at(session_id),
             }
         except (FileNotFoundError, ValueError) as exc:
             raise HTTPException(404, "Session not found") from exc
+
+    @api.post("/sessions/{session_id}/archive")
+    async def archive_session(session_id: str) -> dict:
+        try:
+            safe_id(session_id)
+        except ValueError as exc:
+            raise HTTPException(404, "Session not found") from exc
+        try:
+            return await app.state.execution.archive_session(session_id)
+        except FileNotFoundError as exc:
+            raise HTTPException(404, "Session not found") from exc
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(
+                503, "Archival could not finish; check storage and restart for recovery"
+            ) from exc
 
     @api.post("/sessions/{session_id}/messages")
     async def message(session_id: str, request: RunRequest) -> dict:

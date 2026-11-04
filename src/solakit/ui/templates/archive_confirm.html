@@ -1,0 +1,11 @@
+{% extends 'base.html' %}
+{% block title %}Archive conversation · Solakit{% endblock %}
+{% block content %}
+<section class="panel archive-confirm">
+  <span class="eyebrow">A FRESH CHAPTER</span><h1>Archive this conversation?</h1>
+  <p class="intro">The current messages in <strong>{{ session.title or session.id }}</strong> will be saved in a read-only numbered archive. Nothing is deleted.</p>
+  <p class="muted">This session keeps its profile, memory setting, and channel pairing. The next message starts with a fresh transcript and the usual memory recall. Archiving makes no new memory writes.</p>
+  <p class="muted">Wait for queued or running turns to finish before archiving.</p>
+  <form method="post" action="/sessions/{{ session.id|urlencode }}/archive" class="archive-confirm-actions"><a href="/sessions/{{ session.id|urlencode }}" class="quiet-button">Keep chatting</a><button type="submit" class="primary-button" {% if not session.messages %}disabled{% endif %}>Archive and start fresh <span aria-hidden="true">↗</span></button></form>
+</section>
+{% endblock %}

@@ -40,8 +40,10 @@ def request_bytes(
     )
 
 
-def manifest_path(store: Store, session_id: str) -> Path:
-    return store.root / "sessions" / f"{safe_id(session_id)}.compaction.json"
+def manifest_path(store: Store, session_id: str, kind: str = "compaction") -> Path:
+    if kind not in {"compaction", "archive"}:
+        raise ValueError("Unknown rotation kind")
+    return store.root / "sessions" / f"{safe_id(session_id)}.{kind}.json"
 
 
 def finish_rotation(store: Store, session_id: str, manifest: dict) -> None:
@@ -55,8 +57,13 @@ def finish_rotation(store: Store, session_id: str, manifest: dict) -> None:
         ):
             raise StorageCorruption("Invalid compaction archive name")
         archive = active.parent / archive_name
-        boundary = Message.model_validate(manifest["boundary"])
-        payload = boundary.model_dump_json().encode() + b"\n"
+        kind = manifest.get("kind", "compaction")
+        journal = manifest_path(store, session_id, kind)
+        if kind == "archive":
+            payload = b""
+        else:
+            boundary = Message.model_validate(manifest["boundary"])
+            payload = boundary.model_dump_json().encode() + b"\n"
         if not archive.exists():
             if (
                 not active.exists()
@@ -79,14 +86,19 @@ def finish_rotation(store: Store, session_id: str, manifest: dict) -> None:
         else:
             atomic_write(active, payload)
         manifest = {**manifest, "stage": "committed"}
-        atomic_write(manifest_path(store, session_id), json.dumps(manifest).encode())
+        atomic_write(journal, json.dumps(manifest).encode())
 
 
 def recover_rotations(store: Store) -> None:
-    for path in (store.root / "sessions").glob("*.compaction.json"):
-        manifest = json.loads(path.read_bytes())
-        if manifest["stage"] == "prepared":
-            finish_rotation(store, path.name.removesuffix(".compaction.json"), manifest)
+    for kind in ("compaction", "archive"):
+        for path in (store.root / "sessions").glob(f"*.{kind}.json"):
+            manifest = json.loads(path.read_bytes())
+            if manifest.get("kind", "compaction") != kind:
+                raise StorageCorruption("Rotation manifest kind mismatch")
+            if manifest["stage"] == "prepared":
+                finish_rotation(
+                    store, path.name.removesuffix(f".{kind}.json"), manifest
+                )
 
 
 class Compactor:

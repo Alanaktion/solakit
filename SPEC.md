@@ -79,8 +79,9 @@ rejected even if it is convenient.
 - Provider abstraction. The server speaks to one OpenAI-compatible local
   endpoint. Supporting "70 providers" is exactly the bloat being escaped.
 - Advanced UI features beyond the authorized P1 sessions/chat/status surface.
-  Prompt/run inspection and archive browsing are P2; jobs/channels controls P3.
-  Markdown, per-message profile selection, and session archival remain v2.
+  Prompt/run inspection is P2; jobs/channels controls P3. Operator API/UI archival
+  and archive browsing are implemented; markdown, profile selection, and Discord
+  archival exposure remain deferred.
 - Multi-tenancy, user accounts beyond a single operator token, public
   internet exposure. The app binds localhost/tailnet.
 - Voice, image generation, or TTS in the core. Those stay external and
@@ -642,6 +643,7 @@ The P1 operator UI is a thin server-rendered API client. Shared app contracts:
 | `GET /api/tools` | loaded tool catalog, argument schemas, and effective profile grants |
 | `GET /api/profiles` | configured profile names for session creation |
 | `GET /api/sessions` · `GET /api/sessions/{id}` | session list; metadata + transcript |
+| `POST /api/sessions/{id}/archive` | operator-only immutable rotation, fresh context, bindings preserved; 409 while busy |
 | `POST /api/sessions/{id}/messages` | post a message (the **api channel** — lands in that pinned session and runs) |
 | `GET /api/runs` · `GET /api/runs/{id}` | run records incl. prompt, tool log |
 | `GET /api/prompt?profile=&session=` | the dry-run prompt (§11) as JSON/text |
@@ -653,6 +655,24 @@ The P1 operator UI is a thin server-rendered API client. Shared app contracts:
   An SSE variant (`?stream=1`) is reserved in the API shape so the web UI
   can grow token streaming without a breaking change; the loop (§4.2)
   does not change when it lands.
+
+### 9.1 Operator session archival
+
+`POST /api/sessions/{id}/archive` uses the execution admission lock and rejects
+queued/running turns or shutdown (409). It rotates active JSONL byte-for-byte to
+the next numbered immutable archive with the same hash/manifest recovery as
+compaction, then creates an empty active transcript. Session metadata and channel
+binding are untouched. Empty transcripts are a no-op. Disconnect/cancellation
+waits for the durable operation before allowing another turn. An unresolved
+prepared rotation blocks active reads/writes until startup recovery completes.
+
+The next turn sees a fresh transcript plus the usual prompt and scoped recall.
+Existing long-term memory remains available; archival makes no new memory writes,
+model requests or extraction retries. The UI has an explanatory confirmation,
+POST action, and read-only history picker. Archives reuse escaped/redacted chat
+presentation, with tool details sourced only from redacted logs. No deletion,
+archive editing or model/job-triggered archival is exposed. Discord can use the
+shared operation later; slash-command UI is outside this change.
 
 ## 10. Storage
 
