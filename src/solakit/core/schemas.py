@@ -79,5 +79,8 @@ class Run(BaseModel):
     context_skipped_messages: int = 0
     memory_status: str = "disabled"
     memory_commit: dict[str, Any] | None = None
+    delivery_status: str = "none"
+    delivery: dict[str, Any] | None = None
+    artifacts: list[str] = Field(default_factory=list)
     compaction: dict[str, Any] | None = None
     error: str | None = None

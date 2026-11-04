@@ -346,9 +346,14 @@ identity, no duplicate "announcement copy" drifting from the record.
 - On message: ignore bots and herself; ignore channels with no config;
   enforce `trigger` + `trigger_authors`; show typing while the run is
   queued/running (long local generations need the affordance).
+- Thread replies are delivered in the originating thread while its transcript
+  remains pinned to the configured parent session.
 - Outbound: split at Discord's 2000-char limit on paragraph/line
   boundaries; never split a code fence. No embeds for normal replies —
-  she posts like a person in the channel, not like a webhook.
+  she posts like a person in the channel, not like a webhook. A fenced block
+  exceeding 2000 characters is attached intact as UTF-8 text, never split. Every
+  outbound send suppresses implicit mentions. Delivery intent/results are durable;
+  ambiguous sends are visible and are not automatically replayed.
 - Reconnect/gateway failure: adapter retries with backoff (discord.py
   does most of this); messages sent while she was down are **not**
   replayed into runs on reconnect in the MVP — a missed message is a gap,
@@ -569,6 +574,11 @@ Alan handles the web UI. The spec therefore fixes only:
 - **Mount points:** Alan's UI mounts at `/` (templates/static or a built
   SPA — his call); the API lives under `/api`; `/health` at root.
   The UI and the API are the same app and share one auth story.
+- **Activation:** integrations stay disabled by default. Enabled Discord channels
+  or jobs additionally require operator-set `live_ready = true`, asserting the
+  live scratch-memory check and §14 acceptance suite have passed. This is a rollout
+  assertion, not a replacement for those checks. `discord_token` is a secret
+  reference; maintenance profiles are never scheduled or triggered by Discord.
 - **Auth:** one operator token (header or session cookie once Alan's UI
   has login), stored as a `0600` file / env var. Discord has its own bot
   token. Nothing else.

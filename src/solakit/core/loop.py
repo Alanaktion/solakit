@@ -276,6 +276,10 @@ class Execution:
                     result = await self.registry.dispatch(
                         function["name"], function["arguments"], ctx
                     )
+                    for artifact in result.artifacts:
+                        verified = ctx.path(artifact)
+                        if str(verified) not in run.artifacts:
+                            run.artifacts.append(str(verified))
                     content = result.model_dump_json()
                     if result.error and result.repairable:
                         repairs += 1

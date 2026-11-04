@@ -19,6 +19,7 @@ class Prepared:
     registry: Registry
     operator_token: str = field(repr=False)
     memory_key: str | None = field(default=None, repr=False)
+    discord_token: str | None = field(default=None, repr=False)
 
 
 def prepare(config: Config | None = None) -> Prepared:
@@ -59,4 +60,24 @@ def prepare(config: Config | None = None) -> Prepared:
             raise ConfigurationError(
                 "Memory secret unavailable; check its env/file reference and mode 0600"
             ) from None
-    return Prepared(config, registry, token, memory_key)
+    discord_enabled = any(c.enabled and c.type == "discord" for c in config.channels)
+    if (
+        discord_enabled or any(j.enabled for j in config.jobs)
+    ) and not config.live_ready:
+        raise ConfigurationError(
+            "Live channels/jobs require live_ready after the memory probe "
+            "and acceptance suite"
+        )
+    discord_token = None
+    if discord_enabled:
+        if config.discord_token is None:
+            raise ConfigurationError(
+                "Enabled Discord requires a bot-token secret reference"
+            )
+        try:
+            discord_token = config.discord_token.resolve()
+        except (OSError, ValueError):
+            raise ConfigurationError(
+                "Discord secret unavailable; check its reference"
+            ) from None
+    return Prepared(config, registry, token, memory_key, discord_token)

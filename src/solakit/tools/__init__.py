@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, get_type_hints
 
-from pydantic import BaseModel, ConfigDict, ValidationError, create_model
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, create_model
 
 from solakit.core.config import Config, Profile
 from solakit.core.io import durable
@@ -28,6 +28,7 @@ class ToolResult(BaseModel):
     error: bool = False
     repairable: bool = False
     content_complete: bool = True
+    artifacts: list[str] = Field(default_factory=list)
 
 
 def truncate_output(content: str, limit: int, *, complete: bool) -> tuple[str, int]:

@@ -145,6 +145,8 @@ class Config(StrictModel):
     repositories: dict[str, Path] = Field(default_factory=dict)
     enabled_tools: list[str] = Field(default_factory=list)
     timezone: str = "America/Denver"
+    live_ready: bool = False
+    discord_token: SecretRef | None = None
 
     @model_validator(mode="after")
     def references(self) -> Self:
@@ -159,6 +161,10 @@ class Config(StrictModel):
         pins = [(c.type, c.channel_id) for c in self.channels]
         if len(pins) != len(set(pins)):
             raise ValueError("duplicate channel identity")
+        if any(c.type != "api" and c.profile == "maintenance" for c in self.channels):
+            raise ValueError("Maintenance is operator-API only")
+        if any(j.profile == "maintenance" for j in self.jobs):
+            raise ValueError("Maintenance cannot be scheduled")
         channel_ids = {c.id for c in self.channels}
         for job in self.jobs:
             if job.deliver and job.deliver.to not in channel_ids:

@@ -1,6 +1,6 @@
 # Phase 7: Channel interface and Discord pilot readiness
 
-Status: planned
+Status: local implementation complete — live pilot gated
 
 Depends on: phase 6
 
@@ -14,7 +14,14 @@ Depends on: phase 6
 
 ## Completion record
 
-Record implementation, validation, and remaining limitations here before marking complete.
+Implemented the shared adapter interface, trigger gating, parent-thread session
+routing with replies in the originating thread, typing lifecycle, discord.py
+reconnect, connected/failed liveness, stored-message final/artifact/silent delivery,
+whole fenced-block handling, mention suppression, and durable send evidence.
+Tests use mock adapters and gateway lifecycle, including continued context,
+independent sessions, artifact scope checks, silent runs and duplicate-send refusal.
+Live Discord is disabled and requires live_ready plus a bot-token reference.
+The real gateway pilot remains gated by live memory and phase 9 acceptance.
 
 ## Revised release gates
 

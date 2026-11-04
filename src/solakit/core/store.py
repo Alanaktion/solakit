@@ -347,6 +347,7 @@ class Store:
         ]
         record["memory_events"] = self.memory_events(run_id)
         record["tools"] = self._read(self._path("runs", run_id, ".tools.jsonl"))
+        record["deliveries"] = self.delivery_events(run_id)
         record["diagnostics"] = self._read(
             self._path("runs", run_id, ".diagnostics.jsonl")
         )
@@ -373,6 +374,15 @@ class Store:
     def log_tool(self, run_id: str, record: dict[str, Any]) -> None:
         self._append(
             self._path("runs", run_id, ".tools.jsonl"), self.redactor.redact(record)
+        )
+
+    def delivery_events(self, run_id: str) -> list[dict]:
+        return self._read(self._path("runs", run_id, ".deliveries.jsonl"))
+
+    def log_delivery(self, run_id: str, record: dict) -> None:
+        self._append(
+            self._path("runs", run_id, ".deliveries.jsonl"),
+            self.redactor.redact(record),
         )
 
     def log_diagnostic(self, run_id: str, record: dict) -> None:

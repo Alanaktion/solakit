@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel, ConfigDict, StringConstraints
 from starlette.responses import JSONResponse
 
+from solakit.channels import ApiAdapter, Channels
 from solakit.core.config import Config
 from solakit.core.loop import Execution
 from solakit.core.memory import MemoryClient, MemoryUnavailable
@@ -71,6 +72,10 @@ def create_app(
         app.state.config = cfg
         app.state.operator_token = token
         app.state.redactor = Redactor([token] + ([memory_key] if memory_key else []))
+        if prepared.discord_token:
+            app.state.redactor = Redactor(
+                [token, prepared.discord_token] + ([memory_key] if memory_key else [])
+            )
         app.state.registry = prepared.registry
         app.state.store = await asyncio.to_thread(
             Store, cfg.paths.data, app.state.redactor, exclusive=True
@@ -83,16 +88,26 @@ def create_app(
         app.state.execution = Execution(
             cfg, app.state.store, app.state.registry, app.state.model, app.state.memory
         )
+        adapters = {"api": ApiAdapter()}
+        if prepared.discord_token:
+            from solakit.channels.discord import DiscordAdapter
+
+            adapters["discord"] = DiscordAdapter(cfg, prepared.discord_token)
+        app.state.channels = Channels(cfg, app.state.execution, adapters)
         log_filter = RedactingFilter(app.state.redactor)
         handlers = logging.getLogger().handlers
         for handler in handlers:
             handler.addFilter(log_filter)
         try:
             app.state.model_health = await probe_model(app.state.model)
+            await app.state.channels.start()
             yield
         finally:
             try:
-                await app.state.execution.close()
+                try:
+                    await app.state.execution.close()
+                finally:
+                    await app.state.channels.stop()
             finally:
                 app.state.store.close()
                 for handler in handlers:
@@ -135,15 +150,7 @@ def create_app(
 
     @api.get("/channels")
     async def channels() -> list[dict]:
-        return [
-            {
-                "id": c.id,
-                "type": c.type,
-                "enabled": c.enabled,
-                "status": "disabled" if not c.enabled else "unimplemented",
-            }
-            for c in app.state.config.channels
-        ]
+        return app.state.channels.status()
 
     @api.get("/prompt")
     async def prompt(

@@ -52,4 +52,4 @@ async def write(ctx: ToolContext, path: str, content: str) -> ToolResult:
         await durable(create)
     except OSError as exc:
         raise ToolError("Cannot create requested file") from exc
-    return ToolResult(content=str(target))
+    return ToolResult(content=str(target), artifacts=[str(target)])
