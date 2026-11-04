@@ -9,8 +9,16 @@ live_ready = false
 env = "SOLA_OPERATOR_TOKEN"
 # Alternatively: file = "/absolute/path/to/operator-token" (mode 0600)
 
+[server]
+host = "127.0.0.1"
+port = 8382 # ASCII decimal S=83, R=82 (sola-ryu)
+log_level = "info" # Set debug for backend connection diagnostics.
+
 [model]
-base_url = "http://127.0.0.1:8001/v1"
+base_url = "http://127.0.0.1:8000/v1"
+# Optional OpenAI-style Authorization: Bearer token (never inline the token).
+# api_key = { env = "OPENAI_API_KEY" }
+# Or: api_key = { file = "/absolute/path/to/model-token" } # mode 0600
 model_id = "OsaurusAI/Qwen3.6-35B-A3B-mxfp4"
 concurrency = 1
 # Opt in only if this service needs proxy/CA environment settings.

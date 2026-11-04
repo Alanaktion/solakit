@@ -20,6 +20,7 @@ class Prepared:
     operator_token: str = field(repr=False)
     memory_key: str | None = field(default=None, repr=False)
     discord_token: str | None = field(default=None, repr=False)
+    model_key: str | None = field(default=None, repr=False)
 
 
 def prepare(config: Config | None = None) -> Prepared:
@@ -52,6 +53,15 @@ def prepare(config: Config | None = None) -> Prepared:
         raise ConfigurationError(
             "Operator secret unavailable; check its env/file reference and mode 0600"
         ) from None
+    model_key = None
+    if config.model.api_key:
+        try:
+            model_key = config.model.resolve_api_key()
+        except (OSError, ValueError):
+            raise ConfigurationError(
+                "Model API token unavailable or invalid; check its secret reference, "
+                "printable ASCII value and file mode 0600"
+            ) from None
     memory_key = None
     if config.memory.enabled and config.memory.api_key:
         try:
@@ -80,4 +90,4 @@ def prepare(config: Config | None = None) -> Prepared:
             raise ConfigurationError(
                 "Discord secret unavailable; check its reference"
             ) from None
-    return Prepared(config, registry, token, memory_key, discord_token)
+    return Prepared(config, registry, token, memory_key, discord_token, model_key)

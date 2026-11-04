@@ -1,8 +1,26 @@
 """Single pinned oMLX client. No provider abstraction or fallback."""
 
+import logging
+import re
+import time
+
 import httpx
 
-from solakit.core.config import ModelConfig
+from solakit.core.config import ModelConfig, validate_api_token
+from solakit.core.secrets import Redactor
+
+LOGGER = logging.getLogger(__name__)
+
+
+def safe_url(value: str) -> str:
+    try:
+        return str(
+            httpx.URL(value).copy_with(
+                username="", password="", query=None, fragment=None
+            )
+        )
+    except (ValueError, httpx.InvalidURL):
+        return "<invalid endpoint>"
 
 
 class ModelUnavailable(Exception):
@@ -10,30 +28,108 @@ class ModelUnavailable(Exception):
 
 
 class ModelClient:
-    def __init__(self, config: ModelConfig, transport=None):
+    def __init__(
+        self, config: ModelConfig, transport=None, *, api_key: str | None = None
+    ):
         self.config = config
+        key = (
+            validate_api_token(api_key)
+            if api_key is not None
+            else config.resolve_api_key()
+        )
+        self.redactor = Redactor([key] if key else [])
+        self.auth_configured = bool(key)
         self.available = False
         self.client = httpx.AsyncClient(
             base_url=config.base_url.rstrip("/") + "/",
             timeout=config.timeout_s,
             transport=transport,
             trust_env=config.trust_env,
+            headers={"Authorization": f"Bearer {key}"} if key else {},
+        )
+
+    def _begin(self, operation: str, path: str, timeout: float) -> float:
+        endpoint = safe_url(str(self.client.base_url.join(path)))
+        LOGGER.debug(
+            "%s",
+            self.redactor.redact(
+                f"Model {operation}: endpoint={endpoint} pinned={self.config.model_id} "
+                f"timeout_s={timeout} auth_configured={self.auth_configured} "
+                f"trust_env={self.config.trust_env}"
+            ),
+        )
+        return time.monotonic()
+
+    def _failure(self, operation: str, path: str, exc: Exception) -> None:
+        endpoint = safe_url(str(self.client.base_url.join(path)))
+        if isinstance(exc, httpx.HTTPStatusError):
+            status = exc.response.status_code
+            hint = (
+                "check [model].api_key and backend token configuration"
+                if status in {401, 403}
+                else "check the backend URL/path and server logs"
+            )
+            reason = f"HTTP {status}; {hint}"
+        elif isinstance(exc, httpx.TimeoutException):
+            reason = (
+                "request timed out; check backend load/connectivity and model.timeout_s"
+            )
+        elif isinstance(exc, httpx.RequestError):
+            reason = (
+                "connection failed; check oMLX is listening at this host/port "
+                "and model.trust_env"
+            )
+        else:
+            reason = (
+                "backend response rejected; check the pinned model ID "
+                "and API response shape"
+            )
+        LOGGER.warning(
+            "%s",
+            self.redactor.redact(
+                f"Model {operation} failed: endpoint={endpoint} "
+                f"error={type(exc).__name__}; {reason}"
+            ),
+        )
+        # Never log headers or model payloads. Sanitize URLs and the configured key
+        # even if the transport's exception text embeds either of them.
+        detail = re.sub(
+            r"https?://[^\s<>\"']+", lambda match: safe_url(match[0]), str(exc)
+        )
+        LOGGER.debug(
+            "%s", self.redactor.redact(f"Model {operation} diagnostic: {detail}")
         )
 
     async def preflight(self) -> None:
         self.available = False
+        started = self._begin("preflight GET", "models", min(5, self.config.timeout_s))
         try:
             response = await self.client.get(
                 "models", timeout=min(5, self.config.timeout_s)
             )
             response.raise_for_status()
-            if self.config.model_id not in [x["id"] for x in response.json()["data"]]:
+            served = [x["id"] for x in response.json()["data"]]
+            if self.config.model_id not in served:
+                LOGGER.debug(
+                    "%s", self.redactor.redact(f"Served model IDs: {served[:20]}")
+                )
                 raise ModelUnavailable("Pinned model is not served")
             self.available = True
+            LOGGER.debug(
+                "Model preflight succeeded: elapsed_ms=%.1f",
+                (time.monotonic() - started) * 1000,
+            )
+        except ModelUnavailable as exc:
+            self._failure("preflight GET", "models", exc)
+            raise
         except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
+            self._failure("preflight GET", "models", exc)
             raise ModelUnavailable("Model endpoint unavailable") from exc
 
     async def complete(self, messages: list[dict], tools: list[dict]) -> dict:
+        started = self._begin(
+            "completion POST", "chat/completions", self.config.timeout_s
+        )
         try:
             request = {
                 "model": self.config.model_id,
@@ -72,9 +168,14 @@ class ModelClient:
             if not calls and message.get("content") is None:
                 raise ModelUnavailable("Empty completion")
             self.available = True
+            LOGGER.debug(
+                "Model completion succeeded: elapsed_ms=%.1f",
+                (time.monotonic() - started) * 1000,
+            )
             return data
-        except ModelUnavailable:
+        except ModelUnavailable as exc:
             self.available = False
+            self._failure("completion POST", "chat/completions", exc)
             raise
         except (
             httpx.HTTPError,
@@ -85,6 +186,7 @@ class ModelClient:
             AttributeError,
         ) as exc:
             self.available = False
+            self._failure("completion POST", "chat/completions", exc)
             raise ModelUnavailable("Model completion failed") from exc
 
     async def close(self) -> None:

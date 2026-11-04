@@ -4,6 +4,7 @@
 **Host target:** Sola's Mac Studio (headless, macOS, SSH/VNC access)
 **Stack:** Python 3.12+, FastAPI (single app: web UI mount + API + scheduler + channels)
 **Model target:** OsaurusAI Qwen3.6-35B-A3B mxfp4 via local oMLX (OpenAI-compatible endpoint)
+**Local ports:** oMLX `8000`; Solakit/uvicorn `8382` (ASCII decimal S=83, R=82)
 **Memory target:** OpenViking (existing instance — REST / MCP / Python SDK)
 **Primary channel target:** Discord
 
@@ -580,6 +581,21 @@ Notes:
 
 Alan handles the web UI. The spec therefore fixes only:
 
+- **Server command:** `sola serve` launches uvicorn with `[server]` host/port/log
+  settings, defaulting to `127.0.0.1:8382`; explicit CLI flags override them.
+  Direct uvicorn CLI launches must specify `--port 8382`. API CLI default URL
+  follows the standard port; nonstandard deployments use `--url`/`SOLA_URL`.
+- **Model authentication:** `[model].base_url` defaults to
+  `http://127.0.0.1:8000/v1`. Optional `[model].api_key` is a secret reference
+  (env or mode-0600 file), resolved at startup and sent as OpenAI-style
+  `Authorization: Bearer` on preflight and completion requests. It is separately
+  registered for redaction; unset means unauthenticated, not implicit credential
+  discovery. The exact pinned model and no-fallback behavior are unchanged.
+- **Backend diagnostics:** warning logs classify connection/timeout/HTTP/identity
+  failures. Debug logs expose sanitized endpoints, effective settings, elapsed
+  time and sanitized exception details, with auth-enabled flags only. Never log
+  auth headers, credentials, model request messages or response bodies. Enable
+  through `[server].log_level = "debug"` or `sola serve --log-level debug`.
 - **App factory + lifespan** (`app/main.py`): startup loads config,
   builds the registry (with manifest cross-checks), starts the scheduler,
   connects channel adapters, runs model pre-flight (failure to reach the

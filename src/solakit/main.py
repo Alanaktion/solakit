@@ -72,11 +72,8 @@ def create_app(
         )
         app.state.config = cfg
         app.state.operator_token = token
-        app.state.redactor = Redactor([token] + ([memory_key] if memory_key else []))
-        if prepared.discord_token:
-            app.state.redactor = Redactor(
-                [token, prepared.discord_token] + ([memory_key] if memory_key else [])
-            )
+        credentials = [token, memory_key, prepared.discord_token, prepared.model_key]
+        app.state.redactor = Redactor([value for value in credentials if value])
         app.state.registry = prepared.registry
         app.state.store = await asyncio.to_thread(
             Store, cfg.paths.data, app.state.redactor, exclusive=True
@@ -85,7 +82,11 @@ def create_app(
             MemoryClient(cfg.memory, memory_key) if cfg.memory.enabled else None
         )
         app.state.router = SessionRouter(cfg, app.state.store)
-        app.state.model = model if model is not None else ModelClient(cfg.model)
+        app.state.model = (
+            model
+            if model is not None
+            else ModelClient(cfg.model, api_key=prepared.model_key)
+        )
         app.state.execution = Execution(
             cfg, app.state.store, app.state.registry, app.state.model, app.state.memory
         )
@@ -96,8 +97,26 @@ def create_app(
             adapters["discord"] = DiscordAdapter(cfg, prepared.discord_token)
         app.state.channels = Channels(cfg, app.state.execution, adapters)
         app.state.jobs = Jobs(cfg, app.state.execution, app.state.channels)
+        logging.basicConfig(
+            level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
+        )
+        runtime_logger = logging.getLogger("solakit")
+        previous_level = runtime_logger.level
+        runtime_logger.setLevel(cfg.server.log_level.upper())
         log_filter = RedactingFilter(app.state.redactor)
-        handlers = logging.getLogger().handlers
+        handlers = list(
+            dict.fromkeys(
+                handler
+                for name in (
+                    "",
+                    "solakit",
+                    "uvicorn",
+                    "uvicorn.error",
+                    "uvicorn.access",
+                )
+                for handler in logging.getLogger(name).handlers
+            )
+        )
         for handler in handlers:
             handler.addFilter(log_filter)
         memory_watch = None
@@ -125,6 +144,7 @@ def create_app(
                 app.state.store.close()
                 for handler in handlers:
                     handler.removeFilter(log_filter)
+                runtime_logger.setLevel(previous_level)
 
     app = FastAPI(title="Solakit", version="0.1.0", lifespan=lifespan)
 

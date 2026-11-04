@@ -7,14 +7,14 @@ import sys
 
 import httpx
 
-from solakit.core.config import load_config
+from solakit.core.config import ServerConfig, load_config
 from solakit.core.startup import ConfigurationError, prepare
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(prog="sola")
     parser.add_argument(
-        "--url", default=os.environ.get("SOLA_URL", "http://127.0.0.1:8000")
+        "--url", default=os.environ.get("SOLA_URL", "http://127.0.0.1:8382")
     )
     parser.add_argument(
         "--trust-env",
@@ -35,7 +35,39 @@ def main() -> None:
     memory.add_argument("--fact", required=True)
     memory.add_argument("--query", required=True)
     memory.add_argument("--expected", required=True)
+    serve = commands.add_parser("serve", help="Run the server (default 127.0.0.1:8382)")
+    serve.add_argument("--host")
+    serve.add_argument("--port", type=int)
+    serve.add_argument(
+        "--log-level", choices=["debug", "info", "warning", "error", "critical"]
+    )
     args = parser.parse_args()
+    if args.command == "serve":
+        try:
+            prepared = prepare()
+            defaults = prepared.config.server
+            prepared.config.server = ServerConfig(
+                host=args.host if args.host is not None else defaults.host,
+                port=args.port if args.port is not None else defaults.port,
+                log_level=args.log_level or defaults.log_level,
+            )
+        except (ConfigurationError, ValueError) as exc:
+            if isinstance(exc, ConfigurationError):
+                parser.exit(1, f"Configuration error: {exc}\n")
+            parser.exit(1, "Invalid server host, port or log level.\n")
+        import uvicorn
+
+        from solakit.main import create_app
+
+        server = prepared.config.server
+        uvicorn.run(
+            create_app(config=prepared.config),
+            host=server.host,
+            port=server.port,
+            log_level=server.log_level,
+            workers=1,
+        )
+        return
     if args.command == "check":
         try:
             prepare()

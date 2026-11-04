@@ -43,8 +43,12 @@ A user-bound key must already belong to Sola; a mismatched identity fails closed
 
 ```sh
 uv run sola check
-uv run uvicorn solakit.main:app --host 127.0.0.1 --port 8000
+uv run sola serve
 ```
+
+Solakit's serve command uses port 8382; oMLX uses port 8000. Configure optional
+`[model].api_key = { env = "OPENAI_API_KEY" }` if oMLX requires Bearer auth.
+Use `uv run sola serve --log-level debug` for sanitized backend diagnostics.
 
 In another shell using the same operator-token reference, choose a harmless,
 unique verification code and deliberately run the scratch test:

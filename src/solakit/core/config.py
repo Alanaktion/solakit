@@ -44,12 +44,28 @@ class SecretRef(StrictModel):
         return value
 
 
+def validate_api_token(value: str) -> str:
+    if not value or any(ord(char) < 33 or ord(char) > 126 for char in value):
+        raise ValueError("API token must be printable ASCII without whitespace")
+    return value
+
+
 class ModelConfig(StrictModel):
-    base_url: str = "http://127.0.0.1:8001/v1"
+    base_url: str = "http://127.0.0.1:8000/v1"
+    api_key: SecretRef | None = None
     model_id: str = "OsaurusAI/Qwen3.6-35B-A3B-mxfp4"
     concurrency: int = Field(default=1, ge=1)
     timeout_s: float = Field(default=120, gt=0)
     trust_env: bool = False
+
+    def resolve_api_key(self) -> str | None:
+        return validate_api_token(self.api_key.resolve()) if self.api_key else None
+
+
+class ServerConfig(StrictModel):
+    host: str = "127.0.0.1"
+    port: int = Field(default=8382, ge=1, le=65535)
+    log_level: Literal["debug", "info", "warning", "error", "critical"] = "info"
 
 
 class MemoryConfig(StrictModel):
@@ -157,6 +173,7 @@ class Config(StrictModel):
         default_factory=lambda: SecretRef(env="SOLA_OPERATOR_TOKEN")
     )
     model: ModelConfig = Field(default_factory=ModelConfig)
+    server: ServerConfig = Field(default_factory=ServerConfig)
     memory: MemoryConfig = Field(default_factory=MemoryConfig)
     paths: PathsConfig = Field(default_factory=PathsConfig)
     profiles: dict[str, Profile] = Field(

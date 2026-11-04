@@ -19,8 +19,24 @@ cp config.example.toml config.toml
 # Provide an operator-token env reference or a mode-0600 token-file reference.
 # Create fragments/profiles/<profile>.md for every profile (empty is valid).
 uv run sola check
-uv run uvicorn solakit.main:app --host 127.0.0.1 --port 8000
+uv run sola serve
 ```
+
+`sola serve` launches uvicorn at `127.0.0.1:8382` by default (ASCII decimal
+`S=83`, `R=82`, sola-ryu); oMLX defaults to `http://127.0.0.1:8000/v1`.
+`[server]` configures `host`, `port`, and `log_level`; CLI flags override them:
+
+```sh
+uv run sola serve --log-level debug
+# Direct uvicorn invocation must specify the port; its own default is still 8000.
+uv run uvicorn solakit.main:app --host 127.0.0.1 --port 8382
+```
+
+The API CLI defaults to `http://127.0.0.1:8382`; use `SOLA_URL` or `--url` when
+serving at another address. For direct uvicorn launches, set `[server].log_level`
+to `debug` to enable Solakit's backend diagnostics. The project's serve command
+sets both application and uvicorn levels together. Existing `config.toml` values
+override the new defaults; update an old model URL explicitly to port 8000.
 
 `sola check` validates TOML, secret references, prompt files, tools, cron and rollout
 settings offline. Errors name files and safe TOML locations without echoing their
@@ -61,6 +77,31 @@ stops job admission, finalizes accepted work, drains dispatches, and closes clie
 Interrupted tool groups remain in evidence and are explicitly counted when excluded
 from future model context. Unexpected exceptions retain redacted chained tracebacks
 in `.diagnostics.jsonl`, with operator-log fallback if persistence fails.
+
+## Model authentication and diagnostics
+
+Optional `[model].api_key` references an environment variable or a mode-0600 file:
+
+```toml
+[model]
+base_url = "http://127.0.0.1:8000/v1"
+api_key = { env = "OPENAI_API_KEY" }
+```
+
+Both `/models` preflight and `/chat/completions` send `Authorization: Bearer ...`.
+Leave the reference out for an unauthenticated backend. Credentials are resolved
+at startup, registered for redaction, and never read implicitly from a provider
+environment variable. Restart after rotating the credential. `sola check` reports
+missing/empty/invalid references before the server allocates services.
+
+Warnings identify connection failures, timeouts, HTTP status (including 401/403
+authentication hints), and invalid/wrong-model replies. Debug logs add the sanitized
+endpoint, pinned model, authentication-enabled flag, proxy-environment setting,
+timeouts, transport error details and elapsed time. They omit headers, tokens,
+request messages and response bodies. Dependency wire-level debug is not enabled.
+If the backend is unreachable, verify it listens at port 8000 and that `base_url`
+includes `/v1`; inspect `trust_env` if a proxy is involved. A wrong endpoint or
+credential still fails closed; diagnostic logging never enables a fallback.
 
 ## Prompt sovereignty
 

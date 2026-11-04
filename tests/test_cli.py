@@ -1,4 +1,5 @@
 import httpx
+import pytest
 
 from solakit.cli import main
 
@@ -60,3 +61,36 @@ def test_offline_check_reports_invalid_tool_grants(config, monkeypatch, capsys):
         "Configuration error: filesystem tool requires explicit write roots" in stderr
     )
     assert "Traceback" not in stderr
+
+
+@pytest.mark.parametrize(
+    "options, port, level",
+    [([], 8382, "info"), (["--port", "9000", "--log-level", "debug"], 9000, "debug")],
+)
+def test_serve_defaults_and_overrides(config, monkeypatch, options, port, level):
+    monkeypatch.setattr("solakit.core.startup.load_config", lambda: config)
+    monkeypatch.setattr("sys.argv", ["sola", "serve", *options])
+    observed = []
+    monkeypatch.setattr("uvicorn.run", lambda app, **kwargs: observed.append(kwargs))
+    main()
+    assert observed == [
+        {"host": "127.0.0.1", "port": port, "log_level": level, "workers": 1}
+    ]
+
+
+def test_default_cli_uses_solakit_port(config, monkeypatch, capsys):
+    monkeypatch.setattr("solakit.cli.load_config", lambda: config)
+    monkeypatch.delenv("SOLA_URL", raising=False)
+    monkeypatch.setattr("sys.argv", ["sola", "prompt"])
+    urls = []
+
+    def get(url, **kwargs):
+        urls.append(url)
+        return httpx.Response(
+            200, json={"prompt": "exact"}, request=httpx.Request("GET", url)
+        )
+
+    monkeypatch.setattr("httpx.get", get)
+    main()
+    assert urls == ["http://127.0.0.1:8382/api/prompt"]
+    assert capsys.readouterr().out == "exact"
