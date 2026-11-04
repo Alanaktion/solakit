@@ -86,7 +86,19 @@ send evidence. Session inspection lists numbered archives, available through
 Per-session FIFO workers feed a global inference semaphore (default one). Model
 preflight and the first validated completion precede transcript mutation. Tool-call
 messages precede their matching results. Malformed arguments/forbidden calls get
-a bounded repair budget; max steps ends as `budget_exceeded`. Token usage is summed
+a bounded repair budget; max steps ends as `budget_exceeded`.
+Every completion sends `[model].max_tokens` (default 4096). This is a per-response
+output cap, separate from the profile's step limit and input context budget.
+A backend `finish_reason: "length"` preserves partial output as evidence but ends
+as `budget_exceeded` with an explicit error, without retries or tool execution.
+Tool-free profiles send `tool_choice: "none"` and omit tool schemas. Empty
+`enabled_tools` loads no plugins; individual profiles still determine tool grants.
+A long repetitive assistant message with no `tool_calls` is a single model
+response, not a registry loop. Check the run's steps and tool evidence to tell
+these apart. If reasoning appears in `content`, check the backend's model/chat
+format settings; the runtime preserves returned text rather than silently
+rewriting it. Backends must honor the requested output cap.
+Token usage is summed
 only when every response supplies counts; otherwise it remains null.
 
 `POST /api/runs/{id}/cancel` shares one durable operation across concurrent callers.

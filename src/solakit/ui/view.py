@@ -10,7 +10,7 @@ LABELS = {
     "model_unavailable": "Model unavailable",
     "memory_unavailable": "Memory unavailable",
     "tool_error": "Tool failed",
-    "budget_exceeded": "Step limit reached",
+    "budget_exceeded": "Run limit reached",
     "context_limit": "Context limit reached",
     "interrupted": "Interrupted",
     "cancelled": "Cancelled",

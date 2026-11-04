@@ -141,7 +141,12 @@ class Execution:
                     {"role": "user", "content": pending.text},
                 ]
                 if (
-                    request_bytes(self.config.model.model_id, preview, tools)
+                    request_bytes(
+                        self.config.model.model_id,
+                        preview,
+                        tools,
+                        self.config.model.max_tokens,
+                    )
                     > self.config.profiles[run.profile].context_budget
                 ):
                     self.compactor.memory = self.memory
@@ -227,7 +232,12 @@ class Execution:
         for step in range(cfg.max_steps):
             tools = self.registry.schemas(run.profile)
             if (
-                request_bytes(self.config.model.model_id, messages, tools)
+                request_bytes(
+                    self.config.model.model_id,
+                    messages,
+                    tools,
+                    self.config.model.max_tokens,
+                )
                 > cfg.context_budget
             ):
                 raise ContextLimit("Request exceeds conservative context byte budget")
@@ -262,6 +272,15 @@ class Execution:
             )
             await durable(self.store.append_message, session.id, assistant)
             messages.append(assistant.model_message())
+            if data["choices"][0].get("finish_reason") == "length":
+                # Keep partial output as evidence, but never execute a potentially
+                # truncated tool call or mark a token-limited answer complete.
+                run.status = RunStatus.budget_exceeded
+                run.error = (
+                    "Model output reached model.max_tokens "
+                    f"({self.config.model.max_tokens}); response may be incomplete."
+                )
+                return
             calls = assistant.tool_calls or []
             if not calls:
                 run.status = RunStatus.completed

@@ -135,9 +135,12 @@ class ModelClient:
                 "model": self.config.model_id,
                 "messages": messages,
                 "stream": False,
+                "max_tokens": self.config.max_tokens,
             }
             if tools:
                 request["tools"] = tools
+            else:
+                request["tool_choice"] = "none"
             response = await self.client.post("chat/completions", json=request)
             response.raise_for_status()
             data = response.json()

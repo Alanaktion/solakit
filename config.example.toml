@@ -21,6 +21,8 @@ base_url = "http://127.0.0.1:8000/v1"
 # Or: api_key = { file = "/absolute/path/to/model-token" } # mode 0600
 model_id = "OsaurusAI/Qwen3.6-35B-A3B-mxfp4"
 concurrency = 1
+# Bound each model completion, including reasoning tokens on supporting backends.
+max_tokens = 4096
 # Opt in only if this service needs proxy/CA environment settings.
 trust_env = false
 

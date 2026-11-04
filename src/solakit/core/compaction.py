@@ -21,11 +21,20 @@ class ContextLimit(Exception):
     """The context cannot safely fit and no completed summary can replace it."""
 
 
-def request_bytes(model: str, messages: list[dict], tools: list[dict]) -> int:
+def request_bytes(
+    model: str, messages: list[dict], tools: list[dict], max_tokens: int
+) -> int:
     """Conservative serialized-byte guard; never reported as measured token usage."""
     return len(
         json.dumps(
-            {"model": model, "messages": messages, "tools": tools, "stream": False},
+            {
+                "model": model,
+                "messages": messages,
+                "tools": tools,
+                "stream": False,
+                "max_tokens": max_tokens,
+                **({"tool_choice": "none"} if not tools else {}),
+            },
             ensure_ascii=False,
         ).encode("utf-8")
     )

@@ -555,3 +555,70 @@ def test_verbatim_transcript_and_context_are_separate_from_redacted_logs(config)
         await execution.close()
 
     asyncio.run(exercise())
+
+
+def test_tool_free_generation_is_one_bounded_completion(config):
+    captured = []
+    config.model.max_tokens = 128
+    assert config.enabled_tools == []
+
+    def handler(request):
+        if request.url.path.endswith("/models"):
+            return model_list(config)
+        captured.append(json.loads(request.content))
+        return completion(config, "No tools are available.")
+
+    execution = setup(config, handler)
+
+    async def exercise():
+        run = await execution.submit("s", "Do you have any tools?")
+        assert run.status == "completed"
+        assert run.steps == len(captured) == 1
+        assert captured[0]["tool_choice"] == "none"
+        assert captured[0]["max_tokens"] == 128
+        assert "tools" not in captured[0]
+        assert execution.store.run(run.id)["tools"] == []
+        await execution.close()
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("with_calls", [False, True])
+def test_output_token_limit_stops_without_retry_or_tool_dispatch(config, with_calls):
+    captured = []
+    config.model.max_tokens = 128
+
+    def handler(request):
+        if request.url.path.endswith("/models"):
+            return model_list(config)
+        captured.append(json.loads(request.content))
+        response = completion(
+            config, "Partial response", [call()] if with_calls else None
+        )
+        data = json.loads(response.content)
+        data["choices"][0]["finish_reason"] = "length"
+        return httpx.Response(200, json=data)
+
+    execution = setup(config, handler)
+
+    @tool(name="echo", profiles=["interactive"])
+    async def echo(ctx: ToolContext, text: str) -> ToolResult:
+        raise AssertionError("Token-limited tool call must not execute")
+
+    if with_calls:
+        execution.registry.register(echo)
+        config.profiles["interactive"].tools = ["echo"]
+        execution.registry.validate()
+
+    async def exercise():
+        run = await execution.submit("s", "hello")
+        assert run.status == "budget_exceeded"
+        assert run.steps == len(captured) == 1
+        assert "model.max_tokens (128)" in run.error
+        assert execution.store.run(run.id)["tools"] == []
+        transcript = execution.store.transcript("s")
+        assert [m["role"] for m in transcript] == ["user", "assistant"]
+        assert transcript[-1]["content"] == "Partial response"
+        await execution.close()
+
+    asyncio.run(exercise())

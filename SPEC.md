@@ -188,7 +188,11 @@ delivery — that message delivered to a channel (§6.3 / §7.2).
    session's memory_scope (§13). No other implicit retrieval happens
    mid-loop — further memory access is an explicit tool call.
 5. Loop, at most profile.max_steps times:
-   a. POST messages + enabled tool schemas to the model endpoint.
+   a. POST messages + enabled tool schemas to the model endpoint with
+      model.max_tokens (default 4096) as a per-completion output bound.
+      If no schemas are granted, omit tools and set tool_choice to "none".
+      A finish_reason of "length" preserves partial output, ends the run as
+      budget_exceeded with an explicit error, and executes no tool calls.
    b. No tool calls in the reply: append it, end run as `completed`.
    c. Tool calls: FIRST append the assistant message carrying the
       tool_calls, THEN execute each call through the registry and append

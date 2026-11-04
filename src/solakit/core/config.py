@@ -56,6 +56,7 @@ class ModelConfig(StrictModel):
     model_id: str = "OsaurusAI/Qwen3.6-35B-A3B-mxfp4"
     concurrency: int = Field(default=1, ge=1)
     timeout_s: float = Field(default=120, gt=0)
+    max_tokens: int = Field(default=4096, ge=1)
     trust_env: bool = False
 
     def resolve_api_key(self) -> str | None:
