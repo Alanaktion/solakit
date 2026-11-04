@@ -51,7 +51,7 @@ def test_golden_dry_run(config, auth, monkeypatch):
 
 def test_live_soul_verbatim(config):
     root = config.paths.fragments
-    (root / "profiles").mkdir(parents=True)
+    (root / "profiles").mkdir(parents=True, exist_ok=True)
     (root / "profiles/interactive.md").write_text("")
     config.paths.soul.write_bytes(b"Persona\r\n  \n")
     kwargs = dict(

@@ -1,7 +1,6 @@
 """Narrow filesystem tools with per-call resolved-path checks."""
 
-import asyncio
-
+from solakit.core.io import durable
 from solakit.tools import ToolContext, ToolError, ToolResult, tool
 
 PROFILES = ["interactive", "maintenance", "dream", "blog", "inbox", "letters"]
@@ -19,7 +18,7 @@ async def read(ctx: ToolContext, path: str) -> ToolResult:
                     ctx.config.profiles[ctx.profile].tool_output_max_chars + 1
                 )
 
-        content = await asyncio.to_thread(bounded_read)
+        content = await durable(bounded_read)
     except (OSError, UnicodeError) as exc:
         raise ToolError("Cannot read requested file") from exc
     return ToolResult(content=content)
@@ -35,7 +34,7 @@ async def write(ctx: ToolContext, path: str, content: str) -> ToolResult:
             with target.open("x", encoding="utf-8") as stream:
                 stream.write(content)
 
-        await asyncio.to_thread(create)
+        await durable(create)
     except OSError as exc:
         raise ToolError("Cannot create requested file") from exc
     return ToolResult(content=str(target))

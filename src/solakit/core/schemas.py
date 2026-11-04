@@ -63,6 +63,7 @@ class Run(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid4()))
     session: str
     profile: str
+    input_message: str | None = None
     origin: Origin
     status: RunStatus = RunStatus.queued
     created_at: datetime = Field(default_factory=now)
@@ -70,4 +71,5 @@ class Run(BaseModel):
     prompt_sha256: str | None = None
     tokens: dict[str, int] | None = None
     steps: int = 0
+    context_skipped_messages: int = 0
     error: str | None = None

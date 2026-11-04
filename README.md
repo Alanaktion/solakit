@@ -21,9 +21,11 @@ The root `/` is reserved for Alan's UI. `/api` requires an
 `Authorization: Bearer <operator-token>` header. `/api/channels` explicitly
 reports disabled or unimplemented adapters. No adapters or jobs run yet.
 
-The scaffold's `/v1/runs` was removed. Its temporary injected-agent test seam is
-`POST /api/runs`; phase 5 replaces it with the persistent session execution path.
-The default runtime returns 503 while no agent is configured.
+The scaffold's `/v1/runs` and temporary `POST /api/runs` were retired.
+Create a session with `POST /api/sessions` (`{"id":"web-main"}`), then send
+`POST /api/sessions/web-main/messages` (`{"message":"Hello"}`). This returns the
+completed persistent run record. Optional `profile` selects an operator-granted
+profile. The authenticated API may invoke maintenance; channels/jobs may not.
 
 ```sh
 uv run pytest
@@ -79,3 +81,26 @@ must supply their own bounded/cancellable operations. Configured Python modules
 are trusted operator code; profile checks constrain exposed operations, not
 arbitrary Python imported by the operator. The filesystem is operator-controlled;
 resolved-path checks do not provide OS isolation against concurrent path changes.
+
+## Execution and cancellation
+
+One FIFO queue per session feeds the global inference semaphore. Every run checks
+the exact pinned model, persists its prompt before inference, and sends only
+registered profile tools. No history is appended until the first validated
+completion arrives; model unavailability or an incorrect model before that leaves
+the session untouched. Partial evidence from later failures remains archived.
+Tool call envelopes precede all matching results. Bad JSON, schema violations,
+and forbidden calls get at most two repair opportunities; tools never execute
+when forbidden. Other tool failures are structured results. Max steps ends a run
+as `budget_exceeded`. Endpoint usage is summed only when every response supplies
+counts; otherwise tokens remain null.
+
+`POST /api/runs/{id}/cancel` cancels queued/running work; shutdown cancels work and
+closes HTTP clients. Interrupted tool groups remain in history but are excluded
+from future model requests, with the skipped count in each run record. A data
+ownership lock prevents a second server from recovering an active server's runs.
+Run uvicorn with one worker. No fallback model is attempted.
+
+Memory recall/commit and context compaction arrive in phase 6. Until then runs
+use the complete valid transcript without compaction, and there is no external
+memory access. Isolated memory is refused. Discord and scheduling remain disabled.

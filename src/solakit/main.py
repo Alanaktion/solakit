@@ -7,17 +7,17 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Annotated
 
-import httpx
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel, StringConstraints
 
 from solakit.core.config import Config, load_config
+from solakit.core.loop import Execution
+from solakit.core.model import ModelClient, ModelUnavailable
 from solakit.core.prompt import inspection, read_prompt
 from solakit.core.routing import SessionRouter
-from solakit.core.schemas import now
+from solakit.core.schemas import Origin, Session, now
 from solakit.core.secrets import RedactingFilter, Redactor
-from solakit.core.store import Store
-from solakit.runtime import AgentNotConfigured, Runtime
+from solakit.core.store import Store, safe_id
 from solakit.tools import Registry
 
 
@@ -25,26 +25,20 @@ class RunRequest(BaseModel):
     message: Annotated[
         str, StringConstraints(strip_whitespace=True, min_length=1, max_length=32000)
     ]
+    profile: str | None = None
 
 
-class RunResponse(BaseModel):
-    response: str
-
-
-async def probe_model(config: Config) -> dict[str, str]:
+async def probe_model(model: ModelClient) -> dict[str, str]:
     try:
-        async with httpx.AsyncClient(timeout=min(config.model.timeout_s, 5)) as client:
-            response = await client.get(f"{config.model.base_url.rstrip('/')}/models")
-            response.raise_for_status()
-            ids = [entry["id"] for entry in response.json()["data"]]
-        if config.model.model_id not in ids:
-            return {"status": "unavailable", "reason": "pinned model not served"}
-        return {"status": "ready", "model_id": config.model.model_id}
-    except (httpx.HTTPError, ValueError, KeyError, TypeError):
-        return {"status": "unavailable", "reason": "model endpoint unavailable"}
+        await model.preflight()
+        return {"status": "ready", "model_id": model.config.model_id}
+    except ModelUnavailable:
+        return {"status": "unavailable", "reason": "pinned model unavailable"}
 
 
-def create_app(runtime: Runtime | None = None, config: Config | None = None) -> FastAPI:
+def create_app(
+    config: Config | None = None, model: ModelClient | None = None
+) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         cfg = config if config is not None else load_config()
@@ -52,22 +46,29 @@ def create_app(runtime: Runtime | None = None, config: Config | None = None) -> 
         app.state.config = cfg
         app.state.operator_token = token
         app.state.redactor = Redactor([token])
+        app.state.registry = Registry(cfg)
+        app.state.store = await asyncio.to_thread(
+            Store, cfg.paths.data, app.state.redactor, exclusive=True
+        )
+        app.state.router = SessionRouter(cfg, app.state.store)
+        app.state.model = model if model is not None else ModelClient(cfg.model)
+        app.state.execution = Execution(
+            cfg, app.state.store, app.state.registry, app.state.model
+        )
         log_filter = RedactingFilter(app.state.redactor)
         handlers = logging.getLogger().handlers
         for handler in handlers:
             handler.addFilter(log_filter)
-        app.state.registry = Registry(cfg)
-        app.state.store = Store(cfg.paths.data, app.state.redactor)
-        app.state.router = SessionRouter(cfg, app.state.store)
-        app.state.model_health = await probe_model(cfg)
         try:
+            app.state.model_health = await probe_model(app.state.model)
             yield
         finally:
+            await app.state.execution.close()
+            app.state.store.close()
             for handler in handlers:
                 handler.removeFilter(log_filter)
 
     app = FastAPI(title="Solakit", version="0.1.0", lifespan=lifespan)
-    app.state.runtime = runtime if runtime is not None else Runtime()
 
     async def authorize(authorization: Annotated[str | None, Header()] = None) -> None:
         expected = f"Bearer {app.state.operator_token}"
@@ -82,15 +83,12 @@ def create_app(runtime: Runtime | None = None, config: Config | None = None) -> 
 
     @app.get("/health")
     async def health() -> dict:
-        model = app.state.model_health
-        return {
-            "status": "ok" if model["status"] == "ready" else "degraded",
-            "model": model["status"],
-        }
+        status = app.state.model_health["status"]
+        return {"status": "ok" if status == "ready" else "degraded", "model": status}
 
     @app.get("/health/model")
     async def model_health() -> dict:
-        app.state.model_health = await probe_model(app.state.config)
+        app.state.model_health = await probe_model(app.state.model)
         return app.state.model_health
 
     @api.get("/channels")
@@ -104,14 +102,6 @@ def create_app(runtime: Runtime | None = None, config: Config | None = None) -> 
             }
             for c in app.state.config.channels
         ]
-
-    @api.post("/runs", response_model=RunResponse, deprecated=True)
-    async def run(request: RunRequest) -> RunResponse:
-        try:
-            response = await app.state.runtime.run(request.message)
-        except AgentNotConfigured as exc:
-            raise HTTPException(503, "No agent configured") from exc
-        return RunResponse(response=response)
 
     @api.get("/prompt")
     async def prompt(
@@ -136,27 +126,65 @@ def create_app(runtime: Runtime | None = None, config: Config | None = None) -> 
             raise HTTPException(422, "Prompt files or profile are invalid") from exc
 
     @api.get("/sessions")
-    async def sessions() -> list[dict]:
+    def sessions() -> list[dict]:
         return app.state.store.list_records("sessions")
 
+    @api.post("/sessions", status_code=201)
+    def create_session(session: Session) -> dict:
+        try:
+            safe_id(session.id)
+            if session.default_profile not in app.state.config.profiles:
+                raise ValueError("Unknown profile")
+            if session.memory_scope == "isolated":
+                raise ValueError("Isolated memory is not implemented")
+            if session.bound_channel is not None:
+                raise ValueError("Channel bindings are controlled by configuration")
+            return app.state.store.create_session(session).model_dump(mode="json")
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+
     @api.get("/sessions/{session_id}")
-    async def session(session_id: str) -> dict:
+    def session(session_id: str) -> dict:
         try:
             metadata = app.state.store.session(session_id).model_dump(mode="json")
             return {**metadata, "messages": app.state.store.transcript(session_id)}
         except (FileNotFoundError, ValueError) as exc:
             raise HTTPException(404, "Session not found") from exc
 
+    @api.post("/sessions/{session_id}/messages")
+    async def message(session_id: str, request: RunRequest) -> dict:
+        try:
+            run = await app.state.execution.submit(
+                session_id,
+                request.message,
+                profile=request.profile,
+                origin=Origin(channel="api", channel_id=session_id),
+            )
+            return await asyncio.to_thread(app.state.store.run, run.id)
+        except FileNotFoundError as exc:
+            raise HTTPException(404, "Session not found") from exc
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+
     @api.get("/runs")
-    async def runs() -> list[dict]:
+    def runs() -> list[dict]:
         return app.state.store.list_records("runs")
 
     @api.get("/runs/{run_id}")
-    async def run_record(run_id: str) -> dict:
+    def run_record(run_id: str) -> dict:
         try:
             return app.state.store.run(run_id)
         except (FileNotFoundError, ValueError) as exc:
             raise HTTPException(404, "Run not found") from exc
+
+    @api.post("/runs/{run_id}/cancel")
+    async def cancel(run_id: str) -> dict:
+        try:
+            await asyncio.to_thread(app.state.store.run, run_id)
+        except (FileNotFoundError, ValueError) as exc:
+            raise HTTPException(404, "Run not found") from exc
+        await app.state.execution.cancel(run_id)
+        return await asyncio.to_thread(app.state.store.run, run_id)
 
     app.include_router(api)
     return app

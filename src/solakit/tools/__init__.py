@@ -14,6 +14,7 @@ from typing import Any, get_type_hints
 from pydantic import BaseModel, ConfigDict, ValidationError, create_model
 
 from solakit.core.config import Config, Profile
+from solakit.core.io import durable
 from solakit.core.schemas import Session
 from solakit.core.store import Store
 
@@ -25,6 +26,7 @@ class ToolError(Exception):
 class ToolResult(BaseModel):
     content: str
     error: bool = False
+    repairable: bool = False
 
 
 @dataclass
@@ -177,14 +179,18 @@ class Registry:
         result = ToolResult(content="Tool execution failed", error=True)
         parsed = None
         detail = None
+        repairable = False
         try:
             if not self.allowed(name, ctx.profile):
+                repairable = True
                 raise ToolError("Tool is not permitted in this profile")
             registered = self.tools[name]
             cfg = self.config.profiles[ctx.profile]
             self.check_writes(registered, cfg)
+            repairable = True
             parsed = json.loads(arguments)
             values = registered.arguments.model_validate(parsed).model_dump()
+            repairable = False
             timeout = min(
                 registered.manifest.timeout or cfg.tool_timeout_s, cfg.tool_timeout_s
             )
@@ -207,7 +213,7 @@ class Registry:
                 message = str(exc)
             else:
                 message = "Invalid tool arguments or capability grant"
-            result = ToolResult(content=message, error=True)
+            result = ToolResult(content=message, error=True, repairable=repairable)
         except Exception:
             detail = traceback.format_exc()
         finally:
@@ -215,7 +221,7 @@ class Registry:
             output_chars = len(result.content)
             if output_chars > limit:
                 result.content = result.content[: limit - 12] + "\n[truncated]"
-            await asyncio.to_thread(
+            await durable(
                 ctx.store.log_tool,
                 ctx.run_id,
                 {

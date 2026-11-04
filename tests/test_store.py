@@ -72,3 +72,12 @@ def test_inspection_api(config, auth):
         assert client.get("/api/sessions/s", headers=auth).json()["messages"] == []
         assert client.get("/api/sessions/missing", headers=auth).status_code == 404
         assert client.get("/api/runs/missing", headers=auth).status_code == 404
+
+
+def test_only_one_runtime_owns_data(config):
+    first = Store(config.paths.data, exclusive=True)
+    with pytest.raises(RuntimeError, match="Another runtime"):
+        Store(config.paths.data, exclusive=True)
+    first.close()
+    second = Store(config.paths.data, exclusive=True)
+    second.close()

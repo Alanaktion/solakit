@@ -5,6 +5,7 @@ inspection snapshot, never the only copy. A torn final JSONL write is preserved
 and ignored during reads; later writes begin on a fresh line.
 """
 
+import fcntl
 import hashlib
 import json
 import os
@@ -27,14 +28,29 @@ def safe_id(value: str) -> str:
 
 
 class Store:
-    def __init__(self, root: Path, redactor: Redactor | None = None):
+    def __init__(
+        self, root: Path, redactor: Redactor | None = None, exclusive: bool = False
+    ):
         self.root = root.expanduser().resolve()
         self.redactor = redactor or Redactor()
         self.lock = threading.RLock()
         for directory in (self.root, self.root / "sessions", self.root / "runs"):
             directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+        self.ownership = None
+        if exclusive:
+            self.ownership = (self.root / ".runtime.lock").open("a")
+            try:
+                fcntl.flock(self.ownership, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                self.ownership.close()
+                raise RuntimeError("Another runtime owns this data directory") from None
         self.rebuild()
         self.recover()
+
+    def close(self) -> None:
+        if self.ownership is not None:
+            self.ownership.close()
+            self.ownership = None
 
     def _path(self, kind: str, record_id: str, suffix: str) -> Path:
         return self.root / kind / f"{safe_id(record_id)}{suffix}"

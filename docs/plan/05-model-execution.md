@@ -1,6 +1,6 @@
 # Phase 5: Model client and queued agent execution
 
-Status: planned
+Status: complete
 
 Depends on: phase 4
 
@@ -15,4 +15,14 @@ Depends on: phase 4
 
 ## Completion record
 
-Record implementation, validation, and remaining limitations here before marking complete.
+Implemented async pinned oMLX requests, FIFO session workers, global inference
+semaphore, bounded tool loop, repair budgets, token accounting, persistent API
+execution, queued/running cancellation and clean shutdown. Removed both scaffold
+execution routes; all messages use /api/sessions/{id}/messages.
+First-response model failures leave transcripts untouched. Incomplete tool groups
+are retained as evidence and explicitly counted when excluded from model context.
+A process ownership lock prevents concurrent recovery of active runs.
+Validated with 23 passing tests, including mock exact-context, ordering, model
+identity/down cases, capabilities, successful FIFO, concurrency, cancellation,
+shutdown and recovery; Ruff lint and format pass. Live oMLX validation remains
+part of phase 9. Memory/compaction and delivery remain later phases.
