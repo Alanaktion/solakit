@@ -10,7 +10,9 @@ from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel, StringConstraints
 
 from solakit.core.config import Config, load_config
+from solakit.core.routing import SessionRouter
 from solakit.core.secrets import RedactingFilter, Redactor
+from solakit.core.store import Store
 from solakit.runtime import AgentNotConfigured, Runtime
 
 
@@ -49,6 +51,8 @@ def create_app(runtime: Runtime | None = None, config: Config | None = None) -> 
         handlers = logging.getLogger().handlers
         for handler in handlers:
             handler.addFilter(log_filter)
+        app.state.store = Store(cfg.paths.data, app.state.redactor)
+        app.state.router = SessionRouter(cfg, app.state.store)
         app.state.model_health = await probe_model(cfg)
         try:
             yield
@@ -102,6 +106,29 @@ def create_app(runtime: Runtime | None = None, config: Config | None = None) -> 
         except AgentNotConfigured as exc:
             raise HTTPException(503, "No agent configured") from exc
         return RunResponse(response=response)
+
+    @api.get("/sessions")
+    async def sessions() -> list[dict]:
+        return app.state.store.list_records("sessions")
+
+    @api.get("/sessions/{session_id}")
+    async def session(session_id: str) -> dict:
+        try:
+            metadata = app.state.store.session(session_id).model_dump(mode="json")
+            return {**metadata, "messages": app.state.store.transcript(session_id)}
+        except (FileNotFoundError, ValueError) as exc:
+            raise HTTPException(404, "Session not found") from exc
+
+    @api.get("/runs")
+    async def runs() -> list[dict]:
+        return app.state.store.list_records("runs")
+
+    @api.get("/runs/{run_id}")
+    async def run_record(run_id: str) -> dict:
+        try:
+            return app.state.store.run(run_id)
+        except (FileNotFoundError, ValueError) as exc:
+            raise HTTPException(404, "Run not found") from exc
 
     app.include_router(api)
     return app

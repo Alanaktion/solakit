@@ -34,3 +34,14 @@ uv run ruff format --check .
 In the managed cloud environment, use `UV_CACHE_DIR=/workspace/.cache/uv`.
 Runtime data must live outside the code tree. Never commit operator configuration
 or secrets. This work does not deploy a pilot or change Hermes.
+
+## Storage and inspection
+
+`GET /api/sessions`, `/api/sessions/{id}`, `/api/runs`, and `/api/runs/{id}`
+inspect local evidence. Session metadata and transcripts, run event journals,
+exact prompt files, and redacted tool logs are authoritative. `app.db` is rebuilt
+at startup; deleting it loses no evidence. Unfinished runs become `interrupted`
+on restart, with partial evidence preserved. Each `.json` run snapshot is backed
+by append-only `.events.jsonl`. JSONL writes are fsynced. Prompt files preserve
+exact UTF-8 bytes, including CRLF; they are intentionally not redacted. Treat the
+data directory as private operator material, just like the source persona.

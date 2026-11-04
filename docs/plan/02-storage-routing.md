@@ -1,6 +1,6 @@
 # Phase 2: Append-only storage and session routing
 
-Status: planned
+Status: complete
 
 Depends on: phase 1
 
@@ -14,4 +14,10 @@ Depends on: phase 1
 
 ## Completion record
 
-Record implementation, validation, and remaining limitations here before marking complete.
+Implemented JSONL transcripts and run event journals, immutable exact prompt files,
+redacted tool logs, immutable session metadata, channel pinning, recovery and
+rebuildable SQLite indexes. Run .json files are disposable snapshots backed by
+append-only .events.jsonl evidence. Inspection endpoints are authenticated.
+Validated with 10 passing tests including restart, index deletion, independent
+channel histories, torn-write preservation, and interrupted-run recovery; Ruff passes.
+The store is a single-process service, consistent with the target architecture.
