@@ -144,6 +144,19 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
             data, records, dict(zip(sorted(with_tools), logs, strict=True))
         )
 
+    async def chat_context(request, data, history, error=None):
+        all_sessions, state = await asyncio.gather(
+            api(request, "GET", "/api/sessions"), health(request)
+        )
+        all_sessions.sort(key=lambda item: timestamp(item["created_at"]), reverse=True)
+        return {
+            "session": data,
+            "turns": history,
+            "sessions": all_sessions,
+            "health": state,
+            "error": error,
+        }
+
     @router.get("/login")
     async def login_page(request: Request):
         if logged_in(request):
@@ -249,7 +262,7 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
             return render(
                 request,
                 "chat.html",
-                {"session": data, "turns": history, "health": await health(request)},
+                await chat_context(request, data, history),
             )
         except APIError as exc:
             return render(request, "error.html", {"error": exc.detail}, exc.status)
@@ -295,12 +308,7 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
         return render(
             request,
             "chat.html",
-            {
-                "session": data,
-                "turns": history,
-                "error": error,
-                "health": await health(request),
-            },
+            await chat_context(request, data, history, error),
             status,
         )
 

@@ -46,7 +46,10 @@ Run uvicorn with one worker; a data ownership lock prevents concurrent recovery.
 Open `http://127.0.0.1:8382/` for the moonlight-themed operator UI. Sign in with
 **the operator token**, separately from the model API key. The UI supports system
 light/dark preference, session creation, plain-text chat, collapsed tool evidence,
-and reported health. Sessions use their configured default profile for chat.
+and reported health. Chat fills the viewport with a desktop session sidebar,
+message bubbles, and a bottom-anchored composer; on mobile, the conversation takes
+the full width with a back link to sessions. Sessions use their configured default
+profile for chat.
 Prompt/run inspectors, archive browsing, and jobs/channels controls are deferred.
 
 Login exchanges the token for an opaque, HttpOnly, SameSite=Lax cookie valid for

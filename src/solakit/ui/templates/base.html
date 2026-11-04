@@ -13,7 +13,7 @@
   <script src="/static/vendor/htmx.min.js" defer></script>
   <script src="/static/app.js" defer></script>
 </head>
-<body>
+<body class="{% block body_class %}{% endblock %}">
   <a class="skip-link" href="#main">Skip to content</a>
   <header class="site-header">
     <div class="header-inner">
@@ -28,6 +28,6 @@
   <main id="main" class="page {% block page_class %}{% endblock %}">
     {% block content %}{% endblock %}
   </main>
-  <footer class="site-footer"><span>Solakit</span><span>A quiet space for an ongoing conversation.</span><span class="footer-star" aria-hidden="true">✧</span></footer>
+  {% block footer %}<footer class="site-footer"><span>Solakit</span><span>A quiet space for an ongoing conversation.</span><span class="footer-star" aria-hidden="true">✧</span></footer>{% endblock %}
 </body>
 </html>
