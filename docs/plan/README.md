@@ -83,3 +83,11 @@ Retain existing documented MVP decisions: no Discord replay after downtime,
 ignore non-trigger authors entirely, shell maintenance-only, blog publishing
 capability separated from filesystem writes. Revisit these explicitly before
 production configuration. Hermes and its schedules stay untouched.
+
+## Operator UI
+
+The supplied UI brief authorizes [P1 sessions/chat/status](10-ui-p1.md), now locally
+implemented. [P2 evidence](11-ui-p2-evidence.md) and
+[P3 operations](12-ui-p3-operations.md) have separate deferred plans. They do not
+advance existing live-integration gates. Markdown/profile selection and shared
+UI/Discord session archival remain separate v2 decisions.

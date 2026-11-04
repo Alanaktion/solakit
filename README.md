@@ -43,8 +43,23 @@ settings offline. Errors name files and safe TOML locations without echoing thei
 contents. Startup performs the same checks. Model unavailability leaves the app
 up with degraded health; runs use the exact pinned model or fail without fallback.
 Run uvicorn with one worker; a data ownership lock prevents concurrent recovery.
-The root `/` is reserved for Alan's UI. `/api` requires
-`Authorization: Bearer <operator-token>`.
+Open `http://127.0.0.1:8382/` for the moonlight-themed operator UI. Sign in with
+**the operator token**, separately from the model API key. The UI supports system
+light/dark preference, session creation, plain-text chat, collapsed tool evidence,
+and reported health. Sessions use their configured default profile for chat.
+Prompt/run inspectors, archive browsing, and jobs/channels controls are deferred.
+
+Login exchanges the token for an opaque, HttpOnly, SameSite=Lax cookie valid for
+seven days (Secure on HTTPS). Sign out revokes it; server restarts invalidate all
+UI sessions. Five failed attempts lock login for 60 seconds. `/api` accepts either
+this cookie or the existing `Authorization: Bearer <operator-token>` header.
+The token is never placed in page content or browser storage.
+
+The composer waits without a client timeout, showing elapsed time while disabled.
+Reloading during a run shows its recorded state; reload again to check completion.
+A dropped connection does not prove a run failed: check its state before retrying.
+All templates, CSS, JavaScript and vendored HTMX ship locally with the package;
+no Node build, CDN, markdown renderer, or extra hosting service is required.
 
 ```sh
 uv run pytest

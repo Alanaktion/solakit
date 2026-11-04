@@ -1,0 +1,24 @@
+{% extends 'base.html' %}
+{% block title %}{{ session.title or session.id }} · Solakit{% endblock %}
+{% block page_class %}chat-page{% endblock %}
+{% block content %}
+<a class="back-link" href="/">← All sessions</a>
+<section class="page-heading chat-heading">
+  <div><span class="eyebrow">AN ONGOING THREAD</span><h1>{{ session.title or session.id }}</h1><p class="intro">A conversation with Sola.</p></div>
+  <div class="session-badges"><span class="profile-tag">{{ session.default_profile }}</span><span class="subtle-tag">{{ session.memory_scope }} memory</span>{% if session.bound_channel %}<span class="subtle-tag">{{ session.bound_channel }}</span>{% endif %}</div>
+</section>
+<section class="conversation-shell panel" aria-label="Conversation">
+  <div class="conversation-heading"><span class="section-label">CONVERSATION</span><span class="muted">{{ session.id }}</span></div>
+  <div id="conversation" class="conversation" role="log" aria-label="Message history" aria-live="polite" aria-relevant="additions text">{% include 'fragments/message_tail.html' %}</div>
+  <div class="composer-wrap">
+    <p id="connection-error" class="notice notice-error" role="alert" hidden>The request could not finish. Reload to check the run before sending again.</p>
+    <p id="pending" class="pending" role="status" hidden><span class="thinking-dot" aria-hidden="true"></span>Waiting for Sola <span id="elapsed" aria-live="off">0:00</span></p>
+    <form id="composer" action="/sessions/{{ session.id|urlencode }}/messages" method="post" hx-post="/sessions/{{ session.id|urlencode }}/messages" hx-target="#conversation" hx-swap="innerHTML" hx-disabled-elt="find textarea, find button">
+      <label class="visually-hidden" for="message">Message to Sola</label>
+      <textarea id="message" name="message" placeholder="What’s on your mind?" maxlength="32000" rows="3" required aria-describedby="composer-hint"></textarea>
+      <div class="composer-bottom"><small id="composer-hint">Enter for a new line · ⌘ / Ctrl ↵ to send</small><button class="primary-button" type="submit">Send <span aria-hidden="true">↗</span></button></div>
+    </form>
+  </div>
+</section>
+<p class="page-note">This conversation uses the <strong>{{ session.default_profile }}</strong> profile.</p>
+{% endblock %}

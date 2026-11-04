@@ -1,0 +1,315 @@
+"""Server-rendered UI P1. Every application-data operation uses existing API routes."""
+
+import asyncio
+from pathlib import Path
+from urllib.parse import parse_qs, quote
+
+import httpx
+from fastapi import APIRouter, Request
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.templating import Jinja2Templates
+
+from solakit.ui.auth import COOKIE, LIFETIME, UISessions
+from solakit.ui.view import timestamp, turns
+
+ROOT = Path(__file__).parent
+TEMPLATES = Jinja2Templates(directory=str(ROOT / "templates"))
+HEADERS = {
+    "Cache-Control": "no-store",
+    "Vary": "Cookie",
+    "X-Content-Type-Options": "nosniff",
+    "Content-Security-Policy": (
+        "default-src 'self'; script-src 'self'; style-src 'self'; "
+        "connect-src 'self'; img-src 'self'; frame-ancestors 'none'; "
+        "base-uri 'self'; form-action 'self'"
+    ),
+}
+
+
+class APIError(Exception):
+    def __init__(self, status: int, detail):
+        self.status = status
+        if isinstance(detail, list):
+            self.detail = "\n".join(
+                f"{'.'.join(map(str, e.get('loc', [])))}: "
+                f"{e.get('msg', 'Invalid input')}"
+                for e in detail
+            )
+        else:
+            self.detail = str(detail)
+
+
+def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRouter:
+    router = APIRouter(include_in_schema=False)
+
+    def logged_in(request):
+        return sessions.authorized(
+            request.headers.get("authorization"),
+            request.cookies.get(COOKIE),
+            operator_token(),
+        )
+
+    def login_redirect(request):
+        if request.headers.get("HX-Request") == "true":
+            return Response(headers={**HEADERS, "HX-Redirect": "/login"})
+        return RedirectResponse("/login", status_code=303, headers=HEADERS)
+
+    def render(request, template, context=None, status=200, headers=None):
+        # API transcripts are deliberately verbatim. UI presentation additionally
+        # masks resolved credentials, without changing API/history/prompt bytes.
+        return TEMPLATES.TemplateResponse(
+            request=request,
+            name=template,
+            context=redact(context or {}),
+            status_code=status,
+            headers=HEADERS | (headers or {}),
+        )
+
+    async def form(request, limit=512000):
+        if (
+            request.headers.get("content-type", "").split(";", 1)[0]
+            != "application/x-www-form-urlencoded"
+        ):
+            raise APIError(400, "Expected a form submission.")
+        body = bytearray()
+        async for chunk in request.stream():
+            body.extend(chunk)
+            if len(body) > limit:
+                raise APIError(413, "Form submission is too large.")
+        try:
+            values = parse_qs(
+                body.decode("utf-8"), keep_blank_values=True, max_num_fields=8
+            )
+        except (ValueError, UnicodeError):
+            raise APIError(400, "Invalid form submission.") from None
+        return {key: entries[-1] for key, entries in values.items()}
+
+    async def api(request, method, path, payload=None):
+        headers = {}
+        if request.headers.get("authorization"):
+            headers["Authorization"] = request.headers["authorization"]
+        identity = request.cookies.get(COOKIE)
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app),
+            base_url="http://solakit.internal",
+            timeout=None,
+            trust_env=False,
+            headers=headers,
+            cookies={COOKIE: identity} if identity else {},
+        ) as client:
+            response = await client.request(method, path, json=payload)
+        data = response.json()
+        if response.is_error:
+            raise APIError(
+                response.status_code, data.get("detail", "API request failed.")
+            )
+        return data
+
+    async def health(request):
+        return await api(request, "GET", "/health")
+
+    async def session_page(request, error=None, values=None, status=200):
+        data, profiles, state = await asyncio.gather(
+            api(request, "GET", "/api/sessions"),
+            api(request, "GET", "/api/profiles"),
+            health(request),
+        )
+        data.sort(key=lambda item: timestamp(item["created_at"]), reverse=True)
+        return render(
+            request,
+            "sessions.html",
+            {
+                "sessions": data,
+                "profiles": profiles,
+                "health": state,
+                "error": error,
+                "values": values or {},
+            },
+            status,
+        )
+
+    async def conversation(request, identity):
+        data, records = await asyncio.gather(
+            api(request, "GET", f"/api/sessions/{quote(identity, safe='')}"),
+            api(request, "GET", "/api/runs"),
+        )
+        with_tools = {m["run_id"] for m in data["messages"] if m.get("tool_calls")}
+        logs = await asyncio.gather(
+            *(
+                api(request, "GET", f"/api/runs/{quote(run_id, safe='')}")
+                for run_id in sorted(with_tools)
+            )
+        )
+        return data, turns(
+            data, records, dict(zip(sorted(with_tools), logs, strict=True))
+        )
+
+    @router.get("/login")
+    async def login_page(request: Request):
+        if logged_in(request):
+            return RedirectResponse("/", 303, headers=HEADERS)
+        return render(request, "login.html")
+
+    @router.post("/login")
+    async def login(request: Request):
+        try:
+            values = await form(request, 32768)
+        except APIError:
+            return render(request, "login.html", {"error": "Unable to sign in."}, 400)
+        peer = request.client.host if request.client else "local"
+        identity, status = sessions.login(
+            values.get("token", ""), operator_token(), peer
+        )
+        if identity is None:
+            error = (
+                "Too many attempts. Try again in a minute."
+                if status == 429
+                else "Unable to sign in. Check your operator token."
+            )
+            return render(
+                request,
+                "login.html",
+                {"error": error},
+                status,
+                {"Retry-After": "60"} if status == 429 else None,
+            )
+        response = RedirectResponse("/", 303, headers=HEADERS)
+        # Single operator, localhost/tailnet: SameSite=Lax plus POST-only mutations.
+        # No cross-origin CORS or GET mutations; no separate CSRF framework in v1.
+        response.set_cookie(
+            COOKIE,
+            identity,
+            max_age=LIFETIME,
+            httponly=True,
+            samesite="lax",
+            secure=request.url.scheme == "https",
+            path="/",
+        )
+        return response
+
+    @router.post("/logout")
+    async def logout(request: Request):
+        sessions.revoke(request.cookies.get(COOKIE))
+        response = RedirectResponse("/login", 303, headers=HEADERS)
+        response.delete_cookie(
+            COOKIE,
+            path="/",
+            httponly=True,
+            samesite="lax",
+            secure=request.url.scheme == "https",
+        )
+        return response
+
+    @router.get("/")
+    async def index(request: Request):
+        if not logged_in(request):
+            return login_redirect(request)
+        try:
+            return await session_page(request)
+        except APIError as exc:
+            return render(request, "error.html", {"error": exc.detail}, exc.status)
+
+    @router.post("/sessions")
+    async def create_session(request: Request):
+        if not logged_in(request):
+            return login_redirect(request)
+        values = {}
+        try:
+            values = await form(request)
+            created = await api(
+                request,
+                "POST",
+                "/api/sessions",
+                {
+                    "id": values.get("id", ""),
+                    "default_profile": values.get("default_profile", ""),
+                    "memory_scope": values.get("memory_scope", "shared"),
+                },
+            )
+        except APIError as exc:
+            try:
+                return await session_page(request, exc.detail, values, exc.status)
+            except APIError as unavailable:
+                return render(
+                    request,
+                    "error.html",
+                    {"error": unavailable.detail},
+                    unavailable.status,
+                )
+        return RedirectResponse(
+            f"/sessions/{quote(created['id'], safe='')}", 303, headers=HEADERS
+        )
+
+    @router.get("/sessions/{identity}")
+    async def chat(request: Request, identity: str):
+        if not logged_in(request):
+            return login_redirect(request)
+        try:
+            data, history = await conversation(request, identity)
+            return render(
+                request,
+                "chat.html",
+                {"session": data, "turns": history, "health": await health(request)},
+            )
+        except APIError as exc:
+            return render(request, "error.html", {"error": exc.detail}, exc.status)
+
+    @router.post("/sessions/{identity}/messages")
+    async def send(request: Request, identity: str):
+        if not logged_in(request):
+            return login_redirect(request)
+        error, status, completed = None, 200, False
+        try:
+            values = await form(request)
+            record = await api(
+                request,
+                "POST",
+                f"/api/sessions/{quote(identity, safe='')}/messages",
+                {"message": values.get("message", "")},
+            )
+            completed = record["status"] == "completed"
+        except APIError as exc:
+            error, status = exc.detail, exc.status
+        try:
+            data, history = await conversation(request, identity)
+        except APIError as exc:
+            return render(
+                request,
+                "fragments/message_tail.html",
+                {"turns": [], "error": exc.detail},
+                exc.status,
+            )
+        headers = {"HX-Trigger": "chatCompleted"} if completed else None
+        if request.headers.get("HX-Request") == "true":
+            return render(
+                request,
+                "fragments/message_tail.html",
+                {"turns": history, "error": error},
+                status,
+                headers,
+            )
+        if completed:
+            return RedirectResponse(
+                f"/sessions/{quote(identity, safe='')}", 303, headers=HEADERS
+            )
+        return render(
+            request,
+            "chat.html",
+            {
+                "session": data,
+                "turns": history,
+                "error": error,
+                "health": await health(request),
+            },
+            status,
+        )
+
+    @router.get("/ui/status", response_class=HTMLResponse)
+    async def status_chips(request: Request):
+        if not logged_in(request):
+            return login_redirect(request)
+        return render(
+            request, "fragments/status.html", {"health": await health(request)}
+        )
+
+    return router

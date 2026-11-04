@@ -78,8 +78,9 @@ rejected even if it is convenient.
   later, are markdown files loaded by name (§5.3) — nothing self-modifies.
 - Provider abstraction. The server speaks to one OpenAI-compatible local
   endpoint. Supporting "70 providers" is exactly the bloat being escaped.
-- Building the web UI. Alan handles the web side; this spec defines only
-  the FastAPI scaffold it mounts into and the API it consumes (§9).
+- Advanced UI features beyond the authorized P1 sessions/chat/status surface.
+  Prompt/run inspection and archive browsing are P2; jobs/channels controls P3.
+  Markdown, per-message profile selection, and session archival remain v2.
 - Multi-tenancy, user accounts beyond a single operator token, public
   internet exposure. The app binds localhost/tailnet.
 - Voice, image generation, or TTS in the core. Those stay external and
@@ -579,7 +580,7 @@ Notes:
 
 ## 9. FastAPI scaffold & API surface
 
-Alan handles the web UI. The spec therefore fixes only:
+The P1 operator UI is a thin server-rendered API client. Shared app contracts:
 
 - **Server command:** `sola serve` launches uvicorn with `[server]` host/port/log
   settings, defaulting to `127.0.0.1:8382`; explicit CLI flags override them.
@@ -601,17 +602,24 @@ Alan handles the web UI. The spec therefore fixes only:
   connects channel adapters, runs model pre-flight (failure to reach the
   model at boot is a *warning state*, not a crash — the app stays up,
   `/health` reports it, runs abort per §4.2 until the model is back).
-- **Mount points:** Alan's UI mounts at `/` (templates/static or a built
-  SPA — his call); the API lives under `/api`; `/health` at root.
-  The UI and the API are the same app and share one auth story.
+- **Mount points:** Jinja2 templates mount at `/`, packaged local assets at
+  `/static`, API routes under `/api`, and `/health` at root. Vendored HTMX and
+  small vanilla JS enhance forms; no build step or remote assets. The UI has no
+  direct storage/execution access, and never changes prompt/history bytes.
+  Presentation escapes plain text and masks resolved credentials; tool details
+  come only from redacted run logs. Light/dark follows the system preference.
 - **Activation:** integrations stay disabled by default. Enabled Discord channels
   or jobs additionally require operator-set `live_ready = true`, asserting the
   live scratch-memory check and §14 acceptance suite have passed. This is a rollout
   assertion, not a replacement for those checks. `discord_token` is a secret
   reference; maintenance profiles are never scheduled or triggered by Discord.
-- **Auth:** one operator token (header or session cookie once Alan's UI
-  has login), stored as a `0600` file / env var. Discord has its own bot
-  token. Nothing else.
+- **Auth:** one operator token stored as a `0600` file / env var. API Bearer
+  auth remains valid. `POST /login` exchanges the token for an opaque in-memory
+  seven-day session cookie (HttpOnly, SameSite=Lax, Path=/; Secure on HTTPS).
+  `POST /logout` revokes it; restart clears all sessions. Five wrong attempts
+  produce a 60-second local lockout. Cookies authorize the same API dependency.
+  State-changing UI actions are POST-only, with no cross-origin CORS. Discord
+  has its own bot token. The model API key is separate from the operator token.
 - **Request validation:** session creation uses `default_profile`; message posts
   may select `profile`. Unknown or misplaced request fields are rejected with
   HTTP 422, never accepted and ignored. Offline configuration errors name the
@@ -621,6 +629,7 @@ Alan handles the web UI. The spec therefore fixes only:
 | Route | Purpose |
 |-------|---------|
 | `GET /health` · `GET /health/model` | app status; pinned-model reachability/ID |
+| `GET /api/profiles` | configured profile names for session creation |
 | `GET /api/sessions` · `GET /api/sessions/{id}` | session list; metadata + transcript |
 | `POST /api/sessions/{id}/messages` | post a message (the **api channel** — lands in that pinned session and runs) |
 | `GET /api/runs` · `GET /api/runs/{id}` | run records incl. prompt, tool log |
@@ -843,7 +852,7 @@ operator operations separate, and revise this checkpoint when scope changes.
 
 - **Stack (Alan's call):** FastAPI single app; APScheduler in-process;
   discord.py; Pydantic-generated tool schemas.
-- **Web UI:** Alan's. Spec fixes mount point + API only (§9).
+- **Web UI:** P1 server-rendered sessions/chat/status (§9); later phases deferred.
 - **Config-as-files:** channels/jobs/profiles in `config.toml`;
   SQLite is index/state, JSONL is the transcript of record.
 - **Concurrency:** per-session queues, global inference semaphore = 1.

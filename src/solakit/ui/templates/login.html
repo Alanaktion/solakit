@@ -1,0 +1,19 @@
+{% extends 'base.html' %}
+{% block title %}Sign in · Solakit{% endblock %}
+{% block header_actions %}<span class="private-label">Private operator console</span>{% endblock %}
+{% block status %}{% endblock %}
+{% block page_class %}login-page{% endblock %}
+{% block content %}
+<section class="login-card panel" aria-labelledby="login-title">
+  <span class="eyebrow">WELCOME BACK</span>
+  <h1 id="login-title">A little room<br>for conversation.</h1>
+  <p class="intro">Sign in with your operator token to spend some time with Sola.</p>
+  {% if error %}<div class="notice notice-error" role="alert">{{ error }}</div>{% endif %}
+  <form method="post" action="/login" class="stack-form" autocomplete="off">
+    <label for="token">Operator token</label>
+    <input id="token" name="token" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="4096" required autofocus>
+    <button class="primary-button full-width" type="submit">Enter Solakit <span aria-hidden="true">→</span></button>
+  </form>
+  <p class="form-note">One operator. Your own space.</p>
+</section>
+{% endblock %}

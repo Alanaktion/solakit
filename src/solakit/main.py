@@ -1,15 +1,15 @@
-"""Application lifecycle and operator API; root is reserved for the UI."""
+"""Application lifecycle, operator API, and server-rendered operator UI."""
 
 import asyncio
 import logging
-import secrets
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException
+from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, StringConstraints
 from starlette.responses import JSONResponse
+from starlette.staticfiles import StaticFiles
 
 from solakit.channels import ApiAdapter, Channels
 from solakit.core.config import Config
@@ -24,6 +24,9 @@ from solakit.core.secrets import RedactingFilter, Redactor
 from solakit.core.startup import prepare
 from solakit.core.store import StorageCorruption, Store, safe_id
 from solakit.jobs import Jobs
+from solakit.ui import build_ui_router
+from solakit.ui.auth import COOKIE, UISessions
+from solakit.ui.routes import ROOT as UI_ROOT
 
 
 class RunRequest(BaseModel):
@@ -62,8 +65,11 @@ async def probe_model(model: ModelClient) -> dict[str, str]:
 def create_app(
     config: Config | None = None, model: ModelClient | None = None
 ) -> FastAPI:
+    ui_sessions = UISessions()
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        ui_sessions.clear()
         prepared = await asyncio.to_thread(prepare, config)
         cfg, token, memory_key = (
             prepared.config,
@@ -145,6 +151,7 @@ def create_app(
                 for handler in handlers:
                     handler.removeFilter(log_filter)
                 runtime_logger.setLevel(previous_level)
+                ui_sessions.clear()
 
     app = FastAPI(title="Solakit", version="0.1.0", lifespan=lifespan)
 
@@ -152,10 +159,11 @@ def create_app(
     async def storage_corruption(request, exc: StorageCorruption):
         return JSONResponse(status_code=503, content={"detail": str(exc)})
 
-    async def authorize(authorization: Annotated[str | None, Header()] = None) -> None:
-        expected = f"Bearer {app.state.operator_token}"
-        if authorization is None or not secrets.compare_digest(
-            authorization.encode(), expected.encode()
+    async def authorize(
+        request: Request, authorization: Annotated[str | None, Header()] = None
+    ) -> None:
+        if not ui_sessions.authorized(
+            authorization, request.cookies.get(COOKIE), app.state.operator_token
         ):
             raise HTTPException(
                 401, "Operator token required", headers={"WWW-Authenticate": "Bearer"}
@@ -231,6 +239,10 @@ def create_app(
     @api.get("/storage/health")
     def storage_health() -> dict:
         return app.state.store.storage_health()
+
+    @api.get("/profiles")
+    async def profiles() -> list[str]:
+        return sorted(app.state.config.profiles)
 
     @api.get("/sessions")
     def sessions() -> list[dict]:
@@ -329,6 +341,16 @@ def create_app(
         return await asyncio.to_thread(app.state.store.run, run_id)
 
     app.include_router(api)
+    app.state.ui_sessions = ui_sessions
+    app.include_router(
+        build_ui_router(
+            app,
+            ui_sessions,
+            lambda: app.state.operator_token,
+            lambda value: app.state.redactor.redact(value),
+        )
+    )
+    app.mount("/static", StaticFiles(directory=str(UI_ROOT / "static")), name="static")
     return app
 
 

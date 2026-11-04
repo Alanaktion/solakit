@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f5f6fb">
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#111722">
+  <meta name="htmx-config" content='{"timeout":0,"allowEval":false,"allowScriptTags":false,"includeIndicatorStyles":false}'>
+  <title>{% block title %}Solakit{% endblock %}</title>
+  <link rel="icon" type="image/svg+xml" href="/static/moon.svg">
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/vendor/htmx.min.js" defer></script>
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/"><span class="moon" aria-hidden="true">🌙</span><span>Solakit<small>sola · ryu</small></span></a>
+      {% block header_actions %}
+      <nav class="nav" aria-label="Main navigation"><a href="/" class="nav-link">Sessions</a></nav>
+      <form method="post" action="/logout"><button class="quiet-button" type="submit">Sign out <span aria-hidden="true">↗</span></button></form>
+      {% endblock %}
+    </div>
+    {% block status %}<div class="header-status">{% include 'fragments/status.html' %}</div>{% endblock %}
+  </header>
+  <main id="main" class="page {% block page_class %}{% endblock %}">
+    {% block content %}{% endblock %}
+  </main>
+  <footer class="site-footer"><span>Solakit</span><span>A quiet space for an ongoing conversation.</span><span class="footer-star" aria-hidden="true">✧</span></footer>
+</body>
+</html>
