@@ -1,55 +1,41 @@
-"""Narrow filesystem tools with per-call resolved-path checks."""
+"""Thin wrappers around scope-checked Python filesystem services."""
 
-import os
-import stat
+import json
 
-from solakit.core.io import durable
-from solakit.tools import ToolContext, ToolError, ToolResult, tool
-
-PROFILES = ["interactive", "maintenance", "dream", "blog", "inbox", "letters"]
+from solakit.tools import ToolContext, ToolResult, tool
 
 
-@tool(name="files.read", profiles=PROFILES)
+@tool(name="files.read", profiles=["*"])
 async def read(ctx: ToolContext, path: str) -> ToolResult:
-    """Read a UTF-8 file inside the profile's configured read or write roots."""
-    target = ctx.path(path)
-    try:
-        # Bound the read itself, not only the returned text.
-        def bounded_read():
-            descriptor = os.open(target, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
-            try:
-                if not stat.S_ISREG(os.fstat(descriptor).st_mode):
-                    raise ToolError("Only regular files can be read")
-                with os.fdopen(
-                    descriptor, "r", encoding="utf-8", closefd=False
-                ) as stream:
-                    return stream.read(
-                        ctx.config.profiles[ctx.profile].tool_output_max_chars + 1
-                    )
-            finally:
-                os.close(descriptor)
-
-        content = await durable(bounded_read)
-    except (OSError, UnicodeError) as exc:
-        raise ToolError("Cannot read requested file") from exc
-    return ToolResult(
-        content=content,
-        content_complete=len(content)
-        <= ctx.config.profiles[ctx.profile].tool_output_max_chars,
-    )
+    """Read a bounded UTF-8 regular file inside profile filesystem scopes."""
+    return await ctx.fs.read(path)
 
 
-@tool(name="files.write", profiles=PROFILES, writes=["filesystem"])
+@tool(name="files.write", profiles=["*"], writes=["filesystem"])
 async def write(ctx: ToolContext, path: str, content: str) -> ToolResult:
-    """Create a new UTF-8 file inside a configured write root; never overwrite."""
-    target = ctx.path(path, write=True)
-    try:
-
-        def create():
-            with target.open("x", encoding="utf-8") as stream:
-                stream.write(content)
-
-        await durable(create)
-    except OSError as exc:
-        raise ToolError("Cannot create requested file") from exc
+    """Create a UTF-8 file; never overwrite an existing file."""
+    target = await ctx.fs.write(path, content)
     return ToolResult(content=str(target), artifacts=[str(target)])
+
+
+@tool(name="files.edit", profiles=["*"], writes=["filesystem"])
+async def edit(ctx: ToolContext, path: str, old: str, new: str) -> ToolResult:
+    """Replace one exact nonempty match; fail on zero or multiple matches."""
+    target = await ctx.fs.edit(path, old, new)
+    return ToolResult(content=str(target), artifacts=[str(target)])
+
+
+@tool(name="files.append", profiles=["*"], writes=["filesystem"])
+async def append(ctx: ToolContext, path: str, content: str) -> ToolResult:
+    """Append text to an existing regular file inside profile write scopes."""
+    target = await ctx.fs.append(path, content)
+    return ToolResult(content=str(target), artifacts=[str(target)])
+
+
+@tool(name="files.list", profiles=["*"])
+async def list_files(ctx: ToolContext, path: str, limit: int = 100) -> ToolResult:
+    """List up to 500 directory entries inside profile scopes, without recursion."""
+    entries, more = await ctx.fs.entries(path, limit)
+    return ToolResult(
+        content=json.dumps({"entries": entries, "more": more}, ensure_ascii=False)
+    )

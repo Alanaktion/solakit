@@ -3,7 +3,7 @@
 from solakit.core.memory import MemoryUnavailable
 from solakit.tools import ToolContext, ToolError, ToolResult, tool
 
-PROFILES = ["interactive", "maintenance", "dream", "blog", "inbox", "letters"]
+PROFILES = ["*"]
 
 
 @tool(name="memory.search", profiles=PROFILES)

@@ -103,6 +103,25 @@ def create_app(
             adapters["discord"] = DiscordAdapter(cfg, prepared.discord_token)
         app.state.channels = Channels(cfg, app.state.execution, adapters)
         app.state.jobs = Jobs(cfg, app.state.execution, app.state.channels)
+
+        def runtime_status(profile):
+            return app.state.redactor.redact(
+                {
+                    "model": {
+                        "id": cfg.model.model_id,
+                        "available": app.state.model.available,
+                    },
+                    "channels": app.state.channels.status(),
+                    "jobs": app.state.jobs.status(),
+                    "profile": profile,
+                    "granted_tools": [
+                        schema["function"]["name"]
+                        for schema in app.state.registry.schemas(profile)
+                    ],
+                }
+            )
+
+        app.state.registry.runtime_status = runtime_status
         logging.basicConfig(
             level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
         )

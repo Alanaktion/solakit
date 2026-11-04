@@ -45,7 +45,8 @@ Hermes remains untouched. No production deployment is part of this plan run.
 Phases 1–5 are implemented. Phases 6–8 are locally implemented and covered by
 mock/controlled-clock tests. Phase 6's deliberate live round-trip is pending on
 the Sola host; phase 7's live pilot and phase 8's live jobs remain gated by that
-check and phase 9 acceptance. Phase 9 domain tools are not implemented.
+check and phase 9 acceptance. The generic services and journal pack are now locally implemented; remaining
+packs and complete live acceptance are unfinished (see plans 14–19).
 
 The first-contact guide records the supplied server settings and the exact
 remaining verification. No pilot/deployment, production configuration, or Hermes
@@ -96,3 +97,14 @@ UI/Discord session archival remain separate v2 decisions.
 read-only numbered archive browsing, preserving bindings and existing evidence.
 This supersedes the earlier UI deferral for these surfaces only; Discord archival
 exposure, prompt/run inspectors, markdown and profile selection remain deferred.
+
+## Tool boundary direction
+
+The user-directed replacement for phase 9 is now recorded in
+[14: external tool packs and services](14-tool-pack-boundary.md),
+[15: generic tools/runtime](15-generic-tools.md), and
+[16: journal pack](16-journal-pack.md), locally implemented. Remaining work follows
+[17: letters](17-letters-pack.md), [18: email](18-email-pack.md), then
+[19: printer and later seam proofs](19-printer-and-seam-provers.md).
+Domain behavior is independently packaged; core loop changes are not part of
+adding a pack. Live acceptance and pilot gates remain unchanged.

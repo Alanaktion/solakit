@@ -1,31 +1,35 @@
-"""Read-only repository primitive; repository identity always comes from config."""
+"""Generic Git tool wrappers; subprocess and scope logic live in services."""
 
-import asyncio
-
-from solakit.tools import ToolContext, ToolError, ToolResult, tool
+from solakit.tools import ToolContext, ToolResult, tool
 
 
-@tool(name="repo_git.status", profiles=["interactive", "maintenance"])
+@tool(name="repo_git.status", profiles=["*"])
 async def status(ctx: ToolContext, repository: str) -> ToolResult:
-    """Return short git status for a named repository within profile read scopes."""
-    if repository not in ctx.config.repositories:
-        raise ToolError("Unknown repository")
-    path = ctx.path(str(ctx.config.repositories[repository]))
-    process = await asyncio.create_subprocess_exec(
-        "git",
-        "-C",
-        str(path),
-        "status",
-        "--short",
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    try:
-        stdout, _ = await process.communicate()
-    except BaseException:
-        process.kill()
-        await process.wait()
-        raise
-    if process.returncode:
-        raise ToolError("Repository status failed")
-    return ToolResult(content=stdout.decode("utf-8", errors="replace"))
+    """Return short Git status for a named repository within read scopes."""
+    return await ctx.git(repository).status()
+
+
+@tool(name="repo_git.diff", profiles=["*"])
+async def diff(ctx: ToolContext, repository: str) -> ToolResult:
+    """Show staged and unstaged changes against HEAD; no external diff drivers."""
+    return await ctx.git(repository).diff()
+
+
+@tool(name="repo_git.log", profiles=["*"])
+async def log(ctx: ToolContext, repository: str, count: int = 10) -> ToolResult:
+    """Show up to 100 recent commits for a named repository."""
+    return await ctx.git(repository).log(count)
+
+
+@tool(name="repo_git.pull", profiles=["*"], writes=["filesystem"])
+async def pull(ctx: ToolContext, repository: str) -> ToolResult:
+    """Fast-forward a clean named repository; requires its exact repo write scope."""
+    return await ctx.git(repository).pull()
+
+
+@tool(name="repo_git.commit_push", profiles=["*"], writes=["filesystem", "git.push"])
+async def commit_push(
+    ctx: ToolContext, repository: str, paths: list[str], message: str
+) -> ToolResult:
+    """Commit named files and push; requires repository write and git.push grants."""
+    return await ctx.git(repository).commit_push(paths, message)

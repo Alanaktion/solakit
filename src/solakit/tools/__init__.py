@@ -4,6 +4,7 @@ import asyncio
 import importlib
 import inspect
 import json
+import re
 import time
 import traceback
 from collections.abc import Callable
@@ -59,6 +60,28 @@ class ToolContext:
     run_id: str
     memory_client: Any = None
     deliver: Any = None
+    runtime_provider: Any = None
+
+    @property
+    def fs(self):
+        from solakit.services.fs import Filesystem
+
+        return Filesystem(self)
+
+    def git(self, repository: str):
+        from solakit.services.git import Git
+
+        return Git(self, repository)
+
+    def collection(self, alias: str):
+        from solakit.services.collections import Collection
+
+        return Collection(self, alias)
+
+    def runtime(self) -> dict:
+        if self.runtime_provider is None:
+            raise ToolError("Live runtime status is not available in this context")
+        return self.runtime_provider(self.profile)
 
     def path(self, path: str, *, write: bool = False) -> Path:
         """Resolve symlinks and enforce the actual path against explicit roots."""
@@ -79,6 +102,15 @@ def scope_root(scope: str, config: Config) -> Path | None:
     if scope.startswith("repo:"):
         path = config.repositories.get(scope[5:])
         return path.expanduser().resolve() if path else None
+    if scope.startswith("collection:"):
+        resource = config.collections.get(scope.removeprefix("collection:"))
+        if resource is None:
+            return None
+        root = config.repositories[resource.repository].expanduser().resolve()
+        directory = (root / resource.directory).resolve()
+        if not directory.is_relative_to(root):
+            raise ValueError("Collection directory escapes repository")
+        return directory
     if scope.startswith("path:"):
         path = Path(scope[5:]).expanduser()
         if not path.is_absolute():
@@ -130,8 +162,14 @@ class Registry:
     def __init__(self, config: Config):
         self.config = config
         self.tools: dict[str, Registered] = {}
+        self.runtime_status = None
         for module in config.enabled_tools:
-            imported = importlib.import_module(f"solakit.tools.{module}")
+            if not re.fullmatch(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*", module):
+                raise ValueError(
+                    "Tool modules must be Python module names or dotted paths"
+                )
+            path = module if "." in module else f"solakit.tools.{module}"
+            imported = importlib.import_module(path)
             for function in vars(imported).values():
                 manifest = getattr(function, "__sola_tool__", None)
                 if isinstance(manifest, Manifest):
@@ -164,7 +202,10 @@ class Registry:
         return (
             registered is not None
             and name in cfg.tools
-            and profile in registered.manifest.profiles
+            and (
+                profile in registered.manifest.profiles
+                or "*" in registered.manifest.profiles
+            )
         )
 
     def check_writes(self, registered: Registered, profile: Profile) -> None:
@@ -172,7 +213,7 @@ class Registry:
             if scope == "filesystem":
                 if not profile.write_scopes:
                     raise ValueError("filesystem tool requires explicit write roots")
-            elif scope.startswith(("repo:", "path:")):
+            elif scope.startswith(("repo:", "path:", "collection:")):
                 if scope not in profile.write_scopes:
                     raise ValueError(f"missing filesystem grant: {scope}")
             elif scope not in profile.capabilities:
@@ -182,7 +223,7 @@ class Registry:
         for name, profile in self.config.profiles.items():
             for scope in profile.read_scopes + profile.write_scopes:
                 if scope_root(scope, self.config) is None:
-                    raise ValueError(f"unknown repository scope: {scope}")
+                    raise ValueError(f"unknown resource scope: {scope}")
             for tool_name in profile.tools:
                 if not self.allowed(tool_name, name):
                     raise ValueError(f"tool {tool_name} is not available to {name}")
@@ -230,6 +271,7 @@ class Registry:
                 repairable = True
                 raise ToolError("Tool is not permitted in this profile")
             registered = self.tools[name]
+            ctx.runtime_provider = self.runtime_status
             cfg = self.config.profiles[ctx.profile]
             self.check_writes(registered, cfg)
             repairable = True

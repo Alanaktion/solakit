@@ -8,7 +8,9 @@ Python 3.12+ and uv are required. [SPEC.md](SPEC.md) defines behavior;
 
 Phases 1–8 are locally implemented. Phase 6's live OpenViking round-trip is still
 pending on the Sola host, and phase 9's domain tools/complete acceptance remain
-unfinished. Discord and jobs are disabled by default. No production pilot,
+unfinished. The generic services and separate journal pack are locally implemented;
+letters/email/printer packs and full acceptance remain pending. Discord and jobs
+are disabled by default. No production pilot,
 deployment, Hermes changes, or live memory writes have been performed.
 
 ## Development
@@ -261,7 +263,8 @@ grant its full names in profiles. `read_scopes`/`write_scopes` use `repo:<name>`
 exist by default. Registry checks occur at startup and dispatch; arguments are
 strictly validated. `files.read` bounds regular-file reads using nonblocking,
 no-follow descriptor checks. `files.write` creates new files only; `repo_git.status`
-uses a configured repository name. Domain tools remain phase 9 work.
+uses a configured repository name. Domain conventions now live in separate packs;
+the journal pack is available, with letters/email/printer still planned.
 
 Counted truncation markers fit within output budgets. Complete outputs report exact
 omitted characters; bounded reads report a lower bound. Logs distinguish exact from
@@ -270,3 +273,47 @@ artifact paths. Sync tools run in worker threads: Python cannot stop an arbitrar
 thread, so blocking integrations must bound/cancel their own operations. Plugins
 are trusted operator code; path checks are not OS isolation against concurrent
 filesystem changes. Nothing self-modifies profiles or imports tools for the model.
+
+## Tool packs and named collections
+
+`enabled_tools` accepts full Python module paths, e.g. `solakit.tools.files`,
+`solakit.tools.repo_git`, `solakit.tools.runtime`, and installed `sola_packs.journal`.
+Bare built-in names (`files`, `repo_git`, `runtime`, `memory`) remain shorthand.
+Explicitly installed/imported packs are trusted Python; no automatic discovery.
+Profile `tools` still grants exact tool names; `profiles=["*"]` in a manifest only
+allows that tool to be granted to custom profiles. No tools are enabled by default.
+
+Generic additions: `files.edit` (unique exact replacement), `files.append`
+(existing regular file), `files.list`; `repo_git.diff`, `repo_git.log`,
+`repo_git.pull` (clean fast-forward), and `repo_git.commit_push` (named files only).
+Git writes require the actual `repo:<alias>` write scope, and push additionally
+requires `git.push`. Existing index changes or unpublished commits are refused.
+Failed push preserves the local commit and requires inspection before retrying.
+`runtime.status` returns live model availability, channel/job state including next
+fire times, and the calling profile's actual granted tools.
+
+Packs compose Python services (`ctx.fs`, `ctx.git(alias)`, `ctx.collection(alias)`)
+inside a single tool call. Core execution is unchanged. Generic service code
+lives in `services/`; domain conventions live in separately installed packs.
+
+Collections reference the existing repository map:
+
+```toml
+[repositories]
+site = "/absolute/path/to/site"
+
+[collections.dreams]
+repository = "site"
+directory = "_dreams"
+filename = "{date}-{slug}.md"
+```
+
+A profile can grant `collection:dreams` read/write scopes without granting the
+entire repository. Layout strings are optional data; the journal pack owns default
+front matter. A blog is simply another collection.
+
+[Journal pack installation and use](packs/journal/README.md) documents its separate
+distribution, create/list/publish tools, and scratch-only contract tests. Core
+installation does not install any pack. [The revised phase 9 roadmap](docs/plan/09-domain-tools-verification.md)
+keeps sequential immutable letters, mailbox replies and device conventions in
+their own thin packs, in that order, with production integrations still gated.

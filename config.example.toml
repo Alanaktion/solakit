@@ -1,6 +1,9 @@
 # Copy to config.toml; reference the live persona, never a forked copy.
 timezone = "America/Denver"
 enabled_tools = []
+# Built-ins accept bare names or full paths: ["files", "solakit.tools.repo_git", "runtime"].
+# External packs must be separately installed: e.g. "sola_packs.journal".
+# enabled_tools = ["solakit.tools.files", "solakit.tools.runtime", "sola_packs.journal"]
 # Set true only after the live memory probe and full acceptance suite pass.
 live_ready = false
 # discord_token = { env = "SOLA_DISCORD_TOKEN" }
@@ -74,3 +77,17 @@ bind_session = "discord-pilot"
 polling = true
 catch_up = false
 enabled = false
+
+# Optional named resources (nothing is enabled or granted by these examples):
+# [repositories]
+# site = "/absolute/path/to/site"
+#
+# [collections.dreams]
+# repository = "site"
+# directory = "_dreams"
+# filename = "{date}-{slug}.md"
+#
+# [profiles.dream]
+# tools = ["journal.create", "journal.list_recent", "journal.publish", "runtime.status"]
+# write_scopes = ["collection:dreams"]
+# capabilities = ["git.push"]

@@ -23,3 +23,6 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP"]
+
+[tool.hatch.build.targets.sdist]
+exclude = ["/packs"]

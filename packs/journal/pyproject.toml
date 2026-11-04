@@ -1,0 +1,13 @@
+[project]
+name = "solakit-packs-journal"
+version = "0.1.0"
+description = "Collection-based journal tools for Solakit"
+requires-python = ">=3.12"
+dependencies = ["solakit>=0.1.0,<0.2"]
+
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sola_packs"]

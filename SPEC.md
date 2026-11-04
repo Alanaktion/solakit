@@ -117,7 +117,7 @@ One FastAPI application, one process:
                                 ▼            ▼
                           ┌──────────┐ ┌───────────────────────────────┐
                           │  oMLX    │ │ Tool registry (§8): files,    │
-                          │  Qwen3.6 │ │ shell, repo_git, blog.*,      │
+                          │  Qwen3.6 │ │ shell, repo_git, journal.*,      │
                           └──────────┘ │ letters.*, email, printer,    │
                                        │ memory — drop-in modules      │
                                        └───────────────────────────────┘
@@ -135,7 +135,7 @@ sola-server/
   config.toml                # channels, jobs, profiles, model, repos
   SOUL.md -> <path to her live SOUL.md>   # reference, never a forked copy
   fragments/…                # §5
-  app/
+  src/solakit/
     main.py                  # FastAPI factory, lifespan: start scheduler,
                              #   channel adapters, model pre-flight
     core/
@@ -146,10 +146,13 @@ sola-server/
       api_channel.py         # web UI / HTTP posts land as a channel too
     tools/
       __init__.py            # @tool registry + discovery (§8.1)
-      files.py  shell.py  repo_git.py  memory.py
-      blog.py  letters.py  email.py  printer.py
+      files.py  repo_git.py  memory.py  runtime.py
+    services/
+      fs.py  git.py  collections.py  # generic Python services for tools/packs
     jobs/
       scheduler.py           # APScheduler wiring, misfire policy (§7)
+  packs/journal/             # separate distribution: sola_packs.journal
+  # letters/email/printer packs remain separately packaged follow-up work
   tests/                     # mock model endpoint, mock Discord adapter
 data/                        # runtime state lives OUTSIDE the code tree (§10)
 ```
@@ -479,45 +482,56 @@ docstring via Pydantic — writing a tool should feel like writing a
 FastAPI endpoint, because it's the same machinery Alan already chose.
 
 ```python
-# tools/blog.py
-from app.tools import tool, ToolContext, ToolResult
+# Separate package: sola_packs/journal.py
+from solakit.tools import tool, ToolContext, ToolResult
 
 
-@tool(
-    name="blog.create_post",
-    profiles=["blog", "dream", "interactive"],
-    writes=["repo:blog"],
-    timeout=30,
-)
-async def create_post(
+@tool(name="journal.create", profiles=["*"], writes=["filesystem"])
+async def create(
     ctx: ToolContext,
+    collection: str,
+    slug: str,
     title: str,
     body: str,
-    slug: str | None = None,
-    tags: list[str] = [],
+    date: str | None = None,
 ) -> ToolResult:
-    """Create a new draft post in the blog repo. Returns its path."""
-    ...
+    """Create one dated entry using the named collection's layout."""
+    ...  # Validate convention, then compose ctx.collection / ctx.fs services.
 
 
-@tool(
-    name="blog.publish",
-    profiles=["blog", "dream", "interactive"],
-    writes=["repo:blog", "network"],
-    timeout=120,
-)
-async def publish(ctx: ToolContext, path: str, commit_message: str) -> ToolResult:
-    """Commit and push one post in the blog repo. Returns sha + URL."""
-    ...
+@tool(name="journal.publish", profiles=["*"], writes=["filesystem", "git.push"])
+async def publish(
+    ctx: ToolContext,
+    collection: str,
+    paths: list[str],
+    message: str,
+) -> ToolResult:
+    """Publish named collection entries, returning the commit identity."""
+    ...  # Scoped Git service rechecks actual paths and publishing capability.
 ```
 
 Registry rules:
 
-- **Discovery:** modules listed in config `enabled_tools = ["files",
-  "shell", "repo_git", "blog", "letters", "email", "printer", "memory"]`
-  are imported at startup; every `@tool` registers itself. Adding a tool
-  = new function (or new module + one config word) + restart. No core
-  changes, no loop changes — acceptance-tested (§14.8).
+- **Discovery:** explicitly configured dotted paths are imported at startup,
+  e.g. `enabled_tools = ["solakit.tools.files", "solakit.tools.repo_git",
+  "sola_packs.journal"]`. Bare names remain built-in shorthand. Packs are
+  independently installed trusted Python packages, not auto-discovered or
+  sandboxed. Exact profile tool grants remain required. A manifest may use
+  `profiles=["*"]` to support custom profiles without automatically granting it.
+  No core/domain module or execution-loop changes for a new pack (§14.8).
+- **Services:** `ctx.fs` and `ctx.git(repository_alias)` provide Python operations
+  for packs to compose privately. Generic tools are thin wrappers. Git services
+  expose status/diff/log/pull/commit/push/commit_push, bounded output and cancellation
+  cleanup. Generic writes require exact repo grants, publish also `git.push`.
+  Named literal files only; clean initial index and no existing unpublished
+  commits for combined publish. No implicit force/rebase/retry. Failed push keeps
+  the commit identity visible for operator reconciliation.
+- **Collections:** configured named repo subdirectories, filename pattern and
+  optional layout data. `ctx.collection(alias)` confines filesystem and publishing
+  operations to that directory, using `collection:<alias>` read/write scopes.
+  Filename fields are date/slug; layout fields date/slug/title/body, no attribute
+  access/conversions/specifiers. Journal conventions/default front matter live in
+  the external pack; blog/dreams/poems are configuration, not core tool modules.
 - **`ToolContext`** is the injected runtime: `{session, profile, config,
   store, memory_client, run_log, deliver}`. Tools never reach for
   globals; everything they may touch is in `ctx`, which is also how
@@ -544,7 +558,7 @@ gets a **semantic tool** whose implementation hides the mechanics:
 
 | Domain tool set | Wraps | Model sees |
 |-----------------|-------|-----------|
-| `blog.create_post / blog.publish / blog.list_recent` | posts-dir layout, front matter, git add/commit/push inside the tool (library or subprocess — the tool's private choice) | "publish this post", returns sha + URL. Never a shell command line. |
+| `journal.create / journal.publish / journal.list_recent` | configured collection layout, pack-owned front matter, scoped Python filesystem/Git services | "publish these entries", returns commit identity. Never a shell command line. |
 | `letters.pull_new / letters.reply` | clone/pull of the letters repo, next-number computation, filename convention from the letters protocol | "reply to letter 003" — the `NNN-YYYY-MM-DD-sola.md` rule lives in code, not in a prompt hoping she remembers it |
 | `repo_git.status / commit_push` | git in a *named, configured* repo only | scoped fallback for repos without a domain toolset yet |
 | `email.search / read / reply` | IMAP/SMTP, thread-aware reply | reply-by-ID, not raw SMTP |
@@ -556,9 +570,11 @@ in posts and letters, not `git -C … commit -m`), and the fragile
 mechanics — filename conventions, front matter, push retries — become
 tested code instead of model behaviour that varies with her mood.
 
-Generic `shell` still exists, but only in `interactive`/`maintenance`
-profiles (§8.3). The direction of travel for the toolset is: every time
-she does something via shell twice, it graduates into a domain tool.
+A future generic shell remains maintenance-only. Prefer named Python services
+and small external packs over model-driven primitive choreography. The core's
+vocabulary stays files, repositories, memory, web, messages and devices; letters,
+mailbox protocols, journals and printer conventions are pack code/configuration.
+A tool-specific change to core execution is a seam defect, not a domain feature.
 
 ### 8.3 Run profiles
 
@@ -568,9 +584,9 @@ tool manifests per §8.1.)
 
 | Profile | Used by | Tools allowed | Write scope | Max steps |
 |---------|---------|---------------|-------------|-----------|
-| `interactive` | channel conversations (Discord/web/CLI) | files, repo_git, blog.*, letters.*, memory, web_fetch, printer | home dir | 60 |
-| `dream` | nightly job, bound to its channel/session | files (blog repo), blog.*, memory, printer | blog repo only | 40 |
-| `blog` | blog job → **#blog** | files (blog repo), blog.*, web_fetch, memory | blog repo only | 40 |
+| `interactive` | channel conversations (Discord/web/CLI) | files, repo_git, journal.*, letters.*, memory, web_fetch, printer | home dir | 60 |
+| `dream` | nightly job, bound to its channel/session | files (blog repo), journal.*, memory, printer | blog repo only | 40 |
+| `blog` | blog job → **#blog** | files (blog repo), journal.*, web_fetch, memory | blog repo only | 40 |
 | `inbox` | inbox-poll job | email.*, memory, files (read-only) | no filesystem writes | 25 |
 | `letters` | letters-check job | letters.*, memory, files (letters repo) | letters repo only | 25 |
 | `maintenance` | Alan-invoked via API/CLI only | all incl. `shell` | home dir | 60 |
@@ -837,7 +853,7 @@ them later is exactly the kind of surgery this project exists to avoid:
 |-------|------|----------------|
 | 0. Prompt audit | `GET /api/prompt` per profile; side-by-side + token diff vs. what Hermes sends for the same task | Alan has seen both prompts and approved the lean one |
 | 1. Core + Discord pilot | FastAPI scaffold, loop, registry, Discord adapter; one low-stakes channel pinned (a #sola-test or her quietest channel) | A week of Discord conversation in that channel with no Hermes involvement; pinning + queueing behave (§14.6) |
-| 2. Blog cron to #blog | `blog` profile + `blog.*` tools + job bound to #blog; runs in **shadow** first (deliver to the test channel, publish to a scratch branch) | Shadow posts Alan judges publishable; then the job's delivery flips to the real #blog and real branch |
+| 2. Blog cron to #blog | `blog` profile + `journal.*` tools + job bound to #blog; runs in **shadow** first (deliver to the test channel, publish to a scratch branch) | Shadow posts Alan judges publishable; then the job's delivery flips to the real #blog and real branch |
 | 3. Remaining jobs | `dream`, `letters` (her letters cron finally gets wired — to this, not Hermes), `inbox`, one by one | Each job runs a clean week in its bound session |
 | 4. Cutover | Hermes left installed but unscheduled for one month as rollback | One clean month; then Hermes is archived, not deleted — per house archival doctrine |
 

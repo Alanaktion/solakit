@@ -5,6 +5,7 @@ import re
 import stat
 import tomllib
 from pathlib import Path
+from string import Formatter
 from typing import Literal, Self
 from zoneinfo import ZoneInfo
 
@@ -169,6 +170,35 @@ class Job(StrictModel):
         return self
 
 
+class CollectionConfig(StrictModel):
+    repository: str
+    directory: Path
+    filename: str = "{date}-{slug}.md"
+    layout: str | None = None
+
+    @model_validator(mode="after")
+    def safe_layout(self) -> Self:
+        if self.directory.is_absolute() or ".." in self.directory.parts:
+            raise ValueError("Collection directory must be repository-relative")
+        if not self.directory.parts or any(
+            part.casefold() == ".git" for part in self.directory.parts
+        ):
+            raise ValueError("Collection must use a directory below the repository")
+        for template, fields in (
+            (self.filename, {"date", "slug"}),
+            (self.layout, {"date", "slug", "title", "body"}),
+        ):
+            if template is None:
+                continue
+            for _, field, spec, conversion in Formatter().parse(template):
+                if field is not None and (field not in fields or spec or conversion):
+                    raise ValueError("Unsupported collection template placeholder")
+        sample = self.filename.format(date="2000-01-01", slug="entry")
+        if not sample or Path(sample).name != sample or sample in {".", "..", ".git"}:
+            raise ValueError("Collection filename must be one file name")
+        return self
+
+
 class Config(StrictModel):
     operator_token: SecretRef = Field(
         default_factory=lambda: SecretRef(env="SOLA_OPERATOR_TOKEN")
@@ -183,6 +213,7 @@ class Config(StrictModel):
     channels: list[Channel] = Field(default_factory=list)
     jobs: list[Job] = Field(default_factory=list)
     repositories: dict[str, Path] = Field(default_factory=dict)
+    collections: dict[str, CollectionConfig] = Field(default_factory=dict)
     enabled_tools: list[str] = Field(default_factory=list)
     timezone: str = "America/Denver"
     live_ready: bool = False
@@ -191,6 +222,9 @@ class Config(StrictModel):
     @model_validator(mode="after")
     def references(self) -> Self:
         ZoneInfo(self.timezone)
+        for collection in self.collections.values():
+            if collection.repository not in self.repositories:
+                raise ValueError("Collection references unknown repository")
         for values in (self.channels, self.jobs):
             ids = [item.id for item in values]
             if len(ids) != len(set(ids)):

@@ -35,10 +35,20 @@ not proof that a live integration or production acceptance gate has passed.
 - `core/memory.py`, `core/memory_ops.py`: scope-bound OpenViking REST access,
   recall, explicit commit/extraction tracking, compaction and operator scratch
   verification. Startup only performs authenticated read-only root checks.
+- `services/`: internal scope-checked filesystem, alias-bound Git and collection
+  resources. `ctx.fs`, `ctx.git(alias)` and `ctx.collection(alias)` let packs
+  compose operations privately. Generic tools are thin service wrappers.
 - `tools/`: registry/decorator/manifests, generated argument schemas, tool
   implementations and per-profile capability enforcement. `enabled_tools` loads
-  modules; profile `tools` grants exact tool names. Both are necessary. Filesystem
+  modules by explicit dotted path (bare names are built-in shorthand); profile
+  `tools` grants exact tool names. Both are necessary. A manifest `profiles=["*"]`
+  supports arbitrary configured profiles without granting calls automatically.
+  Filesystem
   roots, writes and other capabilities are separate explicit grants.
+- `packs/`: independently packaged extensions outside the core package. Journal
+  is `packs/journal` / `sola_packs.journal`, not an in-tree domain module. Core
+  distributions exclude packs; install and test them separately. Collections are
+  named repo subdirectories; `collection:<alias>` grants only that directory.
 - `channels/`: API and opt-in Discord adapters through shared session execution.
   `jobs/`: opt-in APScheduler jobs using the same execution/delivery operations.
 - `ui/`: Jinja2 pages, packaged local HTMX/CSS/vanilla JS, opaque in-memory login
@@ -55,6 +65,14 @@ not proof that a live integration or production acceptance gate has passed.
   and tool logs are redacted, and UI presentation masks resolved credentials.
   Render tool-card arguments/results from redacted run logs, never raw transcript
   payloads. Escape plain text; markdown rendering remains deferred.
+- Domain behavior belongs in external packs. No blog/letters/email/printer
+  modules under `src/solakit`, no domain imports or branches in core execution.
+  A future tool PR touching `core/loop.py` is a review finding: fix the generic
+  service seam instead. No entry-point discovery or auto-loading is needed.
+- Git writes check the actual named repository/files. Generic writes require
+  exact `repo:<alias>` write grants; collection services enforce directory limits.
+  Push additionally requires `git.push`, even inside packs. Do not stage whole
+  directories, force-push, rebase implicitly or retry uncertain publish/send work.
 - Tools must pass registry/schema/profile/capability checks. Append the assistant
   tool-call envelope before matching result messages. Forbidden/malformed calls
   have a bounded repair budget; tool output is explicitly and countably truncated.
@@ -100,12 +118,28 @@ browser visual QA separately from HTTP tests. Synchronize docs and phase status,
 then follow the working agreement in `docs/plan/README.md`: push directly to main
 without force. No public deployment is implied by local implementation.
 
+Optional journal pack checks (after the core environment is synced):
+
+```sh
+uv pip install --no-deps -e packs/journal
+uv run --no-sync pytest packs/journal/tests -q
+uv build packs/journal
+```
+
+Root `uv sync` removes independently installed packs; production deployments must
+include desired pack distributions in their own dependency manifest. Pack code is
+operator-trusted Python, not sandboxed code. Services enforce model-call arguments,
+not a security boundary against a malicious installed package.
+
 ## Scope and deferred work
 
 P1 UI (sessions/chat/status) is implemented, plus read-only tools inspection.
 `docs/plan/11-ui-p2-evidence.md` and `12-ui-p3-operations.md` describe deferred
 prompt/run inspection and job/channel controls. Operator API/UI archival and
-read-only archive browsing are implemented; see `docs/plan/13-session-archival.md`. Discord
-archival exposure, markdown, per-message profile selection and SSE remain deferred. Phase 6 live scratch-memory verification and later acceptance/pilot gates
-remain distinct from local mock-tested implementation. Check the phase plans
+read-only archive browsing are implemented; see `docs/plan/13-session-archival.md`.
+Discord archival exposure, markdown, per-message profile selection and SSE remain
+deferred. Generic services and the journal pack are locally implemented. The
+revised phase 9 roadmap is journal → letters → email → printer, with image/calendar
+as later seam proofs; see plans 14–19. Phase 6 live scratch-memory verification and
+later acceptance/pilot gates remain distinct from local mock-tested implementation. Check the phase plans
 before expanding scope or claiming a phase complete.
