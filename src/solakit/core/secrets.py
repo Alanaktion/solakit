@@ -2,6 +2,7 @@
 
 import logging
 import re
+import traceback
 from typing import Any
 
 SENSITIVE = re.compile(r"(?:KEY|TOKEN|SECRET|PASSWORD)$", re.IGNORECASE)
@@ -31,6 +32,18 @@ class RedactingFilter(logging.Filter):
         self.redactor = redactor
 
     def filter(self, record: logging.LogRecord) -> bool:
+        # Redact structured key/value arguments before they become prose.
+        if isinstance(record.args, dict):
+            record.args = self.redactor.redact(record.args)
+        elif isinstance(record.args, tuple):
+            record.args = tuple(self.redactor.redact(arg) for arg in record.args)
         record.msg = self.redactor.redact(record.getMessage())
+        if record.exc_info:
+            record.exc_text = self.redactor.redact(
+                "".join(traceback.format_exception(*record.exc_info))
+            )
+            record.exc_info = None
+        elif record.exc_text:
+            record.exc_text = self.redactor.redact(record.exc_text)
         record.args = ()
         return True

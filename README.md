@@ -101,6 +101,35 @@ from future model requests, with the skipped count in each run record. A data
 ownership lock prevents a second server from recovering an active server's runs.
 Run uvicorn with one worker. No fallback model is attempted.
 
-Memory recall/commit and context compaction arrive in phase 6. Until then runs
-use the complete valid transcript without compaction, and there is no external
-memory access. Isolated memory is refused. Discord and scheduling remain disabled.
+Memory is disabled by default. Context compaction is not implemented yet;
+runs currently use the full valid transcript. Isolated memory is refused.
+Discord and scheduling remain disabled.
+
+## OpenViking (phase 6, in progress)
+
+Opt-in `[memory]` configuration references the existing server URL, canonical
+shared-memory URI roots, and optionally an API-key secret reference. The client
+uses OpenViking's documented `/api/v1/search/find`, session message batch/commit,
+and content-read endpoints. Confirm compatibility with the installed version
+before enabling; no local or production instance was available for validation.
+
+Pre-turn recall happens before final prompt construction and persistence. Recall
+failure ends as `memory_unavailable` without transcript mutation. Post-turn commit
+failure preserves the conversation and sets `memory_status` to
+`commit_failed_or_uncertain`. Every commit uses a stable run-owned remote session,
+with durable intent recorded in `<run-id>.memory.jsonl`. Acknowledged retries reuse
+the recorded result. Ambiguous writes are never replayed automatically, because
+the documented API provides no message-append idempotency key. Reconcile those
+remote sessions before any manual recovery. This favors a visible gap over
+silently duplicating long-term memories.
+
+`accepted` means OpenViking accepted the archive; extraction still runs in the
+background. Run records expose its task ID and archive URI. Completion polling,
+operator recovery, context compaction with archived transcript rotation and
+summary references, and validation against the existing instance remain open.
+Ephemeral sessions make no memory calls; isolated scope fails closed. The
+`memory.search` and `memory.read` tools use a session-bound facade and enforce
+configured canonical URI roots. Prompt inspection still makes no memory calls.
+
+Current implementation: phases 1–5 complete; phase 6 partial; phases 7–9 planned.
+No Discord pilot, production configuration, deployment, or Hermes changes were made.

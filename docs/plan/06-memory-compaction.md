@@ -1,6 +1,6 @@
 # Phase 6: OpenViking integration and context compaction
 
-Status: planned
+Status: in progress — recall/commit implemented; compaction and live verification pending
 
 Depends on: phase 5
 
@@ -14,4 +14,32 @@ Depends on: phase 5
 
 ## Completion record
 
-Record implementation, validation, and remaining limitations here before marking complete.
+Implemented opt-in scope-aware OpenViking REST client, pre-turn recall before
+prompt construction, post-turn session commits, memory tools, durable commit
+intent journals, task/archive references, visible recall/commit failures, and
+conservative duplicate prevention. Ephemeral sessions make no memory calls;
+isolated scopes fail closed. The API remains disabled by default.
+
+Validated with mock recall round-trip, denied URI/scope access, failed recall,
+ambiguous-write replay refusal, retained conversation on failed commit, and CLI
+byte-output tests. Full suite: 29 passing tests; Ruff lint and format pass.
+
+## Remaining work before completing this phase
+
+- Confirm the existing OpenViking instance URL, installed API version, canonical
+  roots and secret reference. No such configuration is present in this checkout.
+- Poll accepted extraction task IDs and surface terminal extraction failures.
+  Upstream explicitly distinguishes archive acceptance from completed extraction.
+- Reconcile ambiguous remote writes before any operator-triggered recovery;
+  upstream message append has no documented idempotency key. Do not blindly retry.
+- Implement between-run compaction: completed OpenViking summary, immutable
+  transcript archive rotation, boundary/summary references, crash recovery, and
+  preservation of complete assistant/tool groups. Do not substitute a local
+  summary or silently discard history.
+- Test archive/index recovery, repeated compaction, pending/failed summary tasks,
+  and live committed-fact recall before marking the exit check complete.
+
+API contract references reviewed during implementation:
+[Sessions](https://github.com/volcengine/OpenViking/blob/main/docs/en/api/05-sessions.md),
+[Retrieval](https://github.com/volcengine/OpenViking/blob/main/docs/en/api/06-retrieval.md),
+[Content](https://github.com/volcengine/OpenViking/blob/main/docs/en/api/12-content.md).

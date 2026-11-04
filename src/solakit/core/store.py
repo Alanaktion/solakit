@@ -166,6 +166,7 @@ class Store:
         record["prompt"] = (
             prompt.read_bytes().decode("utf-8") if prompt.exists() else None
         )
+        record["memory_events"] = self.memory_events(run_id)
         record["tools"] = self._read(self._path("runs", run_id, ".tools.jsonl"))
         return record
 
@@ -177,6 +178,14 @@ class Store:
             stream.flush()
             os.fsync(stream.fileno())
         return hashlib.sha256(payload).hexdigest()
+
+    def memory_events(self, run_id: str) -> list[dict]:
+        return self._read(self._path("runs", run_id, ".memory.jsonl"))
+
+    def log_memory(self, run_id: str, record: dict) -> None:
+        self._append(
+            self._path("runs", run_id, ".memory.jsonl"), self.redactor.redact(record)
+        )
 
     def log_tool(self, run_id: str, record: dict[str, Any]) -> None:
         self._append(

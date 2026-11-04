@@ -12,6 +12,7 @@ from pydantic import BaseModel, StringConstraints
 
 from solakit.core.config import Config, load_config
 from solakit.core.loop import Execution
+from solakit.core.memory import MemoryClient
 from solakit.core.model import ModelClient, ModelUnavailable
 from solakit.core.prompt import inspection, read_prompt
 from solakit.core.routing import SessionRouter
@@ -46,14 +47,24 @@ def create_app(
         app.state.config = cfg
         app.state.operator_token = token
         app.state.redactor = Redactor([token])
+        memory_key = (
+            cfg.memory.api_key.resolve()
+            if cfg.memory.enabled and cfg.memory.api_key
+            else None
+        )
+        if memory_key:
+            app.state.redactor = Redactor([token, memory_key])
         app.state.registry = Registry(cfg)
         app.state.store = await asyncio.to_thread(
             Store, cfg.paths.data, app.state.redactor, exclusive=True
         )
+        app.state.memory = (
+            MemoryClient(cfg.memory, memory_key) if cfg.memory.enabled else None
+        )
         app.state.router = SessionRouter(cfg, app.state.store)
         app.state.model = model if model is not None else ModelClient(cfg.model)
         app.state.execution = Execution(
-            cfg, app.state.store, app.state.registry, app.state.model
+            cfg, app.state.store, app.state.registry, app.state.model, app.state.memory
         )
         log_filter = RedactingFilter(app.state.redactor)
         handlers = logging.getLogger().handlers
@@ -83,8 +94,12 @@ def create_app(
 
     @app.get("/health")
     async def health() -> dict:
-        status = app.state.model_health["status"]
-        return {"status": "ok" if status == "ready" else "degraded", "model": status}
+        status = "ready" if app.state.model.available else "unavailable"
+        return {
+            "status": "ok" if status == "ready" else "degraded",
+            "model": status,
+            "memory": "configured" if app.state.memory else "disabled",
+        }
 
     @app.get("/health/model")
     async def model_health() -> dict:

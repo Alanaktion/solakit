@@ -12,6 +12,7 @@ class ModelUnavailable(Exception):
 class ModelClient:
     def __init__(self, config: ModelConfig, transport=None):
         self.config = config
+        self.available = False
         self.client = httpx.AsyncClient(
             base_url=config.base_url.rstrip("/") + "/",
             timeout=config.timeout_s,
@@ -19,11 +20,15 @@ class ModelClient:
         )
 
     async def preflight(self) -> None:
+        self.available = False
         try:
-            response = await self.client.get("models")
+            response = await self.client.get(
+                "models", timeout=min(5, self.config.timeout_s)
+            )
             response.raise_for_status()
             if self.config.model_id not in [x["id"] for x in response.json()["data"]]:
                 raise ModelUnavailable("Pinned model is not served")
+            self.available = True
         except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
             raise ModelUnavailable("Model endpoint unavailable") from exc
 
@@ -65,8 +70,20 @@ class ModelClient:
                     ids.add(call["id"])
             if not calls and message.get("content") is None:
                 raise ModelUnavailable("Empty completion")
+            self.available = True
             return data
-        except (httpx.HTTPError, ValueError, KeyError, TypeError, IndexError) as exc:
+        except ModelUnavailable:
+            self.available = False
+            raise
+        except (
+            httpx.HTTPError,
+            ValueError,
+            KeyError,
+            TypeError,
+            IndexError,
+            AttributeError,
+        ) as exc:
+            self.available = False
             raise ModelUnavailable("Model completion failed") from exc
 
     async def close(self) -> None:

@@ -46,6 +46,29 @@ class ModelConfig(StrictModel):
     timeout_s: float = Field(default=120, gt=0)
 
 
+class MemoryConfig(StrictModel):
+    enabled: bool = False
+    base_url: str | None = None
+    api_key: SecretRef | None = None
+    roots: list[str] = Field(default_factory=list)
+    timeout_s: float = Field(default=30, gt=0)
+    recall_limit: int = Field(default=5, ge=1, le=20)
+
+    @model_validator(mode="after")
+    def valid_endpoint(self) -> Self:
+        if self.enabled and (not self.base_url or not self.roots):
+            raise ValueError("enabled memory requires base_url and canonical URI roots")
+        for root in self.roots:
+            if (
+                not root.startswith("viking://")
+                or "~" in root
+                or "%" in root
+                or any(p in {".", ".."} for p in root.split("/"))
+            ):
+                raise ValueError("memory roots must be canonical Viking URIs")
+        return self
+
+
 class PathsConfig(StrictModel):
     data: Path = Path("~/sola-data")
     soul: Path = Path("SOUL.md")
@@ -105,6 +128,7 @@ class Config(StrictModel):
         default_factory=lambda: SecretRef(env="SOLA_OPERATOR_TOKEN")
     )
     model: ModelConfig = Field(default_factory=ModelConfig)
+    memory: MemoryConfig = Field(default_factory=MemoryConfig)
     paths: PathsConfig = Field(default_factory=PathsConfig)
     profiles: dict[str, Profile] = Field(
         default_factory=lambda: {"interactive": Profile(max_steps=60)}

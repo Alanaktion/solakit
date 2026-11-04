@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from solakit.core.config import Config
 from solakit.core.io import durable
+from solakit.core.memory import MemoryClient, MemoryUnavailable
 from solakit.core.model import ModelClient, ModelUnavailable
 from solakit.core.prompt import read_prompt
 from solakit.core.schemas import Message, Origin, Run, RunStatus, Session, now
@@ -23,7 +24,12 @@ class Pending:
 
 class Execution:
     def __init__(
-        self, config: Config, store: Store, registry: Registry, model: ModelClient
+        self,
+        config: Config,
+        store: Store,
+        registry: Registry,
+        model: ModelClient,
+        memory: MemoryClient | None = None,
     ):
         self.config, self.store, self.registry, self.model = (
             config,
@@ -31,6 +37,7 @@ class Execution:
             registry,
             model,
         )
+        self.memory = memory
         self.semaphore = asyncio.Semaphore(config.model.concurrency)
         self.queues: dict[str, asyncio.Queue] = {}
         self.workers: dict[str, asyncio.Task] = {}
@@ -102,6 +109,13 @@ class Execution:
                 session = await durable(self.store.session, run.session)
                 if session.memory_scope == "isolated":
                     raise ValueError("Isolated memory is not implemented")
+                recall = None
+                if self.memory and session.memory_scope == "shared":
+                    run.memory_status = "recalling"
+                    recall = await self.memory.scoped(session).search(pending.text)
+                    run.memory_status = "recalled"
+                elif session.memory_scope == "ephemeral":
+                    run.memory_status = "ephemeral"
                 prompt = await durable(
                     read_prompt,
                     self.config,
@@ -109,12 +123,28 @@ class Execution:
                     session=run.session,
                     origin=run.origin.job or run.origin.channel,
                     at=now(),
+                    recall=recall,
                 )
                 run.prompt_sha256 = await durable(
                     self.store.write_prompt, run.id, prompt
                 )
                 await durable(self.store.save_run, run)
                 await self._loop(run, session, prompt, pending.text)
+                if self.memory and session.memory_scope == "shared":
+                    history = await durable(self.store.transcript, session.id)
+                    new_messages = [m for m in history if m["run_id"] == run.id]
+                    if new_messages:
+                        try:
+                            run.memory_commit = await self.memory.scoped(
+                                session
+                            ).commit(self.store, run.id, new_messages)
+                            run.memory_status = run.memory_commit["status"]
+                        except MemoryUnavailable:
+                            run.memory_status = "commit_failed_or_uncertain"
+        except MemoryUnavailable:
+            run.status = RunStatus.memory_unavailable
+            run.memory_status = "recall_failed"
+            run.error = "Memory recall failed; no session messages were added"
         except ModelUnavailable as exc:
             run.status = RunStatus.model_unavailable
             run.error = str(exc)
@@ -140,7 +170,18 @@ class Execution:
         messages.append(user.model_message())
         repairs = 0
         usage_complete = True
-        ctx = ToolContext(session, run.profile, self.config, self.store, run.id)
+        ctx = ToolContext(
+            session,
+            run.profile,
+            self.config,
+            self.store,
+            run.id,
+            memory_client=(
+                self.memory.scoped(session)
+                if self.memory and session.memory_scope == "shared"
+                else None
+            ),
+        )
         for step in range(cfg.max_steps):
             data = await self.model.complete(
                 messages, self.registry.schemas(run.profile)
@@ -233,6 +274,8 @@ class Execution:
             worker.cancel()
         await asyncio.gather(*self.workers.values(), return_exceptions=True)
         await self.model.close()
+        if self.memory:
+            await self.memory.close()
 
 
 def valid_history(history: list[dict]) -> list[dict]:

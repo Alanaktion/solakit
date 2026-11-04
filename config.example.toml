@@ -27,3 +27,11 @@ max_steps = 60
 tools = []
 write_scopes = []
 capabilities = []
+
+# Opt-in OpenViking integration. Set the existing server's URL and canonical
+# shared-memory roots; confirm its API version before enabling.
+[memory]
+enabled = false
+# base_url = "http://127.0.0.1:1933"
+# roots = ["viking://user/sola/memories"]
+# api_key = { env = "OPENVIKING_API_KEY" }

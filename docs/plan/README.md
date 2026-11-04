@@ -37,3 +37,12 @@ Implementation is separate from production cutover. Complete SPEC §14 before
 starting the Discord pilot. Then follow §15: operator prompt audit, one-week
 pilot, shadow blog publishing, jobs individually, and a month rollback window.
 Hermes remains untouched. No production deployment is part of this plan run.
+
+
+## Current checkpoint
+
+Phases 1–5 are implemented and pushed to main. Phase 6 has opt-in recall/commit
+and memory tools with mock verification; compaction, extraction completion
+tracking, and validation against the existing instance remain open. Phases 7–9
+remain planned. The full acceptance suite and production rollout have not passed.
+Resume at phase 6's remaining-work checklist. All integrations remain opt-in.

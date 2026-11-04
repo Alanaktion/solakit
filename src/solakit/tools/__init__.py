@@ -121,7 +121,7 @@ class Registry:
         manifest = manifest or function.__sola_tool__
         if manifest.name in self.tools:
             raise ValueError(f"duplicate tool: {manifest.name}")
-        hints = get_type_hints(function)
+        hints = get_type_hints(function, include_extras=True)
         fields = {}
         for name, parameter in inspect.signature(function).parameters.items():
             if name == "ctx":

@@ -51,6 +51,7 @@ class RunStatus(StrEnum):
     running = "running"
     completed = "completed"
     model_unavailable = "model_unavailable"
+    memory_unavailable = "memory_unavailable"
     tool_error = "tool_error"
     failed = "failed"
     cancelled = "cancelled"
@@ -72,4 +73,6 @@ class Run(BaseModel):
     tokens: dict[str, int] | None = None
     steps: int = 0
     context_skipped_messages: int = 0
+    memory_status: str = "disabled"
+    memory_commit: dict[str, Any] | None = None
     error: str | None = None
