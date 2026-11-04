@@ -18,6 +18,7 @@ from solakit.core.schemas import now
 from solakit.core.secrets import RedactingFilter, Redactor
 from solakit.core.store import Store
 from solakit.runtime import AgentNotConfigured, Runtime
+from solakit.tools import Registry
 
 
 class RunRequest(BaseModel):
@@ -55,6 +56,7 @@ def create_app(runtime: Runtime | None = None, config: Config | None = None) -> 
         handlers = logging.getLogger().handlers
         for handler in handlers:
             handler.addFilter(log_filter)
+        app.state.registry = Registry(cfg)
         app.state.store = Store(cfg.paths.data, app.state.redactor)
         app.state.router = SessionRouter(cfg, app.state.store)
         app.state.model_health = await probe_model(cfg)
@@ -129,7 +131,7 @@ def create_app(runtime: Runtime | None = None, config: Config | None = None) -> 
                 at=at or now(),
                 recall=recall,
             )
-            return inspection(result, [])
+            return inspection(result, app.state.registry.schemas(profile))
         except (OSError, ValueError) as exc:
             raise HTTPException(422, "Prompt files or profile are invalid") from exc
 

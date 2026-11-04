@@ -59,3 +59,23 @@ SHA-256, nullable token count, and enabled tool schemas. Optional `recall`, `at`
 This endpoint performs no inference or memory retrieval and writes no history.
 `sola prompt --profile interactive` prints exact UTF-8 bytes; `--json` includes
 metadata. Set `SOLA_URL` or `sola --url ...` to select the API server.
+
+## Tool configuration
+
+Set `enabled_tools = ["files", "repo_git"]`, then explicitly grant full tool
+names in each profile's `tools` list. `read_scopes` and `write_scopes` accept
+`repo:<configured-name>` or `path:/absolute/root`. Network and other non-file
+rights belong in `capabilities`. For example, `files.write` requires a write
+root and checks each resolved target against it; it only creates new files.
+`files.read` bounds reads; `repo_git.status` accepts a configured repository name.
+No filesystem roots or capabilities are granted by default.
+
+Add a typed function decorated with `@tool` to `solakit.tools.<module>` and list
+that module in configuration. The registry validates grants at startup and
+again at dispatch, validates arguments strictly, enforces timeouts, truncates
+output visibly, and logs every call. Sync tools run in worker threads. Python
+cannot stop a running worker thread on timeout: blocking mutating integrations
+must supply their own bounded/cancellable operations. Configured Python modules
+are trusted operator code; profile checks constrain exposed operations, not
+arbitrary Python imported by the operator. The filesystem is operator-controlled;
+resolved-path checks do not provide OS isolation against concurrent path changes.

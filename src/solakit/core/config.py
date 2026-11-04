@@ -54,6 +54,7 @@ class PathsConfig(StrictModel):
 
 class Profile(StrictModel):
     tools: list[str] = Field(default_factory=list)
+    read_scopes: list[str] = Field(default_factory=list)
     write_scopes: list[str] = Field(default_factory=list)
     capabilities: list[str] = Field(default_factory=list)
     max_steps: int = Field(default=40, ge=1)

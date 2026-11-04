@@ -1,0 +1,123 @@
+import asyncio
+import json
+import sys
+from types import ModuleType
+
+import pytest
+
+from solakit.core.config import Profile
+from solakit.core.schemas import Session
+from solakit.core.store import Store
+from solakit.tools import Registry, ToolContext, ToolResult, tool
+
+
+def context(config):
+    store = Store(config.paths.data)
+    session = store.create_session(Session(id="s"))
+    return ToolContext(session, "interactive", config, store, "r")
+
+
+def test_drop_in_gating_validation_and_logs(config, monkeypatch):
+    module = ModuleType("solakit.tools.fixture")
+    calls = []
+
+    @tool(name="fixture.echo", profiles=["interactive"], writes=["network"])
+    async def echo(ctx: ToolContext, text: str, repeat: int = 1) -> ToolResult:
+        """Repeat text."""
+        calls.append(text)
+        return ToolResult(content=text * repeat)
+
+    module.echo = echo
+    monkeypatch.setitem(sys.modules, module.__name__, module)
+    config.enabled_tools = ["fixture"]
+    config.profiles["interactive"] = Profile(tools=["fixture.echo"])
+    with pytest.raises(ValueError, match="missing capability"):
+        Registry(config)
+    profile = config.profiles["interactive"]
+    profile.capabilities = ["network"]
+    profile.tool_output_max_chars = 32
+    registry = Registry(config)
+    assert registry.schemas("interactive")[0]["function"]["parameters"]["required"] == [
+        "text"
+    ]
+    ctx = context(config)
+
+    async def exercise():
+        assert (
+            await registry.dispatch("fixture.echo", '{"text": "x", "repeat": "3"}', ctx)
+        ).error
+        assert calls == []
+        result = await registry.dispatch(
+            "fixture.echo", json.dumps({"text": "x" * 60}), ctx
+        )
+        assert result.content.endswith("[truncated]")
+        assert len(result.content) <= 32
+        profile.tools = []
+        assert (
+            await registry.dispatch("fixture.echo", '{"text":"forbidden"}', ctx)
+        ).error
+        assert calls == ["x" * 60]
+
+    asyncio.run(exercise())
+    records = ctx.store._read(ctx.store.root / "runs/r.tools.jsonl")
+    assert len(records) == 3
+    assert records[-1]["result"]["error"]
+
+
+def test_filesystem_scopes_and_symlinks(config, tmp_path):
+    root = tmp_path / "allowed"
+    root.mkdir()
+    outside = tmp_path / "private"
+    outside.write_text("private")
+    (root / "escape").symlink_to(outside)
+    config.enabled_tools = ["files"]
+    config.profiles["interactive"] = Profile(tools=["files.read", "files.write"])
+    with pytest.raises(ValueError, match="explicit write roots"):
+        Registry(config)
+    profile = config.profiles["interactive"]
+    profile.write_scopes = [f"path:{root}"]
+    registry = Registry(config)
+    ctx = context(config)
+
+    async def exercise():
+        for path in (outside, root / "../private", root / "escape"):
+            assert (
+                await registry.dispatch(
+                    "files.read", json.dumps({"path": str(path)}), ctx
+                )
+            ).error
+        target = root / "new.txt"
+        args = json.dumps({"path": str(target), "content": "new"})
+        assert not (await registry.dispatch("files.write", args, ctx)).error
+        assert (await registry.dispatch("files.write", args, ctx)).error
+        assert target.read_text() == "new"
+        profile.write_scopes = []
+        assert (await registry.dispatch("files.write", args, ctx)).error
+
+    asyncio.run(exercise())
+
+
+def test_timeout_and_unexpected_errors(config):
+    registry = Registry(config)
+
+    @tool(name="slow", profiles=["interactive"], timeout=0.01)
+    async def slow(ctx: ToolContext):
+        await asyncio.sleep(1)
+
+    @tool(name="broken", profiles=["interactive"])
+    async def broken(ctx: ToolContext):
+        raise RuntimeError("private implementation detail")
+
+    registry.register(slow)
+    registry.register(broken)
+    config.profiles["interactive"].tools = ["slow", "broken"]
+    registry.validate()
+    ctx = context(config)
+
+    async def exercise():
+        assert (await registry.dispatch("slow", "{}", ctx)).content == "Tool timed out"
+        result = await registry.dispatch("broken", "{}", ctx)
+        assert result.error
+        assert "private" not in result.content
+
+    asyncio.run(exercise())

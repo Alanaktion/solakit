@@ -1,0 +1,230 @@
+"""Configured tool discovery, typed arguments, and enforced capabilities."""
+
+import asyncio
+import importlib
+import inspect
+import json
+import time
+import traceback
+from collections.abc import Callable
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, get_type_hints
+
+from pydantic import BaseModel, ConfigDict, ValidationError, create_model
+
+from solakit.core.config import Config, Profile
+from solakit.core.schemas import Session
+from solakit.core.store import Store
+
+
+class ToolError(Exception):
+    """Expected tool failure safe to return to the model."""
+
+
+class ToolResult(BaseModel):
+    content: str
+    error: bool = False
+
+
+@dataclass
+class ToolContext:
+    session: Session
+    profile: str
+    config: Config
+    store: Store
+    run_id: str
+    memory_client: Any = None
+    deliver: Any = None
+
+    def path(self, path: str, *, write: bool = False) -> Path:
+        """Resolve symlinks and enforce the actual path against explicit roots."""
+        candidate = Path(path).expanduser().resolve()
+        profile = self.config.profiles[self.profile]
+        scopes = (
+            profile.write_scopes
+            if write
+            else (profile.read_scopes + profile.write_scopes)
+        )
+        roots = [scope_root(scope, self.config) for scope in scopes]
+        if not any(root and candidate.is_relative_to(root) for root in roots):
+            raise ToolError("Path is outside profile filesystem scopes")
+        return candidate
+
+
+def scope_root(scope: str, config: Config) -> Path | None:
+    if scope.startswith("repo:"):
+        path = config.repositories.get(scope[5:])
+        return path.expanduser().resolve() if path else None
+    if scope.startswith("path:"):
+        path = Path(scope[5:]).expanduser()
+        if not path.is_absolute():
+            raise ValueError("filesystem scopes must use absolute paths")
+        return path.resolve()
+    raise ValueError(f"unknown filesystem scope: {scope}")
+
+
+@dataclass(frozen=True)
+class Manifest:
+    name: str
+    profiles: tuple[str, ...]
+    writes: tuple[str, ...]
+    timeout: float | None
+
+
+def tool(
+    *,
+    name: str,
+    profiles: list[str],
+    writes: list[str] = (),
+    timeout: float | None = None,
+):
+    def decorate(function: Callable) -> Callable:
+        function.__sola_tool__ = Manifest(name, tuple(profiles), tuple(writes), timeout)
+        return function
+
+    return decorate
+
+
+@dataclass
+class Registered:
+    function: Callable
+    manifest: Manifest
+    arguments: type[BaseModel]
+
+    def schema(self) -> dict:
+        return {
+            "type": "function",
+            "function": {
+                "name": self.manifest.name,
+                "description": inspect.getdoc(self.function) or "",
+                "parameters": self.arguments.model_json_schema(),
+            },
+        }
+
+
+class Registry:
+    def __init__(self, config: Config):
+        self.config = config
+        self.tools: dict[str, Registered] = {}
+        for module in config.enabled_tools:
+            imported = importlib.import_module(f"solakit.tools.{module}")
+            for function in vars(imported).values():
+                manifest = getattr(function, "__sola_tool__", None)
+                if isinstance(manifest, Manifest):
+                    self.register(function, manifest)
+        self.validate()
+
+    def register(self, function: Callable, manifest: Manifest | None = None) -> None:
+        manifest = manifest or function.__sola_tool__
+        if manifest.name in self.tools:
+            raise ValueError(f"duplicate tool: {manifest.name}")
+        hints = get_type_hints(function)
+        fields = {}
+        for name, parameter in inspect.signature(function).parameters.items():
+            if name == "ctx":
+                continue
+            if name not in hints:
+                raise ValueError(f"tool argument missing type: {name}")
+            fields[name] = (
+                hints[name],
+                ... if parameter.default is parameter.empty else parameter.default,
+            )
+        arguments = create_model(
+            manifest.name, __config__=ConfigDict(extra="forbid", strict=True), **fields
+        )
+        self.tools[manifest.name] = Registered(function, manifest, arguments)
+
+    def allowed(self, name: str, profile: str) -> bool:
+        registered = self.tools.get(name)
+        cfg = self.config.profiles[profile]
+        return (
+            registered is not None
+            and name in cfg.tools
+            and profile in registered.manifest.profiles
+        )
+
+    def check_writes(self, registered: Registered, profile: Profile) -> None:
+        for scope in registered.manifest.writes:
+            if scope == "filesystem":
+                if not profile.write_scopes:
+                    raise ValueError("filesystem tool requires explicit write roots")
+            elif scope.startswith(("repo:", "path:")):
+                if scope not in profile.write_scopes:
+                    raise ValueError(f"missing filesystem grant: {scope}")
+            elif scope not in profile.capabilities:
+                raise ValueError(f"missing capability: {scope}")
+
+    def validate(self) -> None:
+        for name, profile in self.config.profiles.items():
+            for scope in profile.read_scopes + profile.write_scopes:
+                if scope_root(scope, self.config) is None:
+                    raise ValueError(f"unknown repository scope: {scope}")
+            for tool_name in profile.tools:
+                if not self.allowed(tool_name, name):
+                    raise ValueError(f"tool {tool_name} is not available to {name}")
+                self.check_writes(self.tools[tool_name], profile)
+
+    def schemas(self, profile: str) -> list[dict]:
+        return [
+            self.tools[name].schema()
+            for name in self.config.profiles[profile].tools
+            if self.allowed(name, profile)
+        ]
+
+    async def dispatch(self, name: str, arguments: str, ctx: ToolContext) -> ToolResult:
+        start = time.monotonic()
+        result = ToolResult(content="Tool execution failed", error=True)
+        parsed = None
+        detail = None
+        try:
+            if not self.allowed(name, ctx.profile):
+                raise ToolError("Tool is not permitted in this profile")
+            registered = self.tools[name]
+            cfg = self.config.profiles[ctx.profile]
+            self.check_writes(registered, cfg)
+            parsed = json.loads(arguments)
+            values = registered.arguments.model_validate(parsed).model_dump()
+            timeout = min(
+                registered.manifest.timeout or cfg.tool_timeout_s, cfg.tool_timeout_s
+            )
+            async with asyncio.timeout(timeout):
+                if inspect.iscoroutinefunction(registered.function):
+                    returned = await registered.function(ctx=ctx, **values)
+                else:
+                    returned = await asyncio.to_thread(
+                        registered.function, ctx=ctx, **values
+                    )
+            result = (
+                returned
+                if isinstance(returned, ToolResult)
+                else ToolResult(content=str(returned))
+            )
+        except (ToolError, ValidationError, ValueError, TimeoutError) as exc:
+            if isinstance(exc, TimeoutError):
+                message = "Tool timed out"
+            elif isinstance(exc, ToolError):
+                message = str(exc)
+            else:
+                message = "Invalid tool arguments or capability grant"
+            result = ToolResult(content=message, error=True)
+        except Exception:
+            detail = traceback.format_exc()
+        finally:
+            limit = self.config.profiles[ctx.profile].tool_output_max_chars
+            output_chars = len(result.content)
+            if output_chars > limit:
+                result.content = result.content[: limit - 12] + "\n[truncated]"
+            await asyncio.to_thread(
+                ctx.store.log_tool,
+                ctx.run_id,
+                {
+                    "name": name,
+                    "args": parsed if parsed is not None else arguments,
+                    "ms": round((time.monotonic() - start) * 1000),
+                    "output_chars": output_chars,
+                    "result": result.model_dump(),
+                    "traceback": detail,
+                },
+            )
+        return result

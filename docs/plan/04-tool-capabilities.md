@@ -1,6 +1,6 @@
 # Phase 4: Tool registry and enforced capabilities
 
-Status: planned
+Status: complete
 
 Depends on: phase 3
 
@@ -14,4 +14,11 @@ Depends on: phase 3
 
 ## Completion record
 
-Record implementation, validation, and remaining limitations here before marking complete.
+Implemented module discovery, decorator manifests, strict Pydantic arguments,
+ToolContext, startup/dispatch grants, separate capabilities and filesystem roots,
+timeouts, truncation, redacted logs, and nonblocking execution. Added bounded
+files.read, create-only files.write, and named repo_git.status primitives.
+Prompt inspection now exposes registry schemas.
+Validated with 15 passing tests including drop-in discovery, denied execution,
+startup rejection, path traversal/symlink refusal, timeout and error handling;
+Ruff passes. Trusted plugin and worker timeout limitations are documented.
