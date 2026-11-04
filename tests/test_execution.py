@@ -266,3 +266,237 @@ def test_incomplete_tool_group_preserved_but_excluded(config):
         await execution.close()
 
     asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("queued", [True, False])
+def test_concurrent_cancellations_share_one_operation(config, queued):
+    async def exercise():
+        entered = asyncio.Event()
+        release = asyncio.Event()
+        model_cancellations = []
+
+        async def handler(request):
+            if request.url.path.endswith("/models"):
+                return model_list(config)
+            entered.set()
+            try:
+                await release.wait()
+            except asyncio.CancelledError:
+                model_cancellations.append(True)
+                raise
+            return completion(config, "done")
+
+        execution = setup(config, handler)
+        first = asyncio.create_task(execution.submit("s", "first"))
+        await entered.wait()
+        second = None
+        if queued:
+            second = asyncio.create_task(execution.submit("s", "second"))
+            while len(execution.pending) < 2:
+                await asyncio.sleep(0)
+        selected = "second" if queued else "first"
+        run_id = next(
+            p.run.id for p in execution.pending.values() if p.text == selected
+        )
+        results = await asyncio.gather(
+            execution.cancel(run_id), execution.cancel(run_id)
+        )
+        assert results == [True, True]
+        run = await (second if queued else first)
+        assert run.status == "cancelled"
+        assert len(model_cancellations) == (0 if queued else 1)
+        assert not await execution.cancel(run_id)
+        release.set()
+        if queued:
+            assert (await first).status == "completed"
+        await execution.close()
+
+    asyncio.run(exercise())
+
+
+def test_cancel_request_disconnect_does_not_interrupt_finalization(config, monkeypatch):
+    import threading
+
+    async def exercise():
+        model_entered = asyncio.Event()
+        finalizing, finish = threading.Event(), threading.Event()
+
+        async def handler(request):
+            if request.url.path.endswith("/models"):
+                return model_list(config)
+            model_entered.set()
+            await asyncio.Event().wait()
+
+        execution = setup(config, handler)
+        original_save = execution.store.save_run
+
+        def delayed_save(run):
+            if run.status == "cancelled":
+                finalizing.set()
+                assert finish.wait(5), "test did not release finalization"
+            original_save(run)
+
+        monkeypatch.setattr(execution.store, "save_run", delayed_save)
+        submission = asyncio.create_task(execution.submit("s", "cancel"))
+        await model_entered.wait()
+        run_id = next(iter(execution.pending))
+        request = asyncio.create_task(execution.cancel(run_id))
+        while not finalizing.is_set():
+            await asyncio.sleep(0)
+        request.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await request
+        second_request = asyncio.create_task(execution.cancel(run_id))
+        finish.set()
+        assert await second_request
+        assert (await submission).status == "cancelled"
+        assert execution.store.run(run_id)["status"] == "cancelled"
+        await execution.close()
+
+    asyncio.run(exercise())
+
+
+def test_shutdown_waits_for_inflight_acceptance_and_rejects_new_work(
+    config, monkeypatch
+):
+    import threading
+
+    async def exercise():
+        accepting, finish = threading.Event(), threading.Event()
+
+        async def handler(request):
+            if request.url.path.endswith("/models"):
+                return model_list(config)
+            await asyncio.Event().wait()
+
+        execution = setup(config, handler)
+        original_save = execution.store.save_run
+
+        def delayed_save(run):
+            if not accepting.is_set():
+                accepting.set()
+                assert finish.wait(5), "test did not release acceptance"
+            original_save(run)
+
+        monkeypatch.setattr(execution.store, "save_run", delayed_save)
+        submission = asyncio.create_task(execution.submit("s", "during shutdown"))
+        while not accepting.is_set():
+            await asyncio.sleep(0)
+        closing = asyncio.create_task(execution.close())
+        while execution._close_task is None:
+            await asyncio.sleep(0)
+        assert not closing.done()
+        assert not execution.model.client.is_closed
+        finish.set()
+        async with asyncio.timeout(5):
+            run, _ = await asyncio.gather(submission, closing)
+        assert run.status == "cancelled"
+        assert not execution.pending
+        assert all(worker.done() for worker in execution.workers.values())
+        assert execution.model.client.is_closed
+        with pytest.raises(ValueError, match="shutting down"):
+            await execution.submit("s", "too late")
+        # Concurrent/repeated close requests use the same completed operation.
+        await asyncio.gather(execution.close(), execution.close())
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("fail_diagnostic_write", [False, True])
+def test_unexpected_failure_retains_redacted_cause(
+    config, monkeypatch, caplog, fail_diagnostic_write
+):
+    from solakit.core.secrets import Redactor
+
+    def handler(request):
+        if request.url.path.endswith("/models"):
+            return model_list(config)
+        try:
+            raise OSError("diagnostic-secret")
+        except OSError as cause:
+            raise RuntimeError("unexpected provider failure") from cause
+
+    execution = setup(config, handler)
+    execution.store.redactor = Redactor(["diagnostic-secret"])
+    if fail_diagnostic_write:
+
+        def failed_write(*args):
+            raise OSError("diagnostic disk unavailable")
+
+        monkeypatch.setattr(execution.store, "log_diagnostic", failed_write)
+
+    async def exercise():
+        run = await execution.submit("s", "hello")
+        assert run.status == "failed"
+        assert "unexpected provider failure" not in run.error
+        record = execution.store.run(run.id)
+        if fail_diagnostic_write:
+            trace = caplog.text
+        else:
+            assert record["diagnostics"][0]["exception_type"] == "RuntimeError"
+            trace = record["diagnostics"][0]["traceback"]
+        assert "OSError" in trace
+        assert "RuntimeError" in trace
+        assert "unexpected provider failure" in trace
+        assert "[redacted]" in trace
+        assert "diagnostic-secret" not in trace
+        await execution.close()
+
+    asyncio.run(exercise())
+
+
+def test_shutdown_finishes_other_runs_when_one_finalization_fails(config, monkeypatch):
+    import threading
+
+    async def exercise():
+        entered = 0
+        both_running = asyncio.Event()
+        first_failed, second_finishing, finish = (
+            threading.Event(),
+            threading.Event(),
+            threading.Event(),
+        )
+
+        async def handler(request):
+            nonlocal entered
+            if request.url.path.endswith("/models"):
+                return model_list(config)
+            entered += 1
+            if entered == 2:
+                both_running.set()
+            await asyncio.Event().wait()
+
+        config.model.concurrency = 2
+        execution = setup(config, handler)
+        execution.store.create_session(Session(id="other"))
+        original_save = execution.store.save_run
+
+        def failing_save(run):
+            if run.status == "cancelled":
+                if run.session == "s":
+                    first_failed.set()
+                    raise OSError("failed to persist cancellation")
+                second_finishing.set()
+                assert finish.wait(5), "test did not release finalization"
+            original_save(run)
+
+        monkeypatch.setattr(execution.store, "save_run", failing_save)
+        first = asyncio.create_task(execution.submit("s", "first"))
+        second = asyncio.create_task(execution.submit("other", "second"))
+        await both_running.wait()
+        closing = asyncio.create_task(execution.close())
+        while not (first_failed.is_set() and second_finishing.is_set()):
+            await asyncio.sleep(0)
+        assert not closing.done()
+        assert not execution.model.client.is_closed
+        finish.set()
+        with pytest.raises(ExceptionGroup, match="Run finalization failed"):
+            await closing
+        outcomes = await asyncio.gather(first, second, return_exceptions=True)
+        assert isinstance(outcomes[0], OSError)
+        assert outcomes[1].status == "cancelled"
+        assert execution.model.client.is_closed
+        assert not execution.pending
+        assert all(worker.done() for worker in execution.workers.values())
+
+    asyncio.run(exercise())

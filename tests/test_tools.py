@@ -121,3 +121,54 @@ def test_timeout_and_unexpected_errors(config):
         assert "private" not in result.content
 
     asyncio.run(exercise())
+
+
+def test_file_reads_reject_special_files_without_waiting_for_a_writer(config, tmp_path):
+    import os
+    import threading
+
+    fifo = tmp_path / "pipe"
+    os.mkfifo(fifo)
+    config.enabled_tools = ["files"]
+    config.profiles["interactive"] = Profile(
+        tools=["files.read"], read_scopes=[f"path:{tmp_path}"], tool_timeout_s=0.02
+    )
+    registry, ctx = Registry(config), context(config)
+    fallback_used = threading.Event()
+
+    def unblock_regression():
+        # Bound the test even if a future regression blocks opening the FIFO.
+        fallback_used.set()
+        try:
+            descriptor = os.open(fifo, os.O_WRONLY | os.O_NONBLOCK)
+        except OSError:
+            return
+        os.close(descriptor)
+
+    fallback = threading.Timer(1, unblock_regression)
+    fallback.daemon = True
+    fallback.start()
+    try:
+        result = asyncio.run(
+            registry.dispatch("files.read", json.dumps({"path": str(fifo)}), ctx)
+        )
+        assert result.error
+        assert result.content == "Only regular files can be read"
+        assert not fallback_used.is_set()
+    finally:
+        fallback.cancel()
+        fallback.join()
+
+    # Directories are also excluded; ordinary files still support bounded reads.
+    result = asyncio.run(
+        registry.dispatch("files.read", json.dumps({"path": str(tmp_path)}), ctx)
+    )
+    assert result.error
+    regular = tmp_path / "regular"
+    regular.write_text("readable")
+    assert (
+        asyncio.run(
+            registry.dispatch("files.read", json.dumps({"path": str(regular)}), ctx)
+        ).content
+        == "readable"
+    )

@@ -1,5 +1,8 @@
 """Narrow filesystem tools with per-call resolved-path checks."""
 
+import os
+import stat
+
 from solakit.core.io import durable
 from solakit.tools import ToolContext, ToolError, ToolResult, tool
 
@@ -13,10 +16,18 @@ async def read(ctx: ToolContext, path: str) -> ToolResult:
     try:
         # Bound the read itself, not only the returned text.
         def bounded_read():
-            with target.open("r", encoding="utf-8") as stream:
-                return stream.read(
-                    ctx.config.profiles[ctx.profile].tool_output_max_chars + 1
-                )
+            descriptor = os.open(target, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
+            try:
+                if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+                    raise ToolError("Only regular files can be read")
+                with os.fdopen(
+                    descriptor, "r", encoding="utf-8", closefd=False
+                ) as stream:
+                    return stream.read(
+                        ctx.config.profiles[ctx.profile].tool_output_max_chars + 1
+                    )
+            finally:
+                os.close(descriptor)
 
         content = await durable(bounded_read)
     except (OSError, UnicodeError) as exc:

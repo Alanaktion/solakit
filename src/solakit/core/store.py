@@ -1,8 +1,9 @@
-"""Durable append-only evidence with a disposable SQLite index.
+"""Append-only evidence, atomic metadata, and a disposable SQLite index.
 
-A run's JSONL event stream is authoritative. The .json file is a replaceable
-inspection snapshot, never the only copy. A torn final JSONL write is preserved
-and ignored during reads; later writes begin on a fresh line.
+Only an unterminated final JSONL fragment may be omitted during recovery. Before
+sealing such a fragment, persist its exact offset and hash as immutable recovery
+metadata. Interior damage without that evidence fails closed. Original bytes
+are never rewritten, and every omitted fragment is visible in storage health.
 """
 
 import fcntl
@@ -11,9 +12,12 @@ import json
 import os
 import re
 import sqlite3
+import tempfile
 import threading
 from pathlib import Path
 from typing import Any
+
+from pydantic import ValidationError
 
 from solakit.core.schemas import Message, Run, RunStatus, Session, now
 from solakit.core.secrets import Redactor
@@ -27,6 +31,35 @@ def safe_id(value: str) -> str:
     return value
 
 
+class StorageCorruption(RuntimeError):
+    """An evidence file needs operator recovery before it can be used."""
+
+
+def sync_directory(path: Path) -> None:
+    descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def atomic_write(path: Path, payload: bytes) -> None:
+    """Publish a complete, fsynced file; unfinished temporary files are not state."""
+    descriptor, name = tempfile.mkstemp(
+        prefix=f".{path.name}.", suffix=".tmp", dir=path.parent
+    )
+    temporary = Path(name)
+    try:
+        with os.fdopen(descriptor, "wb") as stream:
+            stream.write(payload)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+        sync_directory(path.parent)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
 class Store:
     def __init__(
         self, root: Path, redactor: Redactor | None = None, exclusive: bool = False
@@ -34,7 +67,13 @@ class Store:
         self.root = root.expanduser().resolve()
         self.redactor = redactor or Redactor()
         self.lock = threading.RLock()
-        for directory in (self.root, self.root / "sessions", self.root / "runs"):
+        self._issues: dict[tuple[str, int | None], dict] = {}
+        for directory in (
+            self.root,
+            self.root / "sessions",
+            self.root / "runs",
+            self.root / "recovery",
+        ):
             directory.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.ownership = None
         if exclusive:
@@ -44,8 +83,12 @@ class Store:
             except BlockingIOError:
                 self.ownership.close()
                 raise RuntimeError("Another runtime owns this data directory") from None
-        self.rebuild()
-        self.recover()
+        try:
+            self.rebuild()
+            self.recover()
+        except BaseException:
+            self.close()
+            raise
 
     def close(self) -> None:
         if self.ownership is not None:
@@ -55,29 +98,119 @@ class Store:
     def _path(self, kind: str, record_id: str, suffix: str) -> Path:
         return self.root / kind / f"{safe_id(record_id)}{suffix}"
 
+    def _issue(self, path: Path, kind: str, offset: int | None = None) -> None:
+        relative = str(path.relative_to(self.root))
+        self._issues[(relative, offset)] = {
+            "file": relative,
+            "kind": kind,
+            "offset": offset,
+        }
+
+    def _corruption(self, path: Path, kind: str, offset: int | None = None):
+        self._issue(path, kind, offset)
+        return StorageCorruption(
+            f"Storage recovery required: {path.relative_to(self.root)}"
+        )
+
+    def storage_health(self) -> dict:
+        with self.lock:
+            issues = list(self._issues.values())
+        return {"status": "degraded" if issues else "ok", "issues": issues}
+
+    def _recovery_path(self, path: Path, offset: int) -> Path:
+        identity = hashlib.sha256(str(path.relative_to(self.root)).encode()).hexdigest()
+        return self.root / "recovery" / f"{identity}.{offset}.json"
+
+    def _is_recovered(self, path: Path, offset: int, fragment: bytes) -> bool:
+        marker = self._recovery_path(path, offset)
+        if not marker.exists():
+            return False
+        try:
+            record = json.loads(marker.read_bytes())
+            return record == {
+                "file": str(path.relative_to(self.root)),
+                "offset": offset,
+                "sha256": hashlib.sha256(fragment).hexdigest(),
+            }
+        except (ValueError, UnicodeDecodeError):
+            return False
+
+    @staticmethod
+    def _decode_record(fragment: bytes) -> dict:
+        record = json.loads(fragment)
+        if not isinstance(record, dict):
+            raise ValueError("JSONL records must be objects")
+        return record
+
     def _append(self, path: Path, record: dict) -> None:
         payload = json.dumps(record, ensure_ascii=False, separators=(",", ":"))
-        with self.lock, path.open("a+b") as stream:
-            stream.seek(0, os.SEEK_END)
-            if stream.tell():
-                stream.seek(-1, os.SEEK_END)
-                if stream.read(1) != b"\n":
+        with self.lock:
+            # Never extend evidence already known to have unaccounted-for damage.
+            relative = str(path.relative_to(self.root))
+            if any(
+                issue["file"] == relative
+                and issue["kind"]
+                in {"corrupt_record", "invalid_message", "invalid_run"}
+                for issue in self._issues.values()
+            ):
+                raise self._corruption(path, "corrupt_record")
+            existed = path.exists()
+            with path.open("a+b") as stream:
+                stream.seek(0, os.SEEK_END)
+                size = stream.tell()
+                offset, fragment = size, b""
+                # Read only the last record, even for a large transcript.
+                while offset:
+                    count = min(offset, 8192)
+                    offset -= count
+                    stream.seek(offset)
+                    fragment = stream.read(count) + fragment
+                    newline = fragment.rfind(b"\n")
+                    if newline >= 0:
+                        offset += newline + 1
+                        fragment = fragment[newline + 1 :]
+                        break
+                if fragment:
+                    try:
+                        self._decode_record(fragment)
+                    except (ValueError, UnicodeDecodeError):
+                        marker = self._recovery_path(path, offset)
+                        recovery = {
+                            "file": relative,
+                            "offset": offset,
+                            "sha256": hashlib.sha256(fragment).hexdigest(),
+                        }
+                        atomic_write(marker, json.dumps(recovery).encode())
+                        self._issue(path, "recovered_tail", offset)
+                stream.seek(0, os.SEEK_END)
+                if fragment:
                     stream.write(b"\n")
-            stream.write(payload.encode("utf-8") + b"\n")
-            stream.flush()
-            os.fsync(stream.fileno())
+                stream.write(payload.encode("utf-8") + b"\n")
+                stream.flush()
+                os.fsync(stream.fileno())
+            if not existed:
+                sync_directory(path.parent)
 
     def _read(self, path: Path) -> list[dict]:
-        if not path.exists():
-            return []
-        records = []
-        for line in path.read_bytes().splitlines():
-            try:
-                records.append(json.loads(line))
-            except (ValueError, UnicodeDecodeError):
-                # Preserve partial/corrupt evidence; never rewrite history.
-                continue
-        return records
+        with self.lock:
+            if not path.exists():
+                return []
+            data = path.read_bytes()
+            records, offset = [], 0
+            for line in data.splitlines(keepends=True):
+                terminated = line.endswith(b"\n")
+                fragment = line[:-1] if terminated else line
+                try:
+                    records.append(self._decode_record(fragment))
+                except (ValueError, UnicodeDecodeError) as exc:
+                    if self._is_recovered(path, offset, fragment):
+                        self._issue(path, "recovered_tail", offset)
+                    elif not terminated and offset + len(line) == len(data):
+                        self._issue(path, "incomplete_tail", offset)
+                    else:
+                        raise self._corruption(path, "corrupt_record", offset) from exc
+                offset += len(line)
+            return records
 
     def _index(self, kind: str, record_id: str, payload: dict) -> None:
         with self.lock, sqlite3.connect(self.root / "app.db") as db:
@@ -88,6 +221,7 @@ class Store:
 
     def rebuild(self) -> None:
         with self.lock, sqlite3.connect(self.root / "app.db") as db:
+            self._issues.clear()
             for kind in ("sessions", "runs"):
                 db.execute(
                     f"CREATE TABLE IF NOT EXISTS {kind} "
@@ -95,19 +229,32 @@ class Store:
                 )
                 db.execute(f"DELETE FROM {kind}")
             for path in sorted((self.root / "sessions").glob("*.meta.json")):
-                session = Session.model_validate_json(path.read_bytes())
+                try:
+                    session = self.session(path.name.removesuffix(".meta.json"))
+                except StorageCorruption:
+                    continue
                 db.execute(
                     "INSERT INTO sessions VALUES (?, ?)",
                     (session.id, session.model_dump_json()),
                 )
+                try:
+                    self.transcript(session.id)
+                except StorageCorruption:
+                    pass  # Report damage while keeping other sessions usable.
             for path in sorted((self.root / "runs").glob("*.events.jsonl")):
-                records = self._read(path)
-                if records:
+                try:
+                    records = self._read(path)
+                    if not records:
+                        continue
                     run = Run.model_validate(records[-1])
-                    db.execute(
-                        "INSERT INTO runs VALUES (?, ?)",
-                        (run.id, run.model_dump_json()),
-                    )
+                except StorageCorruption:
+                    continue
+                except ValidationError:
+                    self._issue(path, "invalid_run")
+                    continue
+                db.execute(
+                    "INSERT INTO runs VALUES (?, ?)", (run.id, run.model_dump_json())
+                )
 
     def recover(self) -> None:
         for record in self.list_records("runs"):
@@ -123,18 +270,20 @@ class Store:
         with self.lock:
             if path.exists():
                 return self.session(session.id)
-            # Metadata is immutable, created once; index can always be rebuilt.
-            with path.open("x", encoding="utf-8") as stream:
-                stream.write(session.model_dump_json())
-                stream.flush()
-                os.fsync(stream.fileno())
+            atomic_write(path, session.model_dump_json().encode("utf-8"))
             self._index("sessions", session.id, session.model_dump(mode="json"))
         return session
 
     def session(self, session_id: str) -> Session:
-        return Session.model_validate_json(
-            self._path("sessions", session_id, ".meta.json").read_bytes()
-        )
+        path = self._path("sessions", session_id, ".meta.json")
+        with self.lock:
+            try:
+                session = Session.model_validate_json(path.read_bytes())
+                if session.id != session_id:
+                    raise ValueError("metadata identity mismatch")
+                return session
+            except (ValueError, UnicodeDecodeError) as exc:
+                raise self._corruption(path, "invalid_metadata") from exc
 
     def append_message(self, session_id: str, message: Message) -> None:
         self.session(session_id)
@@ -145,22 +294,35 @@ class Store:
 
     def transcript(self, session_id: str) -> list[dict]:
         self.session(session_id)
-        return self._read(self._path("sessions", session_id, ".jsonl"))
+        path = self._path("sessions", session_id, ".jsonl")
+        records = self._read(path)
+        try:
+            for record in records:
+                Message.model_validate(record)
+        except ValidationError as exc:
+            with self.lock:
+                raise self._corruption(path, "invalid_message") from exc
+        return records
 
     def save_run(self, run: Run) -> None:
         with self.lock:
             record = self.redactor.redact(run.model_dump(mode="json"))
             self._append(self._path("runs", run.id, ".events.jsonl"), record)
-            path = self._path("runs", run.id, ".json")
-            temporary = path.with_suffix(".tmp")
-            temporary.write_text(json.dumps(record), encoding="utf-8")
-            temporary.replace(path)
+            atomic_write(
+                self._path("runs", run.id, ".json"), json.dumps(record).encode()
+            )
             self._index("runs", run.id, record)
 
     def run(self, run_id: str) -> dict:
-        events = self._read(self._path("runs", run_id, ".events.jsonl"))
+        path = self._path("runs", run_id, ".events.jsonl")
+        events = self._read(path)
         if not events:
             raise FileNotFoundError(run_id)
+        try:
+            Run.model_validate(events[-1])
+        except ValidationError as exc:
+            with self.lock:
+                raise self._corruption(path, "invalid_run") from exc
         record = events[-1].copy()
         prompt = self._path("runs", run_id, ".prompt.txt")
         record["prompt"] = (
@@ -168,6 +330,9 @@ class Store:
         )
         record["memory_events"] = self.memory_events(run_id)
         record["tools"] = self._read(self._path("runs", run_id, ".tools.jsonl"))
+        record["diagnostics"] = self._read(
+            self._path("runs", run_id, ".diagnostics.jsonl")
+        )
         return record
 
     def write_prompt(self, run_id: str, prompt: str) -> str:
@@ -177,6 +342,7 @@ class Store:
             stream.write(payload)
             stream.flush()
             os.fsync(stream.fileno())
+        sync_directory(self.root / "runs")
         return hashlib.sha256(payload).hexdigest()
 
     def memory_events(self, run_id: str) -> list[dict]:
@@ -190,6 +356,12 @@ class Store:
     def log_tool(self, run_id: str, record: dict[str, Any]) -> None:
         self._append(
             self._path("runs", run_id, ".tools.jsonl"), self.redactor.redact(record)
+        )
+
+    def log_diagnostic(self, run_id: str, record: dict) -> None:
+        self._append(
+            self._path("runs", run_id, ".diagnostics.jsonl"),
+            self.redactor.redact(record),
         )
 
     def list_records(self, kind: str) -> list[dict]:

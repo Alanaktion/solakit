@@ -2,6 +2,8 @@
 
 import asyncio
 import json
+import logging
+import traceback
 from dataclasses import dataclass
 
 from solakit.core.config import Config
@@ -20,6 +22,7 @@ class Pending:
     text: str
     future: asyncio.Future
     task: asyncio.Task | None = None
+    cancellation: asyncio.Task | None = None
 
 
 class Execution:
@@ -44,6 +47,7 @@ class Execution:
         self.pending: dict[str, Pending] = {}
         self.submit_lock = asyncio.Lock()
         self.closing = False
+        self._close_task: asyncio.Task | None = None
 
     async def submit(
         self,
@@ -80,7 +84,8 @@ class Execution:
         while True:
             pending = await queue.get()
             try:
-                if pending.run.status == RunStatus.cancelled:
+                if pending.cancellation is not None:
+                    await asyncio.shield(pending.future)
                     continue
                 pending.task = asyncio.create_task(self._perform(pending))
                 try:
@@ -151,9 +156,22 @@ class Execution:
         except asyncio.CancelledError:
             run.status = RunStatus.cancelled
             run.error = "Cancelled by operator or shutdown"
-        except Exception:
+        except Exception as exc:
             run.status = RunStatus.failed
             run.error = "Run failed; inspect configuration and retained evidence"
+            diagnostic = {
+                "exception_type": type(exc).__name__,
+                "traceback": traceback.format_exc(),
+            }
+            try:
+                await durable(self.store.log_diagnostic, run.id, diagnostic)
+            except Exception:
+                # Keep the original cause available even when storage itself fails.
+                logging.getLogger(__name__).error(
+                    "Run %s failed; diagnostic persistence failed: %s",
+                    run.id,
+                    self.store.redactor.redact(diagnostic),
+                )
         finally:
             run.finished_at = now()
             await durable(self.store.save_run, run)
@@ -254,28 +272,61 @@ class Execution:
         pending = self.pending.get(run_id)
         if pending is None or pending.future.done():
             return False
+        # Assign before yielding: concurrent callers share one durable operation.
+        # Request cancellation must not interrupt cancellation of the actual run.
+        if pending.cancellation is None:
+            pending.cancellation = asyncio.create_task(self._cancel_pending(pending))
+        await asyncio.shield(pending.cancellation)
+        return True
+
+    async def _cancel_pending(self, pending: Pending) -> None:
         if pending.task is not None:
             pending.task.cancel()
             await asyncio.shield(pending.future)
         else:
             pending.run.status = RunStatus.cancelled
             pending.run.finished_at = now()
-            await durable(self.store.save_run, pending.run)
+            try:
+                await durable(self.store.save_run, pending.run)
+            except Exception as exc:
+                if not pending.future.done():
+                    pending.future.set_exception(exc)
+                raise
             pending.future.set_result(pending.run)
-        return True
 
     async def close(self) -> None:
-        self.closing = True
-        for run_id in list(self.pending):
-            await self.cancel(run_id)
-        for queue in self.queues.values():
-            await queue.join()
-        for worker in self.workers.values():
-            worker.cancel()
-        await asyncio.gather(*self.workers.values(), return_exceptions=True)
-        await self.model.close()
-        if self.memory:
-            await self.memory.close()
+        if self._close_task is None:
+            self._close_task = asyncio.create_task(self._close())
+        await asyncio.shield(self._close_task)
+
+    async def _close(self) -> None:
+        # Wait for submissions already inside acceptance, then stop admission and
+        # snapshot all accepted work under the same lock. No worker can appear late.
+        async with self.submit_lock:
+            self.closing = True
+            accepted = list(self.pending)
+        try:
+            outcomes = await asyncio.gather(
+                *(self.cancel(run_id) for run_id in accepted), return_exceptions=True
+            )
+            for queue in self.queues.values():
+                await queue.join()
+            failures = [
+                outcome for outcome in outcomes if isinstance(outcome, Exception)
+            ]
+            if failures:
+                raise ExceptionGroup(
+                    "Run finalization failed during shutdown", failures
+                )
+        finally:
+            for worker in self.workers.values():
+                worker.cancel()
+            await asyncio.gather(*self.workers.values(), return_exceptions=True)
+            try:
+                await self.model.close()
+            finally:
+                if self.memory:
+                    await self.memory.close()
 
 
 def valid_history(history: list[dict]) -> list[dict]:

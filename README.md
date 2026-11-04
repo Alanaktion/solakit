@@ -48,6 +48,32 @@ by append-only `.events.jsonl`. JSONL writes are fsynced. Prompt files preserve
 exact UTF-8 bytes, including CRLF; they are intentionally not redacted. Treat the
 data directory as private operator material, just like the source persona.
 
+Session metadata is published with an atomic rename after the file is fsynced;
+the containing directory is fsynced too. Abandoned temporary files are ignored.
+If existing metadata is damaged, that session is unavailable rather than being
+recreated with default privileges or memory scope. Healthy sessions remain usable.
+
+`GET /api/storage/health` (authenticated) lists damaged files, issue types, and
+byte offsets. `/health` reports degraded storage without exposing file details.
+Only a malformed, unterminated final JSONL fragment may be omitted during recovery.
+Before appending past it, the store persists a record in `recovery/` containing its
+path, offset, and SHA-256. Future reads skip only those exact damaged bytes.
+Interior corruption without matching recovery evidence fails closed with HTTP 503.
+Original transcript and journal bytes remain intact, and recovered tails remain
+visible in storage health. Keep `recovery/` alongside transcripts in every backup.
+
+For damaged metadata or interior records, stop the server, preserve a copy of the
+damaged files, and atomically restore verified files from a trusted backup. Do
+not delete metadata and recreate a session: its memory scope and binding matter.
+Restart to rebuild the index and refresh storage health. A recovery record is
+not permission to discard other corrupt records; do not edit its hash to bypass
+a corruption report. Transcripts are not silently repaired or shortened.
+
+Unexpected execution failures keep a concise public `error` and retain a redacted
+exception type, traceback, and chained cause in `<run-id>.diagnostics.jsonl`.
+Authenticated run inspection includes these `diagnostics`. If diagnostic storage
+fails, the original redacted diagnostic is emitted to operator logs instead.
+
 ## Prompt audit
 
 Create `fragments/profiles/<profile>.md` for each profile (an empty file is valid).
@@ -69,7 +95,10 @@ names in each profile's `tools` list. `read_scopes` and `write_scopes` accept
 `repo:<configured-name>` or `path:/absolute/root`. Network and other non-file
 rights belong in `capabilities`. For example, `files.write` requires a write
 root and checks each resolved target against it; it only creates new files.
-`files.read` bounds reads; `repo_git.status` accepts a configured repository name.
+`files.read` bounds reads and accepts only regular files. It opens paths with
+nonblocking/no-follow flags and checks the opened descriptor, so a FIFO cannot
+hold a run or shutdown waiting for a writer. `repo_git.status` accepts a configured
+repository name.
 No filesystem roots or capabilities are granted by default.
 
 Add a typed function decorated with `@tool` to `solakit.tools.<module>` and list
@@ -95,8 +124,11 @@ when forbidden. Other tool failures are structured results. Max steps ends a run
 as `budget_exceeded`. Endpoint usage is summed only when every response supplies
 counts; otherwise tokens remain null.
 
-`POST /api/runs/{id}/cancel` cancels queued/running work; shutdown cancels work and
-closes HTTP clients. Interrupted tool groups remain in history but are excluded
+`POST /api/runs/{id}/cancel` cancels queued/running work. Concurrent cancellation
+requests share one operation; disconnecting a cancellation request does not
+interrupt finalization. Shutdown waits for submissions already being accepted,
+stops admission, finalizes accepted work, then closes workers and HTTP clients.
+Concurrent/repeated shutdown calls share one operation. Interrupted tool groups remain in history but are excluded
 from future model requests, with the skipped count in each run record. A data
 ownership lock prevents a second server from recovering an active server's runs.
 Run uvicorn with one worker. No fallback model is attempted.

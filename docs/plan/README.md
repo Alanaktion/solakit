@@ -46,3 +46,12 @@ and memory tools with mock verification; compaction, extraction completion
 tracking, and validation against the existing instance remain open. Phases 7–9
 remain planned. The full acceptance suite and production rollout have not passed.
 Resume at phase 6's remaining-work checklist. All integrations remain opt-in.
+
+
+## Review hardening checkpoint
+
+The follow-up code review's six findings are addressed: special-file read refusal,
+atomic session metadata with isolated damage reporting, explicit corruption/torn-tail
+recovery, serialized shutdown/admission, idempotent cancellation, and redacted
+execution diagnostics. Regression tests cover the reproduced failures. These fixes
+do not advance phase 6 or enable any integrations.

@@ -9,6 +9,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel, StringConstraints
+from starlette.responses import JSONResponse
 
 from solakit.core.config import Config, load_config
 from solakit.core.loop import Execution
@@ -18,7 +19,7 @@ from solakit.core.prompt import inspection, read_prompt
 from solakit.core.routing import SessionRouter
 from solakit.core.schemas import Origin, Session, now
 from solakit.core.secrets import RedactingFilter, Redactor
-from solakit.core.store import Store, safe_id
+from solakit.core.store import StorageCorruption, Store, safe_id
 from solakit.tools import Registry
 
 
@@ -74,12 +75,18 @@ def create_app(
             app.state.model_health = await probe_model(app.state.model)
             yield
         finally:
-            await app.state.execution.close()
-            app.state.store.close()
-            for handler in handlers:
-                handler.removeFilter(log_filter)
+            try:
+                await app.state.execution.close()
+            finally:
+                app.state.store.close()
+                for handler in handlers:
+                    handler.removeFilter(log_filter)
 
     app = FastAPI(title="Solakit", version="0.1.0", lifespan=lifespan)
+
+    @app.exception_handler(StorageCorruption)
+    async def storage_corruption(request, exc: StorageCorruption):
+        return JSONResponse(status_code=503, content={"detail": str(exc)})
 
     async def authorize(authorization: Annotated[str | None, Header()] = None) -> None:
         expected = f"Bearer {app.state.operator_token}"
@@ -95,9 +102,13 @@ def create_app(
     @app.get("/health")
     async def health() -> dict:
         status = "ready" if app.state.model.available else "unavailable"
+        storage = await asyncio.to_thread(app.state.store.storage_health)
         return {
-            "status": "ok" if status == "ready" else "degraded",
+            "status": "ok"
+            if status == "ready" and storage["status"] == "ok"
+            else "degraded",
             "model": status,
+            "storage": storage["status"],
             "memory": "configured" if app.state.memory else "disabled",
         }
 
@@ -139,6 +150,10 @@ def create_app(
             return inspection(result, app.state.registry.schemas(profile))
         except (OSError, ValueError) as exc:
             raise HTTPException(422, "Prompt files or profile are invalid") from exc
+
+    @api.get("/storage/health")
+    def storage_health() -> dict:
+        return app.state.store.storage_health()
 
     @api.get("/sessions")
     def sessions() -> list[dict]:
