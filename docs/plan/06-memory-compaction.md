@@ -1,6 +1,6 @@
 # Phase 6: OpenViking integration and context compaction
 
-Status: in progress — recall/commit implemented; compaction and live verification pending
+Status: local implementation complete — live verification pending
 
 Depends on: phase 5
 
@@ -57,3 +57,16 @@ Provide explicit extraction refresh and scratch round-trip operations. The live
 probe must verify recalled content in the next run's persisted prompt, not merely
 trust a model's answer. Pending/failed/ambiguous extraction is visible. Do not
 blindly replay memory writes. Live instance configuration is still required.
+
+
+## Local completion checkpoint
+
+Implemented extraction refresh, summary-only compaction, whole-group memory
+conversion, numbered immutable transcript archives, transaction recovery, run
+message inspection across archives, conservative context guarding, and explicit
+scratch memory verification API/CLI. Unknown API fields are rejected. Automated
+checks cover repeat compaction, pending/failed summaries, crash after rotation,
+index deletion, and a probe that cannot pass from a model's claim alone.
+
+Live exit is still pending the existing OpenViking endpoint/version/roots and
+credential reference. No live contact, rollout, or Hermes change has occurred.

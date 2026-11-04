@@ -6,6 +6,7 @@ import logging
 import traceback
 from dataclasses import dataclass
 
+from solakit.core.compaction import Compactor, ContextLimit, request_bytes
 from solakit.core.config import Config
 from solakit.core.io import durable
 from solakit.core.memory import MemoryClient, MemoryUnavailable
@@ -41,6 +42,7 @@ class Execution:
             model,
         )
         self.memory = memory
+        self.compactor = Compactor(store, memory)
         self.semaphore = asyncio.Semaphore(config.model.concurrency)
         self.queues: dict[str, asyncio.Queue] = {}
         self.workers: dict[str, asyncio.Task] = {}
@@ -130,6 +132,19 @@ class Execution:
                     at=now(),
                     recall=recall,
                 )
+                history = await durable(self.store.transcript, session.id)
+                tools = self.registry.schemas(run.profile)
+                preview = [
+                    {"role": "system", "content": prompt},
+                    *valid_history(history),
+                    {"role": "user", "content": pending.text},
+                ]
+                if (
+                    request_bytes(self.config.model.model_id, preview, tools)
+                    > self.config.profiles[run.profile].context_budget
+                ):
+                    self.compactor.memory = self.memory
+                    run.compaction = await self.compactor.compact(session)
                 run.prompt_sha256 = await durable(
                     self.store.write_prompt, run.id, prompt
                 )
@@ -137,7 +152,12 @@ class Execution:
                 await self._loop(run, session, prompt, pending.text)
                 if self.memory and session.memory_scope == "shared":
                     history = await durable(self.store.transcript, session.id)
-                    new_messages = [m for m in history if m["run_id"] == run.id]
+                    new_messages = [
+                        m
+                        for m in history
+                        if m["run_id"] == run.id
+                        and m.get("kind", "message") == "message"
+                    ]
                     if new_messages:
                         try:
                             run.memory_commit = await self.memory.scoped(
@@ -146,6 +166,9 @@ class Execution:
                             run.memory_status = run.memory_commit["status"]
                         except MemoryUnavailable:
                             run.memory_status = "commit_failed_or_uncertain"
+        except ContextLimit as exc:
+            run.status = RunStatus.context_limit
+            run.error = str(exc)
         except MemoryUnavailable:
             run.status = RunStatus.memory_unavailable
             run.memory_status = "recall_failed"
@@ -201,9 +224,13 @@ class Execution:
             ),
         )
         for step in range(cfg.max_steps):
-            data = await self.model.complete(
-                messages, self.registry.schemas(run.profile)
-            )
+            tools = self.registry.schemas(run.profile)
+            if (
+                request_bytes(self.config.model.model_id, messages, tools)
+                > cfg.context_budget
+            ):
+                raise ContextLimit("Request exceeds conservative context byte budget")
+            data = await self.model.complete(messages, tools)
             if step == 0:
                 await durable(self.store.append_message, session.id, user)
             run.steps = step + 1

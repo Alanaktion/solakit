@@ -627,6 +627,27 @@ transcript entry. Compaction never happens inside a run, and the
 pre-compaction transcript file is rotated, not truncated away
 (`<session-id>.jsonl.1`, kept forever, per house archival doctrine).
 
+Compaction uses a dedicated OpenViking summary-only session with self/peer
+long-term extraction disabled and working-memory summaries enabled. Only a
+completed task and nonempty completed archive overview can replace active context.
+A prepared manifest records the source hash and boundary before numbered archive
+rotation; startup finishes interrupted rotations before serving. Original archive
+bytes are immutable. A transcript with unresolved storage damage cannot compact.
+
+Until an exact local tokenizer is configured, `context_budget` also caps a
+conservative serialized UTF-8 byte guard over the full model request (including
+prompt, history, task, and tools). This intentionally triggers earlier than a
+model token limit and is never presented as measured token usage. If prompt/task
+alone or a mid-run request exceeds the guard, end as `context_limit`; compaction
+never runs inside a tool loop and no oversized request is sent silently.
+
+`POST /api/runs/{id}/memory/refresh` polls acknowledged extraction without replaying
+writes. `POST /api/memory/probe` / `sola memory-test --fact ... --query ...
+--expected ...` deliberately create a shared scratch session, wait for extraction,
+and verify the expected text in the next persisted system prompt. This writes a
+real scratch fact; never run automatically at startup or on a cron. A live probe
+against the existing instance precedes the pilot; mocks do not satisfy that gate.
+
 ## 11. Observability & the dry-run
 
 - `GET /api/prompt` and `sola prompt --profile blog` (thin CLI over the

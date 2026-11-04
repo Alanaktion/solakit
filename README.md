@@ -159,8 +159,8 @@ from future model requests, with the skipped count in each run record. A data
 ownership lock prevents a second server from recovering an active server's runs.
 Run uvicorn with one worker. No fallback model is attempted.
 
-Memory is disabled by default. Context compaction is not implemented yet;
-runs currently use the full valid transcript. Isolated memory is refused.
+Memory is disabled by default. Oversized requests compact between turns using completed OpenViking summaries;
+when that cannot complete, runs end as `context_limit` before oversized inference. Isolated memory is refused.
 Discord and scheduling remain disabled.
 
 ## OpenViking (phase 6, in progress)
@@ -191,3 +191,18 @@ configured canonical URI roots. Prompt inspection still makes no memory calls.
 
 Current implementation: phases 1–5 complete; phase 6 partial; phases 7–9 planned.
 No Discord pilot, production configuration, deployment, or Hermes changes were made.
+
+
+Phase 6 now includes completed-summary compaction, numbered transcript archives,
+rotation recovery, and extraction refresh. `/api/sessions/{id}` lists archives;
+`GET /api/sessions/{id}/archives/{number}` inspects them. Run inspection includes
+its messages even after archival. `context_budget` uses a conservative UTF-8
+serialized-request byte guard, not a fabricated token count; adjust it alongside
+the pinned model's capacity. Oversized SOUL/task/tool-loop context fails explicitly.
+
+Use `POST /api/runs/{id}/memory/refresh` to inspect extraction completion without
+replaying writes. For the first real OpenViking contact, invoke `sola memory-test
+--fact "<deliberate scratch fact>" --query "<recall query>" --expected "<unique text>"`.
+This writes a shared scratch fact and verifies recall in the next run's persisted
+prompt. It is never automatic. Configure and verify the actual installed server
+before a Discord pilot or scheduled work; live verification remains pending.

@@ -84,6 +84,9 @@ class Store:
                 self.ownership.close()
                 raise RuntimeError("Another runtime owns this data directory") from None
         try:
+            from solakit.core.compaction import recover_rotations
+
+            recover_rotations(self)
             self.rebuild()
             self.recover()
         except BaseException:
@@ -304,6 +307,17 @@ class Store:
                 raise self._corruption(path, "invalid_message") from exc
         return records
 
+    def archives(self, session_id: str) -> list[str]:
+        self.session(session_id)
+        paths = (self.root / "sessions").glob(f"{safe_id(session_id)}.jsonl.[0-9]*")
+        return [p.name for p in sorted(paths, key=lambda p: int(p.suffix[1:]))]
+
+    def all_messages(self, session_id: str) -> list[dict]:
+        records = []
+        for name in self.archives(session_id):
+            records.extend(self._read(self.root / "sessions" / name))
+        return records + self.transcript(session_id)
+
     def save_run(self, run: Run) -> None:
         with self.lock:
             record = self.redactor.redact(run.model_dump(mode="json"))
@@ -328,6 +342,9 @@ class Store:
         record["prompt"] = (
             prompt.read_bytes().decode("utf-8") if prompt.exists() else None
         )
+        record["messages"] = [
+            m for m in self.all_messages(record["session"]) if m["run_id"] == run_id
+        ]
         record["memory_events"] = self.memory_events(run_id)
         record["tools"] = self._read(self._path("runs", run_id, ".tools.jsonl"))
         record["diagnostics"] = self._read(

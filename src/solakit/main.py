@@ -13,7 +13,8 @@ from starlette.responses import JSONResponse
 
 from solakit.core.config import Config
 from solakit.core.loop import Execution
-from solakit.core.memory import MemoryClient
+from solakit.core.memory import MemoryClient, MemoryUnavailable
+from solakit.core.memory_ops import probe, refresh_run
 from solakit.core.model import ModelClient, ModelUnavailable
 from solakit.core.prompt import inspection, read_prompt
 from solakit.core.routing import SessionRouter
@@ -33,6 +34,19 @@ class RunRequest(BaseModel):
 
 class CreateSessionRequest(Session):
     model_config = ConfigDict(extra="forbid")
+
+
+class MemoryProbeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    fact: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=4000)
+    ]
+    query: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)
+    ]
+    expected: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)
+    ]
 
 
 async def probe_model(model: ModelClient) -> dict[str, str]:
@@ -179,7 +193,11 @@ def create_app(
     def session(session_id: str) -> dict:
         try:
             metadata = app.state.store.session(session_id).model_dump(mode="json")
-            return {**metadata, "messages": app.state.store.transcript(session_id)}
+            return {
+                **metadata,
+                "messages": app.state.store.transcript(session_id),
+                "archives": app.state.store.archives(session_id),
+            }
         except (FileNotFoundError, ValueError) as exc:
             raise HTTPException(404, "Session not found") from exc
 
@@ -208,6 +226,37 @@ def create_app(
             return app.state.store.run(run_id)
         except (FileNotFoundError, ValueError) as exc:
             raise HTTPException(404, "Run not found") from exc
+
+    @api.get("/sessions/{session_id}/archives/{number}")
+    def archive(session_id: str, number: int) -> list[dict]:
+        if number < 1:
+            raise HTTPException(404, "Archive not found")
+        name = f"{session_id}.jsonl.{number}"
+        try:
+            if name not in app.state.store.archives(session_id):
+                raise FileNotFoundError(name)
+            return app.state.store._read(app.state.store.root / "sessions" / name)
+        except (ValueError, FileNotFoundError) as exc:
+            raise HTTPException(404, "Archive not found") from exc
+
+    @api.post("/runs/{run_id}/memory/refresh")
+    async def refresh_memory(run_id: str) -> dict:
+        try:
+            run = await refresh_run(app.state.execution, run_id)
+            return run.model_dump(mode="json")
+        except FileNotFoundError as exc:
+            raise HTTPException(404, "Run not found") from exc
+        except (ValueError, MemoryUnavailable) as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @api.post("/memory/probe")
+    async def memory_probe(request: MemoryProbeRequest) -> dict:
+        try:
+            return await probe(
+                app.state.execution, request.fact, request.query, request.expected
+            )
+        except (ValueError, MemoryUnavailable) as exc:
+            raise HTTPException(409, str(exc)) from exc
 
     @api.post("/runs/{run_id}/cancel")
     async def cancel(run_id: str) -> dict:

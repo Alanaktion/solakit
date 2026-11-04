@@ -29,6 +29,12 @@ def main() -> None:
     commands.add_parser(
         "check", help="Validate config, secrets, prompt files and tool grants offline"
     )
+    memory = commands.add_parser(
+        "memory-test", help="Explicit live scratch memory round-trip"
+    )
+    memory.add_argument("--fact", required=True)
+    memory.add_argument("--query", required=True)
+    memory.add_argument("--expected", required=True)
     args = parser.parse_args()
     if args.command == "check":
         try:
@@ -39,6 +45,26 @@ def main() -> None:
         return
     try:
         token = load_config().operator_token.resolve()
+        if args.command == "memory-test":
+            response = httpx.post(
+                f"{args.url.rstrip('/')}/api/memory/probe",
+                json={
+                    "fact": args.fact,
+                    "query": args.query,
+                    "expected": args.expected,
+                },
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=None,
+                trust_env=args.trust_env,
+            )
+            response.raise_for_status()
+            data = response.json()
+            print(json.dumps(data, ensure_ascii=False, indent=2))
+            if not data["passed"]:
+                parser.exit(
+                    1, "Memory verification did not pass; inspect its run evidence.\n"
+                )
+            return
         response = httpx.get(
             f"{args.url.rstrip('/')}/api/prompt",
             params={"profile": args.profile, "session": args.session},

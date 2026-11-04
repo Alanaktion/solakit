@@ -6,7 +6,10 @@ before each remote write and refuse ambiguous replays, rather than duplicating
 memories after a lost response. Each run has a stable remote session identity.
 """
 
+import asyncio
 import json
+import re
+import time
 
 import httpx
 
@@ -108,14 +111,24 @@ class ScopedMemory:
             raise MemoryUnavailable("Invalid memory content")
         return result
 
-    async def commit(self, store: Store, run_id: str, messages: list[dict]) -> dict:
+    async def commit(
+        self,
+        store: Store,
+        run_id: str,
+        messages: list[dict],
+        *,
+        summary_only: bool = False,
+    ) -> dict:
         self.check()
         remote = f"solakit-{safe_id(run_id)}"
         events = await durable(store.memory_events, run_id)
         if events:
-            latest = events[-1]
-            if latest["stage"] == "accepted":
-                return latest["result"]
+            accepted = next(
+                (event for event in reversed(events) if event["stage"] == "accepted"),
+                None,
+            )
+            if accepted:
+                return accepted["result"]
             # No append or commit replay without a verified remote idempotency API.
             raise MemoryUnavailable(
                 "Ambiguous prior memory write; reconcile remote session"
@@ -123,9 +136,23 @@ class ScopedMemory:
         await durable(
             store.log_memory, run_id, {"stage": "creating", "session": remote}
         )
-        await self._client.request(
-            "GET", f"sessions/{remote}", params={"auto_create": "true"}
-        )
+        if summary_only:
+            await self._client.request(
+                "POST",
+                "sessions",
+                json={
+                    "session_id": remote,
+                    "memory_policy": {
+                        "self": {"enabled": False},
+                        "peer": {"enabled": False},
+                        "working_memory": {"enabled": True},
+                    },
+                },
+            )
+        else:
+            await self._client.request(
+                "GET", f"sessions/{remote}", params={"auto_create": "true"}
+            )
         # Disable inherited automatic extraction on this run-owned remote session.
         await self._client.request(
             "PATCH", f"sessions/{remote}/config", json={"auto_commit_policy": None}
@@ -147,7 +174,9 @@ class ScopedMemory:
             store.log_memory, run_id, {"stage": "committing", "session": remote}
         )
         result = await self._client.request(
-            "POST", f"sessions/{remote}/commit", json={"keep_recent_count": 0}
+            "POST",
+            f"sessions/{remote}/commit",
+            json={"keep_recent_count": 0, "enable_working_memory": summary_only},
         )
         if not isinstance(result, dict) or result.get("status") not in {
             "accepted",
@@ -161,6 +190,75 @@ class ScopedMemory:
         )
         return result
 
+    async def refresh(self, store: Store, run_id: str, *, wait_s: float = 0) -> dict:
+        self.check()
+        events = await durable(store.memory_events, run_id)
+        accepted = next((e for e in reversed(events) if e["stage"] == "accepted"), None)
+        if accepted is None:
+            raise MemoryUnavailable("No acknowledged commit; reconcile before recovery")
+        result = accepted["result"]
+        if result["status"] == "skipped":
+            return result
+        task_id = result.get("task_id")
+        if not isinstance(task_id, str):
+            raise MemoryUnavailable("Accepted commit has no extraction task ID")
+        safe_id(task_id)
+        deadline = time.monotonic() + wait_s
+        while True:
+            task = await self._client.request("GET", f"tasks/{task_id}")
+            if not isinstance(task, dict) or task.get("status") not in {
+                "pending",
+                "running",
+                "cancelling",
+                "completed",
+                "failed",
+                "cancelled",
+            }:
+                raise MemoryUnavailable("Invalid extraction task response")
+            outcome = {**result, "status": task["status"], "task": task}
+            await durable(
+                store.log_memory, run_id, {"stage": "task", "result": outcome}
+            )
+            if (
+                task["status"] in {"completed", "failed", "cancelled"}
+                or time.monotonic() >= deadline
+            ):
+                return outcome
+            await asyncio.sleep(min(0.25, max(0, deadline - time.monotonic())))
+
+    async def summary(
+        self, store: Store, operation: str, messages: list[dict]
+    ) -> tuple[str, str]:
+        await self.commit(store, operation, messages, summary_only=True)
+        outcome = await self.refresh(
+            store, operation, wait_s=self._client.config.timeout_s
+        )
+        if outcome["status"] != "completed":
+            raise MemoryUnavailable(f"Compaction extraction is {outcome['status']}")
+        remote = f"solakit-{safe_id(operation)}"
+        uri = outcome.get("archive_uri", "")
+        match = re.fullmatch(
+            r"viking://[^?#]+/sessions/"
+            + re.escape(remote)
+            + r"/history/(archive_\d+)",
+            uri,
+        )
+        if not match:
+            raise MemoryUnavailable(
+                "Compaction acknowledgment has invalid archive identity"
+            )
+        archive = await self._client.request(
+            "GET", f"sessions/{remote}/archives/{match[1]}"
+        )
+        if (
+            not isinstance(archive, dict)
+            or archive.get("status") != "completed"
+            or not isinstance(archive.get("overview"), str)
+            or not archive["overview"].strip()
+        ):
+            raise MemoryUnavailable("Completed compaction archive has no summary")
+        return archive["overview"], uri + "/.overview.md"
+
 
 def memory_messages(messages: list[dict]) -> list[dict]:
     converted = []
@@ -173,7 +271,11 @@ def memory_messages(messages: list[dict]) -> list[dict]:
             if message.get("content"):
                 parts.append({"type": "text", "text": message["content"]})
             calls = message.get("tool_calls") or []
-            following = messages[index + 1 : index + 1 + len(calls)]
+            following = []
+            for candidate in messages[index + 1 : index + 1 + len(calls)]:
+                if candidate["role"] != "tool":
+                    break
+                following.append(candidate)
             results = {
                 m.get("tool_call_id"): m for m in following if m["role"] == "tool"
             }
@@ -189,9 +291,7 @@ def memory_messages(messages: list[dict]) -> list[dict]:
                         "tool_id": call["id"],
                         "tool_name": function["name"],
                         "tool_input": arguments,
-                        "tool_status": "completed"
-                        if call["id"] in results
-                        else "error",
+                        "tool_status": tool_status(results.get(call["id"])),
                         "tool_output": results.get(call["id"], {}).get(
                             "content", "Interrupted"
                         ),
@@ -199,6 +299,20 @@ def memory_messages(messages: list[dict]) -> list[dict]:
                 )
             if parts:
                 converted.append({"role": role, "parts": parts})
-            index += len(calls)
+            index += len(following)
         index += 1
     return converted
+
+
+def tool_status(result: dict | None) -> str:
+    if result is None:
+        return "error"
+    try:
+        payload = json.loads(result.get("content", ""))
+        return (
+            "error"
+            if isinstance(payload, dict) and payload.get("error")
+            else "completed"
+        )
+    except (ValueError, TypeError):
+        return "completed"

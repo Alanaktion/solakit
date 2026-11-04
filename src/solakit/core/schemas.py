@@ -38,6 +38,9 @@ class Message(BaseModel):
     origin: Origin
     run_id: str
     ts: datetime = Field(default_factory=now)
+    kind: Literal["message", "compaction"] = "message"
+    summary_uri: str | None = None
+    archive: str | None = None
 
     def model_message(self) -> dict[str, Any]:
         return self.model_dump(
@@ -58,6 +61,7 @@ class RunStatus(StrEnum):
     interrupted = "interrupted"
     budget_exceeded = "budget_exceeded"
     missed = "missed"
+    context_limit = "context_limit"
 
 
 class Run(BaseModel):
@@ -75,4 +79,5 @@ class Run(BaseModel):
     context_skipped_messages: int = 0
     memory_status: str = "disabled"
     memory_commit: dict[str, Any] | None = None
+    compaction: dict[str, Any] | None = None
     error: str | None = None
