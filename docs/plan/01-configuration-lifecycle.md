@@ -1,6 +1,6 @@
 # Phase 1: Configuration, profiles, and application lifecycle
 
-Status: planned
+Status: complete
 
 Depends on: none
 
@@ -14,4 +14,7 @@ Depends on: none
 
 ## Completion record
 
-Record implementation, validation, and remaining limitations here before marking complete.
+Implemented strict TOML models, secret references, shared records, authenticated /api,
+lifespan wiring, exact model health probe, and explicit adapter status.
+Validated with 7 passing tests, Ruff lint and format checks. Integrations remain
+unimplemented and disabled; execution still uses the temporary injected-agent seam.

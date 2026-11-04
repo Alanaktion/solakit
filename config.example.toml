@@ -1,0 +1,29 @@
+# Copy to config.toml; reference the live persona, never a forked copy.
+timezone = "America/Denver"
+enabled_tools = []
+
+[operator_token]
+env = "SOLA_OPERATOR_TOKEN"
+# Alternatively: file = "/absolute/path/to/operator-token" (mode 0600)
+
+[model]
+base_url = "http://127.0.0.1:8001/v1"
+model_id = "OsaurusAI/Qwen3.6-35B-A3B-mxfp4"
+concurrency = 1
+
+[paths]
+data = "~/sola-data"
+soul = "/absolute/path/to/live/SOUL.md"
+fragments = "fragments"
+
+[profiles.interactive]
+max_steps = 60
+tools = []
+write_scopes = []
+capabilities = []
+
+[profiles.maintenance]
+max_steps = 60
+tools = []
+write_scopes = []
+capabilities = []

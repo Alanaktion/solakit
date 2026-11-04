@@ -258,8 +258,9 @@ A channel is a Python module implementing one protocol:
 
 ```python
 class ChannelAdapter(Protocol):
-    type: str                                    # "discord", "api", …
-    async def start(self, emit: EmitFn) -> None: ...   # begin receiving
+    type: str  # "discord", "api", …
+
+    async def start(self, emit: EmitFn) -> None: ...  # begin receiving
     async def stop(self) -> None: ...
     async def deliver(self, channel_cfg, message: OutboundMessage) -> str:
         """Post a message; return the external message ID."""
@@ -445,18 +446,31 @@ FastAPI endpoint, because it's the same machinery Alan already chose.
 # tools/blog.py
 from app.tools import tool, ToolContext, ToolResult
 
-@tool(name="blog.create_post", profiles=["blog", "dream", "interactive"],
-      writes=["repo:blog"], timeout=30)
-async def create_post(ctx: ToolContext, title: str, body: str,
-                      slug: str | None = None,
-                      tags: list[str] = []) -> ToolResult:
+
+@tool(
+    name="blog.create_post",
+    profiles=["blog", "dream", "interactive"],
+    writes=["repo:blog"],
+    timeout=30,
+)
+async def create_post(
+    ctx: ToolContext,
+    title: str,
+    body: str,
+    slug: str | None = None,
+    tags: list[str] = [],
+) -> ToolResult:
     """Create a new draft post in the blog repo. Returns its path."""
     ...
 
-@tool(name="blog.publish", profiles=["blog", "dream", "interactive"],
-      writes=["repo:blog", "network"], timeout=120)
-async def publish(ctx: ToolContext, path: str,
-                  commit_message: str) -> ToolResult:
+
+@tool(
+    name="blog.publish",
+    profiles=["blog", "dream", "interactive"],
+    writes=["repo:blog", "network"],
+    timeout=120,
+)
+async def publish(ctx: ToolContext, path: str, commit_message: str) -> ToolResult:
     """Commit and push one post in the blog repo. Returns sha + URL."""
     ...
 ```
