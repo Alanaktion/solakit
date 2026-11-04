@@ -16,7 +16,7 @@ from solakit.core.config import Config
 from solakit.core.loop import Execution
 from solakit.core.memory import MemoryClient, MemoryUnavailable
 from solakit.core.memory_ops import probe, refresh_run, watch_memory
-from solakit.core.model import ModelClient, ModelUnavailable
+from solakit.core.model import ModelClient, ModelUnavailable, safe_url
 from solakit.core.prompt import inspection, read_prompt
 from solakit.core.routing import SessionRouter
 from solakit.core.schemas import Origin, Session, now
@@ -127,7 +127,68 @@ def create_app(
             handler.addFilter(log_filter)
         memory_watch = None
         try:
+            runtime_logger.info("Starting Solakit: checking model and memory backends")
             app.state.model_health = await probe_model(app.state.model)
+            runtime_logger.info(
+                "Model: %s; endpoint=%s; pinned=%s; max_tokens=%d",
+                app.state.model_health["status"],
+                safe_url(cfg.model.base_url),
+                cfg.model.model_id,
+                cfg.model.max_tokens,
+            )
+            app.state.memory_health = {
+                "status": "disabled",
+                "checked_at": None,
+            }
+            if app.state.memory:
+                try:
+                    await app.state.memory.preflight()
+                    memory_status = "ready"
+                except MemoryUnavailable:
+                    memory_status = "unavailable"
+                app.state.memory_health = {
+                    "status": memory_status,
+                    "checked_at": now().isoformat(),
+                }
+                log = (
+                    runtime_logger.info
+                    if memory_status == "ready"
+                    else runtime_logger.warning
+                )
+                log(
+                    "Memory: %s; endpoint=%s; roots=%s; authenticated=%s; "
+                    "read-only startup check (not extraction/write verification)",
+                    memory_status,
+                    safe_url(cfg.memory.base_url),
+                    ", ".join(cfg.memory.roots),
+                    bool(memory_key),
+                )
+                if memory_status == "unavailable":
+                    runtime_logger.warning(
+                        "Check memory endpoint, credentials, user "
+                        "and root permissions; "
+                        "continuing with memory unavailable at startup"
+                    )
+            else:
+                runtime_logger.info("Memory: disabled")
+            catalog = app.state.registry.catalog()
+            runtime_logger.info(
+                "Tools: modules=%s; loaded=%s",
+                ", ".join(catalog["modules"]) or "none",
+                ", ".join(tool["name"] for tool in catalog["tools"]) or "none",
+            )
+            for profile, names in catalog["profiles"].items():
+                runtime_logger.info(
+                    "Profile %s: tools=%s", profile, ", ".join(names) or "none"
+                )
+            runtime_logger.info(
+                "Storage: %s; configured channels=%d; configured jobs=%d; "
+                "live_ready=%s",
+                app.state.store.storage_health()["status"],
+                len(cfg.channels),
+                len(cfg.jobs),
+                cfg.live_ready,
+            )
             await app.state.channels.start()
             await app.state.jobs.start()
             if app.state.memory:
@@ -177,11 +238,14 @@ def create_app(
         storage = await asyncio.to_thread(app.state.store.storage_health)
         return {
             "status": "ok"
-            if status == "ready" and storage["status"] == "ok"
+            if status == "ready"
+            and storage["status"] == "ok"
+            and app.state.memory_health["status"] in {"ready", "disabled"}
             else "degraded",
             "model": status,
             "storage": storage["status"],
-            "memory": "configured" if app.state.memory else "disabled",
+            "memory": app.state.memory_health["status"],
+            "memory_checked_at": app.state.memory_health["checked_at"],
         }
 
     @app.get("/health/model")
@@ -239,6 +303,10 @@ def create_app(
     @api.get("/storage/health")
     def storage_health() -> dict:
         return app.state.store.storage_health()
+
+    @api.get("/tools")
+    async def tools() -> dict:
+        return app.state.redactor.redact(app.state.registry.catalog())
 
     @api.get("/profiles")
     async def profiles() -> list[str]:

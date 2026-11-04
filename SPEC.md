@@ -606,10 +606,16 @@ The P1 operator UI is a thin server-rendered API client. Shared app contracts:
   connects channel adapters, runs model pre-flight (failure to reach the
   model at boot is a *warning state*, not a crash — the app stays up,
   `/health` reports it, runs abort per §4.2 until the model is back).
+  Startup logs summarize model, storage, tools/profile grants and integrations.
+  Enabled memory performs authenticated read-only `fs/stat` checks of configured
+  roots, bounded to five seconds total (or its shorter configured timeout).
+  Failure warns without stopping startup; memory startup state/time appear in
+  `/health`. This is not live extraction/write verification or a rollout gate.
 - **Mount points:** Jinja2 templates mount at `/`, packaged local assets at
   `/static`, API routes under `/api`, and `/health` at root. Vendored HTMX and
   small vanilla JS enhance forms; no build step or remote assets. The UI has no
   direct storage/execution access, and never changes prompt/history bytes.
+  A read-only `/tools` page lists loaded tools and effective profile grants.
   Presentation escapes plain text and masks resolved credentials; tool details
   come only from redacted run logs. Light/dark follows the system preference.
 - **Activation:** integrations stay disabled by default. Enabled Discord channels
@@ -633,6 +639,7 @@ The P1 operator UI is a thin server-rendered API client. Shared app contracts:
 | Route | Purpose |
 |-------|---------|
 | `GET /health` · `GET /health/model` | app status; pinned-model reachability/ID |
+| `GET /api/tools` | loaded tool catalog, argument schemas, and effective profile grants |
 | `GET /api/profiles` | configured profile names for session creation |
 | `GET /api/sessions` · `GET /api/sessions/{id}` | session list; metadata + transcript |
 | `POST /api/sessions/{id}/messages` | post a message (the **api channel** — lands in that pinned session and runs) |

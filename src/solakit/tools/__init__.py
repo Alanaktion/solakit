@@ -188,6 +188,30 @@ class Registry:
                     raise ValueError(f"tool {tool_name} is not available to {name}")
                 self.check_writes(self.tools[tool_name], profile)
 
+    def catalog(self) -> dict:
+        """Loaded tools and effective grants, shared by diagnostics and API."""
+        return {
+            "modules": list(self.config.enabled_tools),
+            "profiles": {
+                name: [schema["function"]["name"] for schema in self.schemas(name)]
+                for name in sorted(self.config.profiles)
+            },
+            "tools": [
+                {
+                    "name": name,
+                    "description": inspect.getdoc(registered.function) or "",
+                    "parameters": registered.schema()["function"]["parameters"],
+                    "profiles": [
+                        profile
+                        for profile in sorted(self.config.profiles)
+                        if self.allowed(name, profile)
+                    ],
+                    "writes": list(registered.manifest.writes),
+                }
+                for name, registered in sorted(self.tools.items())
+            ],
+        }
+
     def schemas(self, profile: str) -> list[dict]:
         return [
             self.tools[name].schema()

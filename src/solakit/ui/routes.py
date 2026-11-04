@@ -145,14 +145,17 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
         )
 
     async def chat_context(request, data, history, error=None):
-        all_sessions, state = await asyncio.gather(
-            api(request, "GET", "/api/sessions"), health(request)
+        all_sessions, state, catalog = await asyncio.gather(
+            api(request, "GET", "/api/sessions"),
+            health(request),
+            api(request, "GET", "/api/tools"),
         )
         all_sessions.sort(key=lambda item: timestamp(item["created_at"]), reverse=True)
         return {
             "session": data,
             "turns": history,
             "sessions": all_sessions,
+            "tool_count": len(catalog["profiles"].get(data["default_profile"], [])),
             "health": state,
             "error": error,
         }
@@ -311,6 +314,18 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
             await chat_context(request, data, history, error),
             status,
         )
+
+    @router.get("/tools")
+    async def tools_page(request: Request):
+        if not logged_in(request):
+            return login_redirect(request)
+        try:
+            catalog, state = await asyncio.gather(
+                api(request, "GET", "/api/tools"), health(request)
+            )
+            return render(request, "tools.html", {"catalog": catalog, "health": state})
+        except APIError as exc:
+            return render(request, "error.html", {"error": exc.detail}, exc.status)
 
     @router.get("/ui/status", response_class=HTMLResponse)
     async def status_chips(request: Request):

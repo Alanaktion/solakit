@@ -19,7 +19,7 @@
     <div class="header-inner">
       <a class="brand" href="/"><span class="moon" aria-hidden="true">🌙</span><span>Solakit<small>sola · ryu</small></span></a>
       {% block header_actions %}
-      <nav class="nav" aria-label="Main navigation"><a href="/" class="nav-link">Sessions</a></nav>
+      <nav class="nav" aria-label="Main navigation"><a href="/" class="nav-link" {% if request.url.path == "/" or request.url.path.startswith("/sessions/") %}aria-current="page"{% endif %}>Sessions</a><a href="/tools" class="nav-link" {% if request.url.path == "/tools" %}aria-current="page"{% endif %}>Tools</a></nav>
       <form method="post" action="/logout"><button class="quiet-button" type="submit">Sign out <span aria-hidden="true">↗</span></button></form>
       {% endblock %}
     </div>

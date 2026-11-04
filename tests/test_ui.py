@@ -265,3 +265,100 @@ def test_local_assets_theme_and_minimal_navigation(config, mock_model):
         page = client.get("/")
         assert 'href="/prompt"' not in page.text
         assert 'href="/jobs"' not in page.text
+
+
+def test_tools_catalog_distinguishes_loaded_from_granted(config, mock_model):
+    config.enabled_tools = ["files"]
+    config.profiles["interactive"].tools = ["files.read"]
+    with TestClient(create_app(config=config, model=mock_model)) as client:
+        assert client.get("/api/tools").status_code == 401
+        assert (
+            client.get("/tools", follow_redirects=False).headers["location"] == "/login"
+        )
+        sign_in(client)
+        catalog = client.get("/api/tools").json()
+        assert catalog["modules"] == ["files"]
+        assert catalog["profiles"]["interactive"] == ["files.read"]
+        read = next(tool for tool in catalog["tools"] if tool["name"] == "files.read")
+        write = next(tool for tool in catalog["tools"] if tool["name"] == "files.write")
+        assert read["profiles"] == ["interactive"]
+        assert write["profiles"] == []
+        assert "path" in read["parameters"]["properties"]
+        page = client.get("/tools")
+        assert page.status_code == 200
+        assert "files.read" in page.text and "files.write" in page.text
+        assert "No description provided" not in page.text
+        new_session(client)
+        assert "1 tool" in client.get("/sessions/evening").text
+
+
+def test_empty_tools_page(config, mock_model):
+    with TestClient(create_app(config=config, model=mock_model)) as client:
+        sign_in(client)
+        response = client.get("/tools")
+        assert response.status_code == 200
+        assert "No tools loaded." in response.text
+        assert "No tools granted" in response.text
+
+
+def test_real_tool_call_visible_in_chat_fragment(config):
+    import json
+
+    from solakit.tools import ToolContext, ToolResult, tool
+
+    completions = []
+
+    def backend(request):
+        if request.url.path.endswith("/models"):
+            return httpx.Response(200, json={"data": [{"id": config.model.model_id}]})
+        body = json.loads(request.content)
+        completions.append(body)
+        message = {"role": "assistant", "content": "Finished"}
+        if len(completions) == 1:
+            message = {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": "test-call",
+                        "type": "function",
+                        "function": {
+                            "name": "echo",
+                            "arguments": '{"text":"<script>example</script>"}',
+                        },
+                    }
+                ],
+            }
+        return httpx.Response(
+            200,
+            json={
+                "model": config.model.model_id,
+                "choices": [{"message": message}],
+            },
+        )
+
+    @tool(name="echo", profiles=["interactive"])
+    async def echo(ctx: ToolContext, text: str) -> ToolResult:
+        return ToolResult(content=text)
+
+    model = ModelClient(config.model, transport=httpx.MockTransport(backend))
+    app = create_app(config=config, model=model)
+    with TestClient(app) as client:
+        app.state.registry.register(echo)
+        config.profiles["interactive"].tools = ["echo"]
+        app.state.registry.validate()
+        sign_in(client)
+        new_session(client)
+        response = client.post(
+            "/sessions/evening/messages",
+            data={"message": "Use echo"},
+            headers={"HX-Request": "true"},
+        )
+        assert response.status_code == 200
+        assert '<details class="tool-call">' in response.text
+        assert "echo" in response.text and "Finished" in response.text
+        assert "&lt;script&gt;example&lt;/script&gt;" in response.text
+        assert "<script>example</script>" not in response.text
+        assert len(completions) == 2
+        assert completions[1]["messages"][-1]["tool_call_id"] == "test-call"
+        assert '<details class="tool-call">' in client.get("/sessions/evening").text

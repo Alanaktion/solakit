@@ -4,6 +4,7 @@ A small FastAPI runtime for Sola, with a file-defined prompt, pinned model,
 profile-enforced tools, external OpenViking memory, and portable session evidence.
 Python 3.12+ and uv are required. [SPEC.md](SPEC.md) defines behavior;
 [phase plans](docs/plan/README.md) record implementation and release gates.
+[AGENTS.md](AGENTS.md) maps the architecture and contribution rules.
 
 Phases 1–8 are locally implemented. Phase 6's live OpenViking round-trip is still
 pending on the Sola host, and phase 9's domain tools/complete acceptance remain
@@ -43,10 +44,18 @@ settings offline. Errors name files and safe TOML locations without echoing thei
 contents. Startup performs the same checks. Model unavailability leaves the app
 up with degraded health; runs use the exact pinned model or fail without fallback.
 Run uvicorn with one worker; a data ownership lock prevents concurrent recovery.
+Startup logs summarize model readiness, authenticated read-only access to every
+configured memory root, loaded tool modules/names, effective profile grants,
+storage status and configured integration counts. Memory failures warn without
+preventing startup. These checks do not write memory or verify extraction.
+`/health` and its UI chips report the memory startup result and check timestamp,
+not a continuous connectivity guarantee.
 Open `http://127.0.0.1:8382/` for the moonlight-themed operator UI. Sign in with
 **the operator token**, separately from the model API key. The UI supports system
 light/dark preference, session creation, plain-text chat, collapsed tool evidence,
-and reported health. Chat fills the viewport with a desktop session sidebar,
+and reported health. The Tools page lists loaded tools, argument schemas, write
+requirements, and effective profile grants. Chat links to its profile’s tools
+and shows calls as expandable redacted argument/result cards. Chat fills the viewport with a desktop session sidebar,
 message bubbles, and a bottom-anchored composer; on mobile, the conversation takes
 the full width with a back link to sessions. Sessions use their configured default
 profile for chat.
@@ -78,6 +87,7 @@ In the managed workspace use `UV_CACHE_DIR=/workspace/.cache/uv`.
 Create `POST /api/sessions` with `{"id":"web-main","default_profile":"interactive"}`.
 Post `{"message":"Hello"}` to `/api/sessions/web-main/messages`; optional `profile`
 selects that run's profile. Unknown/misplaced fields are rejected, not ignored.
+Inspect `/api/tools` for loaded tools and effective profile grants.
 Inspect `/api/sessions`, `/api/sessions/{id}`, `/api/runs`, and `/api/runs/{id}`.
 Run inspection includes prompt, messages, tool calls, diagnostics, memory and
 send evidence. Session inspection lists numbered archives, available through

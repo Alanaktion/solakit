@@ -6,7 +6,7 @@
   <section class="turn" data-run-id="{{ turn.run.id }}" data-run-status="{{ turn.run.status }}">
     {% for message in turn["items"] %}
       {% if message.role == 'tool' %}
-      <details class="tool-call"><summary><span aria-hidden="true">⌁</span> {{ message.name }} <span class="tool-state {% if message.error %}tool-error{% endif %}">{{ message.state }}</span></summary><div class="tool-details"><h3>Arguments</h3><pre><code>{{ message.args }}</code></pre><h3>Result</h3><pre><code>{{ message.content }}</code></pre></div></details>
+      <details class="tool-call"><summary><span aria-hidden="true">⌁</span> Tool call: {{ message.name }} <span class="tool-state {% if message.error %}tool-error{% endif %}">{{ message.state }}</span></summary><div class="tool-details"><h3>Arguments</h3><pre><code>{{ message.args }}</code></pre><h3>Result</h3><pre><code>{{ message.content }}</code></pre></div></details>
       {% else %}
       <article class="message message-{{ message.role }}"><div class="message-author"><span class="avatar avatar-{{ message.role }}" aria-hidden="true">{% if message.role == 'user' %}A{% else %}☾{% endif %}</span><strong>{% if message.role == 'user' %}You{% elif message.role == 'assistant' %}Sola{% else %}{{ message.role }}{% endif %}</strong></div><div class="message-content">{{ message.content }}</div></article>
       {% endif %}

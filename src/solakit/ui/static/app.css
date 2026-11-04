@@ -216,3 +216,22 @@ pre { overflow-x: auto; font-size: 11px; line-height: 1.75; color: var(--ink); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }
+/* Capability inspection uses the same API as startup diagnostics. */
+.nav { display: flex; gap: 20px; }
+.nav-link { border-bottom-color: transparent; }
+.nav-link[aria-current="page"] { border-bottom-color: var(--accent); }
+.tool-profiles, .tool-card { padding: 24px; }
+.tool-profiles { margin-bottom: 24px; }
+.tool-profiles dl > div, .tool-card dl > div { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 16px; padding: 12px 0; border-top: 1px solid var(--line); font-size: 12px; }
+.tool-profiles dt, .tool-card dt { color: var(--muted); }
+.tool-profiles dd, .tool-card dd { margin: 0; overflow-wrap: anywhere; }
+.tool-profiles a { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+.tool-catalog { display: grid; gap: 16px; }
+.tool-card h2 { font-size: 16px; overflow-wrap: anywhere; }
+.tool-description { font-size: 13px; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere; }
+.tool-card summary { cursor: pointer; font-size: 12px; color: var(--accent); }
+@media (max-width: 640px) {
+  .nav { gap: 12px; }
+  .chat-app .header-inner { gap: 12px; }
+  .tool-profiles dl > div, .tool-card dl > div { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+}

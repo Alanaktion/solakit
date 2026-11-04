@@ -49,6 +49,19 @@ class MemoryClient:
         except (httpx.HTTPError, ValueError, TypeError, AttributeError) as exc:
             raise MemoryUnavailable("OpenViking request failed") from exc
 
+    async def preflight(self) -> None:
+        """Read-only authenticated checks of every configured memory root."""
+        try:
+            async with asyncio.timeout(min(5, self.config.timeout_s)):
+                for root in self.config.roots:
+                    result = await self.request("GET", "fs/stat", params={"uri": root})
+                    if not isinstance(result, dict):
+                        raise MemoryUnavailable(
+                            "OpenViking returned invalid root metadata"
+                        )
+        except TimeoutError as exc:
+            raise MemoryUnavailable("OpenViking startup check timed out") from exc
+
     def scoped(self, session: Session):
         return ScopedMemory(self, session)
 
