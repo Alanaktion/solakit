@@ -44,6 +44,7 @@ class ModelConfig(StrictModel):
     model_id: str = "OsaurusAI/Qwen3.6-35B-A3B-mxfp4"
     concurrency: int = Field(default=1, ge=1)
     timeout_s: float = Field(default=120, gt=0)
+    trust_env: bool = False
 
 
 class MemoryConfig(StrictModel):
@@ -52,6 +53,7 @@ class MemoryConfig(StrictModel):
     api_key: SecretRef | None = None
     roots: list[str] = Field(default_factory=list)
     timeout_s: float = Field(default=30, gt=0)
+    trust_env: bool = False
     recall_limit: int = Field(default=5, ge=1, le=20)
 
     @model_validator(mode="after")

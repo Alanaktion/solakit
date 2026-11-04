@@ -32,7 +32,11 @@ async def read(ctx: ToolContext, path: str) -> ToolResult:
         content = await durable(bounded_read)
     except (OSError, UnicodeError) as exc:
         raise ToolError("Cannot read requested file") from exc
-    return ToolResult(content=content)
+    return ToolResult(
+        content=content,
+        content_complete=len(content)
+        <= ctx.config.profiles[ctx.profile].tool_output_max_chars,
+    )
 
 
 @tool(name="files.write", profiles=PROFILES, writes=["filesystem"])

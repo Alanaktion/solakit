@@ -18,3 +18,45 @@ def test_cli_prints_exact_prompt(config, monkeypatch, capsys):
     main()
     assert capsys.readouterr().out == "Verbatim\r\n  "
     assert captured[0][1]["headers"]["Authorization"] == "Bearer operator-test-token"
+    assert captured[0][1]["trust_env"] is False
+
+
+def test_offline_check_has_actionable_error_without_traceback(
+    config, monkeypatch, capsys
+):
+    import pytest
+
+    monkeypatch.setattr("solakit.core.startup.load_config", lambda: config)
+    monkeypatch.setattr("sys.argv", ["sola", "check"])
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("offline check must not call external services")
+
+    monkeypatch.setattr("httpx.AsyncClient", forbidden)
+    main()
+    assert capsys.readouterr().out == "Configuration valid.\n"
+    (config.paths.fragments / "profiles/interactive.md").unlink()
+    with pytest.raises(SystemExit) as error:
+        main()
+    assert error.value.code == 1
+    stderr = capsys.readouterr().err
+    assert "Configuration error:" in stderr
+    assert "profiles/interactive.md" in stderr
+    assert "Traceback" not in stderr
+
+
+def test_offline_check_reports_invalid_tool_grants(config, monkeypatch, capsys):
+    import pytest
+
+    monkeypatch.setattr("solakit.core.startup.load_config", lambda: config)
+    monkeypatch.setattr("sys.argv", ["sola", "check"])
+    config.enabled_tools = ["files"]
+    config.profiles["interactive"].tools = ["files.write"]
+    with pytest.raises(SystemExit) as error:
+        main()
+    assert error.value.code == 1
+    stderr = capsys.readouterr().err
+    assert (
+        "Configuration error: filesystem tool requires explicit write roots" in stderr
+    )
+    assert "Traceback" not in stderr

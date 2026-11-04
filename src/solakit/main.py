@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel, StringConstraints
 from starlette.responses import JSONResponse
 
-from solakit.core.config import Config, load_config
+from solakit.core.config import Config
 from solakit.core.loop import Execution
 from solakit.core.memory import MemoryClient
 from solakit.core.model import ModelClient, ModelUnavailable
@@ -19,8 +19,8 @@ from solakit.core.prompt import inspection, read_prompt
 from solakit.core.routing import SessionRouter
 from solakit.core.schemas import Origin, Session, now
 from solakit.core.secrets import RedactingFilter, Redactor
+from solakit.core.startup import prepare
 from solakit.core.store import StorageCorruption, Store, safe_id
-from solakit.tools import Registry
 
 
 class RunRequest(BaseModel):
@@ -43,19 +43,16 @@ def create_app(
 ) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        cfg = config if config is not None else load_config()
-        token = cfg.operator_token.resolve()
+        prepared = await asyncio.to_thread(prepare, config)
+        cfg, token, memory_key = (
+            prepared.config,
+            prepared.operator_token,
+            prepared.memory_key,
+        )
         app.state.config = cfg
         app.state.operator_token = token
-        app.state.redactor = Redactor([token])
-        memory_key = (
-            cfg.memory.api_key.resolve()
-            if cfg.memory.enabled and cfg.memory.api_key
-            else None
-        )
-        if memory_key:
-            app.state.redactor = Redactor([token, memory_key])
-        app.state.registry = Registry(cfg)
+        app.state.redactor = Redactor([token] + ([memory_key] if memory_key else []))
+        app.state.registry = prepared.registry
         app.state.store = await asyncio.to_thread(
             Store, cfg.paths.data, app.state.redactor, exclusive=True
         )

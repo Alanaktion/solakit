@@ -203,8 +203,10 @@ delivery — that message delivered to a channel (§6.3 / §7.2).
 
 Budgets per run (defaults in config, overridable per profile):
 `max_steps: 40`, `tool_timeout_s: 120`, `tool_output_max_chars: 20000`
-(truncate with an explicit `[truncated]` marker —
-...[truncated 18463 chars] never silently),
+(truncate with an explicit counted marker such as `[truncated 18463 chars]`,
+never silently; the marker fits within the limit and its count includes all
+characters removed to make room for it. Bounded sources with an unknown total
+use an explicit lower bound, e.g. `[truncated >=27 chars]`),
 `repair_attempts: 2`.
 
 Streaming: the loop stores identical messages either way. Discord/API
@@ -234,6 +236,14 @@ fragment, in Sola's / Alan's words.
 
 Fragments are joined with `\n\n---\n\n`. Assembled prompt, SHA-256, and
 token count are recorded per run.
+
+Required SOUL and profile fragment files must exist and be readable UTF-8 at
+startup; an empty profile file is valid, an absent one is a configuration error.
+The recall header is also required when memory is enabled. Files are still read
+live for every run. An empty-but-present context file remains a fragment. The
+recall header is preserved verbatim, including its trailing newline, before the
+builder adds a newline and the `<recall>` block. These rules deliberately preserve
+literal whitespace; no fragment is stripped or silently replaced with empty text.
 
 ### 5.2 Session history in context
 
@@ -646,8 +656,15 @@ pre-compaction transcript file is rotated, not truncated away
   genuinely dangerous is in no scheduled profile, and `maintenance`
   runs only when Alan invokes it.
 - **Secrets:** referenced by env var / keychain / `0600` file path, never
-  inline in config. Run logs redact values whose keys match
-  `*KEY / *TOKEN / *SECRET / *PASSWORD` before writing.
+  inline in config. Run metadata, tool logs, memory-intent journals, and execution
+  diagnostics redact values whose keys match `*KEY / *TOKEN / *SECRET / *PASSWORD`
+  (case-insensitive suffix matching), plus resolved credential values wherever
+  they occur. Session transcripts and exact prompt files are deliberate verbatim
+  exceptions: they preserve the actual conversation and model input for audit
+  and replay (§2.6, §5, §10). Transcript content is not rewritten before being
+  reused as model history. Both are private operator archives, not sanitized
+  diagnostic exports. The suffix rule intentionally also matches keys such as
+  `monkey`; a log may redact more than only credential-shaped names.
 - **Model identity check** (§4.2) doubles as the fallback guard: a
   different model answering at the endpoint aborts the run.
 

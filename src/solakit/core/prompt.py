@@ -83,3 +83,23 @@ def inspection(prompt: str, tools: list[dict]) -> dict:
         "tokens": None,
         "tools": tools,
     }
+
+
+def validate_prompt_files(config: Config) -> None:
+    """Fail startup on absent/unreadable required UTF-8 inputs; never invent text."""
+    required = [config.paths.soul]
+    for profile in config.profiles:
+        safe_id(profile)
+        required.append(config.paths.fragments / "profiles" / f"{profile}.md")
+    if config.memory.enabled:
+        required.append(config.paths.fragments / "recall-header.md")
+    context = config.paths.fragments / "context.md"
+    if context.exists():
+        required.append(context)
+    for path in required:
+        try:
+            path.read_bytes().decode("utf-8")
+        except (OSError, UnicodeError) as exc:
+            raise ValueError(
+                f"Prompt input must be a readable UTF-8 file: {path}"
+            ) from exc

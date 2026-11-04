@@ -8,6 +8,7 @@ import sys
 import httpx
 
 from solakit.core.config import load_config
+from solakit.core.startup import ConfigurationError, prepare
 
 
 def main() -> None:
@@ -15,12 +16,27 @@ def main() -> None:
     parser.add_argument(
         "--url", default=os.environ.get("SOLA_URL", "http://127.0.0.1:8000")
     )
+    parser.add_argument(
+        "--trust-env",
+        action="store_true",
+        help="Honor proxy and certificate environment variables",
+    )
     commands = parser.add_subparsers(dest="command", required=True)
     prompt = commands.add_parser("prompt")
     prompt.add_argument("--profile", default="interactive")
     prompt.add_argument("--session", default="inspection")
     prompt.add_argument("--json", action="store_true")
+    commands.add_parser(
+        "check", help="Validate config, secrets, prompt files and tool grants offline"
+    )
     args = parser.parse_args()
+    if args.command == "check":
+        try:
+            prepare()
+        except ConfigurationError as exc:
+            parser.exit(1, f"Configuration error: {exc}\n")
+        print("Configuration valid.")
+        return
     try:
         token = load_config().operator_token.resolve()
         response = httpx.get(
@@ -28,6 +44,7 @@ def main() -> None:
             params={"profile": args.profile, "session": args.session},
             headers={"Authorization": f"Bearer {token}"},
             timeout=30,
+            trust_env=args.trust_env,
         )
         response.raise_for_status()
         data = response.json()

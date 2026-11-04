@@ -28,6 +28,7 @@ class MemoryClient:
             headers={"X-API-Key": key} if key else {},
             timeout=config.timeout_s,
             transport=transport,
+            trust_env=config.trust_env,
         )
 
     async def request(self, method: str, path: str, **kwargs):

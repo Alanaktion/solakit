@@ -65,3 +65,23 @@ def test_live_soul_verbatim(config):
     config.paths.soul.write_bytes(b"Changed live persona")
     assert read_prompt(config, **kwargs).startswith("Changed live persona")
     assert "<recall>" not in first
+
+
+def test_empty_context_and_header_newline_remain_literal(config):
+    from solakit.core.prompt import SEPARATOR
+
+    kwargs = dict(
+        profile="interactive",
+        session="s",
+        origin="api",
+        at=datetime.fromisoformat("2026-11-04T19:00:00+00:00"),
+    )
+    absent = read_prompt(config, **kwargs)
+    (config.paths.fragments / "context.md").write_bytes(b"")
+    empty = read_prompt(config, **kwargs)
+    assert absent.count(SEPARATOR) == 2
+    assert empty.count(SEPARATOR) == 3
+    assert SEPARATOR + SEPARATOR in empty
+    (config.paths.fragments / "recall-header.md").write_bytes(b"Header\n")
+    recalled = read_prompt(config, recall="record", **kwargs)
+    assert "Header\n\n<recall>\nrecord\n</recall>" in recalled

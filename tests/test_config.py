@@ -54,3 +54,68 @@ def test_redaction():
     record = logging.LogRecord("test", 20, "", 1, "value %s", ("actual-secret",), None)
     RedactingFilter(redactor).filter(record)
     assert record.getMessage() == "value [redacted]"
+
+
+def test_prompt_files_checked_before_startup_resources(config, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from solakit.core.config import Profile
+    from solakit.core.startup import ConfigurationError
+    from solakit.main import create_app
+
+    config.profiles["blog"] = Profile()
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError(
+            "startup must validate prompt files before allocating services"
+        )
+
+    monkeypatch.setattr("solakit.main.Store", forbidden)
+    monkeypatch.setattr("solakit.main.ModelClient", forbidden)
+    with pytest.raises(ConfigurationError, match=r"profiles/blog\.md"):
+        with TestClient(create_app(config=config)):
+            pass
+    assert not config.paths.data.exists()
+
+
+@pytest.mark.parametrize("which", ["soul", "profile", "context", "recall_header"])
+def test_prompt_inputs_must_be_readable_utf8(config, which):
+    from solakit.core.prompt import validate_prompt_files
+
+    if which == "soul":
+        path = config.paths.soul
+    elif which == "profile":
+        path = config.paths.fragments / "profiles/interactive.md"
+    elif which == "context":
+        path = config.paths.fragments / "context.md"
+    else:
+        from solakit.core.config import MemoryConfig
+
+        config.memory = MemoryConfig(
+            enabled=True,
+            base_url="http://memory",
+            roots=["viking://user/sola/memories"],
+        )
+        path = config.paths.fragments / "recall-header.md"
+    path.write_bytes(b"\xff\xfe")
+    with pytest.raises(ValueError, match="readable UTF-8"):
+        validate_prompt_files(config)
+
+
+def test_startup_diagnostics_do_not_echo_invalid_secret_values(tmp_path, monkeypatch):
+    from solakit.core.startup import ConfigurationError, prepare
+
+    path = tmp_path / "invalid.toml"
+    path.write_text('[operator_token]\nvalue = "must-not-echo-this-secret"\n')
+    monkeypatch.setenv("SOLA_CONFIG", str(path))
+    with pytest.raises(ConfigurationError) as error:
+        prepare()
+    assert "operator_token.value" in str(error.value)
+    assert "must-not-echo-this-secret" not in str(error.value)
+
+
+def test_secret_key_suffix_matching_is_intentional():
+    assert Redactor().redact({"monkey": "value", "key_count": 2}) == {
+        "monkey": "[redacted]",
+        "key_count": 2,
+    }

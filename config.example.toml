@@ -10,6 +10,8 @@ env = "SOLA_OPERATOR_TOKEN"
 base_url = "http://127.0.0.1:8001/v1"
 model_id = "OsaurusAI/Qwen3.6-35B-A3B-mxfp4"
 concurrency = 1
+# Opt in only if this service needs proxy/CA environment settings.
+trust_env = false
 
 [paths]
 data = "~/sola-data"
@@ -32,6 +34,7 @@ capabilities = []
 # shared-memory roots; confirm its API version before enabling.
 [memory]
 enabled = false
+trust_env = false
 # base_url = "http://127.0.0.1:1933"
 # roots = ["viking://user/sola/memories"]
 # api_key = { env = "OPENVIKING_API_KEY" }

@@ -17,6 +17,7 @@ class ModelClient:
             base_url=config.base_url.rstrip("/") + "/",
             timeout=config.timeout_s,
             transport=transport,
+            trust_env=config.trust_env,
         )
 
     async def preflight(self) -> None:

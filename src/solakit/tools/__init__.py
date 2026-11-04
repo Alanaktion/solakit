@@ -27,6 +27,26 @@ class ToolResult(BaseModel):
     content: str
     error: bool = False
     repairable: bool = False
+    content_complete: bool = True
+
+
+def truncate_output(content: str, limit: int, *, complete: bool) -> tuple[str, int]:
+    """Count Unicode characters, including the marker within the output budget.
+
+    A bounded source cannot promise its full length. Report an explicit lower
+    bound rather than presenting the observed prefix as the original output.
+    """
+    if complete and len(content) <= limit:
+        return content, 0
+    retained = min(len(content), limit)
+    while True:
+        omitted = len(content) - retained
+        count = str(omitted) if complete else f">={omitted}"
+        marker = f"\n[truncated {count} chars]"
+        budget = min(len(content), max(0, limit - len(marker)))
+        if budget == retained:
+            return content[:retained] + marker, omitted
+        retained = budget
 
 
 @dataclass
@@ -218,9 +238,12 @@ class Registry:
             detail = traceback.format_exc()
         finally:
             limit = self.config.profiles[ctx.profile].tool_output_max_chars
-            output_chars = len(result.content)
-            if output_chars > limit:
-                result.content = result.content[: limit - 12] + "\n[truncated]"
+            observed_chars = len(result.content)
+            source_complete = result.content_complete
+            result.content, omitted = truncate_output(
+                result.content, limit, complete=source_complete
+            )
+            result.content_complete = source_complete and omitted == 0
             await durable(
                 ctx.store.log_tool,
                 ctx.run_id,
@@ -228,7 +251,10 @@ class Registry:
                     "name": name,
                     "args": parsed if parsed is not None else arguments,
                     "ms": round((time.monotonic() - start) * 1000),
-                    "output_chars": output_chars,
+                    "output_chars": observed_chars if source_complete else None,
+                    "output_observed_chars": observed_chars,
+                    "omitted_chars": omitted if source_complete else None,
+                    "omitted_chars_min": omitted,
                     "result": result.model_dump(),
                     "traceback": detail,
                 },

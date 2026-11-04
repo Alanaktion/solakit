@@ -50,7 +50,8 @@ def test_drop_in_gating_validation_and_logs(config, monkeypatch):
         result = await registry.dispatch(
             "fixture.echo", json.dumps({"text": "x" * 60}), ctx
         )
-        assert result.content.endswith("[truncated]")
+        assert "[truncated " in result.content
+        assert not result.content_complete
         assert len(result.content) <= 32
         profile.tools = []
         assert (
@@ -172,3 +173,50 @@ def test_file_reads_reject_special_files_without_waiting_for_a_writer(config, tm
         ).content
         == "readable"
     )
+
+
+@pytest.mark.parametrize("length", [31, 32, 33, 999, 1000, 10001, 30000])
+def test_truncation_reports_exact_unicode_count_within_budget(length):
+    import re
+
+    from solakit.tools import truncate_output
+
+    content = "雪" * length
+    rendered, omitted = truncate_output(content, 32, complete=True)
+    assert len(rendered) <= 32
+    if length <= 32:
+        assert rendered == content
+        assert omitted == 0
+    else:
+        prefix, marker = rendered.split("\n", 1)
+        assert content.startswith(prefix)
+        assert omitted == length - len(prefix)
+        assert int(re.fullmatch(r"\[truncated (\d+) chars\]", marker)[1]) == omitted
+
+
+def test_bounded_file_truncation_does_not_invent_a_total(config, tmp_path):
+    import re
+
+    path = tmp_path / "large.txt"
+    path.write_text("雪" * 30000)
+    config.enabled_tools = ["files"]
+    config.profiles["interactive"] = Profile(
+        tools=["files.read"],
+        read_scopes=[f"path:{tmp_path}"],
+        tool_output_max_chars=20000,
+    )
+    registry, ctx = Registry(config), context(config)
+    result = asyncio.run(
+        registry.dispatch("files.read", json.dumps({"path": str(path)}), ctx)
+    )
+    prefix, marker = result.content.rsplit("\n", 1)
+    minimum = int(re.fullmatch(r"\[truncated >=(\d+) chars\]", marker)[1])
+    assert len(result.content) <= 20000
+    assert minimum == 20001 - len(prefix)
+    assert minimum <= 30000 - len(prefix)
+    assert not result.content_complete
+    logged = ctx.store._read(ctx.store.root / "runs/r.tools.jsonl")[0]
+    assert logged["output_chars"] is None
+    assert logged["output_observed_chars"] == 20001
+    assert logged["omitted_chars"] is None
+    assert logged["omitted_chars_min"] == minimum

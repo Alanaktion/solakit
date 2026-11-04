@@ -14,6 +14,12 @@ cp config.example.toml config.toml
 uv run uvicorn solakit.main:app --host 127.0.0.1 --port 8000
 ```
 
+Run `uv run sola check` before starting the server. It checks configuration,
+secret references, prompt files, and tool grants offline, with concise errors.
+Startup performs the same checks before allocating runtime services. Uvicorn
+still includes its lifespan traceback when startup fails; the final
+`ConfigurationError` identifies the invalid field or missing file.
+
 Startup requires valid configuration and an operator secret. The model may be
 unavailable: the app stays up and `/health` reports degraded status.
 `/health/model` checks the exact pinned model ID, with no fallback.
@@ -47,6 +53,10 @@ on restart, with partial evidence preserved. Each `.json` run snapshot is backed
 by append-only `.events.jsonl`. JSONL writes are fsynced. Prompt files preserve
 exact UTF-8 bytes, including CRLF; they are intentionally not redacted. Treat the
 data directory as private operator material, just like the source persona.
+Session transcripts are also intentionally verbatim, including user messages,
+assistant tool-call arguments and tool-result messages. They are reused unchanged
+as conversation history. Redaction applies to diagnostic records, not those
+archives; see SPEC §12 for the explicit distinction.
 
 Session metadata is published with an atomic rename after the file is fsynced;
 the containing directory is fsynced too. Abandoned temporary files are ignored.
@@ -77,9 +87,13 @@ fails, the original redacted diagnostic is emitted to operator logs instead.
 ## Prompt audit
 
 Create `fragments/profiles/<profile>.md` for each profile (an empty file is valid).
-`fragments/context.md` is optional. Nonempty supplied recall requires
-`fragments/recall-header.md`. All files, including the live SOUL reference, are
-read anew without stripping whitespace or normalizing line endings.
+`fragments/context.md` is optional. Startup validates the SOUL and all profile
+files, even for profiles not yet used. When memory is enabled it also requires
+`fragments/recall-header.md`; supplied recall in dry-run inspection requires it
+as well. All files, including the live SOUL reference, are
+read anew without stripping whitespace or normalizing line endings. An empty
+context file remains a fragment with separators; a newline-terminated recall
+header keeps that newline before the builder adds another newline for the block.
 
 `GET /api/prompt?profile=interactive&session=inspection` returns exact prompt,
 SHA-256, nullable token count, and enabled tool schemas. Optional `recall`, `at`
@@ -87,6 +101,13 @@ SHA-256, nullable token count, and enabled tool schemas. Optional `recall`, `at`
 This endpoint performs no inference or memory retrieval and writes no history.
 `sola prompt --profile interactive` prints exact UTF-8 bytes; `--json` includes
 metadata. Set `SOLA_URL` or `sola --url ...` to select the API server.
+
+Model and memory HTTP clients default to `trust_env = false`: local services do
+not inherit proxy or certificate-environment settings accidentally. Set
+`[model].trust_env = true` or `[memory].trust_env = true` when that service needs
+your managed proxy or environment-provided CA trust. The CLI likewise defaults
+to explicit direct API access; use `sola --trust-env ...` to opt in. These settings
+do not change the process environment or other tools' networking.
 
 ## Tool configuration
 
@@ -104,8 +125,13 @@ No filesystem roots or capabilities are granted by default.
 Add a typed function decorated with `@tool` to `solakit.tools.<module>` and list
 that module in configuration. The registry validates grants at startup and
 again at dispatch, validates arguments strictly, enforces timeouts, truncates
-output visibly, and logs every call. Sync tools run in worker threads. Python
-cannot stop a running worker thread on timeout: blocking mutating integrations
+output visibly, and logs every call. Complete outputs use a counted marker such
+as `[truncated 18463 chars]`. Bounded file reads use a truthful lower bound such
+as `[truncated >=27 chars]` and do not read the entire file just to count its tail.
+The marker fits within the configured character budget. Logs distinguish exact
+`output_chars`/`omitted_chars` from `output_observed_chars`/`omitted_chars_min`, and
+results carry `content_complete` to indicate whether the full output was returned.
+Sync tools run in worker threads. Python cannot stop a running worker thread on timeout: blocking mutating integrations
 must supply their own bounded/cancellable operations. Configured Python modules
 are trusted operator code; profile checks constrain exposed operations, not
 arbitrary Python imported by the operator. The filesystem is operator-controlled;

@@ -500,3 +500,58 @@ def test_shutdown_finishes_other_runs_when_one_finalization_fails(config, monkey
         assert all(worker.done() for worker in execution.workers.values())
 
     asyncio.run(exercise())
+
+
+def test_verbatim_transcript_and_context_are_separate_from_redacted_logs(config):
+    from solakit.core.secrets import Redactor
+
+    secret = config.operator_token.resolve()
+    captured = []
+
+    def handler(request):
+        if request.url.path.endswith("/models"):
+            return model_list(config)
+        captured.append(json.loads(request.content))
+        if len(captured) == 1:
+            return completion(
+                config, calls=[call(arguments=json.dumps({"text": secret}))]
+            )
+        return completion(config, "done")
+
+    execution = setup(config, handler)
+    execution.store.redactor = Redactor([secret])
+
+    @tool(name="echo", profiles=["interactive"])
+    async def echo(ctx: ToolContext, text: str) -> ToolResult:
+        return ToolResult(content=text)
+
+    execution.registry.register(echo)
+    config.profiles["interactive"].tools = ["echo"]
+    execution.registry.validate()
+
+    async def exercise():
+        first = await execution.submit("s", f"Verbatim {secret}")
+        assert first.status == "completed"
+        transcript = execution.store.transcript("s")
+        assert transcript[0]["content"] == f"Verbatim {secret}"
+        assert transcript[1]["tool_calls"][0]["function"]["arguments"] == json.dumps(
+            {"text": secret}
+        )
+        assert json.loads(transcript[2]["content"])["content"] == secret
+        await execution.submit("s", "continue")
+        history = captured[-1]["messages"][1:-1]
+        assert history[0]["content"] == f"Verbatim {secret}"
+        assert history[1]["tool_calls"][0]["function"]["arguments"] == json.dumps(
+            {"text": secret}
+        )
+        assert json.loads(history[2]["content"])["content"] == secret
+        root = execution.store.root
+        for pattern in ("*.events.jsonl", "*.tools.jsonl"):
+            for path in (root / "runs").glob(pattern):
+                assert secret.encode() not in path.read_bytes()
+        assert b"[redacted]" in (root / "runs" / f"{first.id}.tools.jsonl").read_bytes()
+        execution.store.write_prompt("verbatim-audit", secret)
+        assert (root / "runs/verbatim-audit.prompt.txt").read_bytes() == secret.encode()
+        await execution.close()
+
+    asyncio.run(exercise())

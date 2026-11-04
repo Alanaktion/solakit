@@ -55,3 +55,8 @@ atomic session metadata with isolated damage reporting, explicit corruption/torn
 recovery, serialized shutdown/admission, idempotent cancellation, and redacted
 execution diagnostics. Regression tests cover the reproduced failures. These fixes
 do not advance phase 6 or enable any integrations.
+
+
+The subsequent [adversarial review resolution](adversarial-review-resolution.md)
+records counted truncation, startup prompt validation and offline checks, explicit
+proxy/CA environment trust, and the clarified verbatim archive policy.
