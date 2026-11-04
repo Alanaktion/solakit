@@ -1,8 +1,10 @@
 """Application lifecycle and operator API; root is reserved for the UI."""
 
+import asyncio
 import logging
 import secrets
 from contextlib import asynccontextmanager
+from datetime import datetime
 from typing import Annotated
 
 import httpx
@@ -10,7 +12,9 @@ from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel, StringConstraints
 
 from solakit.core.config import Config, load_config
+from solakit.core.prompt import inspection, read_prompt
 from solakit.core.routing import SessionRouter
+from solakit.core.schemas import now
 from solakit.core.secrets import RedactingFilter, Redactor
 from solakit.core.store import Store
 from solakit.runtime import AgentNotConfigured, Runtime
@@ -106,6 +110,28 @@ def create_app(runtime: Runtime | None = None, config: Config | None = None) -> 
         except AgentNotConfigured as exc:
             raise HTTPException(503, "No agent configured") from exc
         return RunResponse(response=response)
+
+    @api.get("/prompt")
+    async def prompt(
+        profile: str = "interactive",
+        session: str = "inspection",
+        recall: str | None = None,
+        at: datetime | None = None,
+        origin: str = "api",
+    ) -> dict:
+        try:
+            result = await asyncio.to_thread(
+                read_prompt,
+                app.state.config,
+                profile=profile,
+                session=session,
+                origin=origin,
+                at=at or now(),
+                recall=recall,
+            )
+            return inspection(result, [])
+        except (OSError, ValueError) as exc:
+            raise HTTPException(422, "Prompt files or profile are invalid") from exc
 
     @api.get("/sessions")
     async def sessions() -> list[dict]:

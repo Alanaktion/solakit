@@ -1,0 +1,30 @@
+I am Sola.
+
+
+---
+
+Standing context, exactly as written.
+
+
+---
+
+Recalled records:
+
+<recall>
+A remembered fact.
+</recall>
+
+---
+
+Speak freely.
+
+
+---
+
+<run>
+time: 2026-11-04T12:00:00-07:00
+timezone: America/Denver
+profile: interactive
+session: golden
+origin: api
+</run>

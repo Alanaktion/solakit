@@ -45,3 +45,17 @@ on restart, with partial evidence preserved. Each `.json` run snapshot is backed
 by append-only `.events.jsonl`. JSONL writes are fsynced. Prompt files preserve
 exact UTF-8 bytes, including CRLF; they are intentionally not redacted. Treat the
 data directory as private operator material, just like the source persona.
+
+## Prompt audit
+
+Create `fragments/profiles/<profile>.md` for each profile (an empty file is valid).
+`fragments/context.md` is optional. Nonempty supplied recall requires
+`fragments/recall-header.md`. All files, including the live SOUL reference, are
+read anew without stripping whitespace or normalizing line endings.
+
+`GET /api/prompt?profile=interactive&session=inspection` returns exact prompt,
+SHA-256, nullable token count, and enabled tool schemas. Optional `recall`, `at`
+(timezone-aware ISO timestamp), and `origin` parameters make audits repeatable.
+This endpoint performs no inference or memory retrieval and writes no history.
+`sola prompt --profile interactive` prints exact UTF-8 bytes; `--json` includes
+metadata. Set `SOLA_URL` or `sola --url ...` to select the API server.

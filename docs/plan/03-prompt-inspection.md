@@ -1,6 +1,6 @@
 # Phase 3: Prompt sovereignty and dry-run inspection
 
-Status: planned
+Status: complete
 
 Depends on: phase 2
 
@@ -14,4 +14,9 @@ Depends on: phase 2
 
 ## Completion record
 
-Record implementation, validation, and remaining limitations here before marking complete.
+Implemented pure prompt assembly, live verbatim file reads, exact separator and
+fixed run facts, SHA-256 inspection API, and thin authenticated sola prompt CLI.
+A checked-in golden fixture includes supplied recall and tests byte equality.
+Dry-run tests forbid external HTTP calls and verify no history writes.
+Validated with 12 passing tests, Ruff lint and format checks. Tool schemas are
+empty until phase 4 supplies the registry; no hidden tools are advertised.
