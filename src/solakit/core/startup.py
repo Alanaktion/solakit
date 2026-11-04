@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 
 from pydantic import ValidationError
 
-from solakit.core.config import Config, load_config
+from solakit.core.config import Config, ConfigLoadError, load_config
 from solakit.core.prompt import validate_prompt_files
 from solakit.tools import Registry
 
@@ -24,6 +24,8 @@ class Prepared:
 def prepare(config: Config | None = None) -> Prepared:
     try:
         config = config if config is not None else load_config()
+    except ConfigLoadError as exc:
+        raise ConfigurationError(str(exc)) from None
     except ValidationError as exc:
         fields = [
             f"{'.'.join(str(part) for part in issue['loc'])}: {issue['type']}"

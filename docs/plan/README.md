@@ -60,3 +60,23 @@ do not advance phase 6 or enable any integrations.
 The subsequent [adversarial review resolution](adversarial-review-resolution.md)
 records counted truncation, startup prompt validation and offline checks, explicit
 proxy/CA environment trust, and the clarified verbatim archive policy.
+
+
+## Direction review sequencing
+
+The review of 81aa667 confirms the small-core/plugin direction. Next work is:
+
+1. Reject unknown session/message request fields and improve safe config-load
+   diagnostics before extending the API.
+2. Finish phase 6 locally: extraction status, safe summary-only compaction,
+   archive recovery, bounded context, and an explicit scratch-memory probe.
+3. Build phase 7/8 behind disabled-by-default integration settings, using mocks.
+   Local implementation may proceed after phase 6's automated checks; a live
+   Discord pilot and live jobs must wait for the deliberate OpenViking probe
+   and the complete phase 9 acceptance suite. Do not label mock checks live.
+4. Keep SPEC, behavior, tests, and operator documentation in the same commits.
+
+Retain existing documented MVP decisions: no Discord replay after downtime,
+ignore non-trigger authors entirely, shell maintenance-only, blog publishing
+capability separated from filesystem writes. Revisit these explicitly before
+production configuration. Hermes and its schedules stay untouched.

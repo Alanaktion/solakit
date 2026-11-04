@@ -1,6 +1,7 @@
 """Validated operator configuration; secrets are references, never TOML values."""
 
 import os
+import re
 import stat
 import tomllib
 from pathlib import Path
@@ -8,6 +9,10 @@ from typing import Literal, Self
 from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+
+class ConfigLoadError(ValueError):
+    """A safe operator-facing file/configuration diagnostic."""
 
 
 class StrictModel(BaseModel):
@@ -164,7 +169,21 @@ class Config(StrictModel):
 def load_config(path: Path | None = None) -> Config:
     """Resolve relative paths against the configuration directory."""
     path = path or Path(os.environ.get("SOLA_CONFIG", "config.toml"))
-    config = Config.model_validate(tomllib.loads(path.read_text()))
+    try:
+        source = path.read_text()
+    except FileNotFoundError:
+        raise ConfigLoadError(f"Configuration file not found: {path}") from None
+    except OSError:
+        raise ConfigLoadError(f"Configuration file is not readable: {path}") from None
+    try:
+        values = tomllib.loads(source)
+    except tomllib.TOMLDecodeError as exc:
+        position = re.search(
+            r"\(at (?:line \d+, column \d+|end of document)\)", str(exc)
+        )
+        location = f" {position[0]}" if position else ""
+        raise ConfigLoadError(f"Invalid TOML in {path}{location}") from None
+    config = Config.model_validate(values)
     base = path.resolve().parent
     for name in ("data", "soul", "fragments"):
         value = getattr(config.paths, name).expanduser()
@@ -175,5 +194,8 @@ def load_config(path: Path | None = None) -> Config:
     }
     code_root = Path(__file__).resolve().parents[3]
     if config.paths.data.resolve().is_relative_to(code_root):
-        raise ValueError("runtime data must live outside the code tree")
+        raise ConfigLoadError(
+            "Runtime data directory must live outside the code tree: "
+            f"{config.paths.data}"
+        )
     return config

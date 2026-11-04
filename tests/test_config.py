@@ -119,3 +119,21 @@ def test_secret_key_suffix_matching_is_intentional():
         "monkey": "[redacted]",
         "key_count": 2,
     }
+
+
+def test_config_load_errors_identify_path_and_position_without_contents(
+    tmp_path, monkeypatch
+):
+    from solakit.core.startup import ConfigurationError, prepare
+
+    path = tmp_path / "missing.toml"
+    monkeypatch.setenv("SOLA_CONFIG", str(path))
+    with pytest.raises(ConfigurationError, match="file not found") as error:
+        prepare()
+    assert str(path) in str(error.value)
+    path.write_text('secret = "DO_NOT_ECHO" invalid')
+    with pytest.raises(ConfigurationError, match="Invalid TOML") as error:
+        prepare()
+    assert str(path) in str(error.value)
+    assert "line 1, column" in str(error.value)
+    assert "DO_NOT_ECHO" not in str(error.value)

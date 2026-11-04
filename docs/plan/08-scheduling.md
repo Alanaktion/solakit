@@ -15,3 +15,11 @@ Depends on: phase 7
 ## Completion record
 
 Record implementation, validation, and remaining limitations here before marking complete.
+
+## Revised release gates
+
+Local scheduler tests may use mock adapters after phase 7 implementation. Live
+jobs remain disabled until the phase 6 live probe and phase 9 acceptance gates.
+Persist scheduling cursors and pause/last-run evidence outside the rebuildable
+index. Controlled-clock restart tests must distinguish skip from exactly one
+catch-up, and a job must remain non-overlapping while queued as well as running.

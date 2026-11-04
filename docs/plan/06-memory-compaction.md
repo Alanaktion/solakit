@@ -43,3 +43,17 @@ API contract references reviewed during implementation:
 [Sessions](https://github.com/volcengine/OpenViking/blob/main/docs/en/api/05-sessions.md),
 [Retrieval](https://github.com/volcengine/OpenViking/blob/main/docs/en/api/06-retrieval.md),
 [Content](https://github.com/volcengine/OpenViking/blob/main/docs/en/api/12-content.md).
+
+## Revised implementation gates
+
+Use completed, OpenViking-generated summaries only. Summary-only remote sessions
+must disable long-term extraction, so compaction does not re-extract the entire
+history. Preserve every original transcript in numbered archives, journal the
+rotation before it starts, and recover interrupted rotations at startup. Include
+whole assistant/tool groups. Refuse oversized requests when compaction cannot
+complete; never silently send unbounded context or estimate usage as real tokens.
+
+Provide explicit extraction refresh and scratch round-trip operations. The live
+probe must verify recalled content in the next run's persisted prompt, not merely
+trust a model's answer. Pending/failed/ambiguous extraction is visible. Do not
+blindly replay memory writes. Live instance configuration is still required.

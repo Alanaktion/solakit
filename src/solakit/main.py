@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException
-from pydantic import BaseModel, StringConstraints
+from pydantic import BaseModel, ConfigDict, StringConstraints
 from starlette.responses import JSONResponse
 
 from solakit.core.config import Config
@@ -24,10 +24,15 @@ from solakit.core.store import StorageCorruption, Store, safe_id
 
 
 class RunRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     message: Annotated[
         str, StringConstraints(strip_whitespace=True, min_length=1, max_length=32000)
     ]
     profile: str | None = None
+
+
+class CreateSessionRequest(Session):
+    model_config = ConfigDict(extra="forbid")
 
 
 async def probe_model(model: ModelClient) -> dict[str, str]:
@@ -157,7 +162,7 @@ def create_app(
         return app.state.store.list_records("sessions")
 
     @api.post("/sessions", status_code=201)
-    def create_session(session: Session) -> dict:
+    def create_session(session: CreateSessionRequest) -> dict:
         try:
             safe_id(session.id)
             if session.default_profile not in app.state.config.profiles:

@@ -43,3 +43,30 @@ def test_persistent_message_endpoint(config, auth, mock_model):
             ).status_code
             == 404
         )
+
+
+def test_misplaced_session_profile_and_unknown_message_fields_rejected(
+    config, auth, mock_model
+):
+    with TestClient(create_app(config=config, model=mock_model)) as client:
+        response = client.post(
+            "/api/sessions", headers=auth, json={"id": "poet", "profile": "poet"}
+        )
+        assert response.status_code == 422
+        assert client.get("/api/sessions", headers=auth).json() == []
+        assert (
+            client.post(
+                "/api/sessions",
+                headers=auth,
+                json={"id": "web", "default_profile": "interactive"},
+            ).status_code
+            == 201
+        )
+        assert (
+            client.post(
+                "/api/sessions/web/messages",
+                headers=auth,
+                json={"message": "Hi", "typo": True},
+            ).status_code
+            == 422
+        )

@@ -572,6 +572,10 @@ Alan handles the web UI. The spec therefore fixes only:
 - **Auth:** one operator token (header or session cookie once Alan's UI
   has login), stored as a `0600` file / env var. Discord has its own bot
   token. Nothing else.
+- **Request validation:** session creation uses `default_profile`; message posts
+  may select `profile`. Unknown or misplaced request fields are rejected with
+  HTTP 422, never accepted and ignored. Offline configuration errors name the
+  file and safe TOML position without echoing its contents.
 - **API (MVP):**
 
 | Route | Purpose |

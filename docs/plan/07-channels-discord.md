@@ -15,3 +15,12 @@ Depends on: phase 6
 ## Completion record
 
 Record implementation, validation, and remaining limitations here before marking complete.
+
+## Revised release gates
+
+Phase 6's automated compaction/recovery suite precedes implementation. The live
+pilot additionally requires a successful deliberate OpenViking round-trip and
+phase 9 acceptance. Adapter activation remains explicit and disabled by default.
+Keep platform details out of prompt assembly. Use stored final transcript text,
+persist delivery outcomes, and test liveness, gating, parent routing, oversized
+code blocks, and job-to-conversation continuity before connecting a real bot.
