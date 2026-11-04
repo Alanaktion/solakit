@@ -1,6 +1,9 @@
 # Copy to config.toml; reference the live persona, never a forked copy.
 timezone = "America/Denver"
 enabled_tools = []
+# Set true only after the live memory probe and full acceptance suite pass.
+live_ready = false
+# discord_token = { env = "SOLA_DISCORD_TOKEN" }
 
 [operator_token]
 env = "SOLA_OPERATOR_TOKEN"
@@ -37,4 +40,27 @@ enabled = false
 trust_env = false
 # base_url = "http://127.0.0.1:1933"
 # roots = ["viking://user/sola/memories"]
+# user = "sola"
 # api_key = { env = "OPENVIKING_API_KEY" }
+
+
+[[channels]]
+id = "discord-pilot"
+type = "discord"
+channel_id = "000000000000000000"
+session = "pilot"
+profile = "interactive"
+trigger = "mention"
+trigger_authors = ["ALAN_DISCORD_USER_ID"]
+enabled = false
+
+[[jobs]]
+id = "example-poll"
+cron = "0 19 * * *"
+timezone = "America/Denver"
+profile = "interactive"
+task = "Review the configured inbox on {date}."
+bind_session = "discord-pilot"
+polling = true
+catch_up = false
+enabled = false

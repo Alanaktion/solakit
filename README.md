@@ -1,208 +1,179 @@
 # Solakit
 
-A small FastAPI runtime for Sola. Python 3.12+ and uv are required.
-Implementation progress and exit checks are in [docs/plan](docs/plan/README.md).
-The full target is [SPEC.md](SPEC.md); integrations are implemented in phases.
+A small FastAPI runtime for Sola, with a file-defined prompt, pinned model,
+profile-enforced tools, external OpenViking memory, and portable session evidence.
+Python 3.12+ and uv are required. [SPEC.md](SPEC.md) defines behavior;
+[phase plans](docs/plan/README.md) record implementation and release gates.
+
+Phases 1–8 are locally implemented. Phase 6's live OpenViking round-trip is still
+pending on the Sola host, and phase 9's domain tools/complete acceptance remain
+unfinished. Discord and jobs are disabled by default. No production pilot,
+deployment, Hermes changes, or live memory writes have been performed.
 
 ## Development
 
 ```sh
 uv sync --frozen
 cp config.example.toml config.toml
-# Edit paths, including the reference to the existing live SOUL.md.
-# Supply SOLA_OPERATOR_TOKEN through your environment or use a 0600 token file.
+# Configure the reference to the existing live SOUL.md and an external data tree.
+# Provide an operator-token env reference or a mode-0600 token-file reference.
+# Create fragments/profiles/<profile>.md for every profile (empty is valid).
+uv run sola check
 uv run uvicorn solakit.main:app --host 127.0.0.1 --port 8000
 ```
 
-Run `uv run sola check` before starting the server. It checks configuration,
-secret references, prompt files, and tool grants offline, with concise errors.
-Startup performs the same checks before allocating runtime services. Uvicorn
-still includes its lifespan traceback when startup fails; the final
-`ConfigurationError` identifies the invalid field or missing file.
-
-Startup requires valid configuration and an operator secret. The model may be
-unavailable: the app stays up and `/health` reports degraded status.
-`/health/model` checks the exact pinned model ID, with no fallback.
-The root `/` is reserved for Alan's UI. `/api` requires an
-`Authorization: Bearer <operator-token>` header. `/api/channels` explicitly
-reports disabled or unimplemented adapters. No adapters or jobs run yet.
-
-The scaffold's `/v1/runs` and temporary `POST /api/runs` were retired.
-Create a session with `POST /api/sessions` (`{"id":"web-main"}`), then send
-`POST /api/sessions/web-main/messages` (`{"message":"Hello"}`). This returns the
-completed persistent run record. Optional `profile` selects an operator-granted
-profile. The authenticated API may invoke maintenance; channels/jobs may not.
+`sola check` validates TOML, secret references, prompt files, tools, cron and rollout
+settings offline. Errors name files and safe TOML locations without echoing their
+contents. Startup performs the same checks. Model unavailability leaves the app
+up with degraded health; runs use the exact pinned model or fail without fallback.
+Run uvicorn with one worker; a data ownership lock prevents concurrent recovery.
+The root `/` is reserved for Alan's UI. `/api` requires
+`Authorization: Bearer <operator-token>`.
 
 ```sh
 uv run pytest
 uv run ruff check .
 uv run ruff format --check .
+uv build
 ```
 
-In the managed cloud environment, use `UV_CACHE_DIR=/workspace/.cache/uv`.
-Runtime data must live outside the code tree. Never commit operator configuration
-or secrets. This work does not deploy a pilot or change Hermes.
+In the managed workspace use `UV_CACHE_DIR=/workspace/.cache/uv`.
 
-## Storage and inspection
+## API and execution
 
-`GET /api/sessions`, `/api/sessions/{id}`, `/api/runs`, and `/api/runs/{id}`
-inspect local evidence. Session metadata and transcripts, run event journals,
-exact prompt files, and redacted tool logs are authoritative. `app.db` is rebuilt
-at startup; deleting it loses no evidence. Unfinished runs become `interrupted`
-on restart, with partial evidence preserved. Each `.json` run snapshot is backed
-by append-only `.events.jsonl`. JSONL writes are fsynced. Prompt files preserve
-exact UTF-8 bytes, including CRLF; they are intentionally not redacted. Treat the
-data directory as private operator material, just like the source persona.
-Session transcripts are also intentionally verbatim, including user messages,
-assistant tool-call arguments and tool-result messages. They are reused unchanged
-as conversation history. Redaction applies to diagnostic records, not those
-archives; see SPEC §12 for the explicit distinction.
+Create `POST /api/sessions` with `{"id":"web-main","default_profile":"interactive"}`.
+Post `{"message":"Hello"}` to `/api/sessions/web-main/messages`; optional `profile`
+selects that run's profile. Unknown/misplaced fields are rejected, not ignored.
+Inspect `/api/sessions`, `/api/sessions/{id}`, `/api/runs`, and `/api/runs/{id}`.
+Run inspection includes prompt, messages, tool calls, diagnostics, memory and
+send evidence. Session inspection lists numbered archives, available through
+`GET /api/sessions/{id}/archives/{number}`. The old scaffold routes are retired.
 
-Session metadata is published with an atomic rename after the file is fsynced;
-the containing directory is fsynced too. Abandoned temporary files are ignored.
-If existing metadata is damaged, that session is unavailable rather than being
-recreated with default privileges or memory scope. Healthy sessions remain usable.
+Per-session FIFO workers feed a global inference semaphore (default one). Model
+preflight and the first validated completion precede transcript mutation. Tool-call
+messages precede their matching results. Malformed arguments/forbidden calls get
+a bounded repair budget; max steps ends as `budget_exceeded`. Token usage is summed
+only when every response supplies counts; otherwise it remains null.
 
-`GET /api/storage/health` (authenticated) lists damaged files, issue types, and
-byte offsets. `/health` reports degraded storage without exposing file details.
-Only a malformed, unterminated final JSONL fragment may be omitted during recovery.
-Before appending past it, the store persists a record in `recovery/` containing its
-path, offset, and SHA-256. Future reads skip only those exact damaged bytes.
-Interior corruption without matching recovery evidence fails closed with HTTP 503.
-Original transcript and journal bytes remain intact, and recovered tails remain
-visible in storage health. Keep `recovery/` alongside transcripts in every backup.
+`POST /api/runs/{id}/cancel` shares one durable operation across concurrent callers.
+Disconnecting a cancellation request does not interrupt finalization. Shutdown
+stops job admission, finalizes accepted work, drains dispatches, and closes clients.
+Interrupted tool groups remain in evidence and are explicitly counted when excluded
+from future model context. Unexpected exceptions retain redacted chained tracebacks
+in `.diagnostics.jsonl`, with operator-log fallback if persistence fails.
 
-For damaged metadata or interior records, stop the server, preserve a copy of the
-damaged files, and atomically restore verified files from a trusted backup. Do
-not delete metadata and recreate a session: its memory scope and binding matter.
-Restart to rebuild the index and refresh storage health. A recovery record is
-not permission to discard other corrupt records; do not edit its hash to bypass
-a corruption report. Transcripts are not silently repaired or shortened.
+## Prompt sovereignty
 
-Unexpected execution failures keep a concise public `error` and retain a redacted
-exception type, traceback, and chained cause in `<run-id>.diagnostics.jsonl`.
-Authenticated run inspection includes these `diagnostics`. If diagnostic storage
-fails, the original redacted diagnostic is emitted to operator logs instead.
+SOUL and profile files must exist and be readable UTF-8. `context.md` is optional;
+when memory is enabled, `recall-header.md` is required. All are read live without
+stripping whitespace or normalizing line endings. Empty-but-present context keeps
+its separators; a newline-terminated recall header keeps its newline too.
 
-## Prompt audit
+`GET /api/prompt?profile=interactive&session=inspection` returns exact system bytes,
+SHA-256, nullable token count, and enabled tool schemas, without inference, retrieval,
+or history writes. Optional `recall`, `at` and `origin` make audits repeatable.
+`sola prompt --profile interactive` prints exact UTF-8 bytes; `--json` adds metadata.
+Set `SOLA_URL` or `sola --url ...` for the API. Model/memory clients default to
+`trust_env = false`; opt into proxy/CA environment settings per service when needed.
+The CLI's equivalent is `sola --trust-env ...`. Process environment is untouched.
 
-Create `fragments/profiles/<profile>.md` for each profile (an empty file is valid).
-`fragments/context.md` is optional. Startup validates the SOUL and all profile
-files, even for profiles not yet used. When memory is enabled it also requires
-`fragments/recall-header.md`; supplied recall in dry-run inspection requires it
-as well. All files, including the live SOUL reference, are
-read anew without stripping whitespace or normalizing line endings. An empty
-context file remains a fragment with separators; a newline-terminated recall
-header keeps that newline before the builder adds another newline for the block.
+## Storage and recovery
 
-`GET /api/prompt?profile=interactive&session=inspection` returns exact prompt,
-SHA-256, nullable token count, and enabled tool schemas. Optional `recall`, `at`
-(timezone-aware ISO timestamp), and `origin` parameters make audits repeatable.
-This endpoint performs no inference or memory retrieval and writes no history.
-`sola prompt --profile interactive` prints exact UTF-8 bytes; `--json` includes
-metadata. Set `SOLA_URL` or `sola --url ...` to select the API server.
+Runtime data lives outside the code tree. Authoritative JSONL transcripts, run
+journals, tool/memory/delivery/diagnostic evidence, job cursors, immutable prompt
+files and session metadata survive deletion/rebuild of `app.db`. Metadata publishes
+atomically with file/directory fsync. Unfinished runs recover as `interrupted`.
 
-Model and memory HTTP clients default to `trust_env = false`: local services do
-not inherit proxy or certificate-environment settings accidentally. Set
-`[model].trust_env = true` or `[memory].trust_env = true` when that service needs
-your managed proxy or environment-provided CA trust. The CLI likewise defaults
-to explicit direct API access; use `sola --trust-env ...` to opt in. These settings
-do not change the process environment or other tools' networking.
+Transcripts and prompt files are private, intentionally verbatim archives, including
+user text and tool arguments/results. They are reused as actual conversation history.
+Run metadata and diagnostic logs redact secret-key suffixes and resolved credentials;
+these deliberately different policies are explicit in SPEC §12.
 
-## Tool configuration
+`GET /api/storage/health` identifies damage and byte offsets; public `/health`
+reports degraded storage without file details. Only an unterminated damaged JSONL
+tail can be omitted. Before appending past it, immutable recovery metadata records
+its path/offset/hash; future reads skip only those exact bytes. Interior corruption
+fails closed with HTTP 503. Damaged session metadata is never recreated with default
+privileges; healthy sessions remain available. Keep `recovery/` in backups.
 
-Set `enabled_tools = ["files", "repo_git"]`, then explicitly grant full tool
-names in each profile's `tools` list. `read_scopes` and `write_scopes` accept
-`repo:<configured-name>` or `path:/absolute/root`. Network and other non-file
-rights belong in `capabilities`. For example, `files.write` requires a write
-root and checks each resolved target against it; it only creates new files.
-`files.read` bounds reads and accepts only regular files. It opens paths with
-nonblocking/no-follow flags and checks the opened descriptor, so a FIFO cannot
-hold a run or shutdown waiting for a writer. `repo_git.status` accepts a configured
-repository name.
-No filesystem roots or capabilities are granted by default.
+Stop the server and preserve damaged evidence before restoring verified files
+atomically from a trusted backup, then restart to rebuild indexes. Do not delete
+metadata to recreate a session or change recovery hashes to bypass damage reports.
 
-Add a typed function decorated with `@tool` to `solakit.tools.<module>` and list
-that module in configuration. The registry validates grants at startup and
-again at dispatch, validates arguments strictly, enforces timeouts, truncates
-output visibly, and logs every call. Complete outputs use a counted marker such
-as `[truncated 18463 chars]`. Bounded file reads use a truthful lower bound such
-as `[truncated >=27 chars]` and do not read the entire file just to count its tail.
-The marker fits within the configured character budget. Logs distinguish exact
-`output_chars`/`omitted_chars` from `output_observed_chars`/`omitted_chars_min`, and
-results carry `content_complete` to indicate whether the full output was returned.
-Sync tools run in worker threads. Python cannot stop a running worker thread on timeout: blocking mutating integrations
-must supply their own bounded/cancellable operations. Configured Python modules
-are trusted operator code; profile checks constrain exposed operations, not
-arbitrary Python imported by the operator. The filesystem is operator-controlled;
-resolved-path checks do not provide OS isolation against concurrent path changes.
+## Memory and compaction
 
-## Execution and cancellation
+Memory is opt-in, scoped to configured canonical roots. Recall precedes prompt
+persistence; failure ends `memory_unavailable` without transcript mutation.
+Post-turn commits retain intent and acknowledgment evidence; ambiguous writes are
+never automatically replayed. A bounded background observer polls extraction and
+records terminal failures/status-unavailable states. Explicit refresh is
+`POST /api/runs/{id}/memory/refresh`. Observation updates patch only their own fields
+so extraction and delivery do not erase each other's state. Ephemeral sessions make
+no memory calls; isolated scope fails closed until supported.
 
-One FIFO queue per session feeds the global inference semaphore. Every run checks
-the exact pinned model, persists its prompt before inference, and sends only
-registered profile tools. No history is appended until the first validated
-completion arrives; model unavailability or an incorrect model before that leaves
-the session untouched. Partial evidence from later failures remains archived.
-Tool call envelopes precede all matching results. Bad JSON, schema violations,
-and forbidden calls get at most two repair opportunities; tools never execute
-when forbidden. Other tool failures are structured results. Max steps ends a run
-as `budget_exceeded`. Endpoint usage is summed only when every response supplies
-counts; otherwise tokens remain null.
+Before a new turn's first inference, oversized context can compact using a completed
+OpenViking summary-only archive (self/peer long-term extraction disabled). Original
+transcripts rotate to numbered immutable archives. A prepared hash/boundary manifest
+recovers interrupted rotations before serving. Whole tool groups and summaries
+survive repeated compaction and index rebuild. Damaged history cannot compact.
 
-`POST /api/runs/{id}/cancel` cancels queued/running work. Concurrent cancellation
-requests share one operation; disconnecting a cancellation request does not
-interrupt finalization. Shutdown waits for submissions already being accepted,
-stops admission, finalizes accepted work, then closes workers and HTTP clients.
-Concurrent/repeated shutdown calls share one operation. Interrupted tool groups remain in history but are excluded
-from future model requests, with the skipped count in each run record. A data
-ownership lock prevents a second server from recovering an active server's runs.
-Run uvicorn with one worker. No fallback model is attempted.
+Until an exact local tokenizer is configured, `context_budget` also caps conservative
+serialized UTF-8 request bytes, including prompt, history, task and tools. This is
+not reported as measured tokens. If safe compaction is unavailable, the summary
+cannot fit, or a tool loop exceeds the guard, the run ends `context_limit`; it never
+silently drops history or sends unbounded requests.
 
-Memory is disabled by default. Oversized requests compact between turns using completed OpenViking summaries;
-when that cannot complete, runs end as `context_limit` before oversized inference. Isolated memory is refused.
-Discord and scheduling remain disabled.
+Optional `[memory].user` sends the verified server's user hint and checks the
+created session URI before appending messages; the Sola guide selects `sola`.
+The supplied endpoint/version/root/key reference and deliberate live scratch
+procedure are in [first contact](docs/operations/first-contact.md). That guide checks
+`openviking-server 0.4.17.1`; the workspace cannot reach the Sola host's loopback or
+read its env binding. `sola memory-test --fact ... --query ... --expected ...` writes
+a real scratch fact and verifies actual recall plus the next persisted prompt,
+not a model's success claim. Never automate this first-contact ceremony.
 
-## OpenViking (phase 6, in progress)
+## Channels and jobs
 
-Opt-in `[memory]` configuration references the existing server URL, canonical
-shared-memory URI roots, and optionally an API-key secret reference. The client
-uses OpenViking's documented `/api/v1/search/find`, session message batch/commit,
-and content-read endpoints. Confirm compatibility with the installed version
-before enabling; no local or production instance was available for validation.
+Discord uses discord.py with author/channel/mention/bot gating, parent-session thread
+routing, typing while queued/running, reconnect and observable liveness. Replies stay
+in the originating thread. Final delivery uses stored transcript text, with no
+announcement duplicate. Silent and scoped regular-file artifact delivery are
+supported. Oversized fenced blocks attach intact as UTF-8 text; implicit mentions
+are suppressed. Intent/results are durable; uncertain sends are not replayed.
+`GET /api/channels` reports status, connection time and last accepted message.
 
-Pre-turn recall happens before final prompt construction and persistence. Recall
-failure ends as `memory_unavailable` without transcript mutation. Post-turn commit
-failure preserves the conversation and sets `memory_status` to
-`commit_failed_or_uncertain`. Every commit uses a stable run-owned remote session,
-with durable intent recorded in `<run-id>.memory.jsonl`. Acknowledged retries reuse
-the recorded result. Ambiguous writes are never replayed automatically, because
-the documented API provides no message-append idempotency key. Reconcile those
-remote sessions before any manual recovery. This favors a visible gap over
-silently duplicating long-term memories.
+APScheduler 3 supplies wake-ups and cron calculations. TOML defines jobs; JSONL
+cursors indexed in SQLite persist next fire, pause, active dispatch and last result.
+Runtime callbacks are not pickled into a library job store. Cron-to-channel jobs use
+the same session queue, so their task/result appear in the next conversational turn.
+Queued jobs count as active and never overlap themselves. Model-down jobs become
+`missed` gaps. Downtime misses record a bounded range; `catch_up = true` requires
+`polling = true` and runs once. Intentional paused/disabled intervals are not replayed.
 
-`accepted` means OpenViking accepted the archive; extraction still runs in the
-background. Run records expose its task ID and archive URI. Completion polling,
-operator recovery, context compaction with archived transcript rotation and
-summary references, and validation against the existing instance remain open.
-Ephemeral sessions make no memory calls; isolated scope fails closed. The
-`memory.search` and `memory.read` tools use a session-bound facade and enforce
-configured canonical URI roots. Prompt inspection still makes no memory calls.
+`GET /api/jobs` and `POST /api/jobs/{id}/run|pause|resume` provide operations. Tasks
+allow only `{date}`, `{time}`, `{timezone}`, `{job_id}`, without attributes, conversions
+or format specifications. Use named weekdays in cron (APScheduler Monday=0 semantics).
+Channel/session/ephemeral bindings are supported. Maintenance is operator-API only.
 
-Current implementation: phases 1–5 complete; phase 6 partial; phases 7–9 planned.
-No Discord pilot, production configuration, deployment, or Hermes changes were made.
+Live Discord or enabled jobs require explicit `live_ready = true`, asserting the live
+memory check and phase 9 acceptance suite passed. This flag does not perform those
+checks. Supply a `discord_token` secret reference and enable integrations only after
+both gates, then follow SPEC §15's pilot, shadow publishing and rollback stages.
 
+## Tool extensions
 
-Phase 6 now includes completed-summary compaction, numbered transcript archives,
-rotation recovery, and extraction refresh. `/api/sessions/{id}` lists archives;
-`GET /api/sessions/{id}/archives/{number}` inspects them. Run inspection includes
-its messages even after archival. `context_budget` uses a conservative UTF-8
-serialized-request byte guard, not a fabricated token count; adjust it alongside
-the pinned model's capacity. Oversized SOUL/task/tool-loop context fails explicitly.
+Add a typed decorated function in `solakit.tools.<module>`, enable the module, and
+grant its full names in profiles. `read_scopes`/`write_scopes` use `repo:<name>` or
+`path:/absolute/root`; network/other rights use separate `capabilities`. No grants
+exist by default. Registry checks occur at startup and dispatch; arguments are
+strictly validated. `files.read` bounds regular-file reads using nonblocking,
+no-follow descriptor checks. `files.write` creates new files only; `repo_git.status`
+uses a configured repository name. Domain tools remain phase 9 work.
 
-Use `POST /api/runs/{id}/memory/refresh` to inspect extraction completion without
-replaying writes. For the first real OpenViking contact, invoke `sola memory-test
---fact "<deliberate scratch fact>" --query "<recall query>" --expected "<unique text>"`.
-This writes a shared scratch fact and verifies recall in the next run's persisted
-prompt. It is never automatic. Configure and verify the actual installed server
-before a Discord pilot or scheduled work; live verification remains pending.
+Counted truncation markers fit within output budgets. Complete outputs report exact
+omitted characters; bounded reads report a lower bound. Logs distinguish exact from
+observed counts; `content_complete` indicates full output. Tools may return scoped
+artifact paths. Sync tools run in worker threads: Python cannot stop an arbitrary
+thread, so blocking integrations must bound/cancel their own operations. Plugins
+are trusted operator code; path checks are not OS isolation against concurrent
+filesystem changes. Nothing self-modifies profiles or imports tools for the model.

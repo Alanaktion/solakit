@@ -121,6 +121,7 @@ class Execution:
                     run.memory_status = "recalling"
                     recall = await self.memory.scoped(session).search(pending.text)
                     run.memory_status = "recalled"
+                    run.recall = recall
                 elif session.memory_scope == "ephemeral":
                     run.memory_status = "ephemeral"
                 prompt = await durable(

@@ -57,6 +57,7 @@ class MemoryConfig(StrictModel):
     base_url: str | None = None
     api_key: SecretRef | None = None
     roots: list[str] = Field(default_factory=list)
+    user: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_-]+$", max_length=128)
     timeout_s: float = Field(default=30, gt=0)
     trust_env: bool = False
     recall_limit: int = Field(default=5, ge=1, le=20)
@@ -107,8 +108,14 @@ class Channel(StrictModel):
 
 
 class Delivery(StrictModel):
-    to: str
+    to: str = ""
     mode: Literal["final", "artifact", "silent"] = "final"
+
+    @model_validator(mode="after")
+    def destination(self) -> Self:
+        if self.mode != "silent" and not self.to:
+            raise ValueError("Non-silent delivery requires a destination")
+        return self
 
 
 class Job(StrictModel):
@@ -120,13 +127,28 @@ class Job(StrictModel):
     bind_session: str
     deliver: Delivery | None = None
     catch_up: bool = False
+    polling: bool = False
     enabled: bool = False
 
     @model_validator(mode="after")
     def valid_timezone(self) -> Self:
         ZoneInfo(self.timezone)
-        if len(self.cron.split()) != 5:
-            raise ValueError("cron requires five fields")
+        from string import Formatter
+
+        from apscheduler.triggers.cron import CronTrigger
+
+        CronTrigger.from_crontab(self.cron, timezone=self.timezone)
+        if self.catch_up and not self.polling:
+            raise ValueError("catch_up is reserved for idempotent polling jobs")
+        if not self.task.strip() or len(self.task) > 32000:
+            raise ValueError("Job task must contain 1–32000 characters")
+        for _, field, spec, conversion in Formatter().parse(self.task):
+            if field is not None and (
+                field not in {"date", "time", "timezone", "job_id"}
+                or spec
+                or conversion
+            ):
+                raise ValueError("Unsupported job task placeholder")
         return self
 
 
@@ -167,7 +189,11 @@ class Config(StrictModel):
             raise ValueError("Maintenance cannot be scheduled")
         channel_ids = {c.id for c in self.channels}
         for job in self.jobs:
-            if job.deliver and job.deliver.to not in channel_ids:
+            if (
+                job.deliver
+                and job.deliver.mode != "silent"
+                and job.deliver.to not in channel_ids
+            ):
                 raise ValueError("job delivery references unknown channel")
         return self
 
@@ -177,6 +203,8 @@ def load_config(path: Path | None = None) -> Config:
     path = path or Path(os.environ.get("SOLA_CONFIG", "config.toml"))
     try:
         source = path.read_text()
+    except UnicodeDecodeError:
+        raise ConfigLoadError(f"Configuration file must be UTF-8: {path}") from None
     except FileNotFoundError:
         raise ConfigLoadError(f"Configuration file not found: {path}") from None
     except OSError:

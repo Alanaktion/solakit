@@ -367,7 +367,11 @@ identity, no duplicate "announcement copy" drifting from the record.
 ## 7. Scheduled jobs (in-app)
 
 Scheduling is owned by the FastAPI app via **APScheduler**
-(`AsyncIOScheduler`, job store on SQLite so schedules survive restarts).
+(`AsyncIOScheduler` wake-ups and `CronTrigger`), with durable JSONL job cursors
+indexed in SQLite so pause/next-fire/dispatch state survives index rebuilds and
+restarts. TOML restores job definitions; runtime callbacks are never pickled into
+library state. This replaces the original SQLAlchemy job-store sketch with owned,
+inspectable state and avoids a global runtime callback registry.
 launchd's only remaining job is starting the app itself at boot.
 
 ### 7.1 Job definition
@@ -392,6 +396,7 @@ profile       = "letters"
 task          = "Pull the letters repo. If a new letter from Dingus is waiting, read it and reply if you want to. No reply is owed."
 bind_session  = "letters"
 deliver       = { mode = "silent" }
+polling       = true
 catch_up      = true                   # polling is idempotent — safe to catch up
 
 [[jobs]]
@@ -436,10 +441,19 @@ App down at fire time, or model unavailable at fire time:
 - Default: **skip**. `coalesce = true`, `max_instances = 1`, misfire
   grace 60s, then the missed run is recorded as `missed` and left as a
   gap — the dream/blog doctrine (§2.3) applied to scheduling.
-- `catch_up = true` jobs (idempotent polling only) run **once** on
+- `catch_up = true` jobs (explicit `polling = true`, idempotent polling only) run **once** on
   recovery, no matter how many firings were missed.
 - A job never runs concurrently with itself, and a job bound to a busy
   session simply joins that session's queue (§4.1).
+
+Missed firings across downtime are recorded as a bounded range rather than
+materializing unbounded individual records. Coalescing advances the durable
+cursor before dispatch; an interrupted dispatch becomes a visible gap and is not
+automatically replayed. A paused/disabled interval is intentional; resume starts
+with the next future firing. Weekdays follow APScheduler's syntax (Monday=0);
+prefer weekday names as in the examples. Task placeholders are limited to
+`{date}`, `{time}`, `{timezone}`, and `{job_id}`; attributes/conversions/format
+specifiers and oversized expansion are refused.
 
 ### 7.4 Job operations
 
@@ -651,8 +665,11 @@ model token limit and is never presented as measured token usage. If prompt/task
 alone or a mid-run request exceeds the guard, end as `context_limit`; compaction
 never runs inside a tool loop and no oversized request is sent silently.
 
-`POST /api/runs/{id}/memory/refresh` polls acknowledged extraction without replaying
-writes. `POST /api/memory/probe` / `sola memory-test --fact ... --query ...
+A bounded background observer polls acknowledged extraction and persists pending,
+completed, failed, cancelled or status-unavailable observations; it never replays
+writes. `POST /api/runs/{id}/memory/refresh` also polls explicitly. Observation
+updates patch only their own fields so delivery and extraction cannot overwrite
+one another's state. `POST /api/memory/probe` / `sola memory-test --fact ... --query ...
 --expected ...` deliberately create a shared scratch session, wait for extraction,
 and verify the expected text in the next persisted system prompt. This writes a
 real scratch fact; never run automatically at startup or on a cron. A live probe
@@ -796,6 +813,15 @@ part. The evenings go on discord.py gateway quirks, local-quant tool-call
 parsing, APScheduler misfire semantics, and the blog repo's publishing
 steps. Feature parity with *all* of Hermes remains explicitly not the
 target (§3).
+
+### Implementation checkpoint after phases 6–8
+
+Current source is 3,590 Python lines across 25 modules, with 2,571 test
+lines. The original ~3,200-line estimate above predated crash recovery, explicit
+integration release gates, extraction observation, and cursor recovery. Domain
+tools and full live acceptance remain phase 9; the estimate is not a reason to
+omit required behavior or claim those checks passed. Keep core, adapters and
+operator operations separate, and revise this checkpoint when scope changes.
 
 ## 17. Defaults chosen in v2 (change any with one line)
 

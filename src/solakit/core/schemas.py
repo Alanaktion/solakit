@@ -78,6 +78,7 @@ class Run(BaseModel):
     steps: int = 0
     context_skipped_messages: int = 0
     memory_status: str = "disabled"
+    recall: str | None = None
     memory_commit: dict[str, Any] | None = None
     delivery_status: str = "none"
     delivery: dict[str, Any] | None = None

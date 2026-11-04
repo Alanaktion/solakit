@@ -27,7 +27,8 @@ phase complete on the strength of a mock alone when its exit requires live work.
 - Filesystem scopes and non-filesystem capabilities are separate grants.
 - Job tasks use `{date}` with a bounded allowlist of substitution keys.
 - Recall failure aborts before transcript mutation; commit failures are recorded
-  separately and must be retried with a stable idempotency key.
+  separately. Poll acknowledged extraction; never replay ambiguous writes without
+  verified idempotency support or explicit operator reconciliation.
 - Model identity matches the configured ID exactly; no fallback.
 - Reserved isolated memory must fail closed until scope support exists.
 
@@ -41,12 +42,14 @@ Hermes remains untouched. No production deployment is part of this plan run.
 
 ## Current checkpoint
 
-Phases 1–5 are implemented and pushed to main. Phase 6 has opt-in recall/commit
-and memory tools with mock verification; compaction, extraction completion
-tracking, and validation against the existing instance remain open. Phases 7–9
-remain planned. The full acceptance suite and production rollout have not passed.
-Resume at phase 6's remaining-work checklist. All integrations remain opt-in.
+Phases 1–5 are implemented. Phases 6–8 are locally implemented and covered by
+mock/controlled-clock tests. Phase 6's deliberate live round-trip is pending on
+the Sola host; phase 7's live pilot and phase 8's live jobs remain gated by that
+check and phase 9 acceptance. Phase 9 domain tools are not implemented.
 
+The first-contact guide records the supplied server settings and the exact
+remaining verification. No pilot/deployment, production configuration, or Hermes
+changes have been made. Local completion is not a production release claim.
 
 ## Review hardening checkpoint
 

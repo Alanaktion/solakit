@@ -211,3 +211,91 @@ def test_commit_failure_is_visible_without_losing_conversation(config):
         await execution.close()
 
     asyncio.run(exercise())
+
+
+def test_background_refresh_records_terminal_failure_without_replaying(config):
+    from solakit.core.memory_ops import refresh_pending
+    from solakit.core.schemas import Origin, Run
+
+    calls = []
+
+    def handler(request):
+        calls.append((request.method, request.url.path))
+        assert request.method == "GET"
+        return httpx.Response(
+            200,
+            json={
+                "status": "ok",
+                "result": {"status": "failed", "error": "extraction failed"},
+            },
+        )
+
+    execution = setup(config, lambda request: None)
+    execution.memory = MemoryClient(
+        memory_config(), transport=httpx.MockTransport(handler)
+    )
+    run = Run(
+        session="s",
+        profile="interactive",
+        origin=Origin(),
+        status="completed",
+        memory_status="accepted",
+        memory_commit={"status": "accepted", "task_id": "t1"},
+    )
+    execution.store.save_run(run)
+    execution.store.log_memory(
+        run.id, {"stage": "accepted", "result": run.memory_commit}
+    )
+
+    async def exercise():
+        await refresh_pending(execution)
+        record = execution.store.run(run.id)
+        assert record["status"] == "completed"
+        assert record["memory_status"] == "failed"
+        assert record["memory_commit"]["task"]["error"] == "extraction failed"
+        await refresh_pending(execution)
+        assert len(calls) == 1
+        # Delivery updates only their own fields, so extraction status is retained.
+        execution.store.update_run(run.id, {"delivery_status": "delivered"})
+        assert execution.store.run(run.id)["memory_status"] == "failed"
+        await execution.close()
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("actual_user", ["sola", "wrong"])
+def test_explicit_openviking_user_checked_before_message_writes(config, actual_user):
+    cfg = memory_config()
+    cfg.user = "sola"
+    writes = []
+
+    def handler(request):
+        assert request.headers["X-OpenViking-User"] == "sola"
+        if request.url.path.endswith("/solakit-r"):
+            result = {"uri": f"viking://user/{actual_user}/sessions/solakit-r"}
+        elif request.url.path.endswith("/commit"):
+            result = {"status": "accepted", "task_id": "t1"}
+        else:
+            if request.url.path.endswith("messages/batch"):
+                writes.append(True)
+            result = {}
+        return httpx.Response(200, json={"status": "ok", "result": result})
+
+    memory = MemoryClient(cfg, transport=httpx.MockTransport(handler))
+    store = Store(config.paths.data)
+
+    async def exercise():
+        if actual_user == "wrong":
+            with pytest.raises(MemoryUnavailable, match="user does not match"):
+                await memory.scoped(Session(id="s")).commit(
+                    store, "r", [{"role": "user", "content": "fact"}]
+                )
+            assert not writes
+        else:
+            await memory.scoped(Session(id="s")).commit(
+                store, "r", [{"role": "user", "content": "fact"}]
+            )
+            assert writes == [True]
+        await memory.close()
+
+    asyncio.run(exercise())

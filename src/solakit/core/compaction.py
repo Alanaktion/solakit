@@ -117,15 +117,9 @@ class Compactor:
             )
         except MemoryUnavailable as exc:
             raise ContextLimit(str(exc)) from exc
+        names = await durable(self.store.archives, session.id)
         archive_number = (
-            max(
-                (
-                    int(p.suffix[1:])
-                    for p in active.parent.glob(f"{session.id}.jsonl.[0-9]*")
-                ),
-                default=0,
-            )
-            + 1
+            max((int(name.rsplit(".", 1)[1]) for name in names), default=0) + 1
         )
         archive = f"{session.id}.jsonl.{archive_number}"
         boundary = Message(

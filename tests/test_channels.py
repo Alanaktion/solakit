@@ -205,3 +205,66 @@ def test_discord_lifecycle_without_a_gateway(config, monkeypatch):
         assert adapter.task.done()
 
     asyncio.run(exercise())
+
+
+def test_discord_delivers_oversized_fence_as_exact_attachment(config):
+    from types import SimpleNamespace
+
+    from solakit.channels.base import Outbound
+
+    sent = []
+
+    class Target:
+        async def send(self, *args, **kwargs):
+            sent.append((args, kwargs))
+            return SimpleNamespace(id=len(sent))
+
+    async def exercise():
+        adapter = DiscordAdapter.__new__(DiscordAdapter)
+        adapter.client = SimpleNamespace(get_channel=lambda identifier: Target())
+        text = "```python\n" + "x" * 2500 + "\n```"
+        channel = Channel(id="one", type="discord", channel_id="100", session="s")
+        identity = await adapter.deliver(channel, Outbound(text))
+        assert identity == "2"
+        assert sent[0][0] == ("Reply attached.",)
+        attachment = sent[1][1]["file"]
+        assert attachment.fp.read() == text.encode()
+        assert sent[0][1]["allowed_mentions"].everyone is False
+        attachment.close()
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("acknowledged", [False, True])
+def test_delivery_intent_recovery_never_replays_remote_send(config, acknowledged):
+    from solakit.core.schemas import Origin, Run
+    from solakit.core.store import Store
+
+    execution = setup(config, lambda request: None)
+    run = Run(
+        session="s",
+        profile="interactive",
+        origin=Origin(),
+        status="completed",
+        delivery_status="sending",
+    )
+    execution.store.save_run(run)
+    execution.store.log_delivery(run.id, {"stage": "sending", "to": "room"})
+    if acknowledged:
+        execution.store.log_delivery(
+            run.id,
+            {
+                "stage": "delivered",
+                "to": "room",
+                "external_id": "known-id",
+                "mode": "final",
+            },
+        )
+    restarted = Store(config.paths.data)
+    record = restarted.run(run.id)
+    assert record["delivery_status"] == (
+        "delivered" if acknowledged else "failed_or_uncertain"
+    )
+    if acknowledged:
+        assert record["delivery"]["external_id"] == "known-id"
+    asyncio.run(execution.close())

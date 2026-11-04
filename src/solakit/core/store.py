@@ -73,6 +73,7 @@ class Store:
             self.root / "sessions",
             self.root / "runs",
             self.root / "recovery",
+            self.root / "jobs",
         ):
             directory.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.ownership = None
@@ -153,7 +154,12 @@ class Store:
             if any(
                 issue["file"] == relative
                 and issue["kind"]
-                in {"corrupt_record", "invalid_message", "invalid_run"}
+                in {
+                    "corrupt_record",
+                    "invalid_message",
+                    "invalid_run",
+                    "missing_active_transcript",
+                }
                 for issue in self._issues.values()
             ):
                 raise self._corruption(path, "corrupt_record")
@@ -225,7 +231,7 @@ class Store:
     def rebuild(self) -> None:
         with self.lock, sqlite3.connect(self.root / "app.db") as db:
             self._issues.clear()
-            for kind in ("sessions", "runs"):
+            for kind in ("sessions", "runs", "jobs"):
                 db.execute(
                     f"CREATE TABLE IF NOT EXISTS {kind} "
                     "(id TEXT PRIMARY KEY, payload TEXT NOT NULL)"
@@ -259,6 +265,17 @@ class Store:
                     "INSERT INTO runs VALUES (?, ?)", (run.id, run.model_dump_json())
                 )
 
+            for path in sorted((self.root / "jobs").glob("*.jsonl")):
+                try:
+                    records = self._read(path)
+                except StorageCorruption:
+                    continue
+                if records:
+                    db.execute(
+                        "INSERT INTO jobs VALUES (?, ?)",
+                        (path.stem, json.dumps(records[-1])),
+                    )
+
     def recover(self) -> None:
         for record in self.list_records("runs"):
             run = Run.model_validate(record)
@@ -267,6 +284,25 @@ class Store:
                 run.finished_at = now()
                 run.error = "Process stopped before run finalization"
                 self.save_run(run)
+            if run.delivery_status in {"none", "sending"}:
+                deliveries = self.delivery_events(run.id)
+                if deliveries:
+                    acknowledged = next(
+                        (
+                            event
+                            for event in reversed(deliveries)
+                            if event["stage"] == "delivered"
+                        ),
+                        None,
+                    )
+                    run.delivery_status = (
+                        "delivered" if acknowledged else "failed_or_uncertain"
+                    )
+                    if acknowledged:
+                        run.delivery = {
+                            k: v for k, v in acknowledged.items() if k != "stage"
+                        }
+                    self.save_run(run)
 
     def create_session(self, session: Session) -> Session:
         path = self._path("sessions", session.id, ".meta.json")
@@ -296,27 +332,33 @@ class Store:
         )
 
     def transcript(self, session_id: str) -> list[dict]:
-        self.session(session_id)
-        path = self._path("sessions", session_id, ".jsonl")
-        records = self._read(path)
-        try:
-            for record in records:
-                Message.model_validate(record)
-        except ValidationError as exc:
-            with self.lock:
+        with self.lock:
+            self.session(session_id)
+            path = self._path("sessions", session_id, ".jsonl")
+            manifest = self._path("sessions", session_id, ".compaction.json")
+            if not path.exists() and manifest.exists():
+                raise self._corruption(path, "missing_active_transcript")
+            records = self._read(path)
+            try:
+                for record in records:
+                    Message.model_validate(record)
+            except ValidationError as exc:
                 raise self._corruption(path, "invalid_message") from exc
-        return records
+            return records
 
     def archives(self, session_id: str) -> list[str]:
         self.session(session_id)
         paths = (self.root / "sessions").glob(f"{safe_id(session_id)}.jsonl.[0-9]*")
+        prefix = f"{session_id}.jsonl."
+        paths = [p for p in paths if p.name.removeprefix(prefix).isdigit()]
         return [p.name for p in sorted(paths, key=lambda p: int(p.suffix[1:]))]
 
     def all_messages(self, session_id: str) -> list[dict]:
-        records = []
-        for name in self.archives(session_id):
-            records.extend(self._read(self.root / "sessions" / name))
-        return records + self.transcript(session_id)
+        with self.lock:
+            records = []
+            for name in self.archives(session_id):
+                records.extend(self._read(self.root / "sessions" / name))
+            return records + self.transcript(session_id)
 
     def save_run(self, run: Run) -> None:
         with self.lock:
@@ -326,6 +368,27 @@ class Store:
                 self._path("runs", run.id, ".json"), json.dumps(record).encode()
             )
             self._index("runs", run.id, record)
+
+    def update_run(self, run_id: str, updates: dict) -> Run:
+        """Patch finalized-run observations without overwriting concurrent fields."""
+        with self.lock:
+            events = self._read(self._path("runs", run_id, ".events.jsonl"))
+            if not events:
+                raise FileNotFoundError(run_id)
+            run = Run.model_validate(events[-1] | updates)
+            self.save_run(run)
+            return run
+
+    def pending_memory(self) -> list[dict]:
+        with self.lock, sqlite3.connect(self.root / "app.db") as db:
+            rows = db.execute(
+                "SELECT payload FROM runs WHERE "
+                "json_extract(payload, '$.memory_status') IN "
+                "('accepted','pending','running','cancelling','status_unavailable') "
+                "AND json_extract(payload, '$.status') NOT IN ('queued','running') "
+                "ORDER BY rowid LIMIT 100"
+            ).fetchall()
+        return [json.loads(row[0]) for row in rows]
 
     def run(self, run_id: str) -> dict:
         path = self._path("runs", run_id, ".events.jsonl")
@@ -376,6 +439,14 @@ class Store:
             self._path("runs", run_id, ".tools.jsonl"), self.redactor.redact(record)
         )
 
+    def job_state(self, job_id: str) -> dict | None:
+        records = self._read(self._path("jobs", job_id, ".jsonl"))
+        return records[-1] if records else None
+
+    def save_job(self, job_id: str, record: dict) -> None:
+        self._append(self._path("jobs", job_id, ".jsonl"), record)
+        self._index("jobs", job_id, record)
+
     def delivery_events(self, run_id: str) -> list[dict]:
         return self._read(self._path("runs", run_id, ".deliveries.jsonl"))
 
@@ -392,7 +463,7 @@ class Store:
         )
 
     def list_records(self, kind: str) -> list[dict]:
-        if kind not in {"sessions", "runs"}:
+        if kind not in {"sessions", "runs", "jobs"}:
             raise ValueError("unknown index")
         with self.lock, sqlite3.connect(self.root / "app.db") as db:
             rows = db.execute(f"SELECT payload FROM {kind} ORDER BY rowid").fetchall()

@@ -1,10 +1,13 @@
 """Explicit operator operations: extraction inspection and scratch live verification."""
 
+import asyncio
 from uuid import uuid4
 
 from solakit.core.io import durable
 from solakit.core.loop import Execution
+from solakit.core.memory import MemoryUnavailable
 from solakit.core.schemas import Run, RunStatus, Session
+from solakit.core.store import StorageCorruption
 
 
 async def refresh_run(execution: Execution, run_id: str, *, wait_s: float = 0) -> Run:
@@ -20,8 +23,16 @@ async def refresh_run(execution: Execution, run_id: str, *, wait_s: float = 0) -
     )
     run.memory_status = result["status"]
     run.memory_commit = result
-    await durable(execution.store.save_run, run)
-    return run
+    if (
+        record["memory_status"] == run.memory_status
+        and record.get("memory_commit") == result
+    ):
+        return run
+    return await durable(
+        execution.store.update_run,
+        run_id,
+        {"memory_status": run.memory_status, "memory_commit": result},
+    )
 
 
 async def probe(execution: Execution, fact: str, query: str, expected: str) -> dict:
@@ -43,8 +54,10 @@ async def probe(execution: Execution, fact: str, query: str, expected: str) -> d
         return {**result, "reason": f"Extraction is {refreshed.memory_status}"}
     second = await execution.submit(session.id, query)
     evidence = await durable(execution.store.run, second.id)
-    passed = second.status == RunStatus.completed and expected in (
-        evidence["prompt"] or ""
+    passed = (
+        second.status == RunStatus.completed
+        and expected in (evidence["prompt"] or "")
+        and expected in (evidence.get("recall") or "")
     )
     return {
         **result,
@@ -54,3 +67,26 @@ async def probe(execution: Execution, fact: str, query: str, expected: str) -> d
         if passed
         else "Expected fact absent from next persisted prompt",
     }
+
+
+async def refresh_pending(execution: Execution):
+    """Bounded read-only polling; never retries message appends or commits."""
+    for record in await durable(execution.store.pending_memory):
+        try:
+            await refresh_run(execution, record["id"])
+        except StorageCorruption:
+            continue  # Storage health reports the damaged evidence; never rewrite it.
+        except MemoryUnavailable:
+            if record["memory_status"] != "status_unavailable":
+                await durable(
+                    execution.store.update_run,
+                    record["id"],
+                    {"memory_status": "status_unavailable"},
+                )
+            break  # One unavailable endpoint should not create a retry storm.
+
+
+async def watch_memory(execution: Execution):
+    while True:
+        await refresh_pending(execution)
+        await asyncio.sleep(5)

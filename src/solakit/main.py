@@ -15,7 +15,7 @@ from solakit.channels import ApiAdapter, Channels
 from solakit.core.config import Config
 from solakit.core.loop import Execution
 from solakit.core.memory import MemoryClient, MemoryUnavailable
-from solakit.core.memory_ops import probe, refresh_run
+from solakit.core.memory_ops import probe, refresh_run, watch_memory
 from solakit.core.model import ModelClient, ModelUnavailable
 from solakit.core.prompt import inspection, read_prompt
 from solakit.core.routing import SessionRouter
@@ -23,6 +23,7 @@ from solakit.core.schemas import Origin, Session, now
 from solakit.core.secrets import RedactingFilter, Redactor
 from solakit.core.startup import prepare
 from solakit.core.store import StorageCorruption, Store, safe_id
+from solakit.jobs import Jobs
 
 
 class RunRequest(BaseModel):
@@ -94,20 +95,32 @@ def create_app(
 
             adapters["discord"] = DiscordAdapter(cfg, prepared.discord_token)
         app.state.channels = Channels(cfg, app.state.execution, adapters)
+        app.state.jobs = Jobs(cfg, app.state.execution, app.state.channels)
         log_filter = RedactingFilter(app.state.redactor)
         handlers = logging.getLogger().handlers
         for handler in handlers:
             handler.addFilter(log_filter)
+        memory_watch = None
         try:
             app.state.model_health = await probe_model(app.state.model)
             await app.state.channels.start()
+            await app.state.jobs.start()
+            if app.state.memory:
+                memory_watch = asyncio.create_task(watch_memory(app.state.execution))
             yield
         finally:
+            if memory_watch:
+                memory_watch.cancel()
+                await asyncio.gather(memory_watch, return_exceptions=True)
             try:
+                await app.state.jobs.stop_admission()
                 try:
                     await app.state.execution.close()
                 finally:
-                    await app.state.channels.stop()
+                    try:
+                        await app.state.jobs.drain()
+                    finally:
+                        await app.state.channels.stop()
             finally:
                 app.state.store.close()
                 for handler in handlers:
@@ -151,6 +164,27 @@ def create_app(
     @api.get("/channels")
     async def channels() -> list[dict]:
         return app.state.channels.status()
+
+    @api.get("/jobs")
+    async def jobs() -> list[dict]:
+        return app.state.jobs.status()
+
+    @api.post("/jobs/{job_id}/run")
+    async def job_run(job_id: str) -> dict:
+        if job_id not in app.state.jobs.states:
+            raise HTTPException(404, "Job not found")
+        try:
+            run = await app.state.jobs.run_now(job_id)
+            return await asyncio.to_thread(app.state.store.run, run.id)
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @api.post("/jobs/{job_id}/{operation}")
+    async def job_control(job_id: str, operation: str) -> dict:
+        if job_id not in app.state.jobs.states or operation not in {"pause", "resume"}:
+            raise HTTPException(404, "Job operation not found")
+        await app.state.jobs.pause(job_id, operation == "pause")
+        return next(j for j in app.state.jobs.status() if j["id"] == job_id)
 
     @api.get("/prompt")
     async def prompt(

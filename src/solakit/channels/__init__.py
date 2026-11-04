@@ -28,7 +28,7 @@ class ApiAdapter:
 
     async def deliver(self, channel, message):
         # The API consumer reads the same stored run; never append a second copy.
-        return "api"
+        return message.message_id
 
 
 def artifact_bytes(path, maximum=8_000_000):
@@ -110,7 +110,11 @@ class Channels:
     async def _deliver(self, run: Run, delivery: Delivery):
         if delivery.mode == "silent":
             run.delivery_status = "silent"
-            await durable(self.execution.store.save_run, run)
+            await durable(
+                self.execution.store.update_run,
+                run.id,
+                {"delivery_status": run.delivery_status},
+            )
             return
         if run.status not in {RunStatus.completed, RunStatus.tool_error}:
             return
@@ -154,12 +158,14 @@ class Channels:
                 and session.bound_channel == channel.id
                 else channel.channel_id
             )
-            outbound = replace(outbound, target_id=target_id)
+            outbound = replace(outbound, target_id=target_id, message_id=run.id)
             await durable(
                 store.log_delivery,
                 run.id,
                 {"stage": "sending", "to": channel.id, "mode": delivery.mode},
             )
+            run.delivery_status = "sending"
+            await durable(store.update_run, run.id, {"delivery_status": "sending"})
             identity = await adapter.deliver(channel, outbound)
             run.delivery_status = "delivered"
             run.delivery = {
@@ -170,6 +176,19 @@ class Channels:
             await durable(
                 store.log_delivery, run.id, {"stage": "delivered", **run.delivery}
             )
-        except Exception:
+        except Exception as exc:
             run.delivery_status = "failed_or_uncertain"
-        await durable(store.save_run, run)
+            await durable(
+                store.log_delivery,
+                run.id,
+                {
+                    "stage": "failed_or_uncertain",
+                    "error_type": type(exc).__name__,
+                    "error": str(exc),
+                },
+            )
+        await durable(
+            store.update_run,
+            run.id,
+            {"delivery_status": run.delivery_status, "delivery": run.delivery},
+        )

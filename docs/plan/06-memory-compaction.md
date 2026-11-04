@@ -1,72 +1,32 @@
 # Phase 6: OpenViking integration and context compaction
 
-Status: local implementation complete — live verification pending
+Status: local implementation complete; live round-trip pending
 
 Depends on: phase 5
 
-- Add pre-turn recall and post-turn session commits through the existing OpenViking API.
-- Route all memory access through a scope-aware client in `ToolContext`; MVP sessions use `shared`.
-- Construct and persist the final prompt after recall, before inference.
-- Add between-run compaction with archived transcript rotation, boundary records, and summary references.
-- Make memory failures and commit failures visible; prevent retries from duplicating committed messages.
+- Opt-in scoped recall before final prompt construction and persistence.
+- Post-turn commits with intent journals and refusal of ambiguous write replays.
+- Extraction task polling and explicit terminal failure/status-unavailable states.
+- Completed OpenViking summaries with self/peer long-term extraction disabled for
+  compaction, preserving whole tool groups and previously recorded boundaries.
+- Numbered immutable transcript archives, prepared rotation manifests, and
+  recovery before startup serves requests; archives survive index deletion.
+- Conservative serialized UTF-8 context guard, never reported as endpoint tokens;
+  context_limit instead of silently sending oversized context or dropping history.
+- Authenticated archive/run inspection and explicit scratch verification API/CLI.
 
-**Exit check:** A committed fact is recalled in a later run. Compaction preserves archived history and valid tool-call groups. Dry-run inspection remains free of external calls.
+Automated checks cover repeat compaction, failed/pending summaries, rotation crash
+recovery, tool groups, index rebuilds, version 0.4.17.1 archive shapes, extraction
+failure visibility, and a probe that cannot pass from a model's claim alone.
 
-## Completion record
+## Live exit gate
 
-Implemented opt-in scope-aware OpenViking REST client, pre-turn recall before
-prompt construction, post-turn session commits, memory tools, durable commit
-intent journals, task/archive references, visible recall/commit failures, and
-conservative duplicate prevention. Ephemeral sessions make no memory calls;
-isolated scopes fail closed. The API remains disabled by default.
+The operator supplied `http://127.0.0.1:1933`, server `0.4.17.1`, root
+`viking://user/sola/memories`, and secret reference `OPENVIKING_API_KEY`.
+This workspace has no listener or credential binding for those settings. The
+source contract at the exact upstream tag was checked; the live check was not run.
+Follow [first contact](../operations/first-contact.md) on the Sola host and retain
+the probe's run IDs/results. This gate precedes any Discord pilot or live job.
 
-Validated with mock recall round-trip, denied URI/scope access, failed recall,
-ambiguous-write replay refusal, retained conversation on failed commit, and CLI
-byte-output tests. Full suite: 29 passing tests; Ruff lint and format pass.
-
-## Remaining work before completing this phase
-
-- Confirm the existing OpenViking instance URL, installed API version, canonical
-  roots and secret reference. No such configuration is present in this checkout.
-- Poll accepted extraction task IDs and surface terminal extraction failures.
-  Upstream explicitly distinguishes archive acceptance from completed extraction.
-- Reconcile ambiguous remote writes before any operator-triggered recovery;
-  upstream message append has no documented idempotency key. Do not blindly retry.
-- Implement between-run compaction: completed OpenViking summary, immutable
-  transcript archive rotation, boundary/summary references, crash recovery, and
-  preservation of complete assistant/tool groups. Do not substitute a local
-  summary or silently discard history.
-- Test archive/index recovery, repeated compaction, pending/failed summary tasks,
-  and live committed-fact recall before marking the exit check complete.
-
-API contract references reviewed during implementation:
-[Sessions](https://github.com/volcengine/OpenViking/blob/main/docs/en/api/05-sessions.md),
-[Retrieval](https://github.com/volcengine/OpenViking/blob/main/docs/en/api/06-retrieval.md),
-[Content](https://github.com/volcengine/OpenViking/blob/main/docs/en/api/12-content.md).
-
-## Revised implementation gates
-
-Use completed, OpenViking-generated summaries only. Summary-only remote sessions
-must disable long-term extraction, so compaction does not re-extract the entire
-history. Preserve every original transcript in numbered archives, journal the
-rotation before it starts, and recover interrupted rotations at startup. Include
-whole assistant/tool groups. Refuse oversized requests when compaction cannot
-complete; never silently send unbounded context or estimate usage as real tokens.
-
-Provide explicit extraction refresh and scratch round-trip operations. The live
-probe must verify recalled content in the next run's persisted prompt, not merely
-trust a model's answer. Pending/failed/ambiguous extraction is visible. Do not
-blindly replay memory writes. Live instance configuration is still required.
-
-
-## Local completion checkpoint
-
-Implemented extraction refresh, summary-only compaction, whole-group memory
-conversion, numbered immutable transcript archives, transaction recovery, run
-message inspection across archives, conservative context guarding, and explicit
-scratch memory verification API/CLI. Unknown API fields are rejected. Automated
-checks cover repeat compaction, pending/failed summaries, crash after rotation,
-index deletion, and a probe that cannot pass from a model's claim alone.
-
-Live exit is still pending the existing OpenViking endpoint/version/roots and
-credential reference. No live contact, rollout, or Hermes change has occurred.
+Mocks establish implementation behavior, not live compatibility. Ambiguous prior
+writes still require operator reconciliation; polling never replays them.

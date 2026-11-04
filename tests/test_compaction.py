@@ -36,7 +36,11 @@ def memory_handler(
         elif "/tasks/" in path:
             result = {"status": task_status}
         elif "/archives/" in path:
-            result = {"status": "completed", "overview": overview}
+            result = {
+                "status": "completed",
+                "archive_id": "archive_001",
+                "overview": overview,
+            }
         else:
             result = {}
         return httpx.Response(200, json={"status": "ok", "result": result})
@@ -247,6 +251,56 @@ def test_explicit_memory_probe_verifies_recall_not_model_claim(config):
         assert execution.store.run(result["first_run"])["memory_status"] == "completed"
         failed = await probe(execution, "Remember something", "Recall", "not-in-recall")
         assert not failed["passed"]
+        persona = await probe(execution, "Scratch note", "Recall", "I am Sola.")
+        assert not persona["passed"]  # A persona match is not evidence of recall.
         await execution.close()
+
+    asyncio.run(exercise())
+
+
+def test_openviking_04171_archive_contract_without_status(config):
+    recorded = []
+    upstream_shape = memory_handler(recorded)
+
+    def version_04171(request):
+        if request.url.path.endswith("/commit"):
+            assert json.loads(request.content) == {"keep_recent_count": 0}
+        response = upstream_shape(request)
+        if "/archives/" in request.url.path:
+            payload = response.json()
+            del payload["result"]["status"]
+            return httpx.Response(200, json=payload)
+        return response
+
+    store = Store(config.paths.data)
+    seed(store)
+    memory = MemoryClient(memory_config(), transport=httpx.MockTransport(version_04171))
+
+    async def exercise():
+        result = await Compactor(store, memory).compact(store.session("s"))
+        assert result["stage"] == "committed"
+        await memory.close()
+
+    asyncio.run(exercise())
+
+
+def test_lost_compacted_active_file_is_not_treated_as_empty_session(config):
+    from solakit.core.store import StorageCorruption
+
+    memory = MemoryClient(
+        memory_config(), transport=httpx.MockTransport(memory_handler([]))
+    )
+    store = Store(config.paths.data)
+    seed(store)
+
+    async def exercise():
+        await Compactor(store, memory).compact(store.session("s"))
+        (store.root / "sessions/s.jsonl").unlink()
+        restarted = Store(config.paths.data)
+        with pytest.raises(StorageCorruption, match="recovery required"):
+            restarted.transcript("s")
+        assert restarted.storage_health()["status"] == "degraded"
+        assert restarted.archives("s") == ["s.jsonl.1"]
+        await memory.close()
 
     asyncio.run(exercise())

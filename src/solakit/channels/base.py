@@ -27,6 +27,7 @@ class Outbound:
     artifact: bytes | None = None
     filename: str | None = None
     target_id: str | None = None
+    message_id: str | None = None
 
 
 Emit = Callable[[Inbound], Awaitable[object]]

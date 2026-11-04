@@ -1,6 +1,6 @@
 # Phase 8: Persistent scheduling and job operations
 
-Status: planned
+Status: local implementation complete — live work gated
 
 Depends on: phase 7
 
@@ -14,7 +14,17 @@ Depends on: phase 7
 
 ## Completion record
 
-Record implementation, validation, and remaining limitations here before marking complete.
+Implemented APScheduler 3 wake-ups/CronTrigger, durable JSONL job cursors indexed
+in SQLite, channel/session/ephemeral binding into the existing execution queue,
+timezone-aware bounded task placeholders, pause/resume/manual/status operations,
+missed firing ranges, one-time polling catch-up, and queued/running non-overlap.
+Controlled-clock restart tests verify misfires, index rebuild, pause persistence,
+interrupted dispatch and cron-to-channel-to-conversation continuity.
+
+The scheduler intentionally restores declarative jobs from TOML plus owned cursor
+state rather than pickling runtime callbacks into a library job store. This keeps
+state rebuildable, avoids global callback registries, and makes downtime decisions
+explicit. Live jobs remain disabled pending live_ready and acceptance gates.
 
 ## Revised release gates
 

@@ -1,6 +1,7 @@
 """Scope-bound OpenViking REST access and conservative commit recovery.
 
-Contract: upstream docs/en/api/{05-sessions,06-retrieval,12-content}.md.
+Contract checked against OpenViking tag v0.4.17.1 session/search routers and
+working-memory policy, plus docs/en/api/{05-sessions,06-retrieval,12-content}.md.
 The server does not document idempotency for message appends. Persist intent
 before each remote write and refuse ambiguous replays, rather than duplicating
 memories after a lost response. Each run has a stable remote session identity.
@@ -26,9 +27,12 @@ class MemoryUnavailable(Exception):
 class MemoryClient:
     def __init__(self, config: MemoryConfig, key: str | None = None, transport=None):
         self.config = config
+        headers = {"X-API-Key": key} if key else {}
+        if config.user:
+            headers["X-OpenViking-User"] = config.user
         self.client = httpx.AsyncClient(
             base_url=(config.base_url or "http://127.0.0.1:1933").rstrip("/") + "/",
-            headers={"X-API-Key": key} if key else {},
+            headers=headers,
             timeout=config.timeout_s,
             transport=transport,
             trust_env=config.trust_env,
@@ -137,7 +141,7 @@ class ScopedMemory:
             store.log_memory, run_id, {"stage": "creating", "session": remote}
         )
         if summary_only:
-            await self._client.request(
+            created = await self._client.request(
                 "POST",
                 "sessions",
                 json={
@@ -150,9 +154,16 @@ class ScopedMemory:
                 },
             )
         else:
-            await self._client.request(
+            created = await self._client.request(
                 "GET", f"sessions/{remote}", params={"auto_create": "true"}
             )
+        if self._client.config.user:
+            expected_uri = f"viking://user/{self._client.config.user}/sessions/{remote}"
+            uri = created.get("uri") if isinstance(created, dict) else None
+            if not isinstance(uri, str) or uri.rstrip("/") != expected_uri:
+                raise MemoryUnavailable(
+                    "Remote session user does not match configured memory user"
+                )
         # Disable inherited automatic extraction on this run-owned remote session.
         await self._client.request(
             "PATCH", f"sessions/{remote}/config", json={"auto_commit_policy": None}
@@ -176,7 +187,7 @@ class ScopedMemory:
         result = await self._client.request(
             "POST",
             f"sessions/{remote}/commit",
-            json={"keep_recent_count": 0, "enable_working_memory": summary_only},
+            json={"keep_recent_count": 0},
         )
         if not isinstance(result, dict) or result.get("status") not in {
             "accepted",
@@ -202,7 +213,10 @@ class ScopedMemory:
         task_id = result.get("task_id")
         if not isinstance(task_id, str):
             raise MemoryUnavailable("Accepted commit has no extraction task ID")
-        safe_id(task_id)
+        try:
+            safe_id(task_id)
+        except ValueError:
+            raise MemoryUnavailable("Invalid extraction task ID") from None
         deadline = time.monotonic() + wait_s
         while True:
             task = await self._client.request("GET", f"tasks/{task_id}")
@@ -216,9 +230,12 @@ class ScopedMemory:
             }:
                 raise MemoryUnavailable("Invalid extraction task response")
             outcome = {**result, "status": task["status"], "task": task}
-            await durable(
-                store.log_memory, run_id, {"stage": "task", "result": outcome}
-            )
+            latest = next((e for e in reversed(events) if e["stage"] == "task"), None)
+            if latest is None or latest["result"] != outcome:
+                await durable(
+                    store.log_memory, run_id, {"stage": "task", "result": outcome}
+                )
+                events.append({"stage": "task", "result": outcome})
             if (
                 task["status"] in {"completed", "failed", "cancelled"}
                 or time.monotonic() >= deadline
@@ -237,6 +254,8 @@ class ScopedMemory:
             raise MemoryUnavailable(f"Compaction extraction is {outcome['status']}")
         remote = f"solakit-{safe_id(operation)}"
         uri = outcome.get("archive_uri", "")
+        if not isinstance(uri, str):
+            raise MemoryUnavailable("Compaction acknowledgment has no archive URI")
         match = re.fullmatch(
             r"viking://[^?#]+/sessions/"
             + re.escape(remote)
@@ -252,7 +271,8 @@ class ScopedMemory:
         )
         if (
             not isinstance(archive, dict)
-            or archive.get("status") != "completed"
+            or archive.get("status", "completed") != "completed"
+            or archive.get("archive_id") != match[1]
             or not isinstance(archive.get("overview"), str)
             or not archive["overview"].strip()
         ):
