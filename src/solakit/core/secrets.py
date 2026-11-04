@@ -37,7 +37,11 @@ class RedactingFilter(logging.Filter):
             record.args = self.redactor.redact(record.args)
         elif isinstance(record.args, tuple):
             record.args = tuple(self.redactor.redact(arg) for arg in record.args)
-        record.msg = self.redactor.redact(record.getMessage())
+        # Formatters such as Uvicorn's AccessFormatter consume the original
+        # argument tuple themselves. Keep its shape and numeric types intact.
+        record.msg = self.redactor.redact(record.msg)
+        if "color_message" in record.__dict__:
+            record.color_message = self.redactor.redact(record.color_message)
         if record.exc_info:
             record.exc_text = self.redactor.redact(
                 "".join(traceback.format_exception(*record.exc_info))
@@ -45,5 +49,4 @@ class RedactingFilter(logging.Filter):
             record.exc_info = None
         elif record.exc_text:
             record.exc_text = self.redactor.redact(record.exc_text)
-        record.args = ()
         return True
