@@ -65,7 +65,7 @@ def request(cfg, headers, method, path, body=None):
         ) as response:
             response.raise_for_status()
             content = bytearray()
-            for chunk in response.iter_bytes(65536):
+            for chunk in response.iter_bytes():
                 if time.monotonic() >= deadline:
                     raise TimeoutError("ComfyUI response deadline exceeded")
                 content.extend(chunk)

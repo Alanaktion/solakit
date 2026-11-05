@@ -1,6 +1,7 @@
 import asyncio
 import json
 import threading
+from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -248,3 +249,26 @@ def test_pack_auth_registered_before_request_and_masked(setup, monkeypatch):
     assert not invoke(setup).error
     assert calls[0].headers["Authorization"] == "Bearer private-image-auth"
     assert ctx.store.redactor.redact("private-image-auth") == "[redacted]"
+
+
+def test_deadline_checks_small_chunks_without_waiting_for_a_full_buffer(monkeypatch):
+    class Trickle(httpx.SyncByteStream):
+        def __iter__(self):
+            yield b"{"
+            yield b"}"
+
+    ticks = iter([0, 0, 16])
+    monkeypatch.setattr(image, "time", SimpleNamespace(monotonic=lambda: next(ticks)))
+    monkeypatch.setattr(
+        image.httpx,
+        "Client",
+        lambda **kwargs: HTTPClient(
+            transport=httpx.MockTransport(
+                lambda request: httpx.Response(200, stream=Trickle())
+            ),
+            **kwargs,
+        ),
+    )
+    cfg = image.Image(workflow="/tmp/workflow.json", prompt_node="6", seed_node="3")
+    with pytest.raises(TimeoutError, match="deadline"):
+        image.request(cfg, {}, "GET", "/history/prompt-1")
