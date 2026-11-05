@@ -1,6 +1,6 @@
-# Letters pack — next
+# Letters pack
 
-Status: planned, after journal contract tests.
+Status: locally implemented in `packs/letters`; actual protocol/live check pending.
 
 Build a separate package using the same filesystem/Git services. Do not put
 letters tools or protocol rules under `src/solakit/` and do not force letters into
@@ -18,3 +18,17 @@ journal conventions. Use a named repository and pack-owned protocol configuratio
 Verify actual repository conventions before live wiring; leave Hermes untouched.
 Expose this pack without editing `core/loop.py`. If that becomes necessary, fix
 or extend the generic service seam instead of adding a letters branch to the core.
+
+## Implementation record
+
+`sola_packs.letters` implements pull_new/read/reply using the shared Git/filesystem
+services. Config is pack-owned: named repository, directory, local/peer author,
+layout and scan bound. Numbering is global across authors. Reply intent is durable
+before create; request fingerprints and resource locks prevent duplicate replies
+and numbering races. Failed/uncertain publication preserves local evidence and
+blocks automatic replay. Existing letters are never modified.
+
+Tests use local bare remotes: original bytes preserved, external markers, duplicate
+sequence refusal, changed-request and resource/capability denials, concurrent
+number allocation, busy operations, torn receipts and failed push. Live conventions
+and production correspondence have not been checked or modified.

@@ -152,7 +152,7 @@ sola-server/
     jobs/
       scheduler.py           # APScheduler wiring, misfire policy (§7)
   packs/journal/             # separate distribution: sola_packs.journal
-  # letters/email/printer packs remain separately packaged follow-up work
+  # letters/email/shell are independent packs; printer remains follow-up work
   tests/                     # mock model endpoint, mock Discord adapter
 data/                        # runtime state lives OUTSIDE the code tree (§10)
 ```
@@ -552,7 +552,8 @@ Registry rules:
 
 ### 8.2 Domain tools beat generic tools
 
-The registry ships generic primitives (`files.*`, `shell`, `repo_git.*`),
+The core registry loads generic primitives (`files.*`, `repo_git.*`, memory/runtime);
+maintenance shell is a separate pack.
 but the design intent — Alan's, stated plainly — is that recurring work
 gets a **semantic tool** whose implementation hides the mechanics:
 
@@ -570,11 +571,36 @@ in posts and letters, not `git -C … commit -m`), and the fragile
 mechanics — filename conventions, front matter, push retries — become
 tested code instead of model behaviour that varies with her mood.
 
-A future generic shell remains maintenance-only. Prefer named Python services
+The external general shell pack is maintenance-only. Prefer named Python services
 and small external packs over model-driven primitive choreography. The core's
 vocabulary stays files, repositories, memory, web, messages and devices; letters,
 mailbox protocols, journals and printer conventions are pack code/configuration.
 A tool-specific change to core execution is a seam defect, not a domain feature.
+
+### 8.2.1 External letters, email and shell packs
+
+These packs are independently packaged under `packs/`; no core domain schemas or
+execution-loop branches were added. Pack-owned named resources live in the
+`SOLA_PACKS_CONFIG` TOML sidecar; core config selects modules/profile grants only.
+
+Letters use a named repository, configurable directory/authors/layout, global
+sequential numbering and create-only replies. Resource locks and durable request
+receipts prevent duplicate allocations/replies and refuse ambiguous replays.
+Actual repository conventions must be checked before production wiring.
+
+Email uses verified TLS IMAP and TLS/STARTTLS SMTP, stable UIDVALIDITY:UID IDs,
+bounded BODY.PEEK reads and explicit external-content markers. Replies derive
+sender-only recipients and threading from the source message, with no arbitrary
+SMTP envelope arguments. Private append-only intent/result receipts deduplicate
+operation IDs and identical source/body requests. Unknown send outcomes block
+replay; cancellation waits for accepted SMTP work and receipt persistence. SMTP
+acceptance is not proof of final delivery. Mail credentials register with the
+runtime redactor before connection; inbox requires no filesystem write grant.
+
+Shell provides literal argv and `/bin/sh` execution, maintenance profile only,
+with explicit shell.exec capability and scoped cwd. Commands have host-user
+privileges, not a path sandbox. Output and duration are bounded; cancellation and
+timeout kill/drain process groups. This introduces no per-command approval flow.
 
 ### 8.3 Run profiles
 

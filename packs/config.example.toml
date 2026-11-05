@@ -1,0 +1,25 @@
+# This sidecar belongs to optional packs, not core config.toml.
+# Set SOLA_PACKS_CONFIG to its absolute path. Secrets are references only.
+
+[letters.correspondence]
+repository = "letters" # Must exist in core [repositories].
+directory = "."
+author = "sola"
+peer = "dingus"
+# Optional: layout = "In reply to {reply_to}\n\n{body}\n"
+# max_entries = 10000
+
+[mailboxes.personal]
+imap_host = "imap.example.invalid"
+imap_port = 993
+username = "sola@example.invalid"
+address = "sola@example.invalid"
+password = { env = "SOLA_MAIL_PASSWORD" }
+folder = "INBOX"
+smtp_host = "smtp.example.invalid" # Omit to configure read-only access.
+smtp_port = 465
+smtp_security = "tls" # Or "starttls", usually with port 587.
+# smtp_username = "sola@example.invalid"
+# smtp_password = { file = "mail-password" } # Relative to this file; mode 0600.
+timeout_s = 15
+max_message_bytes = 1000000

@@ -45,10 +45,12 @@ not proof that a live integration or production acceptance gate has passed.
   supports arbitrary configured profiles without granting calls automatically.
   Filesystem
   roots, writes and other capabilities are separate explicit grants.
-- `packs/`: independently packaged extensions outside the core package. Journal
-  is `packs/journal` / `sola_packs.journal`, not an in-tree domain module. Core
-  distributions exclude packs; install and test them separately. Collections are
-  named repo subdirectories; `collection:<alias>` grants only that directory.
+- `packs/`: independently packaged journal, letters, email and maintenance shell
+  extensions (`sola_packs.*`), plus `solakit-packs-common` support. Core distributions
+  exclude packs; install and test them separately. Letters/mailbox schemas live
+  in the pack-owned `SOLA_PACKS_CONFIG` sidecar. Resolved pack credentials register
+  with the existing redactor before network access. Collections remain named repo
+  subdirectories; `collection:<alias>` grants only that directory.
 - `channels/`: API and opt-in Discord adapters through shared session execution.
   `jobs/`: opt-in APScheduler jobs using the same execution/delivery operations.
 - `ui/`: Jinja2 pages, packaged local HTMX/CSS/vanilla JS, opaque in-memory login
@@ -69,6 +71,14 @@ not proof that a live integration or production acceptance gate has passed.
   modules under `src/solakit`, no domain imports or branches in core execution.
   A future tool PR touching `core/loop.py` is a review finding: fix the generic
   service seam instead. No entry-point discovery or auto-loading is needed.
+- Pack send/reply receipts are append-only private evidence. Pending/uncertain
+  intents must not auto-replay, including cancellation and restart. Keep external
+  mail/letter content explicitly marked as data. Sender-only email replies derive
+  their envelope and threading from an existing stable mailbox message identity.
+- General shell is an explicit maintenance-only pack with `shell.exec` capability.
+  Its cwd check is not a sandbox: commands have host-user privileges. Keep it out
+  of inbox/journal/letters profiles. Bound output and kill/drain process groups on
+  timeout/cancellation; no per-command approval framework is part of this app.
 - Git writes check the actual named repository/files. Generic writes require
   exact `repo:<alias>` write grants; collection services enforce directory limits.
   Push additionally requires `git.push`, even inside packs. Do not stage whole
@@ -118,12 +128,13 @@ browser visual QA separately from HTTP tests. Synchronize docs and phase status,
 then follow the working agreement in `docs/plan/README.md`: push directly to main
 without force. No public deployment is implied by local implementation.
 
-Optional journal pack checks (after the core environment is synced):
+Optional pack checks (after the core environment is synced):
 
 ```sh
-uv pip install --no-deps -e packs/journal
-uv run --no-sync pytest packs/journal/tests -q
+uv pip install --no-deps -e packs/journal -e packs/common -e packs/letters -e packs/email -e packs/shell
+uv run --no-sync pytest packs/journal/tests packs/letters/tests packs/email/tests packs/shell/tests -q
 uv build packs/journal
+# Build each of common, letters, email and shell separately as well.
 ```
 
 Root `uv sync` removes independently installed packs; production deployments must
@@ -138,8 +149,9 @@ P1 UI (sessions/chat/status) is implemented, plus read-only tools inspection.
 prompt/run inspection and job/channel controls. Operator API/UI archival and
 read-only archive browsing are implemented; see `docs/plan/13-session-archival.md`.
 Discord archival exposure, markdown, per-message profile selection and SSE remain
-deferred. Generic services and the journal pack are locally implemented. The
-revised phase 9 roadmap is journal → letters → email → printer, with image/calendar
-as later seam proofs; see plans 14–19. Phase 6 live scratch-memory verification and
+deferred. Generic services and journal/letters/email/shell packs are locally
+implemented. Printer is the next planned pack, with image/calendar as later seam
+proofs; see plans 14–20. Verify the actual letters protocol and scratch mailbox
+before live wiring; mock/scratch implementation is not live acceptance. Phase 6 live scratch-memory verification and
 later acceptance/pilot gates remain distinct from local mock-tested implementation. Check the phase plans
 before expanding scope or claiming a phase complete.

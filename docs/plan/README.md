@@ -103,8 +103,13 @@ exposure, prompt/run inspectors, markdown and profile selection remain deferred.
 The user-directed replacement for phase 9 is now recorded in
 [14: external tool packs and services](14-tool-pack-boundary.md),
 [15: generic tools/runtime](15-generic-tools.md), and
-[16: journal pack](16-journal-pack.md), locally implemented. Remaining work follows
-[17: letters](17-letters-pack.md), [18: email](18-email-pack.md), then
-[19: printer and later seam proofs](19-printer-and-seam-provers.md).
+[16: journal pack](16-journal-pack.md), locally implemented. [17: letters](17-letters-pack.md) and [18: email](18-email-pack.md) are also locally
+implemented. Next is [19: printer and later seam proofs](19-printer-and-seam-provers.md).
 Domain behavior is independently packaged; core loop changes are not part of
 adding a pack. Live acceptance and pilot gates remain unchanged.
+
+Letters and email are now locally implemented in their own distributions, with
+pack-owned configuration, secret registration and append-only operation receipts.
+[20: maintenance shell](20-shell-pack.md) adds the separately authorized low-level
+pack. Printer is next; protocol/provider checks and complete live acceptance remain
+pending. No changes to core execution or core domain configuration were required.
