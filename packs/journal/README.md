@@ -8,17 +8,15 @@ No core imports this module, and core installations do not install it.
 For local development from a Solakit checkout:
 
 ```sh
-uv sync --frozen
-uv pip install --no-deps -e packs/journal
-uv run --no-sync pytest packs/journal/tests -q
-uv run --no-sync sola check
-uv run --no-sync sola serve
+uv sync --frozen --all-packages
+uv run pytest packs/journal/tests -q
+uv run sola check
+uv run sola serve
 ```
 
-`uv sync` removes separately installed packages not in the root lock. For a
-persistent deployment, include this wheel/package in the deployment environment's
-requirements alongside Solakit, or manage a separate application project with
-both dependencies. The pack's wheel declares its supported Solakit dependency.
+The checkout's workspace lock manages core and all packs together. Outside this
+workspace, include the journal distribution alongside Solakit in the deployment
+environment. Core wheel metadata has no dependency on journal or another pack.
 
 ```toml
 enabled_tools = ["solakit.tools.files", "solakit.tools.repo_git", "sola_packs.journal"]

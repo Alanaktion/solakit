@@ -6,7 +6,7 @@ is assumed: each print ends with two configurable feed lines and sends no cut
 command. Device selection is operator-owned configuration, never model input.
 
 ```sh
-uv pip install -e . -e packs/common -e packs/printer
+uv sync --frozen --all-packages
 ```
 
 Native USB needs a working libusb backend on the host. USB-to-serial uses pyserial

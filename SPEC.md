@@ -999,3 +999,16 @@ and remaining acceptance, printer, provider and staged rollout work.
    MVP, with new-thread sends reserved for `interactive`?
 6. Anything Hermes does today that you rely on that is *not* represented
    in §6–§8?
+
+### Source workspace and tool distribution visibility
+
+The checkout is a uv workspace containing core plus five independently packaged
+packs. `uv sync --frozen --all-packages` reproduces their shared lockfile in one
+environment. Root project dependencies must not include pack distributions; the
+core wheel contains neither pack code nor pack Requires-Dist entries. Workspace
+membership installs distributions without enabling tool modules or granting calls.
+Startup, offline `sola check`, tool catalog and runtime status identify loaded
+modules by installed distribution/version using importlib.metadata. A configured
+missing pack fails with its distribution name and workspace sync repair command.
+Metadata-less external source modules remain supported and explicitly report an
+unknown distribution/version; metadata inspection does not discover/load plugins.

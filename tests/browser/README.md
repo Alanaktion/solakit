@@ -9,7 +9,7 @@ Install Playwright outside the checkout:
 
 ```sh
 npm install --prefix /private/tmp/solakit-browser-qa playwright
-uv run --no-sync python tests/browser/server.py
+uv run python tests/browser/server.py
 ```
 
 In a second terminal:

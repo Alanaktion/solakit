@@ -298,3 +298,26 @@ after the harness changes and passed. Private screenshots, scratch application
 evidence, fixture source, server log and matrix report are retained under the
 operator data directory's `verification/2026-11-05-streaming-browser/`. The QA
 server was stopped after verification.
+
+## Workspace pack sync (2026-11-05)
+
+Core and all five pack distributions are now uv workspace members under one
+lockfile. Root runtime dependencies contain no packs, and a wheel inspection
+regression asserts no pack modules or `solakit-packs-*` Requires-Dist entries in
+the core artifact. Workspace source mappings resolve core/common inter-package
+dependencies locally; manual editable installation and dependency ordering are
+no longer part of the checkout workflow.
+
+`uv sync --frozen --all-packages` was verified in a fresh environment, repeated
+without pruning packs, followed by ordinary `uv run` imports/metadata checks.
+Core-only sync was verified in that separate environment and all-package sync
+restored the six distributions. Existing test environment packs were not removed.
+All 240 core/pack tests passed against workspace installations.
+
+The shared tool catalog, startup logs, offline `sola check` and `runtime.status`
+report loaded module distribution names/versions from importlib.metadata.
+Configured missing packs fail before import with their expected distribution
+and the all-package sync repair command, even if a source module is importable.
+Missing dependencies receive the same repair guidance. Metadata-less external
+modules remain supported and report unknown identity explicitly. No entry-point
+discovery, tool auto-loading, profile grant or integration activation was added.

@@ -36,3 +36,10 @@ select = ["E", "F", "I", "UP"]
 
 [tool.hatch.build.targets.sdist]
 exclude = ["/packs"]
+
+[tool.uv.workspace]
+members = ["packs/*"]
+
+[tool.uv.sources]
+solakit = { workspace = true }
+solakit-packs-common = { workspace = true }

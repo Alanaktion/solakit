@@ -14,16 +14,17 @@ move to a separate repository without changes to core execution.
 From the existing core development checkout:
 
 ```sh
-uv sync --frozen
-uv pip install --no-deps -e packs/common -e packs/letters -e packs/email
-uv pip install --no-deps -e packs/journal -e packs/printer
-uv run --no-sync pytest tests packs/journal/tests packs/letters/tests packs/email/tests packs/printer/tests -q
+uv sync --frozen --all-packages
+uv run pytest tests packs/*/tests -q
 ```
 
-Core sync does not manage these optional dependencies. Production/application
-environments should declare desired pack wheels alongside the core in their own
-requirements, including `solakit-packs-common` for letters/email/printer. Use
-`uv run --no-sync sola serve` for the manually installed development environment.
+The root and all five packs share one uv workspace and lockfile. Sync installs
+them together, including inter-pack dependencies, without manual ordering.
+`uv run` keeps the synced members available; no `--no-sync` is needed.
+Workspace membership does not add pack dependencies or code to the core wheel.
+Plain `uv sync` selects only the root; use `--all-packages` for this checkout.
+Standalone deployments outside the workspace still declare their desired pack
+distributions alongside core. Installed packs load only through `enabled_tools`.
 
 Set `SOLA_PACKS_CONFIG` to an operator-owned TOML file based on
 [config.example.toml](config.example.toml) for letters/email/printer. Nothing reads or sends

@@ -43,3 +43,13 @@ coverage. Live summary/compaction, provider correspondence, configured publishin
 profiles, Discord and scheduled-job rollout remain in the
 [remaining plans](../plan/README.md). This basic audit does not approve operator
 prompt content or the complete SPEC acceptance matrix.
+
+## Workspace sync follow-up (2026-11-05)
+
+The earlier source-only pack-test limitation is superseded by the shared uv
+workspace lock. `uv sync --frozen --all-packages` installs core plus all five
+editable pack distributions, including common dependencies. The full suite runs
+through those installed packages with ordinary `uv run pytest tests packs/*/tests`.
+Startup, offline checks and runtime status expose installed module distribution
+versions. These checks identify environment/installation drift; they do not
+replace a live integration acceptance result or prove a deployed checkout's SHA.

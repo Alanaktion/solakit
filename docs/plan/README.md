@@ -31,7 +31,8 @@ No live service, mailbox, printer, job or Discord bot is activated by this audit
 
 Synchronize main, implement the bounded scope, run its relevant exit checks plus
 pytest, Ruff lint and format checks, update status, and push directly to main
-without force. Keep integrations opt-in. Never mark a live gate complete from mocks.
+without force. Use `uv sync --frozen --all-packages` for the shared checkout
+environment. Keep integrations opt-in. Never mark a live gate complete from mocks.
 Update the audit when removing a completed plan and repair all references.
 
 ## Architecture and rollout rules

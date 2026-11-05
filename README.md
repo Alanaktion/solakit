@@ -18,7 +18,7 @@ work has not activated a production pilot, deployment or changed Hermes.
 ## Development
 
 ```sh
-uv sync --frozen
+uv sync --frozen --all-packages
 cp config.example.toml config.toml
 # Configure the reference to the existing live SOUL.md and an external data tree.
 # Provide an operator-token env reference or a mode-0600 token-file reference.
@@ -26,6 +26,18 @@ cp config.example.toml config.toml
 uv run sola check
 uv run sola serve
 ```
+
+Core and all five packs share one uv workspace lockfile. The sync above installs
+every distribution; enabled modules and profile grants still control use. Run
+`uv run pytest tests packs/*/tests -q` for the full suite. Plain `uv sync` selects
+only core when that is wanted; the core wheel has no pack code or dependencies.
+
+`sola check`, startup logs and `runtime.status` report each configured tool
+module's installed distribution/version. The same list is available as
+`distributions` in `/api/tools` and `tool_distributions` in runtime status.
+Missing pack metadata fails before import with the missing distribution and
+`uv sync --frozen --all-packages` repair command. External source-only modules
+without distribution metadata are reported as unpackaged with unknown version.
 
 `sola serve` launches uvicorn at `127.0.0.1:8382` by default (ASCII decimal
 `S=83`, `R=82`, sola-ryu); oMLX defaults to `http://127.0.0.1:8000/v1`.
@@ -112,6 +124,7 @@ uv build
 ```
 
 In the managed workspace use `UV_CACHE_DIR=/workspace/.cache/uv`.
+
 
 ## API and execution
 

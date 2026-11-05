@@ -283,6 +283,11 @@ def test_runtime_status_is_live_and_profile_scoped(config, mock_model):
         snapshot = json.loads(result.content)
         assert snapshot["model"] == {"id": config.model.model_id, "available": True}
         assert snapshot["granted_tools"] == ["runtime.status"]
+        assert (
+            snapshot["tool_distributions"]
+            == app.state.registry.catalog()["distributions"]
+        )
+        assert snapshot["tool_distributions"][0]["distribution"] == "solakit"
         assert snapshot["channels"] == [] and snapshot["jobs"] == []
         app.state.model.available = False
         snapshot = json.loads(

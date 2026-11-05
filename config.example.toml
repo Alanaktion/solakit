@@ -2,7 +2,7 @@
 timezone = "America/Denver"
 enabled_tools = []
 # Built-ins accept bare names or full paths: ["files", "solakit.tools.repo_git", "runtime"].
-# External packs must be separately installed: "sola_packs.journal",
+# Workspace sync installs external pack distributions; load explicitly: "sola_packs.journal",
 # "sola_packs.letters", "sola_packs.email".
 # Shell is built in: "shell" or "solakit.tools.shell" (enabled by config).
 # See packs/README.md for their resource sidecar and explicit profile grants.

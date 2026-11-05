@@ -18,6 +18,7 @@ from solakit.core.config import Config, Profile
 from solakit.core.io import durable
 from solakit.core.schemas import Session
 from solakit.core.store import Store
+from solakit.tools.distributions import SYNC_HINT, identity, installed
 
 
 class ToolError(Exception):
@@ -163,13 +164,27 @@ class Registry:
         self.config = config
         self.tools: dict[str, Registered] = {}
         self.runtime_status = None
+        self.distributions: list[dict] = []
         for module in config.enabled_tools:
             if not re.fullmatch(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*", module):
                 raise ValueError(
                     "Tool modules must be Python module names or dotted paths"
                 )
             path = module if "." in module else f"solakit.tools.{module}"
-            imported = importlib.import_module(path)
+            provider = installed(path)
+            try:
+                imported = importlib.import_module(path)
+            except ModuleNotFoundError as exc:
+                raise ValueError(
+                    f"enabled_tools references {path} but required module "
+                    f"{exc.name} is unavailable; {SYNC_HINT}"
+                ) from None
+            except ImportError:
+                raise ValueError(
+                    f"enabled_tools references {path} but its imports failed; "
+                    f"check installed distributions and dependencies; {SYNC_HINT}"
+                ) from None
+            self.distributions.append(identity(path, imported, provider))
             for function in vars(imported).values():
                 manifest = getattr(function, "__sola_tool__", None)
                 if isinstance(manifest, Manifest):
@@ -233,6 +248,7 @@ class Registry:
         """Loaded tools and effective grants, shared by diagnostics and API."""
         return {
             "modules": list(self.config.enabled_tools),
+            "distributions": list(self.distributions),
             "profiles": {
                 name: [schema["function"]["name"] for schema in self.schemas(name)]
                 for name in sorted(self.config.profiles)

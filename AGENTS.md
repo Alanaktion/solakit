@@ -116,9 +116,9 @@ not proof that a live integration or production acceptance gate has passed.
 Python 3.12+ and uv are required. From the repository root:
 
 ```sh
-uv sync --frozen
+uv sync --frozen --all-packages
 uv run sola check
-uv run pytest -q
+uv run pytest tests packs/*/tests -q
 uv run ruff check .
 uv run ruff format --check .
 uv build
@@ -137,19 +137,21 @@ browser visual QA separately from HTTP tests. Synchronize docs and phase status,
 then follow the working agreement in `docs/plan/README.md`: push directly to main
 without force. No public deployment is implied by local implementation.
 
-Optional pack checks (after the core environment is synced):
+Pack builds (the workspace sync above already installs all members):
 
 ```sh
-uv pip install --no-deps -e packs/journal -e packs/common -e packs/letters -e packs/email
-uv run --no-sync pytest packs/journal/tests packs/letters/tests packs/email/tests -q
 uv build packs/journal
-# Build each of common, letters and email separately as well.
+# Build each of common, letters, email and printer separately as well.
 ```
 
-Root `uv sync` removes independently installed packs; production deployments must
-include desired pack distributions in their own dependency manifest. Pack code is
-operator-trusted Python, not sandboxed code. Services enforce model-call arguments,
-not a security boundary against a malicious installed package.
+Core and five packs share a uv workspace/lockfile. Always use
+`uv sync --frozen --all-packages` for this checkout; plain `uv sync` selects core
+only. Workspace membership is not a core dependency: core wheel metadata and
+code remain pack-free. `uv run` needs no `--no-sync` after workspace sync.
+Standalone deployments outside the workspace declare desired pack distributions
+in their own dependency manifest. Pack code is operator-trusted Python, not
+sandboxed code. Services enforce model-call arguments, not a security boundary
+against a malicious installed package.
 
 ## Scope and deferred work
 

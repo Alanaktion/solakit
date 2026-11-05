@@ -70,9 +70,13 @@ def main() -> None:
         return
     if args.command == "check":
         try:
-            prepare()
+            prepared = prepare()
         except ConfigurationError as exc:
             parser.exit(1, f"Configuration error: {exc}\n")
+        from solakit.tools.distributions import description
+
+        for provider in prepared.registry.distributions:
+            print("Tool module " + description(provider))
         print("Configuration valid.")
         return
     try:

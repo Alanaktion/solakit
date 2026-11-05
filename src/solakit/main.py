@@ -115,6 +115,7 @@ def create_app(
                     "channels": app.state.channels.status(),
                     "jobs": app.state.jobs.status(),
                     "profile": profile,
+                    "tool_distributions": app.state.registry.distributions,
                     "granted_tools": [
                         schema["function"]["name"]
                         for schema in app.state.registry.schemas(profile)
@@ -197,6 +198,13 @@ def create_app(
                 ", ".join(catalog["modules"]) or "none",
                 ", ".join(tool["name"] for tool in catalog["tools"]) or "none",
             )
+            for provider in catalog["distributions"]:
+                runtime_logger.info(
+                    "Tool module %s: distribution=%s; version=%s",
+                    provider["module"],
+                    provider["distribution"] or "unpackaged",
+                    provider["version"] or "unknown",
+                )
             for profile, names in catalog["profiles"].items():
                 runtime_logger.info(
                     "Profile %s: tools=%s", profile, ", ".join(names) or "none"
