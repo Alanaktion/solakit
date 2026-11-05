@@ -37,3 +37,9 @@ max_message_bytes = 1000000
 # max_text_bytes = 16000
 # For USB-to-serial, omit USB IDs and set transport = "serial",
 # serial_device = "/dev/cu.usbserial-EXAMPLE", baudrate = 9600.
+
+# Optional read-only calendar export; also needs a profile filesystem read scope.
+# [calendars.personal]
+# file = "/absolute/path/to/calendar.ics"
+# timezone = "America/Denver"
+# max_bytes = 1000000

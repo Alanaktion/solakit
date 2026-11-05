@@ -35,8 +35,14 @@ class Filesystem:
         finally:
             os.close(descriptor)
 
-    async def read(self, path) -> ToolResult:
-        limit = self.ctx.config.profiles[self.ctx.profile].tool_output_max_chars
+    async def read(self, path, *, max_chars: int | None = None) -> ToolResult:
+        limit = (
+            self.ctx.config.profiles[self.ctx.profile].tool_output_max_chars
+            if max_chars is None
+            else max_chars
+        )
+        if type(limit) is not int or not 1 <= limit <= _EDIT_LIMIT:
+            raise ToolError("Read limit must be between 1 and 4000000 characters")
         try:
             content, _ = await durable(self._read, path, limit)
         except (OSError, UnicodeError) as exc:

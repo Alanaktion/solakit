@@ -348,3 +348,18 @@ read-only offline behavior. The 269-test core/pack suite passed. A separate CLI
 process also passed with missing credentials, persona and tool provider, without
 changing app.db. `.env`-backed config checks and all six wheel/sdist builds passed.
 No operator session or live integration was changed for these checks.
+
+## Calendar read implementation (2026-11-05)
+
+The optional `solakit-packs-calendar` distribution provides `calendar.events`
+over a named operator-exported ICS file. It checks an explicit per-calendar read
+capability and the shared filesystem scope on every call, bounds export size,
+component count, query window and result count, and marks event text as external
+data. UTC results retain all-day semantics; supported recurrence and exceptions
+are expanded by the ICS library. Sub-daily/BY* rules fail explicitly. The generic
+filesystem reader now accepts an optional bounded internal character limit for
+pack composition; model-facing file tool budgets are unchanged.
+
+Scratch tests cover recurring exceptions, all-day timezone conversion, exclusive
+query bounds, limits, invalid exports, unsupported recurrence and grant/scope
+denial. No live calendar access or integration activation is claimed.

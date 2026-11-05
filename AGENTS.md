@@ -147,7 +147,7 @@ uv build packs/journal
 # Build each of common, letters, email and printer separately as well.
 ```
 
-Core and five packs share a uv workspace/lockfile. Always use
+Core and six packs share a uv workspace/lockfile. Always use
 `uv sync --frozen --all-packages` for this checkout; plain `uv sync` selects core
 only. Workspace membership is not a core dependency: core wheel metadata and
 code remain pack-free. `uv run` needs no `--no-sync` after workspace sync.

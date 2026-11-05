@@ -1,12 +1,13 @@
 # Printer pack and later seam proofs
 
-Status: USB/serial 58mm ESC/POS thermal printer pack implemented; physical check pending; image/calendar remain later priorities.
+Status: USB/serial 58mm ESC/POS thermal printer pack implemented; physical check pending; calendar read implemented; image workflow remains.
 
 - [x] Build a separately packaged printer module with pack-owned named-device config.
 - [x] Enforce explicit print capability and bounded output; report send/error state.
 - [x] Verify wrapping/feed with python-escpos Dummy and replay/grant/error capture tests.
 - [ ] Deliberate physical-device check on the connected 58mm printer.
-- [ ] Later, only when prioritized: image-workflow pack and calendar-read pack.
+- [x] Read-only calendar pack over named ICS exports with scoped, bounded reads.
+- [ ] Image-workflow pack.
 
 The [printer pack](../../packs/printer/README.md) uses python-escpos over named USB/serial devices,
 32-column wrapping and a two-line feed without a cut command. Private durable receipts

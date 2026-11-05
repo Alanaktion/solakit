@@ -1002,7 +1002,7 @@ and remaining acceptance, printer, provider and staged rollout work.
 
 ### Source workspace and tool distribution visibility
 
-The checkout is a uv workspace containing core plus five independently packaged
+The checkout is a uv workspace containing core plus six independently packaged
 packs. `uv sync --frozen --all-packages` reproduces their shared lockfile in one
 environment. Root project dependencies must not include pack distributions; the
 core wheel contains neither pack code nor pack Requires-Dist entries. Workspace
