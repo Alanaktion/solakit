@@ -19,7 +19,7 @@ or the Discord/job rollout results.
 | --- | --- | --- |
 | [07: Discord](07-channels-discord.md) | Adapter, routing, gating, delivery, mock lifecycle checks and operator-confirmed live DM/server replies | Remaining acceptance scenarios, reconnect/oversized delivery and pilot validation |
 | [08: scheduling](08-scheduling.md) | Persistent cursors, timezone schedules, controls, misfire/non-overlap checks | Live job and channel delivery validation; staged rollout |
-| [09: acceptance](09-domain-tools-verification.md) | Core, services, journal/letters/email, shell and runner-driven journal acceptance | Exact profile matrix, operator acceptance and rollout |
+| [09: acceptance](09-domain-tools-verification.md) | Core, services, journal/letters/email, shell, runner-driven journal and profile-isolation acceptance | Operator resource/prompt acceptance and rollout |
 | [10: UI foundation](10-ui-p1.md) | Login, sessions, chat, tool/status views and compact layout | Targeted light/dark, narrow-screen and keyboard browser checks |
 | [11: evidence UI](11-ui-p2-evidence.md) | Prompt/run inspection and cancellation | Targeted browser validation |
 | [12: operations UI](12-ui-p3-operations.md) | Job/channel views and job actions | Targeted browser validation |

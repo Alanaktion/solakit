@@ -58,7 +58,7 @@ not validation against every production resource.
 | 1. Golden prompt | Covered: `test_prompt.py::test_golden_dry_run` | Operator prompt approval is a separate §15 gate |
 | 2. No hidden context | Covered: `test_execution.py::test_exact_context_tool_order_and_usage`; prompt golden checked separately | No additional implementation item identified |
 | 3. Tool ordering | Covered by the same execution test, matching assistant/tool IDs | No additional implementation item identified |
-| 4. Profile leak | Partial: schema/dispatch, startup scope rejection and pack capability denials are tested separately | Exact blog-profile shell/email denial scenario and intended configured profile matrix |
+| 4. Profile leak | Covered: five runner-driven blog-profile attempts at loaded `shell.exec`, `shell.run`, `email.search`, `email.read`, `email.reply`; schemas exclude them, dispatch refuses them, transcript/tool logs preserve denial, implementation sentinels remain untouched (`packs/email/tests/test_profile_acceptance.py`) | Operator audit of intended live profile grants remains separate |
 | 5. Model-down | Covered: unavailable/wrong-model execution tests and `test_jobs.py::test_model_down_is_a_gap_without_channel_messages` | Production availability is operational, not a missing fallback feature |
 | 6. Session pinning | Covered: `test_channels.py::test_gating_parent_pinning_context_and_stored_delivery` | Real gateway/pilot remains separate |
 | 7. Cron/channel continuity | Covered: `test_jobs.py::test_nonoverlap_includes_queued_jobs_and_channel_continuity` | Deliberate live job/channel validation |
@@ -99,7 +99,7 @@ reported complete. Historical adversarial-review resolutions moved from plans to
 
 ## Remaining work and known limits
 
-1. Close the exact profile acceptance gap in plan 09.
+1. Audit intended operator-owned profile/resource grants and approve prompts in plan 09; the automated blog-profile isolation gap is closed.
 2. Verify live completed summaries, rotation and continuation in plan 21; a recall
    round-trip does not exercise those API paths.
 3. Complete targeted light/dark/mobile/keyboard UI checks (plans 10–13 and 21).

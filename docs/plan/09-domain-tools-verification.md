@@ -1,7 +1,7 @@
 # Phase 9: Remaining acceptance and external packs
 
 Status: partial — core and journal/letters/email/shell implementation complete;
-remaining acceptance coverage, provider checks and printer implementation are open.
+automated profile isolation is covered; operator acceptance and live checks remain open.
 
 ## Implemented
 
@@ -17,10 +17,12 @@ Completed foundation plans 01–06, 14–16 and 20 have been removed. See the
 
 ## Remaining
 
-- [ ] Exercise the exact configured profile matrix: a blog-profile model attempt
+- [x] Exercise the configured acceptance profile matrix: a blog-profile model attempt
   at `shell.exec`, `shell.run` and `email.*` must be absent from advertised schemas,
-  refused at dispatch and recorded. Existing tests verify these mechanisms
-  separately, but do not establish this complete profile scenario (SPEC §14.4).
+  refused at dispatch and recorded. Five runner-driven scenarios in
+  `packs/email/tests/test_profile_acceptance.py` verify loaded tools granted to
+  a separate operator profile, with forbidden implementation sentinels and exact
+  transcript/tool-log checks (SPEC §14.4). This fixture does not approve live grants.
 - [x] Runner-driven journal end-to-end acceptance check (SPEC §14.9): mock
   model → `journal.create` → `journal.publish` → scratch remote, exact transcript
   ordering and no shell calls. Covered by
@@ -29,8 +31,9 @@ Completed foundation plans 01–06, 14–16 and 20 have been removed. See the
   resources; record the prompt audit approval required by SPEC §15.
 - [ ] Finish [letters protocol/live checks](17-letters-pack.md) and
   [scratch mailbox checks](18-email-pack.md) before wiring those resources live.
-- [ ] Implement the [printer pack](19-printer-and-seam-provers.md) and verify its
-  capture transport, grants and deliberate physical-device operation.
+- [x] Implement the [printer pack](19-printer-and-seam-provers.md), capture transport
+  and grant checks.
+- [ ] Verify deliberate physical-device operation of the thermal printer.
 - [ ] Record remaining live summary/continuation checks from
   [compaction controls](21-compaction-controls.md).
 - [ ] Close targeted UI browser checks in plans 10–13 and 21.
