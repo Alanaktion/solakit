@@ -1,9 +1,10 @@
 """Server-rendered UI P1. Every application-data operation uses existing API routes."""
 
 import asyncio
+import hashlib
 import json
 import time
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import parse_qs, quote, urlencode
 from zoneinfo import ZoneInfo
@@ -20,12 +21,33 @@ from fastapi.responses import (
 from fastapi.templating import Jinja2Templates
 
 from solakit.ui.auth import COOKIE, LIFETIME, UISessions
-from solakit.ui.markdown import markdown
+from solakit.ui.markdown import markdown, preview_text
 from solakit.ui.view import timestamp, turns
 
+TURN_WINDOW = 20
 ROOT = Path(__file__).parent
 TEMPLATES = Jinja2Templates(directory=str(ROOT / "templates"))
 TEMPLATES.env.filters["markdown"] = markdown
+
+
+def display_time(value):
+    try:
+        date = datetime.fromisoformat(value).astimezone(UTC)
+        return date.strftime("%b %-d, %Y · %H:%M:%S UTC")
+    except (TypeError, ValueError):
+        return value or "—"
+
+
+def status_digest(health):
+    visible = {
+        key: (health or {}).get(key, "unknown")
+        for key in ("status", "model", "storage", "memory")
+    }
+    return hashlib.sha256(json.dumps(visible, sort_keys=True).encode()).hexdigest()[:16]
+
+
+TEMPLATES.env.filters["display_time"] = display_time
+TEMPLATES.env.filters["status_digest"] = status_digest
 HEADERS = {
     "Cache-Control": "no-store",
     "Vary": "Cookie",
@@ -141,6 +163,10 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
     async def health(request):
         return await api(request, "GET", "/health")
 
+    @router.get("/favicon.ico")
+    async def favicon():
+        return RedirectResponse("/static/moon.svg", headers=HEADERS)
+
     async def session_page(request, error=None, values=None, status=200):
         filters = {
             key: request.query_params.get(key, default)
@@ -200,19 +226,83 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
                 f"/api/sessions/{quote(identity, safe='')}/archives/{number}",
             )
             data = {**data, "messages": archived, "context_started_at": None}
-        with_tools = {m["run_id"] for m in data["messages"] if m.get("tool_calls")}
+        for line, message in enumerate(data["messages"], 1):
+            message["anchor"] = f"message-{line}"
+        grouped = turns(data, records, {}, include_empty_runs=number is None)
+        before = request.query_params.get("before")
+        around = request.query_params.get("turn")
+        anchor = request.query_params.get("anchor", "")
+        if anchor.startswith("turn-"):
+            around = anchor.removeprefix("turn-")
+        elif anchor.startswith("message-"):
+            around = next(
+                (m["run_id"] for m in data["messages"] if m["anchor"] == anchor), around
+            )
+
+        def turn_key(turn):
+            return turn["node_id"] if turn.get("boundary") else turn["run"]["id"]
+
+        end = len(grouped)
+        if before:
+            end = next(
+                (i for i, t in enumerate(grouped) if turn_key(t) == before),
+                end,
+            )
+        if around:
+            at = next(
+                (
+                    i
+                    for i, t in enumerate(grouped)
+                    if not t.get("boundary") and t["run"]["id"] == around
+                ),
+                None,
+            )
+            if at is not None:
+                positions = [
+                    i for i in range(at, len(grouped)) if not grouped[i].get("boundary")
+                ]
+                end = positions[min(TURN_WINDOW, len(positions)) - 1] + 1
+        start, remaining = end, TURN_WINDOW
+        while start and remaining:
+            start -= 1
+            if not grouped[start].get("boundary"):
+                remaining -= 1
+        while start and grouped[start - 1].get("boundary"):
+            start -= 1
+        selected = grouped[start:end]
+        ids = {t["run"]["id"] for t in selected if not t.get("boundary")}
+        data["earlier"] = turn_key(selected[0]) if start and selected else None
+        data["later"] = end < len(grouped)
+        data["pending_run"] = min(
+            (r for r in records if r["status"] in {"queued", "running"}),
+            key=lambda r: timestamp(r["created_at"]),
+            default=None,
+        )
+        with_tools = {
+            m["run_id"]
+            for m in data["messages"]
+            if m["run_id"] in ids and m.get("tool_calls")
+        }
         logs = await asyncio.gather(
             *(
-                api(request, "GET", f"/api/runs/{quote(run_id, safe='')}")
+                api(
+                    request,
+                    "GET",
+                    f"/api/runs/{quote(run_id, safe='')}?view=true&messages=false",
+                )
                 for run_id in sorted(with_tools)
             )
         )
-        return data, turns(
-            data,
-            records,
+        hydrated = turns(
+            {**data, "messages": [m for m in data["messages"] if m["run_id"] in ids]},
+            [r for r in records if r["id"] in ids],
             dict(zip(sorted(with_tools), logs, strict=True)),
             include_empty_runs=number is None,
         )
+        indexed = {t["run"]["id"]: t for t in hydrated if not t.get("boundary")}
+        return data, [
+            t if t.get("boundary") else indexed[t["run"]["id"]] for t in selected
+        ]
 
     async def chat_context(request, data, history, error=None):
         all_sessions, state, catalog = await asyncio.gather(
@@ -353,7 +443,12 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
                         if hit["archive"] != "active":
                             number = hit["archive"].rsplit(".", 1)[-1]
                             target += "/archives/" + quote(number, safe="")
-                        hit["url"] = target
+                        hit["url"] = (
+                            target
+                            + "?"
+                            + urlencode({"turn": hit["run_id"]})
+                            + f"#message-{hit['line_no']}"
+                        )
         except APIError as exc:
             error, status = exc.detail, exc.status
         return render(
@@ -469,6 +564,52 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
                 getattr(exc, "status", 422),
             )
 
+    @router.post("/sessions/cleanup/review")
+    async def cleanup_review(request: Request):
+        if not logged_in(request):
+            return login_redirect(request)
+        try:
+            values = await form(request, max_fields=510, multiple=("session_ids",))
+            ids = values.get("session_ids", [])
+            if not ids:
+                raise APIError(422, "Select at least one session.")
+            result = await api(
+                request, "POST", "/api/sessions/archive-batch", {"ids": ids}
+            )
+            payload = {
+                "ids": [s["id"] for s in result["sessions"]],
+                "expected_activity": {
+                    s["id"]: s["last_activity_at"] for s in result["sessions"]
+                },
+            }
+            return render(
+                request,
+                "session_cleanup.html",
+                {
+                    "preview": result,
+                    "selection": json.dumps(payload),
+                    "health": await health(request),
+                },
+            )
+        except APIError as exc:
+            return render(request, "error.html", {"error": exc.detail}, exc.status)
+
+    @router.get("/sessions/{identity}/lifecycle/archive")
+    async def lifecycle_confirmation(request: Request, identity: str):
+        if not logged_in(request):
+            return login_redirect(request)
+        try:
+            data = await api(
+                request, "GET", f"/api/sessions/{quote(identity, safe='')}"
+            )
+            return render(
+                request,
+                "lifecycle_confirm.html",
+                {"session": data, "health": await health(request)},
+            )
+        except APIError as exc:
+            return render(request, "error.html", {"error": exc.detail}, exc.status)
+
     @router.post("/sessions/cleanup/apply")
     async def cleanup_apply(request: Request):
         if not logged_in(request):
@@ -522,6 +663,29 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
                 "error.html",
                 {"error": getattr(exc, "detail", str(exc))},
                 getattr(exc, "status", 422),
+            )
+
+    @router.get("/sessions/{identity}/earlier")
+    async def earlier(request: Request, identity: str):
+        if not logged_in(request):
+            return JSONResponse({"detail": "Sign in again."}, 401, headers=HEADERS)
+        try:
+            number = request.query_params.get("archive")
+            data, history = await conversation(
+                request, identity, int(number) if number else None
+            )
+            page = render(request, "fragments/message_tail.html", {"turns": history})
+            return JSONResponse(
+                {
+                    "html": page.body.decode(),
+                    "before": data["earlier"],
+                    "later": data["later"],
+                },
+                headers=HEADERS,
+            )
+        except (APIError, ValueError) as exc:
+            return JSONResponse(
+                {"detail": str(exc)}, getattr(exc, "status", 422), headers=HEADERS
             )
 
     @router.get("/sessions/{identity}")
@@ -669,101 +833,157 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
                     {"detail": "Sign in again."}, status_code=401, headers=HEADERS
                 )
             return login_redirect(request)
-        error, status, completed = None, 200, False
         try:
             values = await form(request)
-            asynchronous = request.headers.get("accept") == "application/json"
             record = await api(
                 request,
                 "POST",
-                f"/api/sessions/{quote(identity, safe='')}/messages"
-                + ("?wait=false&stream=true" if asynchronous else ""),
+                f"/api/sessions/{quote(identity, safe='')}/messages?wait=false"
+                + (
+                    "&stream=true"
+                    if request.headers.get("accept") == "application/json"
+                    else ""
+                ),
                 {"message": values.get("message", "")},
             )
-            if asynchronous:
+            if request.headers.get("accept") == "application/json":
                 return JSONResponse(
-                    {"run_id": record["id"]}, status_code=202, headers=HEADERS
+                    {"run_id": record["id"], "created_at": record["created_at"]},
+                    status_code=202,
+                    headers=HEADERS,
                 )
-            completed = record["status"] == "completed"
+            return RedirectResponse(
+                f"/sessions/{quote(identity, safe='')}", 303, headers=HEADERS
+            )
         except APIError as exc:
             if request.headers.get("accept") == "application/json":
                 return JSONResponse(
                     {"detail": exc.detail}, status_code=exc.status, headers=HEADERS
                 )
-            error, status = exc.detail, exc.status
-        try:
-            data, history = await conversation(request, identity)
-        except APIError as exc:
+            try:
+                data, history = await conversation(request, identity)
+            except APIError as unavailable:
+                return render(
+                    request,
+                    "error.html",
+                    {"error": unavailable.detail},
+                    unavailable.status,
+                )
             return render(
                 request,
-                "fragments/message_tail.html",
-                {"turns": [], "error": exc.detail},
+                "chat.html",
+                await chat_context(request, data, history, exc.detail),
                 exc.status,
             )
-        headers = {"HX-Trigger": "chatCompleted"} if completed else None
-        if request.headers.get("HX-Request") == "true":
-            return render(
-                request,
-                "fragments/message_tail.html",
-                {"turns": history, "error": error},
-                status,
-                headers,
-            )
-        if completed:
-            return RedirectResponse(
-                f"/sessions/{quote(identity, safe='')}", 303, headers=HEADERS
-            )
-        return render(
-            request,
-            "chat.html",
-            await chat_context(request, data, history, error),
-            status,
-        )
 
     @router.get("/sessions/{identity}/events")
     async def conversation_events(request: Request, identity: str):
         if not logged_in(request):
             return Response(status_code=401, headers=HEADERS)
         try:
-            await api(request, "GET", f"/api/sessions/{quote(identity, safe='')}")
+            records = await api(
+                request,
+                "GET",
+                "/api/runs?"
+                + urlencode({"session_id": identity, "include_archived": "true"}),
+            )
+            # Discover once; subsequent ticks fetch only this run, not the session.
+            active = [r for r in records if r["status"] in {"queued", "running"}]
+            active.sort(key=lambda r: (timestamp(r["created_at"]), r["id"]))
+            requested = request.query_params.get("run")
+            record = (
+                next((r for r in records if r["id"] == requested), None)
+                if requested
+                else (active[0] if active else (records[-1] if records else None))
+            )
+            if (
+                record
+                and active
+                and timestamp(active[0]["created_at"]) < timestamp(record["created_at"])
+            ):
+                record = active[0]
+            if record is None:
+                await api(request, "GET", f"/api/sessions/{quote(identity, safe='')}")
+                return Response(status_code=204, headers=HEADERS)
         except APIError as exc:
             return JSONResponse(
                 {"detail": exc.detail}, status_code=exc.status, headers=HEADERS
             )
 
         async def snapshots():
+            observed = record
+            watched = {r["id"] for r in active} | {record["id"]}
+            seen = set()
+            cutoff = max(timestamp(r["created_at"]) for r in records)
             previous, heartbeat = None, time.monotonic()
             while not await request.is_disconnected():
                 if not logged_in(request):
                     yield "event: expired\ndata: {}\n\n"
                     return
                 try:
-                    data, history = await conversation(request, identity)
-                    pending = [turn for turn in history if turn.get("pending")]
-                    for turn in pending:
-                        record = await api(
+                    current = await api(
+                        request,
+                        "GET",
+                        f"/api/runs/{quote(observed['id'], safe='')}"
+                        "?live=true&view=true",
+                    )
+                    data = {
+                        "id": identity,
+                        "messages": current["messages"],
+                        "default_profile": current["profile"],
+                    }
+                    history = turns(data, [current], {current["id"]: current})
+                    boundaries = [turn for turn in history if turn.get("boundary")]
+                    history = [turn for turn in history if not turn.get("boundary")]
+                    if history:
+                        history[0]["context_boundaries"] = boundaries
+                    pending = current["status"] in {"queued", "running"}
+                    following = None
+                    if not pending:
+                        seen.add(current["id"])
+                        catalog = await api(
                             request,
                             "GET",
-                            f"/api/runs/{quote(turn['run']['id'], safe='')}?live=true",
+                            "/api/runs?"
+                            + urlencode(
+                                {"session_id": identity, "include_archived": "true"}
+                            ),
                         )
-                        preview = record.get("preview")
-                        # API snapshots may race a durable assistant append. Do not
-                        # render its preview a second time once that step is stored.
-                        saved = sum(
-                            m["role"] == "assistant"
-                            and m.get("kind", "message") == "message"
-                            and m["run_id"] == turn["run"]["id"]
-                            for m in data["messages"]
+                        # A queued successor may finish between observer ticks.
+                        # Deliver its final delta too, without replaying history.
+                        following = next(
+                            (
+                                r
+                                for r in sorted(
+                                    catalog,
+                                    key=lambda r: (timestamp(r["created_at"]), r["id"]),
+                                )
+                                if r["id"] not in seen
+                                and (
+                                    r["id"] in watched
+                                    or timestamp(r["created_at"]) > cutoff
+                                    or r["status"] in {"queued", "running"}
+                                )
+                            ),
+                            None,
                         )
-                        if preview and saved <= preview["baseline"]:
-                            turn["preview"] = preview["content"]
+                    preview = current.get("preview")
+                    saved = sum(
+                        m["role"] == "assistant"
+                        and m.get("kind", "message") == "message"
+                        for m in current["messages"]
+                    )
+                    if history and pending and preview and saved <= preview["baseline"]:
+                        history[-1]["preview"] = preview_text(preview["content"])
                     page = render(
                         request, "fragments/message_tail.html", {"turns": history}
                     )
                     snapshot = json.dumps(
                         {
+                            "run_id": current["id"],
+                            "created_at": current["created_at"],
                             "html": page.body.decode(),
-                            "pending": bool(pending),
+                            "pending": pending or following is not None,
                         },
                         ensure_ascii=True,
                     )
@@ -774,7 +994,9 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
                         yield ": keepalive\n\n"
                         heartbeat = time.monotonic()
                     if not pending:
-                        return
+                        if following is None:
+                            return
+                        observed, previous = following, None
                 except APIError:
                     yield "event: unavailable\ndata: {}\n\n"
                     return
@@ -1119,7 +1341,8 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
                 request,
                 "DELETE" if operation == "delete" else "POST",
                 f"/api/jobs/{quote(identity, safe='')}"
-                + ("" if operation == "delete" else f"/{operation}"),
+                + ("" if operation == "delete" else f"/{operation}")
+                + ("?admission=true" if operation == "run" else ""),
             )
             target = (
                 f"/runs/{quote(record['id'], safe='')}"
@@ -1154,8 +1377,9 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
     async def status_chips(request: Request):
         if not logged_in(request):
             return login_redirect(request)
-        return render(
-            request, "fragments/status.html", {"health": await health(request)}
-        )
+        state = await health(request)
+        if request.query_params.get("known") == status_digest(state):
+            return Response(status_code=204, headers=HEADERS)
+        return render(request, "fragments/status.html", {"health": state})
 
     return router

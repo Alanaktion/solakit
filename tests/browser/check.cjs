@@ -41,7 +41,13 @@ async function operations(page) {
   await page.screenshot({path: path.join(output, `12-${page.qaLabel}.png`), fullPage: true});
   await row.getByRole('button', {name: 'Run now'}).click();
   await page.waitForURL('**/runs/*');
-  assert.match(await page.locator('.intro').innerText(), /completed/);
+  await page.waitForFunction(() => /queued|running|completed/.test(document.querySelector('.intro').textContent));
+  await page.waitForFunction(async () => {
+    const id = location.pathname.split('/').pop();
+    const run = await (await fetch('/api/runs/' + id)).json();
+    return !['queued', 'running'].includes(run.status);
+  }, null, {timeout: 60000});
+  await page.reload();
 }
 
 async function jobManagement(page) {
@@ -73,7 +79,13 @@ async function jobManagement(page) {
   assert.match(await row.innerText(), /0 20/);
   await row.getByRole('button', {name: 'Run now', exact: true}).click();
   await page.waitForURL('**/runs/*');
-  assert.match(await page.locator('.intro').innerText(), /completed/);
+  await page.waitForFunction(() => /queued|running|completed/.test(document.querySelector('.intro').textContent));
+  await page.waitForFunction(async () => {
+    const id = location.pathname.split('/').pop();
+    const run = await (await fetch('/api/runs/' + id)).json();
+    return !['queued', 'running'].includes(run.status);
+  }, null, {timeout: 60000});
+  await page.reload();
   await page.goto(base + '/operations');
   row = page.locator('tr').filter({hasText: id});
   await row.getByRole('button', {name: 'Pause', exact: true}).click();
@@ -221,7 +233,8 @@ async function sessionSearch(page) {
   await noOverflow(page);
   await page.screenshot({path: path.join(output, `search-${page.qaLabel}.png`), fullPage: true});
   await page.locator('.search-result a').click();
-  await page.waitForURL(`**/sessions/${id}/archives/1`);
+  await page.waitForURL(url => url.pathname === `/sessions/${id}/archives/1`);
+  assert.equal(await page.locator('.message:target').count(), 1);
   assert.match(await page.locator('#conversation').innerText(), /searchable proof/);
   assert.equal(await page.locator('#composer').count(), 0);
 }
@@ -292,7 +305,7 @@ async function foundation(page) {
   await input.fill('Browser keyboard acceptance');
   await input.press('Enter');
   await page.getByText('Browser reply.', {exact: true}).waitFor();
-  await page.waitForFunction(() => !document.querySelector('#message').disabled);
+  await page.waitForFunction(() => document.querySelector('#composer').getAttribute('aria-busy') !== 'true');
   assert.equal(await input.inputValue(), '');
   await input.focus();
   await page.keyboard.press('Tab');
@@ -301,13 +314,13 @@ async function foundation(page) {
   await page.screenshot({path: path.join(output, `10-chat-${page.qaLabel}.png`), fullPage: true});
   await input.fill('hold-browser');
   await input.press('Enter');
-  await page.waitForFunction(() => document.querySelector('#message').disabled);
+  await page.waitForFunction(() => document.querySelector('#composer').getAttribute('aria-busy') === 'true');
   await page.locator('#composer').evaluate(el => el.requestSubmit());
   const runs = await (await page.request.get(base + '/api/runs')).json();
   const active = runs.filter(r => r.session === id && ['queued', 'running'].includes(r.status));
   assert.equal(active.length, 1);
   assert.equal((await page.request.post(`${base}/api/runs/${active[0].id}/cancel`)).status(), 200);
-  await page.waitForFunction(() => !document.querySelector('#message').disabled);
+  await page.waitForFunction(() => document.querySelector('#composer').getAttribute('aria-busy') !== 'true');
   if (page.viewportSize().width < 600) {
     await page.getByRole('link', {name: 'All sessions', exact: true}).click();
     await page.waitForURL(base + '/');
@@ -430,7 +443,7 @@ async function send(page, text) {
 }
 
 async function settled(page) {
-  await page.waitForFunction(() => !document.querySelector('#message')?.disabled);
+  await page.waitForFunction(() => document.querySelector('#composer')?.getAttribute('aria-busy') !== 'true');
   assert.equal(await page.locator('.live-preview').count(), 0);
 }
 
@@ -454,7 +467,7 @@ async function streaming(page) {
   await settled(page);
   assert(await page.locator('#conversation').evaluate(el => el.scrollTop < 30));
   assert(await page.locator('.tool-call').evaluate(el => el.open));
-  assert(await page.locator('#message').evaluate(el => el === document.activeElement));
+  assert(await page.locator('.tool-call summary').evaluate(el => el === document.activeElement));
   const localLink = page.getByRole('link', {name: 'local link', exact: true});
   assert.equal(await localLink.getAttribute('href'), '/tools');
   assert.match(await localLink.getAttribute('rel'), /noopener/);
@@ -480,12 +493,13 @@ async function streaming(page) {
   assert.equal((await sessionRuns(page, id)).length, beforeReload + 1);
 
   // Block the observer GET while allowing the accepted backend run to finish.
-  const events = `${base}/sessions/${id}/events`;
+  const events = `${base}/sessions/${id}/events**`;
   await page.route(events, route => route.abort('connectionfailed'));
   const beforeDisconnect = (await sessionRuns(page, id)).length;
   await send(page, 'stream-browser disconnect');
   await page.locator('#connection-error').waitFor({state: 'visible'});
-  await page.waitForFunction(() => !document.querySelector('#message').disabled);
+  assert(await page.locator('#message').isEnabled());
+  assert(await page.locator('#composer button').isDisabled());
   await page.unroute(events);
   await page.reload();
   await settled(page);
@@ -507,7 +521,8 @@ async function streaming(page) {
   const second = await (await page.request.post(`${base}/api/sessions/${queueId}/messages?wait=false&stream=true`, {data: {message: 'stream-browser queued'}})).json();
   await page.reload();
   await page.locator(`[data-run-id="${second.id}"][data-run-status="queued"]`).waitFor();
-  assert(await page.locator('#message').isDisabled());
+  assert(await page.locator('#message').isEnabled());
+  assert(await page.locator('#composer button').isDisabled());
   await page.request.post(`${base}/api/runs/${first.id}/cancel`);
   await page.locator('.live-preview').waitFor();
   await page.request.post(`${base}/api/runs/${second.id}/cancel`);
@@ -539,6 +554,117 @@ async function streaming(page) {
   }
 }
 
+async function auditUX(page) {
+  const fixture = await (await page.request.post(base + '/qa/ux-history?count=500')).json();
+  const id = fixture.session;
+  const initial = await page.goto(`${base}/sessions/${id}`);
+  const pageBytes = Buffer.byteLength(await initial.text());
+  assert.equal(await page.locator('#conversation .turn').count(), 20);
+  assert(pageBytes < 60000);
+  await page.locator('.load-earlier').click();
+  await page.waitForFunction(() => document.querySelectorAll('#conversation .turn').length === 40);
+  await page.goto(`${base}/sessions/${id}?turn=${id}-0003#message-8`);
+  assert(await page.locator('#message-8').evaluate(node => { const r = node.getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight; }));
+  await page.goto(`${base}/sessions/${id}#message-8`);
+  await page.locator('#message-8').waitFor();
+  assert(await page.locator('#message-8').evaluate(node => { const r = node.getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight; }));
+  await page.goto(`${base}/sessions/${id}`);
+  await page.evaluate(() => {
+    globalThis.auditSnapshots = [];
+    globalThis.auditWireSizes = [];
+    globalThis.originalListen = EventSource.prototype.addEventListener;
+    EventSource.prototype.addEventListener = function(type, listener, options) {
+      return originalListen.call(this, type, type === 'snapshot' ? event => {
+        auditSnapshots.push(JSON.parse(event.data));
+        auditWireSizes.push(new TextEncoder().encode(event.data).byteLength);
+        listener(event);
+      } : listener, options);
+    };
+  });
+  await page.evaluate(() => {
+    const conversation = document.getElementById('conversation');
+    conversation.scrollTop = 0;
+    globalThis.keptMessage = conversation.querySelector('.message-content');
+    globalThis.keptFocus = conversation.querySelector('.run-meta a');
+    keptFocus.focus({preventScroll: true});
+    const range = document.createRange(); range.selectNodeContents(keptMessage);
+    const selection = getSelection(); selection.removeAllRanges(); selection.addRange(range);
+    globalThis.keptSelection = selection.toString();
+    document.getElementById('message').value = 'audit-stream';
+    document.getElementById('composer').requestSubmit();
+  });
+  await page.waitForFunction(() => document.getElementById('composer').getAttribute('aria-busy') === 'true');
+  assert(await page.locator('#message').isEnabled());
+  assert(await page.locator('#composer button').isDisabled());
+  await page.locator('.live-preview').waitFor();
+  assert.equal(await page.locator('.notice-pending').count(), 0);
+  assert.equal(await page.locator('.live-preview li').count(), 0);
+  const active = page.locator('#conversation .turn').last();
+  await active.locator('.tool-call').first().waitFor();
+  await active.locator('.tool-call').first().evaluate(node => { node.open = true; globalThis.keptTool = node; });
+  await page.evaluate(() => {
+    const field = document.getElementById('message');
+    field.value = 'A draft for the next turn'; field.dispatchEvent(new Event('input', {bubbles: true}));
+  });
+  const readingTop = await page.locator('#conversation').evaluate(node => { const top = node.scrollTop; node.scrollTop = node.scrollHeight; return top; });
+  await page.screenshot({path: path.join(output, `audit-preview-${page.qaLabel}.png`)});
+  await page.locator('#conversation').evaluate((node, top) => { node.scrollTop = top; }, readingTop);
+  await page.waitForFunction(() => document.querySelectorAll('#conversation .turn:last-child .tool-call').length === 2);
+  assert(await page.evaluate(() => keptTool.isConnected && keptTool.open));
+  assert.equal(await active.locator('.tool-call[open]').count(), 1);
+  await settled(page);
+  assert.equal(await page.locator('#message').inputValue(), 'A draft for the next turn');
+  assert(await page.evaluate(() => keptMessage.isConnected && document.activeElement === keptFocus && getSelection().toString() === keptSelection));
+  assert(await page.locator('#conversation').evaluate(node => node.scrollTop < 5));
+  assert(await page.evaluate(() => keptTool.isConnected && keptTool.open));
+  const snapshots = await page.evaluate(() => { EventSource.prototype.addEventListener = originalListen; return auditSnapshots; });
+  assert(snapshots.length > 3);
+  const activeIds = new Set(snapshots.map(snapshot => snapshot.run_id));
+  assert.equal(activeIds.size, 1);
+  for (const snapshot of snapshots) {
+    assert.equal((snapshot.html.match(/data-run-id=/g) || []).length, 1);
+    assert(!snapshot.html.includes(fixture.last));
+  }
+  const sizes = await page.evaluate(() => auditWireSizes);
+  console.log(JSON.stringify({fixture:500,label:page.qaLabel,pageBytes,snapshots:sizes.length,minBytes:Math.min(...sizes),maxBytes:Math.max(...sizes),totalBytes:sizes.reduce((a,b)=>a+b,0)}));
+  // A reconnect keeps run age and recovers the unsent draft after auth expiry.
+  const pending = await (await page.request.post(`${base}/api/sessions/${id}/messages?wait=false`, {data:{message:'hold-browser'}})).json();
+  await page.reload();
+  await page.waitForFunction(() => document.getElementById('elapsed').textContent !== '0:00');
+  await page.reload();
+  assert.notEqual(await page.locator('#elapsed').innerText(), '0:00');
+  await page.locator('#message').fill('Survive signing back in');
+  await page.request.post(base + '/qa/expire');
+  await page.waitForURL('**/login');
+  await signIn(page);
+  await page.goto(`${base}/sessions/${id}`);
+  assert.equal(await page.locator('#message').inputValue(), 'Survive signing back in');
+  await page.request.post(`${base}/api/runs/${pending.id}/cancel`);
+  await settled(page);
+  await noOverflow(page);
+  await page.screenshot({path: path.join(output, `audit-settled-${page.qaLabel}.png`)});
+  await page.goto(base + '/operations');
+  const jobs = await (await page.request.get(base + '/api/jobs')).json();
+  const operation = jobs.find(job => job.id === 'browser-job').paused ? 'resume' : 'pause';
+  const actionForm = page.locator(`form[action="/operations/jobs/browser-job/${operation}"]`);
+  const accepted = await actionForm.evaluate(form => {
+    let accepted = 0;
+    const intercept = event => {
+      if (event.target !== form) return;
+      if (!event.defaultPrevented) accepted++;
+      event.preventDefault(); // QA intercept after the production delegated guard.
+    };
+    document.addEventListener('submit', intercept);
+    form.requestSubmit(); form.requestSubmit();
+    document.removeEventListener('submit', intercept);
+    return accepted;
+  });
+  assert.equal(accepted, 1);
+  await page.waitForFunction(action => document.querySelector(`form[action="${action}"] button`)?.disabled, `/operations/jobs/browser-job/${operation}`);
+  await noOverflow(page);
+
+}
+
 (async () => {
   await fs.mkdir(output, {recursive: true});
   const browser = await chromium.launch({
@@ -557,7 +683,8 @@ async function streaming(page) {
         await page.getByLabel('Operator token').fill('scratch-browser-token');
         await page.getByRole('button', {name: 'Sign in'}).click();
         await page.waitForURL(base + '/');
-        if (phase === 'memory') await memoryDirection(page);
+        if (phase === 'audit') await auditUX(page);
+        else if (phase === 'memory') await memoryDirection(page);
         else if (phase === 'rename') await sessionRename(page);
         else if (phase === 'search') await sessionSearch(page);
         else if (phase === 'lifecycle') await sessionLifecycle(page);

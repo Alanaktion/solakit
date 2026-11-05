@@ -9,6 +9,16 @@ from solakit.main import create_app
 from solakit.ui.auth import COOKIE, LIFETIME, UISessions
 
 
+def send_and_observe(client, path, **kwargs):
+    """Plain forms accept then redirect; wait through the read-only observer."""
+    response = client.post(path, follow_redirects=False, **kwargs)
+    if response.status_code != 303:
+        return response
+    target = response.headers["location"]
+    client.get(target + "/events")
+    return client.get(target)
+
+
 def sign_in(client):
     response = client.post(
         "/login", data={"token": "operator-test-token"}, follow_redirects=False
@@ -102,17 +112,18 @@ def test_session_create_chat_and_api_parity(config, mock_model):
         assert page.status_code == 200
         assert 'name="profile"' not in page.text
         assert '"timeout":0' in page.text
-        fragment = client.post(
+        fragment = send_and_observe(
+            client,
             "/sessions/evening/messages",
             data={"message": "<script>alert(1)</script>", "profile": "ignored"},
             headers={"HX-Request": "true"},
         )
         assert fragment.status_code == 200
-        assert fragment.headers["hx-trigger"] == "chatCompleted"
+        assert "hx-trigger" not in fragment.headers
         assert "Hello back" in fragment.text
         assert "&lt;script&gt;alert(1)&lt;/script&gt;" in fragment.text
         assert "<script>" not in fragment.text
-        assert "<!doctype" not in fragment.text
+        assert "<!doctype" in fragment.text
         record = client.get("/api/sessions/evening").json()
         assert record["memory_scope"] == "ephemeral"
         assert [m["role"] for m in record["messages"]] == ["user", "assistant"]
@@ -136,7 +147,8 @@ def test_validation_and_missing_session(config, mock_model):
         assert client.get("/api/sessions").json() == []
         assert client.get("/sessions/missing").status_code == 404
         new_session(client)
-        response = client.post(
+        response = send_and_observe(
+            client,
             "/sessions/evening/messages",
             data={"message": " "},
             headers={"HX-Request": "true"},
@@ -157,7 +169,8 @@ def test_backend_down_honest_failure(config):
         assert page.status_code == 200
         assert "degraded" in page.text and "unavailable" in page.text
         new_session(client)
-        response = client.post(
+        response = send_and_observe(
+            client,
             "/sessions/evening/messages",
             data={"message": "Hello"},
             headers={"HX-Request": "true"},
@@ -173,7 +186,8 @@ def test_ui_redacts_credentials_without_rewriting_api_history(config, mock_model
     with TestClient(create_app(config=config, model=mock_model)) as client:
         sign_in(client)
         new_session(client)
-        fragment = client.post(
+        fragment = send_and_observe(
+            client,
             "/sessions/evening/messages",
             data={"message": "My token operator-test-token"},
             headers={"HX-Request": "true"},
@@ -238,7 +252,7 @@ def test_tool_cards_use_redacted_evidence_only(config, mock_model):
         )
         page = client.get("/sessions/evening")
         assert page.status_code == 200
-        assert '<details class="tool-call">' in page.text
+        assert '<details class="tool-call" data-key=' in page.text
         assert "raw-secret" not in page.text
         assert "raw-tool-result" not in page.text
         assert "[redacted]" in page.text
@@ -350,23 +364,27 @@ def test_real_tool_call_visible_in_chat_fragment(config):
         app.state.registry.validate()
         sign_in(client)
         new_session(client)
-        response = client.post(
+        response = send_and_observe(
+            client,
             "/sessions/evening/messages",
             data={"message": "Use echo"},
             headers={"HX-Request": "true"},
         )
         assert response.status_code == 200
-        assert '<details class="tool-call">' in response.text
+        assert '<details class="tool-call" data-key=' in response.text
         assert "echo" in response.text and "Finished" in response.text
         assert "&lt;script&gt;example&lt;/script&gt;" in response.text
         assert "<script>example</script>" not in response.text
         assert len(completions) == 2
         assert completions[1]["messages"][-1]["tool_call_id"] == "test-call"
-        assert '<details class="tool-call">' in client.get("/sessions/evening").text
+        assert (
+            '<details class="tool-call" data-key='
+            in client.get("/sessions/evening").text
+        )
         client.post("/sessions/evening/archive")
         archived = client.get("/sessions/evening/archives/1")
         assert archived.status_code == 200
-        assert '<details class="tool-call">' in archived.text
+        assert '<details class="tool-call" data-key=' in archived.text
         assert "&lt;script&gt;example&lt;/script&gt;" in archived.text
         assert 'id="composer"' not in archived.text
 
@@ -382,7 +400,8 @@ def test_ui_archive_confirmation_browsing_and_secret_masking(config, mock_model)
         )
         sign_in(client)
         new_session(client)
-        client.post(
+        send_and_observe(
+            client,
             "/sessions/evening/messages",
             data={
                 "message": "Archived <script>text</script> operator-test-token",

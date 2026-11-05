@@ -368,10 +368,14 @@ def create_app(
             raise job_error(exc) from exc
 
     @api.post("/jobs/{job_id}/run")
-    async def job_run(job_id: str, wait: bool = True):
+    async def job_run(job_id: str, wait: bool = True, admission: bool = False):
         if job_id not in app.state.jobs.states:
             raise HTTPException(404, "Job not found")
         try:
+            if admission:
+                return JSONResponse(
+                    await app.state.jobs.trigger_run(job_id), status_code=202
+                )
             if not wait:
                 return JSONResponse(
                     await app.state.jobs.trigger(job_id), status_code=202
@@ -613,9 +617,13 @@ def create_app(
         return app.state.store.list_runs(session_id, include_archived)
 
     @api.get("/runs/{run_id}")
-    async def run_record(run_id: str, live: bool = False) -> dict:
+    async def run_record(
+        run_id: str, live: bool = False, view: bool = False, messages: bool = True
+    ) -> dict:
         try:
-            record = await asyncio.to_thread(app.state.store.run, run_id)
+            record = await asyncio.to_thread(
+                app.state.store.run, run_id, view=view, include_messages=messages
+            )
             if live:
                 pending = app.state.execution.pending.get(run_id)
                 preview = pending.preview if pending else None

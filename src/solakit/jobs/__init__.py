@@ -77,6 +77,7 @@ class Jobs:
         self.states: dict[str, JobState] = {}
         self.triggers = {}
         self.tasks: dict[str, asyncio.Task] = {}
+        self.admissions: dict[str, asyncio.Future] = {}
         self.lock = asyncio.Lock()
         self.scheduler = None
         self.closing = False
@@ -239,7 +240,13 @@ class Jobs:
             state.consumed, state.next_fire = True, None
         state.active, state.last_status = True, "queued"
         await self._save(state)  # Persist cursor/intent before creating accepted work.
-        task = asyncio.create_task(self._execute(job, state, at))
+        admitted = asyncio.get_running_loop().create_future()
+        # Consume unobserved failures; trigger_run may also await this receipt.
+        admitted.add_done_callback(
+            lambda receipt: receipt.exception() if not receipt.cancelled() else None
+        )
+        self.admissions[job.id] = admitted
+        task = asyncio.create_task(self._execute(job, state, at, admitted))
         self.tasks[job.id] = task
         task.add_done_callback(lambda completed: self._ended(job.id, completed))
         return task
@@ -253,7 +260,7 @@ class Jobs:
                 exc_info=(type(exc), exc, exc.__traceback__),
             )
 
-    async def _execute(self, job, state, at):
+    async def _execute(self, job, state, at, admitted):
         run = None
         try:
             session = await self._session(job)
@@ -268,13 +275,16 @@ class Jobs:
                     finished_at=self.clock(),
                 )
                 await durable(self.execution.store.save_run, run)
+                admitted.set_result(run.model_dump(mode="json"))
                 return run
-            run = await self.execution.submit(
+            pending = await self.execution.enqueue(
                 session.id,
                 render_task(job, at),
                 profile=job.profile,
                 origin=Origin(channel="job", job=job.id),
             )
+            admitted.set_result(pending.run.model_dump(mode="json"))
+            run = await asyncio.shield(pending.future)
             if run.status == RunStatus.model_unavailable:
                 run.status = RunStatus.missed
                 await durable(self.execution.store.save_run, run)
@@ -289,6 +299,8 @@ class Jobs:
                 await self.channels.deliver(run, delivery)
             return run
         finally:
+            if not admitted.done():
+                admitted.set_exception(RuntimeError("Job failed before run admission"))
             async with self.lock:
                 state.active = False
                 if run is not None:
@@ -307,14 +319,23 @@ class Jobs:
             await self._check_binding(job)
             task = await self._launch(job, self.states[job_id], self.clock())
             accepted = self.get(job_id)
-        return task, accepted
+        return task, accepted, self.admissions[job_id]
 
     async def trigger(self, job_id, *, authorize=None):
-        _, accepted = await self._complete(self._accept(job_id, authorize))
+        _, accepted, _ = await self._complete(self._accept(job_id, authorize))
         return accepted
 
+    async def trigger_run(self, job_id):
+        """Return the durable run receipt without waiting for generation/delivery."""
+
+        async def accept():
+            _, _, receipt = await self._accept(job_id)
+            return await asyncio.shield(receipt)
+
+        return await self._complete(accept())
+
     async def run_now(self, job_id):
-        task, _ = await self._complete(self._accept(job_id))
+        task, _, _ = await self._complete(self._accept(job_id))
         return await asyncio.shield(task)
 
     async def pause(self, job_id, paused, *, authorize=None):

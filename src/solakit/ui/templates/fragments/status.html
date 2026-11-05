@@ -1,4 +1,4 @@
-<div id="system-status" class="status-list" aria-label="Reported system status" hx-get="/ui/status" hx-trigger="every 15s" hx-swap="outerHTML">
+<div id="system-status" class="status-list" aria-label="Reported system status" hx-get="/ui/status" hx-vals='{"known":"{{ health|status_digest }}"}'  hx-trigger="every 15s" hx-swap="outerHTML">
   {% for key, label in [('status', 'App'), ('model', 'Model'), ('storage', 'Storage'), ('memory', 'Memory · startup')] %}
   {% set value = health.get(key, 'unknown') if health else 'unknown' %}
   <span class="status-chip {% if value in ['ok', 'ready'] %}status-good{% elif value in ['degraded', 'unavailable', 'failed'] %}status-warning{% else %}status-neutral{% endif %}"><span class="status-dot" aria-hidden="true"></span>{{ label }} <strong>{{ value }}</strong></span>

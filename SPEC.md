@@ -521,7 +521,10 @@ specifiers and oversized expansion are refused.
 job definitions and current scheduling state. IDs are immutable; partial edits
 validate the complete resulting definition, with `deliver: null` clearing delivery.
 `POST /api/jobs/{id}/run` waits for completion; `?wait=false` returns HTTP 202 and
-accepted job state immediately. `POST /api/jobs/{id}/pause|resume` affects future
+accepted job state immediately. `?admission=true` returns HTTP 202 with the durable
+queued run record as soon as execution admits it; the UI uses this receipt to
+redirect immediately to `/runs/{id}`. Generation and delivery continue independently.
+`POST /api/jobs/{id}/pause|resume` affects future
 firings. Invalid definitions return 422, missing jobs 404, duplicate IDs and busy
 edits/deletions/triggers 409. Maintenance profiles cannot be scheduled. Creation
 defaults to disabled; recurrence/enabled changes reset recurring next fire, while
@@ -779,7 +782,16 @@ The P1 operator UI is a thin server-rendered API client. Shared app contracts:
   reported channels and full job management, including creation/edit forms, enable
   controls, run/pause/resume and deletion confirmation. These UI operations use
   the same authenticated APIs; channel/profile configuration stays in files. Chat Enter sends, Shift+Enter adds a newline;
-  composition/repeated-key/busy guards prevent accidental submissions.
+  composition/repeated-key/busy guards prevent accidental submissions. The textarea
+  stays editable while a run is pending; only send is disabled. Run age comes from
+  `created_at`, including after reconnect. Plain POST forms guard duplicate submits.
+  Draft text is saved per session in same-tab `sessionStorage`, never auto-sent,
+  and cleared only after acceptance (without discarding edits made during admission).
+  This recovers drafts across restart/login; authentication remains in-memory and
+  credentials are never stored by the draft mechanism. Storage-disabled browsers
+  retain ordinary editing but cannot recover drafts after navigation.
+  `/ui/status?known=<visible-state-digest>` returns 204 when chips are unchanged.
+  Chat exposes system status in a toolbar disclosure; mobile omits global nav.
   Presentation escapes plain text and masks resolved credentials; tool details
   come only from redacted run logs. Light/dark follows the system preference.
 - **Activation:** integrations stay disabled by default and activate through each
@@ -820,7 +832,18 @@ The P1 operator UI is a thin server-rendered API client. Shared app contracts:
   and validates complete content/tool envelopes before persistence/dispatch.
   `GET /api/runs/{id}?live=true` adds a transient credential-masked preview.
   The authenticated UI `GET /sessions/{id}/events` emits coalesced `snapshot`
-  events containing sanitized HTML and a pending flag, with keepalive comments.
+  events containing `run_id`, `created_at`, sanitized active-turn `html` and a
+  session `pending` flag, with keepalive comments. `?run=<id>` identifies an accepted
+  run to observe. Consecutive queued runs emit separate keyed deltas; settled history
+  is not included. Identical deltas are suppressed. `GET /api/runs/{id}?view=true`
+  projects current-context run messages and redacted tool logs without prompts or
+  archived evidence; `&messages=false` omits transcript reads for tool-only hydration.
+  Initial chat and numbered archives render 20 turns; `/sessions/{id}/earlier`
+  returns the preceding window (`before` cursor, optional `archive`) to prepend
+  without replacing existing nodes. Initial/window requests still read full API
+  transcript data to group turns; the observer uses backward active-turn reads.
+  Open tool cards retain their DOM nodes. Live preview withholds incomplete trailing
+  blocks; completion renders the exact saved assistant content once.
   GET observation is resumable by reloading; it never resubmits or cancels work.
   Browser/API disconnects do not cancel accepted runs. Explicit cancellation
   remains `POST /api/runs/{id}/cancel`. Streaming requests have a 2 MiB wire bound
@@ -907,7 +930,10 @@ no automatic archive policy or deletion. See
 The authenticated web UI `/search` offers session name/ID lookup across active
 and archived sessions, plus full-text `/api/search` results. Name/ID results are
 paginated. Full text shows up to 100 relevance-ranked, masked and escaped message
-snippets linked to their current transcript or numbered archive.
+snippets linked to their current transcript or numbered archive using `?turn=<run-id>`
+and physical `#message-<line>` anchors. The containing window renders first; the
+match is outlined and history scrolls to it without moving the chat shell. Bare
+message/turn fragments can also fetch the containing window in the browser.
 
 ## 10. Storage
 

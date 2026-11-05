@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from test_compaction import memory_handler, seed
 from test_execution import call, completion, model_list, setup
 from test_memory import memory_config
-from test_ui import sign_in
+from test_ui import send_and_observe, sign_in
 
 from solakit.core.memory import MemoryClient
 from solakit.core.schemas import Message, Origin, Session
@@ -180,7 +180,8 @@ def test_pre_turn_summary_is_rendered_before_new_message_and_excludes_it(
     with TestClient(app) as client:
         sign_in(client)
         seed(app.state.store)
-        response = client.post(
+        response = send_and_observe(
+            client,
             "/sessions/s/messages",
             data={"message": "NEW MESSAGE AFTER SUMMARY"},
             headers={"HX-Request": "true"},
@@ -354,7 +355,8 @@ def test_pre_turn_compaction_failure_banner_remains_after_summary(memory_app, co
         sign_in(client)
         seed(app.state.store)
         app.state.model.complete = unavailable
-        result = client.post(
+        result = send_and_observe(
+            client,
             "/sessions/s/messages",
             data={"message": "not yet persisted"},
             headers={"HX-Request": "true"},

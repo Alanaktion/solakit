@@ -5,7 +5,7 @@ import io
 import json
 import os
 import tempfile
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
@@ -25,7 +25,7 @@ from solakit.core.config import (
 from solakit.core.media import Media
 from solakit.core.memory import MemoryClient
 from solakit.core.model import ModelClient
-from solakit.core.schemas import Message, Origin, Session
+from solakit.core.schemas import Message, Origin, Run, RunStatus, Session
 from solakit.main import create_app
 
 root = Path(tempfile.mkdtemp(prefix="solakit-browser-"))
@@ -75,6 +75,7 @@ config = Config(
     ],
 )
 
+config.profiles["interactive"].context_budget = 1_000_000
 config.profiles["interactive"].tools = ["runtime.status", "memory.remember"]
 
 
@@ -118,6 +119,48 @@ async def respond(request):
         ),
         "",
     )
+    if "measure-browser" in task and body.get("stream"):
+        return streamed(
+            [chunk({"content": "Short streaming reply. "}) for _ in range(6)]
+            + [chunk({}, "stop")],
+            delay=0.55,
+        )
+    if "audit-stream" in task and body.get("stream"):
+        prior = [m.get("tool_call_id") for m in body["messages"] if m["role"] == "tool"]
+        if "audit-two" in prior:
+            return streamed(
+                [
+                    chunk({"content": "Final answer.\n\n"}),
+                    chunk({"content": "Saved after both tools."}),
+                    chunk({}, "stop"),
+                ],
+                delay=0.5,
+            )
+        identity = "audit-two" if "audit-one" in prior else "audit-one"
+        return streamed(
+            [
+                chunk({"role": "assistant", "content": "Working on this step.\n\n-"}),
+                chunk({"content": " first item\n- still arriving"}),
+                chunk({"content": "\n\n"}),
+                chunk(
+                    {
+                        "tool_calls": [
+                            {
+                                "index": 0,
+                                "id": identity,
+                                "type": "function",
+                                "function": {
+                                    "name": "runtime.status",
+                                    "arguments": "{}",
+                                },
+                            }
+                        ]
+                    },
+                    "tool_calls",
+                ),
+            ],
+            delay=0.4,
+        )
     if "remember-browser" in task and body["messages"][-1]["role"] == "user":
         return httpx.Response(
             200,
@@ -346,6 +389,49 @@ async def scratch_session_lifecycle():
 
     await asyncio.to_thread(seed)
     return {"prefix": prefix, "ids": ids}
+
+
+@app.post("/qa/ux-history")
+async def scratch_ux_history(count: int = 500):
+    if count not in {44, 500}:
+        return {"error": "Use a bounded QA fixture size"}
+    identity = "audit-" + uuid4().hex[:10]
+
+    def seed():
+        store = app.state.store
+        store.create_session(Session(id=identity, memory_scope="ephemeral"))
+        for n in range(count):
+            at = datetime(2020, 1, 1, tzinfo=UTC) + timedelta(seconds=n)
+            run = Run(
+                id=f"{identity}-{n:04}",
+                session=identity,
+                profile="interactive",
+                origin=Origin(),
+                status=RunStatus.completed,
+                created_at=at,
+            )
+            store.save_run(run)
+            for role, content in [
+                ("user", f"Question {n:04}"),
+                ("assistant", f"Answer {n:04}. Settled text stays selectable."),
+            ]:
+                store.append_message(
+                    identity,
+                    Message(
+                        role=role,
+                        content=content,
+                        run_id=run.id,
+                        origin=Origin(),
+                        ts=at,
+                    ),
+                )
+
+    await asyncio.to_thread(seed)
+    return {
+        "session": identity,
+        "first": f"{identity}-0000",
+        "last": f"{identity}-{count - 1:04}",
+    }
 
 
 if __name__ == "__main__":

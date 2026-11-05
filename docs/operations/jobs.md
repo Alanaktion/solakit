@@ -30,6 +30,7 @@ All routes use the existing Cookie or Bearer operator authentication.
 | `DELETE /api/jobs/{id}` | Stop future firings; retain run evidence |
 | `POST /api/jobs/{id}/run` | Run once and wait for its run record |
 | `POST /api/jobs/{id}/run?wait=false` | Queue once and return HTTP 202 with accepted job state |
+| `POST /api/jobs/{id}/run?admission=true` | Return HTTP 202 with the durable run receipt before generation; used by UI Run now |
 | `POST /api/jobs/{id}/pause` or `/resume` | Control future firings |
 | `GET /api/job-options` | Configured default timezone, schedulable profiles and channels |
 

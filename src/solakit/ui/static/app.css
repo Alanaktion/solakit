@@ -159,7 +159,6 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 @keyframes thinking { 50% { opacity: .25; } }
 .tool-call { margin: 0 0 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-soft); }
 .tool-call summary { padding: 10px 12px; font-size: 11px; cursor: pointer; overflow-wrap: anywhere; }
-.tool-call summary > span:first-child { margin: 0 8px; }
 .tool-state { float: right; color: var(--good); margin-left: 12px; }
 .tool-error { color: var(--warning); }
 .tool-details { padding: 3px 14px 14px; }
@@ -341,3 +340,41 @@ pre { overflow-x: auto; font-size: 11px; line-height: 1.55; color: var(--ink); }
 .search-result { padding: 1rem; min-width: 0; overflow-wrap: anywhere; }
 .search-result h2 { font-size: 1.05rem; margin: 0 0 .5rem; }
 .search-snippet { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; margin-bottom: 0; }
+
+/* Stable history and accessible action states, using the existing palette. */
+.header-status { min-height: 30px; }
+.status-list { min-height: 24px; }
+.load-earlier { display: block; width: fit-content; margin: 12px auto; }
+[aria-busy="true"] > button, .load-earlier[aria-busy="true"] { opacity: .65; cursor: progress; }
+.message:target, .turn:target { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 6px; }
+.chat-health { position: relative; flex: none; font-size: 11px; color: var(--muted); }
+.chat-health summary { cursor: pointer; padding: 10px 4px; }
+.chat-health .status-list { position: absolute; right: 0; top: 100%; z-index: 3; display: grid; width: 200px; padding: 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; box-shadow: var(--shadow); }
+.primary-button, .secondary-button, .quiet-button { min-height: 44px; }
+.new-chat { width: 44px; height: 44px; }
+.composer-input .primary-button { width: 44px; min-height: 44px; }
+#composer textarea { min-height: 64px; padding-right: 64px; resize: none; overflow-y: auto; }
+.message-image { height: auto; }
+.tool-details pre { white-space: pre-wrap; overflow-wrap: anywhere; padding: 8px; border: 1px solid var(--line); border-radius: 4px; overflow-x: auto; scrollbar-color: var(--muted) var(--surface-soft); }
+.tool-call summary > .tool-state { margin-left: 12px; }
+.session-row { grid-template-columns: minmax(120px, 1fr) auto minmax(80px, 160px) 120px; }
+.page-heading > .text-link { white-space: nowrap; }
+.table-scroll { scrollbar-color: var(--muted) var(--surface-soft); }
+@media (max-width: 640px) {
+  .chat-app .site-header .nav { display: none; }
+  .chat-app .header-inner { padding-top: 0; padding-bottom: 0; }
+  .chat-toolbar { flex-wrap: wrap; padding: 4px 14px; gap: 6px; }
+  .chat-toolbar .session-badges { display: none; }
+  .chat-health summary { min-height: 44px; display: flex; align-items: center; }
+  .archive-toolbar { flex-wrap: nowrap; overflow-x: auto; justify-content: start; gap: 16px; padding: 0 14px; }
+  .archive-toolbar > * { flex-shrink: 0; white-space: nowrap; }
+  .archive-toolbar .archive-action, .archive-menu summary { display: inline-flex; align-items: center; min-height: 44px; }
+  .archive-menu nav { position: fixed; top: 140px; left: 14px; }
+  .table-scroll::before { content: "Scroll sideways to see all columns →"; display: block; position: sticky; left: 0; width: fit-content; padding: 6px 0; font-size: 11px; color: var(--muted); }
+  .session-row { grid-template-columns: minmax(0, 1fr) auto; }
+}
+.header-status .status-list { display: grid; grid-template-columns: repeat(4, max-content); align-items: start; }
+@media (max-width: 640px) {
+  .header-status .status-list { grid-template-columns: repeat(2, minmax(0, 1fr)); min-height: 52px; }
+  .header-status .status-chip { flex-wrap: wrap; min-height: 24px; }
+}

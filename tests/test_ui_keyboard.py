@@ -59,19 +59,22 @@ const vm = require('node:vm');
 (async () => {
   const handlers = {}, sources = [];
   let posts = 0;
-  const field = {value:'hello', disabled:false, focus:()=>{}};
+  const field = {value:'hello', disabled:false, style:{},
+    scrollHeight:40, focus:()=>{}};
   const button = {disabled:false};
-  const composer = {action:'/sessions/s/messages', busy:'false',
+  const composer = {action:'/sessions/s/messages', busy:'false', dataset:{},
     getAttribute:()=>composer.busy,
     setAttribute:(k,v)=>composer.busy=v,
-    querySelector:()=>field, querySelectorAll:()=>[field,button]};
+    querySelector:()=>field, querySelectorAll:()=>[button]};
   const conversation = {dataset:{eventsUrl:'/sessions/s/events'},
-    innerHTML:'', scrollTop:0, scrollHeight:1000, clientHeight:200,
+    innerHTML:'settled history', querySelector:()=>null,
+    scrollTop:0, scrollHeight:1000, clientHeight:200,
     querySelectorAll:()=>[]};
   const nodes = {composer, conversation, pending:{hidden:true},
     elapsed:{textContent:''}, 'connection-error':{hidden:true}};
   const document = {addEventListener:(k,v)=>handlers[k]=v,
-    querySelectorAll:()=>[], getElementById:k=>nodes[k]};
+    querySelectorAll:()=>[], getElementById:k=>nodes[k],
+    createElement:()=>({content:{querySelector:()=>null}})};
   class EventSource {
     constructor(url) {this.url=url;this.handlers={};sources.push(this);}
     addEventListener(k,v) {this.handlers[k]=v;}
@@ -83,19 +86,24 @@ const vm = require('node:vm');
     fetch:async (url, options)=>{
       posts++; assert.equal(String(options.body),'message=hello');
       assert.equal(options.headers.Accept,'application/json');
-      return {status:202};
+      return {status:202, json:async()=>({run_id:"r",
+        created_at:new Date(Date.now()-65000).toISOString()})};
     },
   });
   conversation.scrollTop=0; // Reading earlier content.
   const submit = ()=>handlers.submit({target:composer,preventDefault:()=>{}});
   await submit();
   assert.equal(posts,1); assert.equal(field.value,'');
-  assert.equal(field.disabled,true);
+  assert.equal(field.disabled,false); assert.equal(button.disabled,true);
+  assert.match(nodes.elapsed.textContent,/1:0[5-9]/);
+  field.value="next draft";
   await submit(); assert.equal(posts,1); // Busy guard.
   sources[0].handlers.snapshot({data:JSON.stringify({html:'live',pending:true})});
-  assert.equal(conversation.innerHTML,'live'); assert.equal(conversation.scrollTop,0);
+  assert.equal(conversation.innerHTML,'settled history');
+  assert.equal(conversation.scrollTop,0);
   sources[0].handlers.snapshot({data:JSON.stringify({html:'saved',pending:false})});
   assert.equal(field.disabled,false); assert.equal(sources[0].closed,true);
+  assert.equal(field.value,"next draft");
   field.value='hello'; await submit(); assert.equal(posts,2);
   sources[0].onerror(); // A stale stream must not close the current one.
   assert.equal(sources[1].closed,undefined);

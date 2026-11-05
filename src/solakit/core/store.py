@@ -979,7 +979,9 @@ class Store:
             ).fetchall()
         return [json.loads(row[0]) for row in rows]
 
-    def run(self, run_id: str) -> dict:
+    def run(
+        self, run_id: str, *, view: bool = False, include_messages: bool = True
+    ) -> dict:
         path = self._path("runs", run_id, ".events.jsonl")
         events = self._read(path)
         if not events:
@@ -990,6 +992,12 @@ class Store:
             with self.lock:
                 raise self._corruption(path, "invalid_run") from exc
         record = events[-1].copy()
+        if view:
+            # Streaming presentation reads only the current run's contiguous tail,
+            # never historical prompts, archives, or other runs' tool evidence.
+            record["messages"] = self.run_tail(record) if include_messages else []
+            record["tools"] = self._read(self._path("runs", run_id, ".tools.jsonl"))
+            return record
         prompt = self._path("runs", run_id, ".prompt.txt")
         record["prompt"] = (
             prompt.read_bytes().decode("utf-8") if prompt.exists() else None
@@ -1005,6 +1013,61 @@ class Store:
             self._path("runs", run_id, ".diagnostics.jsonl")
         )
         return record
+
+    def run_tail(self, run: dict) -> list[dict]:
+        """Read backwards in bounded blocks, stopping at the preceding turn.
+
+        Session execution is serialized. This projection is deliberately limited
+        to active context; the full evidence endpoint still includes archives.
+        """
+        with self.lock:
+            self.session(run["session"])
+            self.check_compaction(run["session"])
+            path = self._path("sessions", run["session"], ".jsonl")
+            if not path.exists():
+                return []
+            result, remainder = [], b""
+            with path.open("rb") as stream:
+                position = stream.seek(0, os.SEEK_END)
+                end = total = position
+                while position:
+                    size = min(position, 8192)
+                    position -= size
+                    stream.seek(position)
+                    parts = (stream.read(size) + remainder).splitlines(keepends=True)
+                    remainder = parts.pop(0) if position else b""
+                    for line in reversed(parts):
+                        offset = end - len(line)
+                        end = offset
+                        fragment = line.removesuffix(b"\n")
+                        try:
+                            message = self._decode_record(fragment)
+                        except (ValueError, UnicodeDecodeError) as exc:
+                            if self._is_recovered(path, offset, fragment):
+                                self._issue(path, "recovered_tail", offset)
+                                continue
+                            if not line.endswith(b"\n") and offset + len(line) == total:
+                                self._issue(path, "incomplete_tail", offset)
+                                continue
+                            raise self._corruption(
+                                path, "corrupt_record", offset
+                            ) from exc
+                        try:
+                            parsed = Message.model_validate(message)
+                        except ValidationError as exc:
+                            raise self._corruption(
+                                path, "invalid_message", offset
+                            ) from exc
+                        if message["run_id"] != run["id"]:
+                            if (
+                                result
+                                or parsed.ts.timestamp()
+                                < datetime.fromisoformat(run["created_at"]).timestamp()
+                            ):
+                                return list(reversed(result))
+                            continue
+                        result.append(message)
+            return list(reversed(result))
 
     def write_prompt(self, run_id: str, prompt: str) -> str:
         payload = prompt.encode("utf-8")

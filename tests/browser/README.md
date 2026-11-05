@@ -84,3 +84,17 @@ history and searchable escaped names across light/dark desktop/mobile layouts.
 Memory direction: run `check.cjs memory` for staged note receipts/evidence, escaped
 run inspection and retained trivial-recall status, in light/dark desktop/mobile.
 The model and memory endpoints are mocked; this is not live extraction acceptance.
+
+
+UX audit: run `check.cjs audit` for synthetic 500-turn history windows, prepend,
+query/fragment deep links, selection/focus/scroll preservation, a tool card kept
+open while a second call arrives, typable retained drafts, reconnect age, expiry
+and login draft recovery, and plain POST duplicate-submit guards. It checks both
+themes at desktop/mobile sizes and writes mid-preview/settled screenshots. The
+fixture budget is deliberately enlarged for synthetic long-history execution;
+production context limits are unchanged. `check.cjs vision` also verifies image
+layout and authenticated history after the dimension change.
+
+With the same scratch server running, `node tests/browser/measure.cjs` prints
+page and SSE payload bytes for comparable 44/500-turn fixtures and a roughly
+four-second stub stream. This is mocked transport measurement, not live oMLX QA.

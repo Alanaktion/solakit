@@ -370,8 +370,8 @@ def test_web_search_names_ids_archived_text_links_and_errors(config, mock_model)
         assert "Archived" in page.text and 'href="/sessions/old"' in page.text
         page = client.get("/search", params={"mode": "text", "q": "Moonstone"})
         assert page.status_code == 200
-        assert 'href="/sessions/old/archives/1"' in page.text
-        assert 'href="/sessions/old"' in page.text
+        assert 'href="/sessions/old/archives/1?turn=' in page.text
+        assert 'href="/sessions/old?turn=' in page.text
         assert "operator-test-token" not in page.text
         assert "<script>alert" not in page.text
         assert "&lt;script&gt;" in page.text

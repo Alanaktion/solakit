@@ -220,6 +220,10 @@ def test_operations_controls_enabled_and_disabled_jobs(config, mock_model):
             "/runs/"
         )
         assert client.get(result.headers["location"]).status_code == 200
+        run = client.get(
+            "/api/runs/" + result.headers["location"].rsplit("/", 1)[-1]
+        ).json()
+        client.get(f"/sessions/{run['session']}/events")
         assert (
             client.patch("/api/jobs/sample", json={"enabled": False}).status_code == 200
         )

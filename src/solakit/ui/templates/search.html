@@ -16,14 +16,14 @@
 <article class="panel search-result">
 {% if mode == 'text' %}
 <h2><a href="{{ result.url }}">{{ result.session_id }}</a></h2>
-<p class="field-note">{{ 'Current transcript' if result.archive == 'active' else 'Archive ' ~ result.archive.rsplit('.', 1)[1] }} · Line {{ result.line_no }} · {{ result.role }}{% if result.ts %} · <time datetime="{{ result.ts }}">{{ result.ts }}</time>{% endif %}</p>
+<p class="field-note">{{ 'Current transcript' if result.archive == 'active' else 'Archive ' ~ result.archive.rsplit('.', 1)[1] }} · Line {{ result.line_no }} · {{ result.role }}{% if result.ts %} · <time datetime="{{ result.ts }}">{{ result.ts|display_time }}</time>{% endif %}</p>
 <pre class="search-snippet">{{ result.snippet }}</pre>
 {% else %}
 <h2><a href="/sessions/{{ result.id|urlencode }}">{{ result.title or result.id }}</a></h2>
-<p class="field-note">{{ result.id }} · {{ result.default_profile }} · {{ 'Archived' if result.archived_at else 'Active' }} · <time datetime="{{ result.last_activity_at }}">{{ result.last_activity_at }}</time></p>
+<p class="field-note">{{ result.id }} · {{ result.default_profile }} · {{ 'Archived' if result.archived_at else 'Active' }} · <time datetime="{{ result.last_activity_at }}">{{ result.last_activity_at|display_time }}</time></p>
 {% endif %}
 </article>
-{% else %}<div class="empty-state"><h2>No matching sessions or messages.</h2><p>Try another name, ID, or phrase.</p></div>{% endfor %}
+{% else %}<div class="empty-state"><h2>No matching sessions or messages.</h2><p>{% if mode == 'sessions' %}Try another name or ID, or choose Full text to search message content.{% else %}Try another phrase.{% endif %}</p></div>{% endfor %}
 </section>
 <nav class="session-pagination" aria-label="Search pages">{% if previous %}<a class="text-link" href="{{ previous }}">← Previous</a>{% endif %}{% if next %}<a class="text-link" href="{{ next }}">Next →</a>{% endif %}</nav>
 {% endif %}

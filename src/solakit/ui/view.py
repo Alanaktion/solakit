@@ -52,6 +52,7 @@ def turns(
                     "boundary": True,
                     "content": message.get("content") or "",
                     "at": timestamp(message["ts"]),
+                    "node_id": "boundary-" + message["ts"],
                 }
             )
             continue
@@ -94,6 +95,8 @@ def turns(
                         "role": message["role"],
                         "content": message.get("content") or "",
                         "images": message.get("images", []),
+                        "anchor": message.get("anchor"),
+                        "node_id": "message-" + str(len(items)),
                     }
                 )
             for call in message.get("tool_calls") or []:
@@ -110,6 +113,7 @@ def turns(
                             "state": "error" if outcome.get("error") else "ok",
                             "args": argument_text(log.get("args")),
                             "content": outcome.get("content", ""),
+                            "node_id": f"tool-{len(items)}-" + call["id"],
                         }
                     )
                 else:
@@ -120,6 +124,7 @@ def turns(
                             "state": "not recorded",
                             "args": "Not recorded",
                             "content": "No recorded result is available.",
+                            "node_id": f"tool-{len(items)}-" + call["id"],
                         }
                     )
         status = run["status"]
