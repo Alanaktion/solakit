@@ -42,6 +42,9 @@ fragments = "fragments"
 
 [profiles.interactive]
 max_steps = 60
+# Conservative serialized request-byte ceiling. Size this below the model's
+# token window, leaving room for [model].max_tokens; this is not a token count.
+context_budget = 32000
 # Opt in to summarizing between completed tool groups when context exceeds budget.
 mid_run_compaction = false
 tools = []

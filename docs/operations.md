@@ -233,6 +233,11 @@ not reported as measured tokens. If safe compaction is unavailable, the summary
 cannot fit, or a tool loop exceeds the guard, the run ends `context_limit`; it never
 silently drops history or sends unbounded requests.
 
+Configure this per profile as `[profiles.<name>].context_budget`. The default is
+32,000 bytes. For a larger model window, raise it deliberately while leaving room
+for `[model].max_tokens`; serialized bytes are a conservative proxy, not a token
+count. Configuration changes take effect when the server restarts.
+
 Optional `[memory].user` sends the verified server's user hint and checks the
 created session URI before appending messages; it must match the server identity.
 `sola memory-test --fact ... --query ... --expected ...` writes a real scratch

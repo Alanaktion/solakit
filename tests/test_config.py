@@ -30,6 +30,15 @@ def test_invalid_configuration(tmp_path):
         Config.model_validate({"typo": True})
 
 
+def test_profile_context_budget_can_be_configured(tmp_path):
+    path = tmp_path / "config.toml"
+    path.write_text("[profiles.interactive]\ncontext_budget = 196608\n")
+
+    config = load_config(path)
+
+    assert config.profiles["interactive"].context_budget == 196608
+
+
 def test_secret_references(tmp_path, monkeypatch):
     with pytest.raises(ValidationError):
         SecretRef(env="X", file=tmp_path / "x")
