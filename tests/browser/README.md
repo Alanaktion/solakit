@@ -1,7 +1,7 @@
 # Optional real-browser acceptance checks
 
 These checks use a real Chromium browser against an isolated localhost app with
-scratch storage, a mocked OpenAI-compatible transport, disabled channels and
+scratch storage, mocked OpenAI-compatible and OpenViking transports, disabled channels and
 scratch jobs. They never read `.env` or operator configuration. Node/Playwright
 are QA tools only; the application still has no Node build/runtime requirement.
 
@@ -40,3 +40,9 @@ Phase 11: run `check.cjs 11` for fixed-time prompt API parity, schema/tool/promp
 expansion, narrow-screen evidence and actual UI cancellation feedback. The mock
 model calls the built-in read-only runtime.status tool; external integrations
 remain disabled.
+
+Phase 21: run `check.cjs 21` for explicit compaction confirmation, ephemeral/busy
+errors and expanded summary ordering, across light/dark desktop/mobile. The
+OpenViking transport is mocked inside this QA process, including startup/commit
+requests, and cannot access a live memory server. Live memory verification is
+recorded separately in the compaction plan.

@@ -184,3 +184,22 @@ all sixteen phase/theme/viewport browser scenarios passed. Ruff lint/format,
 `.env`-backed offline `sola check`, core wheel/sdist build and packaged UI assets
 passed. Screenshots remain scratch artifacts under the browser harness output
 directory; no operator data or credentials are included.
+
+## Subsequent live verification (2026-11-05)
+
+Live oMLX text/tool SSE checks passed after a narrow fix for exact empty legacy
+keepalive frames; malformed/payload-bearing/wrong-model frames remain rejected.
+The full suite passed 232 tests, Ruff lint/format, `.env`-backed `sola check` and
+core builds. Plan 22 retains its streaming-specific browser matrix.
+
+Actual letters protocol was inspected read-only and the ignored local sidecar's
+directory/layout corrected to match the repository. No correspondence was sent.
+Plan 17 retains its deliberate live reply/publish gate.
+
+Plan 21 passed live explicit and between-step OpenViking summaries, archive
+rotation, deterministic mock-model continuation, completed extraction and actual
+remote archive read-back of task/full tool output/final reply. Its light/dark
+desktop/mobile browser matrix also passed. A newly observed provider limit keeps
+the phase open: remote archive tool parts omit submitted `tool_input`. The test
+used empty arguments, so nonempty argument preservation needs investigation.
+Local transcript evidence remains verbatim.

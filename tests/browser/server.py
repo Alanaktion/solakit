@@ -9,7 +9,16 @@ from pathlib import Path
 import httpx
 import uvicorn
 
-from solakit.core.config import Channel, Config, Job, PathsConfig, SecretRef
+import solakit.main as main_module
+from solakit.core.config import (
+    Channel,
+    Config,
+    Job,
+    MemoryConfig,
+    PathsConfig,
+    SecretRef,
+)
+from solakit.core.memory import MemoryClient
 from solakit.core.model import ModelClient
 from solakit.main import create_app
 
@@ -17,9 +26,15 @@ root = Path(tempfile.mkdtemp(prefix="solakit-browser-"))
 (root / "SOUL.md").write_text("Browser QA persona.\n")
 (root / "fragments/profiles").mkdir(parents=True)
 (root / "fragments/profiles/interactive.md").write_text("")
+(root / "fragments/recall-header.md").write_text("Scratch memory data:")
 os.environ["SOLA_BROWSER_TOKEN"] = "scratch-browser-token"
 config = Config(
     enabled_tools=["runtime"],
+    memory=MemoryConfig(
+        enabled=True,
+        base_url="http://scratch-memory.invalid",
+        roots=["viking://user/scratch/memories"],
+    ),
     operator_token=SecretRef(env="SOLA_BROWSER_TOKEN"),
     paths=PathsConfig(
         data=root / "data", soul=root / "SOUL.md", fragments=root / "fragments"
@@ -127,6 +142,35 @@ async def respond(request):
         },
     )
 
+
+def memory_response(request):
+    endpoint = request.url.path
+    result = {}
+    if endpoint.endswith("search/find"):
+        result = {"memories": []}
+    elif endpoint.endswith("/commit"):
+        remote = endpoint.split("/")[-2]
+        result = {
+            "status": "accepted",
+            "task_id": "scratch-task",
+            "archive_uri": f"viking://user/scratch/sessions/{remote}/history/archive_001",
+        }
+    elif "/tasks/" in endpoint:
+        result = {"status": "completed"}
+    elif "/archives/" in endpoint:
+        result = {
+            "status": "completed",
+            "archive_id": "archive_001",
+            "overview": "Browser scratch conversation summary.",
+        }
+    return httpx.Response(200, json={"status": "ok", "result": result})
+
+
+# Only this isolated QA process substitutes the memory transport. No request can
+# reach a live memory server, including startup, summary or commit operations.
+main_module.MemoryClient = lambda cfg, key=None: MemoryClient(
+    cfg, key, transport=httpx.MockTransport(memory_response)
+)
 
 app = create_app(
     config=config,

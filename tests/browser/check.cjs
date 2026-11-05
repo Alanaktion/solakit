@@ -44,11 +44,11 @@ async function operations(page) {
   assert.match(await page.locator('.intro').innerText(), /completed/);
 }
 
-async function createSession(page, prefix) {
+async function createSession(page, prefix, scope = 'ephemeral') {
   const id = `${prefix}-${page.qaLabel}-${Date.now()}`;
   await page.goto(base + '/?new=1');
   await page.getByLabel('Session ID', {exact: true}).fill(id);
-  await page.getByLabel('Memory', {exact: true}).selectOption('ephemeral');
+  await page.getByLabel('Memory', {exact: true}).selectOption(scope);
   await page.getByRole('button', {name: 'Create session'}).click();
   await page.waitForURL(`**/sessions/${id}`);
   return id;
@@ -136,6 +136,36 @@ async function evidence(page) {
   await page.screenshot({path: path.join(output, `11-cancel-${page.qaLabel}.png`), fullPage: true});
 }
 
+async function compaction(page) {
+  const ephemeral = await createSession(page, 'compact-disabled');
+  await page.goto(`${base}/sessions/${ephemeral}/compact`);
+  assert(await page.getByRole('button', {name: 'Summarize and continue'}).isDisabled());
+  assert.match(await page.locator('.notice-error').innerText(), /requires enabled shared/);
+  const id = await createSession(page, 'compact', 'shared');
+  await page.request.post(`${base}/api/sessions/${id}/messages`, {data: {message: 'Before compaction'}});
+  await page.reload();
+  await page.getByRole('link', {name: 'Compact conversation', exact: true}).click();
+  await page.getByRole('heading', {name: 'Compact this conversation?'}).waitFor();
+  assert.match(await page.locator('main').innerText(), /long-term extraction disabled/);
+  await noOverflow(page);
+  await page.screenshot({path: path.join(output, `21-confirm-${page.qaLabel}.png`), fullPage: true});
+  await page.getByRole('button', {name: 'Summarize and continue'}).click();
+  await page.waitForURL(`**/sessions/${id}`);
+  await page.request.post(`${base}/api/sessions/${id}/messages`, {data: {message: 'After compaction'}});
+  await page.reload();
+  await page.getByText('Earlier context was summarized', {exact: true}).click();
+  const history = await page.locator('#conversation').innerText();
+  assert(history.indexOf('Browser scratch conversation summary.') < history.indexOf('After compaction'));
+  assert(await page.locator('.context-boundary pre').isVisible());
+  await noOverflow(page);
+  await page.screenshot({path: path.join(output, `21-summary-${page.qaLabel}.png`), fullPage: true});
+  const pending = await (await page.request.post(`${base}/api/sessions/${id}/messages?wait=false`, {data: {message: 'hold-browser'}})).json();
+  await page.goto(`${base}/sessions/${id}/compact`);
+  await page.getByRole('button', {name: 'Summarize and continue'}).click();
+  assert.match(await page.locator('main').innerText(), /queued|running|finish/);
+  assert.equal((await page.request.post(`${base}/api/runs/${pending.id}/cancel`)).status(), 200);
+}
+
 async function archival(page) {
   const id = await createSession(page, 'archive');
   const response = await page.request.post(`${base}/api/sessions/${id}/messages`, {
@@ -187,6 +217,7 @@ async function archival(page) {
         else if (phase === '13') await archival(page);
         else if (phase === '10') await foundation(page);
         else if (phase === '11') await evidence(page);
+        else if (phase === '21') await compaction(page);
         else throw new Error(`Unknown phase ${phase}`);
         assert.deepEqual(errors, []);
         console.log(`PASS phase ${phase}: ${page.qaLabel}`);
