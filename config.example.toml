@@ -7,6 +7,8 @@ enabled_tools = []
 # Shell is built in: "shell" or "solakit.tools.shell" (enabled by config).
 # Scheduling tools: "jobs"; mutations need jobs.manage, triggering jobs.run;
 # other profiles/sessions/delivery additionally need jobs.manage.all.
+# Delegation is built in: load "delegate" and grant "delegate.run" to the parent.
+# Set delegation.allowed_profiles explicitly; worker profiles should not grant it.
 # Session history search is built in: "sessions" or "solakit.tools.sessions".
 # Grant tools = ["sessions.search"] for current-session history; additionally
 # capabilities = ["sessions.search.all"] allows another session or all sessions.
@@ -35,6 +37,12 @@ max_tokens = 4096
 # Opt in only if this service needs proxy/CA environment settings.
 trust_env = false
 
+# Empty by default: loading/granting delegate.run alone enables no worker profile.
+[delegation]
+allowed_profiles = []
+# allowed_profiles = ["research"] # Also configure the worker and its prompt fragment.
+timeout_s = 900 # Entire delegation; overrides the parent's generic tool timeout.
+
 [paths]
 data = "~/sola-data"
 soul = "/absolute/path/to/live/SOUL.md"
@@ -58,6 +66,18 @@ max_steps = 60
 tools = []
 write_scopes = []
 capabilities = []
+
+# Example worker (nothing here is enabled by default). Load "files"/"sessions"
+# in enabled_tools and create operator-owned fragments/profiles/research.md.
+# Add explicitly configured web/wiki read tools as needed. Grant no delegation,
+# publish/send/print/shell tools; avoid "*" so the worker cannot delegate again.
+# [profiles.research]
+# tools = ["files.read", "files.list", "sessions.search"]
+# read_scopes = ["path:/absolute/path/to/research-sources"]
+# write_scopes = []
+# capabilities = []
+# max_steps = 40
+# context_budget = 64000
 
 # Opt-in OpenViking integration. Set the existing server's URL and canonical
 # shared-memory roots; confirm its API version before enabling.

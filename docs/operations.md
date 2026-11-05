@@ -100,6 +100,15 @@ Set `SOLA_URL` or `sola --url ...` for the API. Model/memory clients default to
 `trust_env = false`; opt into proxy/CA environment settings per service when needed.
 The CLI's equivalent is `sola --trust-env ...`. Process environment is untouched.
 
+## Delegated sub-agents
+
+Load `delegate`, grant `delegate.run` to the parent and configure
+`delegation.allowed_profiles`. Delegation runs an ephemeral child inside the
+parent's existing inference slot, returning only its final report and evidence
+IDs. It works at concurrency one. See [configuration, continuation and
+cancellation](operations/delegation.md). Worker tool grants control authority and
+whether further delegation is possible; no live profile is enabled automatically.
+
 ## Renaming sessions
 
 Open a conversation and choose **Rename session**, enter a name and save.

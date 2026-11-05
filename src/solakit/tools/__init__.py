@@ -63,6 +63,7 @@ class ToolContext:
     deliver: Any = None
     runtime_provider: Any = None
     job_manager: Any = None
+    nested_submit: Any = None
 
     @property
     def fs(self):
@@ -127,6 +128,7 @@ class Manifest:
     profiles: tuple[str, ...]
     writes: tuple[str, ...]
     timeout: float | None
+    manages_timeout: bool = False
 
 
 def tool(
@@ -135,9 +137,12 @@ def tool(
     profiles: list[str],
     writes: list[str] = (),
     timeout: float | None = None,
+    manages_timeout: bool = False,
 ):
     def decorate(function: Callable) -> Callable:
-        function.__sola_tool__ = Manifest(name, tuple(profiles), tuple(writes), timeout)
+        function.__sola_tool__ = Manifest(
+            name, tuple(profiles), tuple(writes), timeout, manages_timeout
+        )
         return function
 
     return decorate
@@ -311,7 +316,11 @@ class Registry:
             timeout = min(
                 registered.manifest.timeout or cfg.tool_timeout_s, cfg.tool_timeout_s
             )
-            async with asyncio.timeout(timeout):
+            # Trusted tools that own a multi-stage operation can enforce their
+            # own bound and return operation-specific timeout receipts/evidence.
+            async with asyncio.timeout(
+                None if registered.manifest.manages_timeout else timeout
+            ):
                 if inspect.iscoroutinefunction(registered.function):
                     returned = await registered.function(ctx=ctx, **values)
                 else:

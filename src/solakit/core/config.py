@@ -115,6 +115,11 @@ class Profile(StrictModel):
     repair_attempts: int = Field(default=2, ge=0)
 
 
+class DelegationConfig(StrictModel):
+    allowed_profiles: list[str] = Field(default_factory=list)
+    timeout_s: float = Field(default=900, gt=0, allow_inf_nan=False)
+
+
 class Channel(StrictModel):
     id: str
     type: Literal["discord", "api"]
@@ -238,6 +243,7 @@ class Config(StrictModel):
     model: ModelConfig = Field(default_factory=ModelConfig)
     server: ServerConfig = Field(default_factory=ServerConfig)
     memory: MemoryConfig = Field(default_factory=MemoryConfig)
+    delegation: DelegationConfig = Field(default_factory=DelegationConfig)
     paths: PathsConfig = Field(default_factory=PathsConfig)
     profiles: dict[str, Profile] = Field(
         default_factory=lambda: {"interactive": Profile(max_steps=60)}
@@ -253,6 +259,9 @@ class Config(StrictModel):
     @model_validator(mode="after")
     def references(self) -> Self:
         ZoneInfo(self.timezone)
+        for profile in self.delegation.allowed_profiles:
+            if profile not in self.profiles:
+                raise ValueError(f"unknown delegation profile: {profile}")
         for collection in self.collections.values():
             if collection.repository not in self.repositories:
                 raise ValueError("Collection references unknown repository")

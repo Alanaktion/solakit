@@ -622,6 +622,42 @@ Registry rules:
   logged with traceback to the run record, and surfaced to the model as
   a generic failure — a crashed tool never crashes the run or the app.
 
+### 8.1.1 Delegated child sessions
+
+The opt-in built-in `delegate.run(task, profile, session=None)` uses configured
+`delegation.allowed_profiles` (default empty; unknown profiles fail validation).
+Fresh sessions set parent_session to the caller, ephemeral memory, no binding and
+a title from the brief's first line. The brief is retained verbatim. Continuation
+requires an idle, unarchived, unbound ephemeral child belonging to this parent.
+Worker authority comes from the selected profile's normal tool/capability/scope
+grants. Limit depth by withholding delegate.run from workers; no depth counter.
+
+`Execution.submit_nested` is available only within the current performing task.
+It shares run admission/evidence and performs inside the parent's acquired global
+inference slot, bypassing the queue/semaphore reacquisition. Per-session locks and
+admission checks prevent overlap with ordinary queued turns. Busy child requests
+are refused rather than waiting for work that might require the held slot.
+Children retain normal model checks and step/context budgets, with private
+transcripts and no memory recall/commit or automatic channel delivery.
+
+Only final status, session/run IDs and a completed child's final assistant report
+return as the parent's tool result. Intermediate child messages are never parent
+context. Noncompleted runs return tool errors with IDs/status and no report.
+Normal counted tool-output truncation still applies. Parent memory commits only
+its own evidence, which includes the returned report.
+
+`delegation.timeout_s` is finite/positive (default 900); delegate.run owns this
+bound in place of the generic parent tool timeout. Trusted tool manifests can
+set manages_timeout to own a multi-stage operation's cancellation/timeout receipt;
+other tools retain registry timeout enforcement. Timeout finalizes accepted child
+work before returning IDs/status and an uncertainty notice. Parent cancellation
+and shutdown propagate through children; direct child cancellation returns a
+cancelled report and permits the parent to continue. Durable admission and final
+records finish before cancellation propagates; crashes use existing interrupted
+recovery without replay. Serial in-process execution is supported; parallel
+fan-out, child memory and nested UI presentation are outside scope. See
+[operator guidance](docs/operations/delegation.md).
+
 ### 8.2 Domain tools beat generic tools
 
 The core registry loads generic primitives (`files.*`, `repo_git.*`, memory/runtime);
