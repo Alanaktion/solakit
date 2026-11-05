@@ -421,3 +421,99 @@ def test_ui_archive_confirmation_browsing_and_secret_masking(config, mock_model)
         )
         assert client.get("/sessions/evening/archives/99").status_code == 404
         assert client.get("/sessions/evening/archives/0").status_code == 404
+
+
+def test_session_patch_and_rename_ui_preserve_identity_evidence(config, mock_model):
+    import json
+
+    from solakit.core.schemas import Session
+    from solakit.core.store import Store
+
+    app = create_app(config=config, model=mock_model)
+    with TestClient(app) as client:
+        assert (
+            client.patch("/api/sessions/old", json={"title": "New"}).status_code == 401
+        )
+        assert (
+            client.get("/sessions/old/rename", follow_redirects=False).headers[
+                "location"
+            ]
+            == "/login"
+        )
+        assert (
+            client.post(
+                "/sessions/old/rename", data={"title": "New"}, follow_redirects=False
+            ).headers["location"]
+            == "/login"
+        )
+        sign_in(client)
+        store = app.state.store
+        store.create_session(Session(id="old"))
+        store.append_message(
+            "old",
+            Message(
+                role="user", content="Original history", origin=Origin(), run_id="r"
+            ),
+        )
+        store.set_session_archived("old", True)
+        metadata = store.root / "sessions/old.meta.json"
+        before = json.loads(metadata.read_text())
+        before["imported_from"] = "legacy"
+        metadata.write_text(json.dumps(before))
+        transcript = store.root / "sessions/old.jsonl"
+        evidence = transcript.read_bytes()
+        response = client.patch(
+            "/api/sessions/old", json={"title": "  Moonlight & notes  "}
+        )
+        assert response.status_code == 200
+        assert response.json()["title"] == "Moonlight & notes"
+        after = json.loads(metadata.read_text())
+        assert {key: value for key, value in after.items() if key != "title"} == {
+            key: value for key, value in before.items() if key != "title"
+        }
+        assert transcript.read_bytes() == evidence
+        assert (
+            client.get(
+                "/api/sessions", params={"status": "all", "q": "Moonlight"}
+            ).json()[0]["id"]
+            == "old"
+        )
+        for payload in (
+            {},
+            {"title": None},
+            {"title": 1},
+            {"title": "x" * 201},
+            {"title": "Good", "id": "changed"},
+            {"archived_at": None},
+        ):
+            assert client.patch("/api/sessions/old", json=payload).status_code == 422
+        assert (
+            client.patch("/api/sessions/missing", json={"title": "New"}).status_code
+            == 404
+        )
+        page = client.get("/sessions/old")
+        assert "Rename session" in page.text
+        page = client.get("/sessions/old/rename")
+        assert 'value="Moonlight &amp; notes"' in page.text
+        bad = client.post("/sessions/old/rename", data={"title": "x" * 201})
+        assert bad.status_code == 422 and 'role="alert"' in bad.text
+        assert "x" * 201 in bad.text
+        renamed = client.post(
+            "/sessions/old/rename",
+            data={"title": "<A new name>"},
+            follow_redirects=False,
+        )
+        assert (
+            renamed.status_code == 303
+            and renamed.headers["location"] == "/sessions/old"
+        )
+        assert "&lt;A new name&gt;" in client.get("/sessions/old").text
+        assert (
+            client.patch("/api/sessions/old", json={"title": "  "}).json()["title"]
+            == ""
+        )
+        assert transcript.read_bytes() == evidence
+    restarted = Store(config.paths.data)
+    assert restarted.session("old").title == ""
+    assert restarted.session("old").archived_at
+    assert restarted.search("Original")[0]["session_id"] == "old"

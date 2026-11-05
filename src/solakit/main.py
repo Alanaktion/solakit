@@ -50,6 +50,11 @@ class CreateSessionRequest(Session):
     model_config = ConfigDict(extra="forbid")
 
 
+class UpdateSessionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    title: Annotated[str, StringConstraints(strip_whitespace=True, max_length=200)]
+
+
 class MemoryProbeRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     fact: Annotated[
@@ -515,6 +520,17 @@ def create_app(
             if session.bound_channel is not None:
                 raise ValueError("Channel bindings are controlled by configuration")
             return app.state.store.create_session(session).model_dump(mode="json")
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+
+    @api.patch("/sessions/{session_id}")
+    def update_session(session_id: str, request: UpdateSessionRequest) -> dict:
+        try:
+            return app.state.store.rename_session(session_id, request.title).model_dump(
+                mode="json"
+            )
+        except FileNotFoundError as exc:
+            raise HTTPException(404, "Session not found") from exc
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
 

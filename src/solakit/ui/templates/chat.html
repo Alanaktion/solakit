@@ -24,6 +24,7 @@
     <div class="session-badges"><a class="subtle-tag" href="/tools#profile-{{ session.default_profile|urlencode }}">{{ tool_count }} tool{% if tool_count != 1 %}s{% endif %}</a><span class="subtle-tag">{{ session.memory_scope }} memory</span>{% if session.bound_channel %}<span class="subtle-tag">{{ session.bound_channel }}</span>{% endif %}</div>
   </header>
   <div class="archive-toolbar">
+    <a class="archive-action" href="/sessions/{{ session.id|urlencode }}/rename">Rename session</a>
     <details class="archive-menu"><summary>{% if archive_number %}Archive {{ archive_number }} · read only{% else %}Current conversation{% endif %} <span aria-hidden="true">⌄</span></summary>
       <nav aria-label="Conversation history">
         <a href="/sessions/{{ session.id|urlencode }}" {% if not archive_number %}aria-current="page"{% endif %}>Current conversation</a>

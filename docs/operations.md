@@ -100,6 +100,19 @@ Set `SOLA_URL` or `sola --url ...` for the API. Model/memory clients default to
 `trust_env = false`; opt into proxy/CA environment settings per service when needed.
 The CLI's equivalent is `sola --trust-env ...`. Process environment is untouched.
 
+## Renaming sessions
+
+Open a conversation and choose **Rename session**, enter a name and save.
+Names are also searchable from **Search**. Clear the name to display its ID again.
+Archived sessions can be renamed without restoring them.
+
+`PATCH /api/sessions/{session_id}` accepts `{"title":"New name"}` and returns
+updated session metadata. Titles are strings of up to 200 characters after
+trimming whitespace; an empty title clears the display name. Missing sessions
+return 404 and invalid/unsupported fields return 422. The route uses the same
+Cookie/Bearer operator authentication as other API routes. Renaming changes only
+the title, preserving IDs, history, bindings, archive state and importer metadata.
+
 ## Storage and recovery
 
 Runtime data lives outside the code tree. Authoritative JSONL transcripts, run

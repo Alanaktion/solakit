@@ -1,0 +1,14 @@
+{% extends 'base.html' %}
+{% block title %}Rename session · Solakit{% endblock %}
+{% block content %}
+<section class="page-heading"><h1>Rename session</h1></section>
+<div class="panel new-session">
+<p class="field-note">Session ID: {{ session.id }}. Renaming changes its display name and keeps its ID, history and bindings.</p>
+{% if error %}<div class="notice notice-error" role="alert">{{ error }}</div>{% endif %}
+<form class="new-session-form" action="/sessions/{{ session.id|urlencode }}/rename" method="post">
+<div><label for="session-title">Session name</label><input id="session-title" name="title" value="{{ title }}" maxlength="200" autofocus aria-describedby="title-hint"><small id="title-hint" class="field-note">Up to 200 characters. Leave blank to display the session ID.</small></div>
+<button class="primary-button" type="submit">Save name</button>
+<a class="text-link" href="/sessions/{{ session.id|urlencode }}">Cancel</a>
+</form>
+</div>
+{% endblock %}

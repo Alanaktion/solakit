@@ -832,6 +832,13 @@ presentation, with tool details sourced only from redacted logs. No deletion,
 archive editing or model/job-triggered archival is exposed. Discord can use the
 shared operation later; slash-command UI is outside this change.
 
+Session display names can be changed with authenticated
+`PATCH /api/sessions/{session_id}` using `{"title":"New name"}`. The title-only
+strict payload trims whitespace and permits 0–200 characters; blank clears it.
+Atomic metadata updates preserve identity, unknown importer fields, bindings,
+archive status and all evidence. Renaming is allowed while running or archived.
+The chat UI links to a rename form with validation and cancel controls.
+
 ### 9.3 Session lifecycle archival
 
 Whole-session archival is a reversible `archived_at` metadata flag, separate from

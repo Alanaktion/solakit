@@ -155,6 +155,25 @@ async function vision(page) {
   assert.equal((await page.request.get(`${base}/api/media/${fixture.image}`)).status(), 401);
 }
 
+async function sessionRename(page) {
+  const fixture = await (await page.request.post(base + '/qa/session-lifecycle')).json();
+  const id = fixture.ids[0];
+  await page.request.post(`${base}/api/sessions/${id}/lifecycle`, {data: {archived: true}});
+  await page.goto(`${base}/sessions/${id}`);
+  await page.getByRole('link', {name: 'Rename session', exact: true}).click();
+  await page.getByLabel('Session name', {exact: true}).fill('<Moonlight & notes>');
+  await noOverflow(page);
+  await page.screenshot({path: path.join(output, `rename-form-${page.qaLabel}.png`), fullPage: true});
+  await page.getByRole('button', {name: 'Save name', exact: true}).click();
+  await page.waitForURL(`**/sessions/${id}`);
+  assert.equal(await page.locator('.chat-title h1').innerText(), '<Moonlight & notes>');
+  assert.match(await page.locator('#conversation').innerText(), /searchable proof/);
+  assert.equal(await page.locator('#composer').count(), 0);
+  await noOverflow(page);
+  await page.goto(`${base}/search?q=${encodeURIComponent('<Moonlight & notes>')}`);
+  assert(await page.locator(`.search-result a[href="/sessions/${id}"]`).count());
+}
+
 async function sessionSearch(page) {
   const fixture = await (await page.request.post(base + '/qa/session-lifecycle')).json();
   const id = fixture.ids[0];
@@ -512,7 +531,8 @@ async function streaming(page) {
         await page.getByLabel('Operator token').fill('scratch-browser-token');
         await page.getByRole('button', {name: 'Sign in'}).click();
         await page.waitForURL(base + '/');
-        if (phase === 'search') await sessionSearch(page);
+        if (phase === 'rename') await sessionRename(page);
+        else if (phase === 'search') await sessionSearch(page);
         else if (phase === 'lifecycle') await sessionLifecycle(page);
         else if (phase === 'vision') await vision(page);
         else if (phase === 'once') await oneTimeJobs(page);

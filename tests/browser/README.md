@@ -77,3 +77,6 @@ overflow and screenshots with scratch data only.
 Session search: run `check.cjs search` for name/ID pagination, archived sessions,
 full-text snippets and links to retained numbered archives, in both themes at
 desktop/mobile sizes. Uses the scratch imported-history fixture only.
+
+Session rename: run `check.cjs rename` for renaming archived chats, preserved
+history and searchable escaped names across light/dark desktop/mobile layouts.

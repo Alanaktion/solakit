@@ -538,6 +538,58 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
         except APIError as exc:
             return render(request, "error.html", {"error": exc.detail}, exc.status)
 
+    async def rename_page(request, identity, values=None, error=None, status=200):
+        data = await api(request, "GET", f"/api/sessions/{quote(identity, safe='')}")
+        return render(
+            request,
+            "session_rename.html",
+            {
+                "session": data,
+                "title": data["title"] if values is None else values.get("title", ""),
+                "error": error,
+                "health": await health(request),
+            },
+            status,
+        )
+
+    @router.get("/sessions/{identity}/rename")
+    async def rename_confirmation(request: Request, identity: str):
+        if not logged_in(request):
+            return login_redirect(request)
+        try:
+            return await rename_page(request, identity)
+        except APIError as exc:
+            return render(request, "error.html", {"error": exc.detail}, exc.status)
+
+    @router.post("/sessions/{identity}/rename")
+    async def rename_session(request: Request, identity: str):
+        if not logged_in(request):
+            return login_redirect(request)
+        values = {}
+        try:
+            values = await form(request)
+            await api(
+                request,
+                "PATCH",
+                f"/api/sessions/{quote(identity, safe='')}",
+                {"title": values.get("title", "")},
+            )
+            return RedirectResponse(
+                f"/sessions/{quote(identity, safe='')}", 303, headers=HEADERS
+            )
+        except APIError as exc:
+            try:
+                return await rename_page(
+                    request, identity, values, exc.detail, exc.status
+                )
+            except APIError as unavailable:
+                return render(
+                    request,
+                    "error.html",
+                    {"error": unavailable.detail},
+                    unavailable.status,
+                )
+
     @router.get("/sessions/{identity}/compact")
     async def compaction_confirmation(request: Request, identity: str):
         if not logged_in(request):
