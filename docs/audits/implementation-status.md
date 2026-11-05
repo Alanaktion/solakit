@@ -1,5 +1,8 @@
 # Implementation and plan audit
 
+For current live checks, see the [2026-11-04 local integration audit](local-integration.md).
+The inventory and verification totals below describe the earlier source audit.
+
 Audit baseline: `696cc73`. Scope: reconcile all numbered plans with implementation,
 configuration, API/UI routes, pack packaging and regression coverage. This is a
 source/test and plan-status audit, not a new production rollout or exhaustive

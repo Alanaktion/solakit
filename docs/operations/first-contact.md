@@ -1,18 +1,24 @@
 # Deliberate OpenViking first contact
 
-Known operator-provided settings:
+Local configuration inspected on 2026-11-04:
 
 - Endpoint on the Sola host: `http://127.0.0.1:1933`
-- Installed server: `openviking-server 0.4.17.1`
-- Canonical root: `viking://user/sola/memories`
-- Credential reference: `OPENVIKING_API_KEY` (never put its value in this repo)
+- User: `default`
+- Canonical root: `viking://user/default/memories`
+
+Earlier operator settings named user `sola`, root `viking://user/sola/memories`
+and credential reference `OPENVIKING_API_KEY`. Use the actual server's configured
+identity and explicit credential reference when authentication is required.
+The client was checked against `openviking-server 0.4.17.1`; the currently installed
+server version was not reverified.
 
 ## Verification status
 
 The operator has confirmed the OpenViking round-trip and reports that general
 functionality looks good. The original live memory gate is satisfied on that
 attestation. Probe run IDs/results were not supplied here; retain them privately
-on the Sola host. No new probe was run from the implementation workspace.
+on the Sola host. The [local integration audit](../audits/local-integration.md)
+records subsequent live API/model/tool/archival checks without repeating this probe.
 
 The procedure below remains an operational reference for deliberate revalidation,
 not an outstanding instruction to repeat writes. Live compaction and rollout
@@ -36,13 +42,15 @@ false:
 [memory]
 enabled = true
 base_url = "http://127.0.0.1:1933"
-roots = ["viking://user/sola/memories"]
-user = "sola"
-api_key = { env = "OPENVIKING_API_KEY" }
+roots = ["viking://user/default/memories"]
+user = "default"
+# If required by the server:
+# api_key = { env = "OPENVIKING_API_KEY" }
 trust_env = false
 ```
 
-The process running uvicorn must receive that environment variable. The explicit
+If using an environment credential reference, the process running uvicorn must
+receive that environment variable. The explicit
 `user` sends the version's `X-OpenViking-User` hint (useful for admin/root API keys)
 and requires the returned session URI to match that user before adding messages.
 A user-bound key must already belong to Sola; a mismatched identity fails closed. Provide

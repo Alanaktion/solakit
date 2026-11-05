@@ -2,6 +2,8 @@
 
 [SPEC.md](../../SPEC.md) defines behavior. The [implementation audit](../audits/implementation-status.md)
 records shipped features, supporting tests, acceptance gaps and retired plans.
+The [local integration audit](../audits/local-integration.md) records verified
+API, model/tool, prompt evidence and archival checks against the running server.
 Completed implementation plans have been removed; Git history retains their original
 scope and completion records. Plan numbers stay stable.
 
