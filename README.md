@@ -385,4 +385,5 @@ for letters/mailboxes; core config only loads modules and grants tools/scopes.
   cleanup. Commands run with host-user privileges; cwd scopes are not a sandbox.
 
 No core execution-loop changes or new core domain schemas were needed. These
-features are scratch/mock verified; no live letters, email or jobs were activated.
+features retain scratch/mock coverage. Live self-addressed email verification
+passed; letters correspondence and scheduled rollout remain separately gated.

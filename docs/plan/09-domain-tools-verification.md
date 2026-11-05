@@ -29,8 +29,9 @@ Completed foundation plans 01–06, 14–16 and 20 have been removed. See the
   `packs/journal/tests/test_journal_pack.py::test_runner_creates_and_publishes_to_scratch_remote`.
 - [ ] Verify operator-owned prompt/profile/tool grants against the actual intended
   resources; record the prompt audit approval required by SPEC §15.
-- [ ] Finish [letters protocol/live checks](17-letters-pack.md) and
-  [scratch mailbox checks](18-email-pack.md) before wiring those resources live.
+- [ ] Finish [letters protocol/live checks](17-letters-pack.md) before live correspondence.
+- [x] Verify configured mailbox TLS/search/read and self-addressed threaded send/receipt;
+  see the [live mailbox acceptance](../audits/implementation-status.md#subsequent-phase-18-live-mailbox-acceptance-2026-11-05).
 - [x] Implement the [printer pack](19-printer-and-seam-provers.md), capture transport
   and grant checks.
 - [ ] Verify deliberate physical-device operation of the thermal printer.
