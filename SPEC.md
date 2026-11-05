@@ -873,7 +873,7 @@ them later is exactly the kind of surgery this project exists to avoid:
    contain exactly the golden prompt + session history + task.
 3. **Tool ordering:** mock model tool call → transcript shows the
    assistant tool_calls message before its tool results, matching IDs.
-4. **Profile leak:** in a `blog` run, a mock model attempting `shell`
+4. **Profile leak:** in a `blog` run, a mock model attempting `shell.exec`, `shell.run`
    or `email.*` is refused and logged; the tools were absent from the
    request schemas. Plus: startup refuses a config whose profile grants
    a tool exceeding its write scopes (§8.1).
@@ -891,8 +891,8 @@ them later is exactly the kind of surgery this project exists to avoid:
 8. **Tool drop-in:** adding a new tool module + config word makes the
    tool available to its profiles with zero changes to `core/` —
    verified by a fixture tool in tests.
-9. **Blog end-to-end (mock git):** the `blog` profile creates a post via
-   `blog.create_post` and publishes via `blog.publish` against a scratch
+9. **Journal end-to-end (scratch git):** the `blog` profile creates a post via
+   `journal.create` and publishes via `journal.publish` against a scratch
    repo; the transcript contains no shell calls.
 10. **Scheduler misfire:** app paused past a `catch_up=false` job's fire
     time → job recorded `missed`, does not run on resume; a
@@ -940,14 +940,14 @@ parsing, APScheduler misfire semantics, and the blog repo's publishing
 steps. Feature parity with *all* of Hermes remains explicitly not the
 target (§3).
 
-### Implementation checkpoint after phases 6–8
+### Implementation checkpoint
 
-Current source is 3,590 Python lines across 25 modules, with 2,571 test
-lines. The original ~3,200-line estimate above predated crash recovery, explicit
-integration release gates, extraction observation, and cursor recovery. Domain
-tools and full live acceptance remain phase 9; the estimate is not a reason to
-omit required behavior or claim those checks passed. Keep core, adapters and
-operator operations separate, and revise this checkpoint when scope changes.
+The core, Discord/scheduling, memory/compaction, operator UI, generic services,
+journal/letters/email packs and built-in shell tools are implemented. The operator
+has confirmed the live OpenViking round-trip. The original line-count estimate
+predates these additions and is not a completion criterion. See the
+[implementation audit](docs/audits/implementation-status.md) for code/test evidence
+and remaining acceptance, printer, provider and staged rollout work.
 
 ## 17. Defaults chosen in v2 (change any with one line)
 

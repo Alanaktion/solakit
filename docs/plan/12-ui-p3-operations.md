@@ -1,6 +1,15 @@
 # P3 — operations UI
 
-Status: implemented and HTTP/integration verified; browser visual QA pending.
+Status: partial — implementation complete; targeted browser verification remains.
+
+## Audit checklist
+
+- [x] Operations views and job controls implemented; HTTP/action checks pass.
+- [x] Operator reports general functionality looks good.
+- [ ] Check light/dark and narrow-screen tables, timezone display and run/pause/resume
+  feedback in a real browser.
+
+General approval is not recorded as completion of the specific browser matrix.
 
 `/operations` displays existing API job/channel state: enabled, paused/active,
 cron/timezone, next fire, last run/outcome, adapter status, connected-since and last

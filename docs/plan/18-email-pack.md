@@ -1,6 +1,14 @@
 # Email pack
 
-Status: locally implemented in `packs/email`; live provider/scratch check pending.
+Status: partial — locally implemented in `packs/email`; live provider/scratch check pending.
+
+## Audit checklist
+
+- [x] Independent pack, mock IMAP/SMTP and durable-send regression tests.
+- [ ] Verify configured provider authentication, TLS and stable message IDs in a
+  scratch mailbox, including bounded read/search behavior.
+- [ ] Deliberately send a scratch threaded reply and verify recipient/thread headers
+  and receipt evidence; distinguish SMTP acceptance from final delivery.
 
 Search/read/reply by stable mailbox/message ID. Credentials remain secret
 references. Apply external-content markers to subject/body/attachments and enforce

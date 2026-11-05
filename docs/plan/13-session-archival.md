@@ -1,6 +1,17 @@
 # Session archival — API and UI
 
-Status: implemented locally with crash, concurrency and API/UI regression checks.
+Status: partial — implementation complete; targeted browser verification remains.
+
+## Audit checklist
+
+- [x] API/UI archival and read-only browsing implemented; durability, concurrency,
+  byte-preservation and authenticated HTTP checks pass.
+- [x] Operator reports general functionality looks good.
+- [ ] Check archive confirmation/history navigation, read-only composer absence and
+  light/dark/narrow-screen rendering in a real browser.
+
+General approval is not recorded as completion of the specific browser matrix.
+
 Authorized follow-up scope: operator archival and archive browsing in API/UI.
 Discord slash-command exposure remains deferred; it can call the same execution
 operation later. No new model/job tool grants are introduced.

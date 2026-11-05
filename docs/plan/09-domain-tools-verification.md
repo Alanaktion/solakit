@@ -1,34 +1,46 @@
-# Phase 9: External packs and complete MVP verification
+# Phase 9: Remaining acceptance and external packs
 
-Status: generic foundation, journal, letters and email packs plus built-in shell tools
-implemented locally; printer and full live acceptance incomplete. Replaces the in-tree blog/letters plan.
+Status: partial — core and journal/letters/email/shell implementation complete;
+remaining acceptance coverage, provider checks and printer implementation are open.
 
-Prerequisites, in order:
+## Implemented
 
-1. [Dotted imports, shared services and collection resources](14-tool-pack-boundary.md).
-2. [Generic filesystem/Git primitives and runtime grounding](15-generic-tools.md).
-3. [Journal pack](16-journal-pack.md): configured collections unlock posts, dreams,
-   and poems with no special blog code in core.
+- [x] Explicit dotted imports, shared Git/filesystem services and named collections.
+- [x] Generic file/Git tools, live `runtime.status` and config-granted built-in shell.
+- [x] Separately packaged journal, letters, email and common support; no domain
+  imports or branches in the execution loop.
+- [x] Core storage/recovery, queue/cancellation/shutdown and API authentication tests.
+- [x] OpenViking round-trip: confirmed by the operator. No new probe was run here.
 
-Domain pack sequence:
+Completed foundation plans 01–06, 14–16 and 20 have been removed. See the
+[audit and acceptance matrix](../audits/implementation-status.md) for code/test evidence.
 
-4. Locally implemented: [Letters](17-letters-pack.md), with separate sequential/immutable conventions.
-5. Locally implemented: [Email](18-email-pack.md), with named mailbox resources and reply-by-ID.
-6. [Printer](19-printer-and-seam-provers.md), with an explicit device capability.
-7. Later seam proofs: image workflow and calendar read, independently prioritized.
+## Remaining
 
-Packs must live in independently installable packages, compose Python services,
-and never require execution-loop branches. Finish generic web/messages/device
-seams only as concrete pack needs establish their shape. No speculative provider
-framework or entry-point discovery is required.
+- [ ] Exercise the exact configured profile matrix: a blog-profile model attempt
+  at `shell.exec`, `shell.run` and `email.*` must be absent from advertised schemas,
+  refused at dispatch and recorded. Existing tests verify these mechanisms
+  separately, but do not establish this complete profile scenario (SPEC §14.4).
+- [ ] Add the runner-driven journal end-to-end acceptance check (SPEC §14.9): mock
+  model → `journal.create` → `journal.publish` → scratch remote, exact transcript
+  ordering and no shell calls. Direct registry/scratch Git tests already pass.
+- [ ] Verify operator-owned prompt/profile/tool grants against the actual intended
+  resources; record the prompt audit approval required by SPEC §15.
+- [ ] Finish [letters protocol/live checks](17-letters-pack.md) and
+  [scratch mailbox checks](18-email-pack.md) before wiring those resources live.
+- [ ] Implement the [printer pack](19-printer-and-seam-provers.md) and verify its
+  capture transport, grants and deliberate physical-device operation.
+- [ ] Record remaining live summary/continuation checks from
+  [compaction controls](21-compaction-controls.md).
+- [ ] Close targeted UI browser checks in plans 10–13 and 21.
+- [ ] Record the full §14 acceptance decision, then follow
+  [Discord](07-channels-discord.md), [job](08-scheduling.md) and SPEC §15 rollout gates.
 
-Complete the profile capability matrix, operator documentation and all eleven
-§14 acceptance checks, plus storage recovery, cancellation, auth and shutdown.
-Mock checks do not satisfy live gates; keep Discord/jobs disabled until the live
-scratch-memory check and full acceptance pass. Publishing grants remain separate
-from filesystem writes. Existing Hermes installation/schedules stay untouched.
+Image workflow and calendar read are later seam proofs, independently prioritized;
+they do not block the current MVP. Markdown, streaming, per-message profile choice
+and Discord archival exposure also remain deferred, rather than partially built.
 
-[20: shell](20-shell-pack.md) is a separately authorized low-level
-built-in tool, available only to profiles with explicit config grants. The common pack supplies private
-append-only operation receipts and secret registration. No execution-loop or core
-domain-schema changes were required for these packs.
+Packs compose internal Python services. New domain tools must not require core
+execution branches. Publishing grants remain separate from filesystem writes.
+Keep existing Hermes installations/schedules untouched. This audit does not change
+`live_ready`, enable integrations or authorize automatic retries of uncertain sends.

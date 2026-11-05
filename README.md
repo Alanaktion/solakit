@@ -6,12 +6,13 @@ Python 3.12+ and uv are required. [SPEC.md](SPEC.md) defines behavior;
 [phase plans](docs/plan/README.md) record implementation and release gates.
 [AGENTS.md](AGENTS.md) maps the architecture and contribution rules.
 
-Phases 1–8 are locally implemented. Phase 6's live OpenViking round-trip is still
-pending on the Sola host, and phase 9's domain tools/complete acceptance remain
-unfinished. Generic services, journal/letters/email packs and built-in shell tools
-are locally implemented; printer and full live acceptance remain pending. Discord and jobs
-are disabled by default. No production pilot,
-deployment, Hermes changes, or live memory writes have been performed.
+Core execution, memory/compaction, Discord/scheduling, operator UI, generic
+services, journal/letters/email packs and built-in shell tools are implemented.
+The operator has confirmed the live OpenViking round-trip and general functionality.
+The [implementation audit](docs/audits/implementation-status.md) distinguishes
+regression coverage from remaining acceptance, browser, provider and rollout checks.
+Printer remains unimplemented. Discord/jobs are disabled by default; this repository
+work has not activated a production pilot, deployment or changed Hermes.
 
 ## Development
 
@@ -110,7 +111,7 @@ In chat, choose **Archive conversation**, review the explanation and confirm.
 The history picker switches between the current conversation and read-only
 archives, including compaction archives. Nothing is deleted or editable.
 A failed prepared rotation blocks further transcript writes; restart after fixing
-storage to finish recovery. See [archival plan](docs/plan/13-session-archival.md).
+storage to finish recovery. See [archival validation](docs/plan/13-session-archival.md).
 
 Per-session FIFO workers feed a global inference semaphore (default one). Model
 preflight and the first validated completion precede transcript mutation. Tool-call

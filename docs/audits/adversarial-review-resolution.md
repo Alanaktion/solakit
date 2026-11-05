@@ -31,5 +31,7 @@ integrations. Prompt whitespace and transcript history remain literal.
   are untouched. Tests cover malformed bracketed-IPv6 NO_PROXY values and both
   values of the explicit service setting.
 
-Live oMLX/OpenViking compatibility, extraction completion tracking, compaction,
-and phases 7–9 remain open as recorded in the phase plans.
+This is a historical resolution record, not an active plan. Extraction tracking,
+compaction and channel/job implementations have since shipped. The operator has
+confirmed the live OpenViking round-trip. See the [current audit](implementation-status.md)
+and [remaining plans](../plan/README.md) for outstanding validation and rollout.

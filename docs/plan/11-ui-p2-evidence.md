@@ -1,6 +1,16 @@
 # P2 — evidence UI
 
-Status: implemented and HTTP/integration verified; browser visual QA pending.
+Status: partial — implementation complete; targeted browser verification remains.
+
+## Audit checklist
+
+- [x] Prompt/run inspection and cancellation implemented; HTTP parity, masking and
+  active-run cancellation checks pass.
+- [x] Operator reports general functionality looks good.
+- [ ] Check narrow-screen overflow, light/dark readability, expandable evidence and
+  cancellation feedback in a real browser.
+
+General approval is not recorded as completion of the specific browser matrix.
 
 - `/prompt`: profiles/session/origin/time inputs call the existing prompt API.
   Original SHA is displayed without recomputing or reconstructing bytes. Prompt
@@ -18,5 +28,5 @@ Checks cover auth, fixed-time prompt/API SHA and byte parity, credential masking
 escaping, redacted tool source selection, filters, missing records and actual
 mocked active-run cancellation. Core prompt/loop/storage are unchanged.
 
-Still pending: actual light/dark and narrow-screen browser QA. No browser tool is
-available in this workspace; Node keyboard tests are not browser visual QA.
+Still pending: the targeted browser checks above. Node keyboard tests do not
+establish browser visual behavior.

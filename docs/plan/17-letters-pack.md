@@ -1,18 +1,25 @@
 # Letters pack
 
-Status: locally implemented in `packs/letters`; actual protocol/live check pending.
+Status: partial — locally implemented in `packs/letters`; actual protocol/live check pending.
+
+## Audit checklist
+
+- [x] Independent pack and local bare-remote protocol/receipt regression tests.
+- [ ] Inspect the actual repository's numbering, authors, layout and existing files.
+- [ ] Deliberately validate pull/read/reply/publish against the agreed live protocol;
+  retain immutable old-letter bytes and publication evidence.
 
 Build a separate package using the same filesystem/Git services. Do not put
 letters tools or protocol rules under `src/solakit/` and do not force letters into
 journal conventions. Use a named repository and pack-owned protocol configuration.
 
-- Pull/read new peer letters with external-content markers.
-- Encode sequential numbering and `NNN-YYYY-MM-DD-sola.md` in pack code.
-- Reply creates exclusively and never edits prior letters, including retries.
-- Compose services privately; no model-driven shell or primitive choreography.
-- Explicit reply/publish grants; do not grant generic edit/write tools to bypass
+- [x] Pull/read new peer letters with external-content markers.
+- [x] Encode sequential numbering and `NNN-YYYY-MM-DD-sola.md` in pack code.
+- [x] Reply creates exclusively and never edits prior letters, including retries.
+- [x] Compose services privately; no model-driven shell or primitive choreography.
+- [x] Explicit reply/publish grants; do not grant generic edit/write tools to bypass
   the letters profile's protocol. Preserve local commit identity on uncertain push.
-- Scratch tests: concurrent numbering, immutable old letters, external-content
+- [x] Scratch tests: concurrent numbering, immutable old letters, external-content
   formatting, peer/author convention, repeat invocation, failed commit/push.
 
 Verify actual repository conventions before live wiring; leave Hermes untouched.

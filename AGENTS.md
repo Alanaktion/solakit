@@ -149,18 +149,21 @@ not a security boundary against a malicious installed package.
 
 ## Scope and deferred work
 
-P1 UI (sessions/chat/status) is implemented, plus read-only tools inspection.
-`docs/plan/11-ui-p2-evidence.md` and `12-ui-p3-operations.md` describe implemented
-prompt/run inspection, run cancellation and job/channel controls. All presentation
-and actions use existing APIs; the UI never reconstructs prompts or calls Store/
-Execution directly. Chat sends on Enter, with Shift+Enter for newline and IME guards.
-Keyboard unit tests use Node if available, without requiring a Node build/runtime
-for the app. Browser visual QA remains separate from HTTP/unit checks. Operator API/UI archival and
-read-only archive browsing are implemented; see `docs/plan/13-session-archival.md`.
-Discord archival exposure, markdown, per-message profile selection and SSE remain
-deferred. Generic services, journal/letters/email packs and built-in shell tools
-are locally implemented. Printer is the next planned pack, with image/calendar as later seam
-proofs; see plans 14–20. Verify the actual letters protocol and scratch mailbox
-before live wiring; mock/scratch implementation is not live acceptance. Phase 6 live scratch-memory verification and
-later acceptance/pilot gates remain distinct from local mock-tested implementation. Check the phase plans
-before expanding scope or claiming a phase complete.
+The [implementation audit](docs/audits/implementation-status.md) inventories shipped
+features and test evidence. Completed plans 01–06, 14–16 and 20 are removed; consult
+[remaining plans](docs/plan/README.md), not historical completion notes, before
+expanding scope. Core, generic tools/services, journal/letters/email packs, built-in
+shell and API/UI evidence/operations/archival/compaction are implemented.
+
+The operator confirmed the live OpenViking round-trip and general functionality.
+Do not keep calling the original phase 6 gate pending. This is operator evidence,
+not a claim that this workspace ran a probe. Live compaction, exact acceptance
+scenarios, targeted UI browser checks, actual letters protocol, scratch mailbox,
+Discord pilot and staged job rollout remain separately tracked. Printer is still
+unimplemented; image/calendar are later seam proofs.
+
+Chat sends on Enter, Shift+Enter inserts a newline, with IME and busy guards.
+Keyboard unit tests use Node if available; the app needs no Node build/runtime.
+Markdown, per-message profile selection, streaming and Discord archival commands
+remain deferred. Keep live validation distinct from mock/scratch coverage and
+never infer production activation from implementation or general approval.

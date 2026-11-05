@@ -7,9 +7,16 @@ Known operator-provided settings:
 - Canonical root: `viking://user/sola/memories`
 - Credential reference: `OPENVIKING_API_KEY` (never put its value in this repo)
 
-The managed implementation workspace has no listener at that loopback address
-and no binding for that environment variable. `127.0.0.1` here is this workspace,
-not Sola's Mac. No live fact has been committed and the live gate remains pending.
+## Verification status
+
+The operator has confirmed the OpenViking round-trip and reports that general
+functionality looks good. The original live memory gate is satisfied on that
+attestation. Probe run IDs/results were not supplied here; retain them privately
+on the Sola host. No new probe was run from the implementation workspace.
+
+The procedure below remains an operational reference for deliberate revalidation,
+not an outstanding instruction to repeat writes. Live compaction and rollout
+checks remain separate; see the [audit](../audits/implementation-status.md).
 
 The client contract was checked against upstream tag `v0.4.17.1`, including session
 creation/memory policy, async commit/task polling, completed-only archive reads,
@@ -71,8 +78,8 @@ claim or an unrelated persona fragment. Pending/failed extraction or missing
 recall is a failed verification, not a reason to retry uncertain message writes.
 Use `POST /api/runs/{id}/memory/refresh` to inspect acknowledged extraction.
 
-Record endpoint/version, probe result and run IDs before considering the live
-memory gate passed. Phase 9 domain-tool acceptance remains required independently.
+For future revalidation, retain endpoint/version, probe result and run IDs in
+private operator evidence. Phase 9 acceptance remains required independently.
 Only after both gates pass should an operator set `live_ready = true` and enable
 a low-stakes pilot channel. Preserve SPEC §15's week-long pilot, shadow publishing,
 and rollback stages. No such production activation is performed by this work.
