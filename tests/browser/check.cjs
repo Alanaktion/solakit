@@ -44,6 +44,45 @@ async function operations(page) {
   assert.match(await page.locator('.intro').innerText(), /completed/);
 }
 
+async function createSession(page, prefix) {
+  const id = `${prefix}-${page.qaLabel}-${Date.now()}`;
+  await page.goto(base + '/?new=1');
+  await page.getByLabel('Session ID', {exact: true}).fill(id);
+  await page.getByLabel('Memory', {exact: true}).selectOption('ephemeral');
+  await page.getByRole('button', {name: 'Create session'}).click();
+  await page.waitForURL(`**/sessions/${id}`);
+  return id;
+}
+
+async function archival(page) {
+  const id = await createSession(page, 'archive');
+  const response = await page.request.post(`${base}/api/sessions/${id}/messages`, {
+    data: {message: 'Preserve this browser archive evidence.'},
+  });
+  assert.equal(response.status(), 200);
+  assert.equal((await response.json()).status, 'completed');
+  await page.reload();
+  await page.getByRole('link', {name: 'Archive conversation'}).click();
+  await page.getByRole('heading', {name: 'Archive this conversation?'}).waitFor();
+  assert.match(await page.locator('main').innerText(), /Nothing is deleted/);
+  await noOverflow(page);
+  await page.screenshot({path: path.join(output, `13-confirm-${page.qaLabel}.png`), fullPage: true});
+  await page.getByRole('button', {name: 'Archive and start fresh'}).click();
+  await page.waitForURL(`**/sessions/${id}`);
+  assert(await page.locator('#composer').isVisible());
+  assert(!(await page.locator('#conversation').innerText()).includes('Preserve this'));
+  await page.locator('.archive-menu summary').click();
+  await page.getByRole('link', {name: 'Archive 1', exact: true}).click();
+  await page.waitForURL('**/archives/1');
+  assert.equal(await page.locator('#composer').count(), 0);
+  assert.match(await page.locator('#conversation').innerText(), /Preserve this browser archive evidence/);
+  assert.match(await page.locator('.archive-readonly').innerText(), /read only/);
+  await noOverflow(page);
+  await page.screenshot({path: path.join(output, `13-archive-${page.qaLabel}.png`), fullPage: true});
+  await page.getByRole('link', {name: 'Return to the current conversation'}).click();
+  assert(await page.locator('#composer').isVisible());
+}
+
 (async () => {
   await fs.mkdir(output, {recursive: true});
   const browser = await chromium.launch({
@@ -63,6 +102,7 @@ async function operations(page) {
         await page.getByRole('button', {name: 'Sign in'}).click();
         await page.waitForURL(base + '/');
         if (phase === '12') await operations(page);
+        else if (phase === '13') await archival(page);
         else throw new Error(`Unknown phase ${phase}`);
         assert.deepEqual(errors, []);
         console.log(`PASS phase ${phase}: ${page.qaLabel}`);

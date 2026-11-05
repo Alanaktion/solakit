@@ -130,7 +130,7 @@ In chat, choose **Archive conversation**, review the explanation and confirm.
 The history picker switches between the current conversation and read-only
 archives, including compaction archives. Nothing is deleted or editable.
 A failed prepared rotation blocks further transcript writes; restart after fixing
-storage to finish recovery. See [archival validation](docs/plan/13-session-archival.md).
+storage to finish recovery. See [archival validation](docs/audits/implementation-status.md#subsequent-phase-13-browser-acceptance-2026-11-04).
 
 Per-session FIFO workers feed a global inference semaphore (default one). Model
 preflight and the first validated completion precede transcript mutation. Tool-call
