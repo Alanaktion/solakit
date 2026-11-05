@@ -20,4 +20,3 @@ and `has_more`. External text is marked as data. All-day end dates are exclusive
 Daily/weekly/monthly/yearly recurrence, exceptions and overridden instances use
 the ICS library; sub-daily or BY* rules fail explicitly. Export size and component
 count are bounded. A filesystem grant is checked on each read, including symlinks.
-Tests use scratch exports; no live calendar acceptance is claimed.

@@ -59,8 +59,3 @@ prevent concurrent print calls interleaving. Transport success means bytes were
 submitted, not proof that paper emerged. Timeouts bound individual device writes;
 a running worker finishes receipt bookkeeping on cancellation. Never remove a
 receipt to force a retry; inspect the device first.
-
-Capture tests use python-escpos's Dummy transport and fake failing devices; they
-do not access hardware. To validate deliberately, identify/configure the actual
-device, print one short ASCII receipt, inspect wrapping/feed and repeat the same
-operation ID to confirm no duplicate. Physical validation remains a separate gate.

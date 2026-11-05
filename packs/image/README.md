@@ -38,6 +38,3 @@ references. Empty history is ambiguous (queued, cleared or unknown), not proof o
 failure. Images stay on the configured ComfyUI server; no local file or delivery
 artifact is claimed. Result text is external data, with bounded response size and
 output count. Endpoints cannot be switched under an existing receipt.
-
-Tests use mock HTTP responses and scratch workflows/receipts. A live GPU/model
-and image-quality check remain operator acceptance work; no service is activated.

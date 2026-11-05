@@ -45,11 +45,3 @@ Receipt files are internal private runtime evidence, not inbox filesystem write
 permission. SMTP work and its terminal receipt complete before cancellation is
 propagated, so an accepted request cannot leave a late untracked send. Socket
 operations have finite timeouts; cancellation may wait for that work to settle.
-
-Tests mock IMAP/SMTP, including TLS, thread headers, identity changes, bounds,
-permissions, cancellation, secret-file modes and accepted/failed/uncertain sends.
-The configured provider passed an operator-authorized live self-addressed
-seed/reply check on 2026-11-05: verified TLS, stable IDs, preserved read flags,
-thread headers, SMTP acceptance, actual INBOX receipt and duplicate-call receipts.
-See the [acceptance record](../../docs/audits/implementation-status.md#subsequent-phase-18-live-mailbox-acceptance-2026-11-05).
-Other providers still need their own check; inbox jobs remain separately gated.

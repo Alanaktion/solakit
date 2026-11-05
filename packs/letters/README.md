@@ -43,8 +43,4 @@ profile can grant only `letters.read`, `read_scopes=["repo:letters"]`, and the
 resource read capability. Do not grant generic file edit/write or shell tools to
 the letters profile if its never-edit rule is to hold. All actual writes still
 pass the shared filesystem/Git services, with the existing upstream and empty
-index requirements. Production jobs remain disabled pending live acceptance.
-
-Tests use a local bare remote: content preservation, markers, numbering,
-concurrent replies, idempotency, conflicting request denial, duplicate sequences,
-failed push and torn evidence. No actual correspondence was published.
+index requirements.

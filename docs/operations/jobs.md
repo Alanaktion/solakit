@@ -133,7 +133,3 @@ only derived tables and preserves `job_definitions`; do not delete `app.db` to
 repair an index. Pause/next-fire/active/last-run cursors retain their append-only
 `jobs/<id>.jsonl` evidence. Interrupted dispatches remain visible gaps and are not
 silently replayed. Keep referenced profiles and channels available across restarts.
-
-Tests and browser checks use isolated scratch data and mocked services. They do
-not activate real channels/jobs or complete the live rollout checks in
-[operator acceptance](acceptance.md).

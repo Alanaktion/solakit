@@ -1,4 +1,4 @@
-# Optional real-browser acceptance checks
+# Browser regression tests
 
 These checks use a real Chromium browser against an isolated localhost app with
 scratch storage, mocked OpenAI-compatible and OpenViking transports, disabled channels and
@@ -44,8 +44,7 @@ remain disabled.
 Phase 21: run `check.cjs 21` for explicit compaction confirmation, ephemeral/busy
 errors and expanded summary ordering, across light/dark desktop/mobile. The
 OpenViking transport is mocked inside this QA process, including startup/commit
-requests, and cannot access a live memory server. Live memory verification is
-recorded separately in the [compaction acceptance audit](../../docs/audits/implementation-status.md#phase-21-completion-2026-11-05).
+requests, and cannot access a live memory server.
 
 Phase 22: run `check.cjs 22` for delayed partial Markdown/tool SSE, internal code
 and table overflow, link navigation, scroll/focus, reload, observer connection

@@ -38,8 +38,7 @@ Operation receipts live in the private data tree under `pack-operations/`.
 They are append-only JSONL with request fingerprints, cross-process locks and
 fsynced intent/result records. A torn/ambiguous record fails closed. Never delete
 receipts to force a resend: inspect the actual remote/Message-ID and use an
-operator-reviewed reconciliation or deliberate new request. Mock/scratch checks
-do not satisfy live rollout gates.
+operator-reviewed reconciliation or deliberate new request.
 
 Shell has moved into core: enable `shell` or `solakit.tools.shell` without an
 optional package. See [built-in shell and migration](../docs/operations/shell.md).

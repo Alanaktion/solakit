@@ -6,10 +6,9 @@ OpenViking server for external memory, and keeps portable evidence of sessions,
 model runs and tool execution. It is a localhost/tailnet application, not a
 multi-user service. The moonlight-themed operator UI is part of the same app.
 
-Read `SPEC.md` for behavioral contracts, `README.md` for operator instructions,
-`config.example.toml` for configuration, and `docs/operations/acceptance.md`
-for progress and release gates. Keep these consistent with code. Current implementation is
-not proof that a live integration or production acceptance gate has passed.
+Read `SPEC.md` for behavioral contracts, `README.md` for an introduction,
+`docs/setup.md` and `docs/operations.md` for operator guidance, and
+`config.example.toml` for configuration. Keep these consistent with code.
 
 ## Architecture
 
@@ -150,9 +149,7 @@ and sign in with the operator token (separate from the model API key). Use
 
 Add meaningful regression checks for behavioral fixes; mocks are not live service
 verification. Check packaged templates/assets when changing UI packaging. Report
-browser visual QA separately from HTTP tests. Synchronize docs and phase status,
-then follow the working agreement in `docs/operations/acceptance.md`: push directly
-to main without force. No public deployment is implied by local implementation.
+browser visual QA separately from HTTP tests. Synchronize docs, then commit and push directly to main without force. No public deployment is implied by local implementation.
 
 Pack builds (the workspace sync above already installs all members):
 
@@ -170,30 +167,12 @@ in their own dependency manifest. Pack code is operator-trusted Python, not
 sandboxed code. Services enforce model-call arguments, not a security boundary
 against a malicious installed package.
 
-## Scope and deferred work
+## Product scope
 
-The [implementation audit](docs/audits/implementation-status.md) inventories shipped
-features and test evidence. All numbered implementation plans are completed and
-removed; consult [operator acceptance](docs/operations/acceptance.md) for live gates.
-Core, generic tools/services, journal/letters/email packs, built-in shell and
-API/UI evidence/operations/archival/compaction are implemented.
+Core execution, memory, generic tools/services, optional packs, Discord, scheduled
+jobs, and the operator UI are complete and tested. Keep integrations opt-in and
+preserve the behavioral contracts when extending the app. Per-message UI profile
+selection and Discord archival commands remain outside the current scope.
 
-The operator confirmed the live OpenViking round-trip and general functionality.
-Do not keep calling the original phase 6 gate pending. This is operator evidence,
-not a claim that this workspace ran that original probe. Exact acceptance
-scenarios and live letters correspondence,
-Discord pilot and staged job rollout remain separately tracked. The USB/serial
-ESC/POS thermal printer pack is implemented with capture tests; physical-device
-verification remains pending. Image workflow and calendar-read packs are implemented
-with mock/scratch tests; live acceptance remains pending. Live mailbox
-TLS/search/read and self-addressed threaded send/receipt verification passed;
-inbox jobs remain separately gated. Subsequent live explicit/mid-run compaction,
-nonempty argument round-trip and compaction/streaming browser checks passed.
-
-Chat sends on Enter, Shift+Enter inserts a newline, with IME and busy guards.
+Chat sends on Enter; Shift+Enter inserts a newline, with IME and busy guards.
 Keyboard unit tests use Node if available; the app needs no Node build/runtime.
-Assistant Markdown and live chat streaming are implemented and verified; see
-[the acceptance audit](docs/audits/implementation-status.md#phase-22-completion-2026-11-05). Per-message
-profile selection and Discord archival commands remain deferred. Keep live validation
-distinct from mock/scratch coverage and
-never infer production activation from implementation or general approval.

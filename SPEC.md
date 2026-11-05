@@ -1,6 +1,5 @@
-# Minimal Sola Server — Spec (Draft v2)
+# Solakit behavioral specification
 
-**Date:** 2026-11-03
 **Host target:** Sola's Mac Studio (headless, macOS, SSH/VNC access)
 **Stack:** Python 3.12+, FastAPI (single app: web UI mount + API + scheduler + channels)
 **Model target:** OsaurusAI Qwen3.6-35B-A3B mxfp4 via local oMLX (OpenAI-compatible endpoint)
@@ -200,7 +199,7 @@ delivery — that message delivered to a channel (§6.3 / §7.2).
    c. Tool calls: FIRST append the assistant message carrying the
       tool_calls, THEN execute each call through the registry and append
       each result as a tool message with its matching tool_call_id.
-      (Reversing this order is the classic 400-error bug. Tested, §14.)
+      (Reversing this order is the classic 400-error bug. Covered by regression tests.)
    d. Malformed tool call (bad JSON / unknown tool / schema violation):
       do not execute. Append a tool-error message and let the model
       retry — at most 2 repairs per run, then end as `tool_error`.
@@ -236,7 +235,7 @@ The system prompt is the concatenation, in this fixed order, of:
 | 2 | Standing context | `fragments/context.md` (verbatim, optional) | file exists |
 | 3 | Recall | OpenViking results, wrapped in `<recall>…</recall>` with a one-line header from `fragments/recall-header.md` | recall non-empty |
 | 4 | Profile fragment | `fragments/profiles/<profile>.md` | always (may be empty) |
-| 5 | Run facts | Generated: date/time + timezone, profile name, session ID, origin channel/job — one short block, format fixed in code, golden-tested (§14) | always |
+| 5 | Run facts | Generated: date/time + timezone, profile name, session ID, origin channel/job — one short block, format fixed in code, golden-tested | always |
 
 Nothing else. No tool instructions (tools are out-of-band, §2.2), no
 framework identity, no behavioural boilerplate, and — new in v2 — **no
@@ -331,8 +330,7 @@ Consequences, all deliberate:
   Config flag `pin_threads = true` (later) maps each thread to a child
   session with `parent_session` set. The field exists in the schema now.
 - Messages from non-trigger authors are **not** recorded in the MVP
-  (a channel she shares with other people is an open question, §17 —
-  default is that only Alan's messages exist to her).
+  (only configured trigger authors enter the conversation).
 - The web UI and CLI are channels by the same mechanism: the API channel
   pins e.g. session `web-main`, so a conversation started in the browser
   is continuable by a job bound to that session, and vice versa.
@@ -567,7 +565,7 @@ Registry rules:
   or profile-disallowed explicit names. Schemas, catalog and dispatch use the same
   effective grants. A manifest may use
   `profiles=["*"]` to support custom profiles without automatically granting it.
-  No core/domain module or execution-loop changes for a new pack (§14.8).
+  No core/domain module or execution-loop changes for a new pack.
 - **Services:** `ctx.fs` and `ctx.git(repository_alias)` provide Python operations
   for packs to compose privately. Generic tools are thin wrappers. Git services
   expose status/diff/log/pull/commit/push/commit_push, bounded output and cancellation
@@ -704,7 +702,7 @@ The P1 operator UI is a thin server-rendered API client. Shared app contracts:
   Enabled memory performs authenticated read-only `fs/stat` checks of configured
   roots, bounded to five seconds total (or its shorter configured timeout).
   Failure warns without stopping startup; memory startup state/time appear in
-  `/health`. This is not live extraction/write verification or a rollout gate.
+  `/health`. This reports startup connectivity, not extraction or write status.
 - **Mount points:** Jinja2 templates mount at `/`, packaged local assets at
   `/static`, API routes under `/api`, and `/health` at root. Vendored HTMX and
   small vanilla JS enhance forms; no build step or remote assets. The UI has no
@@ -719,8 +717,7 @@ The P1 operator UI is a thin server-rendered API client. Shared app contracts:
   Presentation escapes plain text and masks resolved credentials; tool details
   come only from redacted run logs. Light/dark follows the system preference.
 - **Activation:** integrations stay disabled by default and activate through each
-  channel/job's `enabled` setting. Validate the live scratch-memory check and §14
-  acceptance suite before rollout; configuration does not perform those checks.
+  channel/job's `enabled` setting.
   `discord_token` is a secret reference; maintenance profiles are never scheduled
   or triggered by Discord.
 - **Auth:** one operator token stored as a `0600` file / env var. API Bearer
@@ -865,8 +862,7 @@ updates patch only their own fields so delivery and extraction cannot overwrite
 one another's state. `POST /api/memory/probe` / `sola memory-test --fact ... --query ...
 --expected ...` deliberately create a shared scratch session, wait for extraction,
 and verify the expected text in the next persisted system prompt. This writes a
-real scratch fact; never run automatically at startup or on a cron. A live probe
-against the existing instance precedes the pilot; mocks do not satisfy that gate.
+real scratch fact; never run automatically at startup or on a cron.
 
 ## 11. Observability & the dry-run
 
@@ -932,125 +928,7 @@ them later is exactly the kind of surgery this project exists to avoid:
 - Same seam pattern for channels (new adapter module), tools (new
   module), and jobs (new config block) — §2.7 is the whole strategy.
 
-## 14. Acceptance tests (must pass before the Discord pilot)
-
-1. **Golden prompt:** fixture SOUL/fragments/recall →
-   `GET /api/prompt` matches a checked-in golden file byte-for-byte.
-2. **No hidden context:** messages captured at a mock model endpoint
-   contain exactly the golden prompt + session history + task.
-3. **Tool ordering:** mock model tool call → transcript shows the
-   assistant tool_calls message before its tool results, matching IDs.
-4. **Profile leak:** in a `blog` run, a mock model attempting `shell.exec`, `shell.run`
-   or `email.*` is refused and logged; the tools were absent from the
-   request schemas. Plus: startup refuses a config whose profile grants
-   a tool exceeding its write scopes (§8.1).
-5. **Model-down:** endpoint stopped / wrong model ID → run ends
-   `model_unavailable`, **no** messages written to the session, a job
-   firing in that state is recorded `missed`. No fallback attempted.
-6. **Session pinning:** mock Discord messages in two configured channels
-   produce two independent sessions; a second message in the first
-   channel continues the first session's context (verified at the mock
-   endpoint).
-7. **Cron-to-channel continuity (the §7.2 test):** a job bound to a mock
-   channel fires → run appears in that channel's session + delivery is
-   posted → a follow-up user message in that channel reaches the model
-   with the cron run in its history.
-8. **Tool drop-in:** adding a new tool module + config word makes the
-   tool available to its profiles with zero changes to `core/` —
-   verified by a fixture tool in tests.
-9. **Journal end-to-end (scratch git):** the `blog` profile creates a post via
-   `journal.create` and publishes via `journal.publish` against a scratch
-   repo; the transcript contains no shell calls.
-10. **Scheduler misfire:** app paused past a `catch_up=false` job's fire
-    time → job recorded `missed`, does not run on resume; a
-    `catch_up=true` job runs exactly once.
-11. **Recall round-trip:** a fact committed via OpenViking session-commit
-    in one run is retrievable in the next (pre-turn recall or
-    `memory.search`).
-
-## 15. Migration plan (Hermes stays untouched until cutover)
-
-| Phase | Work | Exit criterion |
-|-------|------|----------------|
-| 0. Prompt audit | `GET /api/prompt` per profile; side-by-side + token diff vs. what Hermes sends for the same task | Alan has seen both prompts and approved the lean one |
-| 1. Core + Discord pilot | FastAPI scaffold, loop, registry, Discord adapter; one low-stakes channel pinned (a #sola-test or her quietest channel) | A week of Discord conversation in that channel with no Hermes involvement; pinning + queueing behave (§14.6) |
-| 2. Blog cron to #blog | `blog` profile + `journal.*` tools + job bound to #blog; runs in **shadow** first (deliver to the test channel, publish to a scratch branch) | Shadow posts Alan judges publishable; then the job's delivery flips to the real #blog and real branch |
-| 3. Remaining jobs | `dream`, `letters` (her letters cron finally gets wired — to this, not Hermes), `inbox`, one by one | Each job runs a clean week in its bound session |
-| 4. Cutover | Hermes left installed but unscheduled for one month as rollback | One clean month; then Hermes is archived, not deleted — per house archival doctrine |
-
-Rollback at every phase is "re-enable the Hermes cron" — both runtimes
-share OpenViking and the same model endpoint, and neither writes to the
-other's state. The Discord bot is a *new* bot/user for this server during
-the pilot so the two runtimes never fight over one gateway connection.
-
-## 16. Size estimate (revised for v2 scope)
-
-| Area | Est. LOC (Python) |
-|------|-------------------|
-| config + profiles + startup cross-checks | ~200 |
-| prompt builder | ~150 |
-| model client (httpx, async) | ~130 |
-| loop + queues/semaphore + budgets/repair | ~330 |
-| tool API + core/domain tools (§8) | ~700 |
-| store (JSONL + SQLite index) + compaction | ~250 |
-| FastAPI scaffold + API routers (§9) | ~300 |
-| Discord adapter | ~350 |
-| scheduler wiring + job ops | ~200 |
-| thin CLI (prompt/status/run via API) | ~100 |
-| tests (mock endpoint + mock adapter) | ~450 |
-| **Total** | **~3,200** |
-
-Still a small codebase — roughly a solid weekend for the core plus a few
-evenings of edge-polish — with the honest caveat: the loop is the easy
-part. The evenings go on discord.py gateway quirks, local-quant tool-call
-parsing, APScheduler misfire semantics, and the blog repo's publishing
-steps. Feature parity with *all* of Hermes remains explicitly not the
-target (§3).
-
-### Implementation checkpoint
-
-The core, Discord/scheduling, memory/compaction, operator UI, generic services,
-journal/letters/email packs and built-in shell tools are implemented. The operator
-has confirmed the live OpenViking round-trip. The original line-count estimate
-predates these additions and is not a completion criterion. See the
-[implementation audit](docs/audits/implementation-status.md) for code/test evidence
-and remaining acceptance, printer, provider and staged rollout work.
-
-## 17. Defaults chosen in v2 (change any with one line)
-
-- **Stack (Alan's call):** FastAPI single app; APScheduler in-process;
-  discord.py; Pydantic-generated tool schemas.
-- **Web UI:** sessions/chat/status, evidence/operations, archival, compaction,
-  assistant Markdown and live streaming (§9); remaining live checks are in `docs/operations/acceptance.md`.
-- **Configuration:** channels/profiles in `config.toml`; managed jobs in SQLite.
-  Legacy TOML jobs import once. JSONL remains the transcript/cursor evidence.
-- **Concurrency:** per-session queues, global inference semaphore = 1.
-- **Discord triggers:** dedicated channels `all`, shared channels
-  `mention`; only Alan triggers in the MVP.
-- **Cron delivery default:** bound jobs deliver `final` to their bound
-  channel; polling jobs default `silent`.
-- **Memory scope:** `shared` everywhere; `isolated`/`ephemeral` reserved.
-- **SOUL source of truth:** her existing live SOUL.md, referenced by
-  path — the server never forks her persona into a second copy.
-
-## 18. Open questions for Alan
-
-1. oMLX model ID: stable enough to pin exactly, or accept a configured
-   prefix while the voice trial still swaps quants?
-2. #blog delivery: `final` (her announcement text) + the blog tool having
-   already published — or do you want `artifact` mode (post file
-   attached) for drafts you review before publish? This decides whether
-   `blog.publish` belongs in the `blog` profile or only in `interactive`.
-3. Discord catch-up: if the app is down and you post in a channel, should
-   she see those messages on reconnect (cursor catch-up, §13-adjacent)
-   or is "missed = gap" right for channels too?
-4. Other people: is every Discord channel she's in Alan-only, or will
-   some have other humans — if so, do their messages enter her context
-   as observed (non-triggering) history, or stay invisible?
-5. `inbox`: should `email.*` reply be limited to existing threads in the
-   MVP, with new-thread sends reserved for `interactive`?
-6. Anything Hermes does today that you rely on that is *not* represented
-   in §6–§8?
+## 14. Packaging and history search
 
 ### Source workspace and tool distribution visibility
 
