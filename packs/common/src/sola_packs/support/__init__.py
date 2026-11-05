@@ -35,6 +35,7 @@ def resource(ctx, section, alias, model, action):
         "mailboxes": "mailbox",
         "printers": "printer",
         "calendars": "calendar",
+        "images": "image",
     }[section]
     grant(ctx, f"{prefix}:{alias}:{action}")
     try:

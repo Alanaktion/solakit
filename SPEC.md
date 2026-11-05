@@ -565,7 +565,9 @@ gets a **semantic tool** whose implementation hides the mechanics:
 | `repo_git.status / commit_push` | git in a *named, configured* repo only | scoped fallback for repos without a domain toolset yet |
 | `email.search / read / reply` | IMAP/SMTP, thread-aware reply | reply-by-ID, not raw SMTP |
 | `memory.search / memory.read` | OpenViking REST/SDK | scoped by `ctx.session.memory_scope` (§13) |
-| `printer.print` | her thermal printer | text in, receipt out |
+| `printer.print_text` | named thermal printer | text in, receipt out |
+| `calendar.events` | named read-only ICS export | bounded agenda with timezone/recurrence handling |
+| `image.generate / image.result` | named ComfyUI API workflow | prompt/seed and stable operation ID, receipted submission and output references |
 
 Two payoffs: prompts and transcripts stay free of plumbing (she thinks
 in posts and letters, not `git -C … commit -m`), and the fragile
@@ -969,7 +971,7 @@ and remaining acceptance, printer, provider and staged rollout work.
 - **Stack (Alan's call):** FastAPI single app; APScheduler in-process;
   discord.py; Pydantic-generated tool schemas.
 - **Web UI:** sessions/chat/status, evidence/operations, archival, compaction,
-  assistant Markdown and live streaming (§9); remaining checks are in the phase plans.
+  assistant Markdown and live streaming (§9); remaining live checks are in `docs/operations/acceptance.md`.
 - **Config-as-files:** channels/jobs/profiles in `config.toml`;
   SQLite is index/state, JSONL is the transcript of record.
 - **Concurrency:** per-session queues, global inference semaphore = 1.
@@ -1002,7 +1004,7 @@ and remaining acceptance, printer, provider and staged rollout work.
 
 ### Source workspace and tool distribution visibility
 
-The checkout is a uv workspace containing core plus six independently packaged
+The checkout is a uv workspace containing core plus seven independently packaged
 packs. `uv sync --frozen --all-packages` reproduces their shared lockfile in one
 environment. Root project dependencies must not include pack distributions; the
 core wheel contains neither pack code nor pack Requires-Dist entries. Workspace

@@ -41,7 +41,9 @@ class Filesystem:
             if max_chars is None
             else max_chars
         )
-        if type(limit) is not int or not 1 <= limit <= _EDIT_LIMIT:
+        if max_chars is not None and (
+            type(limit) is not int or not 1 <= limit <= _EDIT_LIMIT
+        ):
             raise ToolError("Read limit must be between 1 and 4000000 characters")
         try:
             content, _ = await durable(self._read, path, limit)

@@ -44,6 +44,32 @@ class Lease:
         os.close(self.fd)
         self.fd = None
 
+    def events(self):
+        """Read bounded, complete receipts while the resource lock is held."""
+        size = os.fstat(self.fd).st_size
+        if size > 1_000_000:
+            raise ToolError(
+                "Operation evidence exceeds its limit; inspect before retrying"
+            )
+        os.lseek(self.fd, 0, os.SEEK_SET)
+        payload = os.read(self.fd, size)
+        try:
+            if payload and not payload.endswith(b"\n"):
+                raise ValueError("torn operation evidence")
+            events = [json.loads(line) for line in payload.splitlines()]
+            if any(
+                not isinstance(event, dict)
+                or not isinstance(event.get("stage"), str)
+                or not isinstance(event.get("request_hash"), str)
+                for event in events
+            ):
+                raise ValueError("invalid operation evidence")
+            return events
+        except (ValueError, TypeError) as exc:
+            raise ToolError(
+                "Operation evidence requires recovery; no retry was performed"
+            ) from exc
+
 
 class Operation(Lease):
     def __init__(self, ctx, namespace, identity, request):
@@ -54,16 +80,7 @@ class Operation(Lease):
     def __enter__(self):
         super().__enter__()
         try:
-            size = os.fstat(self.fd).st_size
-            if size > 1_000_000:
-                raise ToolError(
-                    "Operation evidence exceeds its limit; inspect before retrying"
-                )
-            payload = os.read(self.fd, size)
-            if payload and not payload.endswith(b"\n"):
-                raise ValueError("torn operation evidence")
-            for line in payload.splitlines():
-                event = json.loads(line)
+            for event in self.events():
                 if event["request_hash"] != self.request_hash:
                     raise ToolError(
                         "Operation identity already used for a different request"

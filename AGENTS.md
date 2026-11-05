@@ -7,8 +7,8 @@ model runs and tool execution. It is a localhost/tailnet application, not a
 multi-user service. The moonlight-themed operator UI is part of the same app.
 
 Read `SPEC.md` for behavioral contracts, `README.md` for operator instructions,
-`config.example.toml` for configuration, and `docs/plan/README.md` for progress
-and release gates. Keep these consistent with code. Current implementation is
+`config.example.toml` for configuration, and `docs/operations/acceptance.md`
+for progress and release gates. Keep these consistent with code. Current implementation is
 not proof that a live integration or production acceptance gate has passed.
 
 ## Architecture
@@ -137,17 +137,17 @@ and sign in with the operator token (separate from the model API key). Use
 Add meaningful regression checks for behavioral fixes; mocks are not live service
 verification. Check packaged templates/assets when changing UI packaging. Report
 browser visual QA separately from HTTP tests. Synchronize docs and phase status,
-then follow the working agreement in `docs/plan/README.md`: push directly to main
-without force. No public deployment is implied by local implementation.
+then follow the working agreement in `docs/operations/acceptance.md`: push directly
+to main without force. No public deployment is implied by local implementation.
 
 Pack builds (the workspace sync above already installs all members):
 
 ```sh
 uv build packs/journal
-# Build each of common, letters, email and printer separately as well.
+# Or build all distributions: uv build --all-packages
 ```
 
-Core and six packs share a uv workspace/lockfile. Always use
+Core and seven packs share a uv workspace/lockfile. Always use
 `uv sync --frozen --all-packages` for this checkout; plain `uv sync` selects core
 only. Workspace membership is not a core dependency: core wheel metadata and
 code remain pack-free. `uv run` needs no `--no-sync` after workspace sync.
@@ -159,10 +159,10 @@ against a malicious installed package.
 ## Scope and deferred work
 
 The [implementation audit](docs/audits/implementation-status.md) inventories shipped
-features and test evidence. Completed plans 01–06, 10–16, 18 and 20–22 are removed; consult
-[remaining plans](docs/plan/README.md), not historical completion notes, before
-expanding scope. Core, generic tools/services, journal/letters/email packs, built-in
-shell and API/UI evidence/operations/archival/compaction are implemented.
+features and test evidence. All numbered implementation plans are completed and
+removed; consult [operator acceptance](docs/operations/acceptance.md) for live gates.
+Core, generic tools/services, journal/letters/email packs, built-in shell and
+API/UI evidence/operations/archival/compaction are implemented.
 
 The operator confirmed the live OpenViking round-trip and general functionality.
 Do not keep calling the original phase 6 gate pending. This is operator evidence,
@@ -170,7 +170,8 @@ not a claim that this workspace ran that original probe. Exact acceptance
 scenarios and live letters correspondence,
 Discord pilot and staged job rollout remain separately tracked. The USB/serial
 ESC/POS thermal printer pack is implemented with capture tests; physical-device
-verification remains pending; image/calendar are later seam proofs. Live mailbox
+verification remains pending. Image workflow and calendar-read packs are implemented
+with mock/scratch tests; live acceptance remains pending. Live mailbox
 TLS/search/read and self-addressed threaded send/receipt verification passed;
 inbox jobs remain separately gated. Subsequent live explicit/mid-run compaction,
 nonempty argument round-trip and compaction/streaming browser checks passed.

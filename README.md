@@ -3,7 +3,7 @@
 A small FastAPI runtime for Sola, with a file-defined prompt, pinned model,
 profile-enforced tools, external OpenViking memory, and portable session evidence.
 Python 3.12+ and uv are required. [SPEC.md](SPEC.md) defines behavior;
-[phase plans](docs/plan/README.md) record implementation and release gates.
+[operator acceptance](docs/operations/acceptance.md) records live release gates.
 [AGENTS.md](AGENTS.md) maps the architecture and contribution rules.
 
 Core execution, memory/compaction, Discord/scheduling, operator UI, generic
@@ -27,7 +27,7 @@ uv run sola check
 uv run sola serve
 ```
 
-Core and all six packs share one uv workspace lockfile. The sync above installs
+Core and all seven packs share one uv workspace lockfile. The sync above installs
 every distribution; enabled modules and profile grants still control use. Run
 `uv run pytest tests packs/*/tests -q` for the full suite. Plain `uv sync` selects
 only core when that is wanted; the core wheel has no pack code or dependencies.
@@ -426,9 +426,9 @@ front matter. A blog is simply another collection.
 
 [Journal pack installation and use](packs/journal/README.md) documents its separate
 distribution, create/list/publish tools, and scratch-only contract tests. Core
-installation does not install any pack. [The revised phase 9 roadmap](docs/plan/09-domain-tools-verification.md)
-keeps sequential immutable letters, mailbox replies and device conventions in
-their own thin packs, in that order, with production integrations still gated.
+installation does not install any pack. [Operator acceptance](docs/operations/acceptance.md) tracks live correspondence,
+devices and production rollout. Calendar reads and receipted ComfyUI workflows
+are available as optional packs; see [pack setup](packs/README.md).
 
 ## Letters/email packs and built-in shell
 

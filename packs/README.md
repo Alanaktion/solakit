@@ -9,6 +9,7 @@ move to a separate repository without changes to core execution.
 - `email`: named TLS mailboxes, read/search and sender-only threaded replies.
 - `printer`: named USB/serial 58mm ESC/POS text receipts with feed and send evidence.
 - `calendar`: read-only named ICS agendas with bounded recurrence expansion.
+- `image`: named ComfyUI API workflows, explicit seeds and non-replaying receipts.
 - `common`: pack-owned config, grants, secret registration, operation evidence,
   optional contract-test fixtures.
 
@@ -19,7 +20,7 @@ uv sync --frozen --all-packages
 uv run pytest tests packs/*/tests -q
 ```
 
-The root and all six packs share one uv workspace and lockfile. Sync installs
+The root and all seven packs share one uv workspace and lockfile. Sync installs
 them together, including inter-pack dependencies, without manual ordering.
 `uv run` keeps the synced members available; no `--no-sync` is needed.
 Workspace membership does not add pack dependencies or code to the core wheel.
@@ -28,7 +29,7 @@ Standalone deployments outside the workspace still declare their desired pack
 distributions alongside core. Installed packs load only through `enabled_tools`.
 
 Set `SOLA_PACKS_CONFIG` to an operator-owned TOML file based on
-[config.example.toml](config.example.toml) for letters/email/printer/calendar. Nothing reads or sends
+[config.example.toml](config.example.toml) for letters/email/printer/calendar/image. Nothing reads or sends
 mail, publishes letters, enables jobs or connects production resources simply because a pack is installed. It must also
 be explicitly loaded in core `enabled_tools`, and tools/capabilities granted to
 profiles. These packs are trusted Python, not a sandbox for hostile package code.

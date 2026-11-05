@@ -34,4 +34,4 @@ integrations. Prompt whitespace and transcript history remain literal.
 This is a historical resolution record, not an active plan. Extraction tracking,
 compaction and channel/job implementations have since shipped. The operator has
 confirmed the live OpenViking round-trip. See the [current audit](implementation-status.md)
-and [remaining plans](../plan/README.md) for outstanding validation and rollout.
+and [operator acceptance](../operations/acceptance.md) for outstanding validation and rollout.

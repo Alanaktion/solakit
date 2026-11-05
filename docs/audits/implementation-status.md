@@ -21,7 +21,7 @@ records on the operator host. No new live request was made for this audit.
 
 General functionality approval does not separately establish live compaction,
 letters/email/device checks, every browser/viewport combination, a Discord pilot,
-or clean weeks of scheduled jobs. Those remain explicit in active plans.
+or clean weeks of scheduled jobs. Current outstanding checks are in [operator acceptance](../operations/acceptance.md).
 
 ## Implemented inventory
 
@@ -90,11 +90,10 @@ original plan text:
 | 16 journal pack | Independently packaged; scratch contract and mock-model runner acceptance verified |
 | 20 shell | Built-in migration complete; ongoing operator guidance is in `docs/operations/shell.md` |
 
-Retained partial plans: 07, 08, 09, 17 and 19. Each now
-separates completed work from remaining checks. Plan 19 now has a separately packaged USB/serial 58mm ESC/POS printer implementation;
-its physical-device gate remains open.
-UI plans remain because their named browser matrices have not been specifically
-reported complete. Historical adversarial-review resolutions moved from plans to
+All remaining implementation plans (07, 08, 09, 17, 19) are now retired.
+Their implementation is complete, including the image/calendar seam proofs.
+Unverified live gates are preserved in [operator acceptance](../operations/acceptance.md).
+The UI browser matrices were subsequently completed as recorded below. Historical adversarial-review resolutions moved from plans to
 `docs/audits/`; they are not remaining tasks.
 
 ## Remaining work and known limits
@@ -103,7 +102,7 @@ reported complete. Historical adversarial-review resolutions moved from plans to
 2. Live compaction acceptance is complete; retain private summary/archive/extraction evidence.
 3. Streaming, compaction and foundation/evidence/operations/archival browser matrices are complete; retain their acceptance evidence.
 4. Complete deliberate letters correspondence (17); the actual repository protocol and live self-addressed mailbox verification are recorded.
-5. Verify physical 58mm USB/serial thermal printer output (19); image/calendar remain later priorities.
+5. Verify physical 58mm USB/serial thermal printer output and real image/calendar resources; implementation is complete.
 6. Record acceptance and prompt-audit approval, then deliberately stage Discord,
    shadow publishing, jobs and rollback under SPEC §15. No automatic activation.
 
@@ -363,3 +362,31 @@ pack composition; model-facing file tool budgets are unchanged.
 Scratch tests cover recurring exceptions, all-day timezone conversion, exclusive
 query bounds, limits, invalid exports, unsupported recurrence and grant/scope
 denial. No live calendar access or integration activation is claimed.
+
+## Image workflow completion and plan retirement (2026-11-05)
+
+`solakit-packs-image` submits operator-owned API-format ComfyUI graphs, including
+ZImage workflows, with configured text/seed inputs. Explicit tool, per-resource
+and generation grants are required; workflows use the generic bounded filesystem
+reader. Named endpoints, optional registered bearer credentials, bounded HTTP
+responses and deadlines, disabled redirects/retries and durable operation receipts
+keep this outside core execution. A stable operation ID reuses the acknowledgement;
+changed, concurrent, torn or uncertain work cannot resubmit. Cancellation waits
+for the accepted submission/receipt before propagating. `image.result` checks the
+receipt and server endpoint, then performs one history read; it returns server
+output references, never invented local artifacts.
+
+Mock transport checks cover preserved graph bytes/other inputs, stable retries,
+changed requests, missing grants/scopes, cancellation, concurrency, oversized or
+malformed acknowledgements, redirects, torn receipts, pending/failed/completed
+states, endpoint changes and credential registration. No GPU/model/service was
+contacted. All seven optional distributions remain independently packaged.
+
+All code work identified by the remaining plans is complete. The numbered plan
+documents and their index are removed; Git history retains the original scope.
+Outstanding prompt/resource approval, letters correspondence, physical printing,
+real extension resources, deliberate gateway/job checks and staged rollout are
+preserved in `docs/operations/acceptance.md`, without claiming live acceptance.
+
+Verification for calendar/image completion: **296 tests passed**, Ruff lint/format
+and all eight distributions (core plus seven packs) built successfully.

@@ -12,6 +12,7 @@ members = [
     "solakit-packs-calendar",
     "solakit-packs-common",
     "solakit-packs-email",
+    "solakit-packs-image",
     "solakit-packs-journal",
     "solakit-packs-letters",
     "solakit-packs-printer",
@@ -1497,6 +1498,21 @@ requires-dist = [
     { name = "solakit-packs-common", editable = "packs/common" },
 ]
 provides-extras = ["test"]
+
+[[package]]
+name = "solakit-packs-image"
+version = "0.1.0"
+source = { editable = "packs/image" }
+dependencies = [
+    { name = "solakit" },
+    { name = "solakit-packs-common" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "solakit", editable = "." },
+    { name = "solakit-packs-common", editable = "packs/common" },
+]
 
 [[package]]
 name = "solakit-packs-journal"

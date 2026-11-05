@@ -41,7 +41,7 @@ pack integration. Combined core and pack coverage: **193 passed**.
 HTTP UI checks do not establish browser rendering, keyboard behavior or viewport
 coverage. Live summary/compaction, provider correspondence, configured publishing
 profiles, Discord and scheduled-job rollout remain in the
-[remaining plans](../plan/README.md). This basic audit does not approve operator
+[operator acceptance](../operations/acceptance.md). This basic audit does not approve operator
 prompt content or the complete SPEC acceptance matrix.
 
 ## Workspace sync follow-up (2026-11-05)

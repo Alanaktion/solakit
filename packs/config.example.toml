@@ -43,3 +43,14 @@ max_message_bytes = 1000000
 # file = "/absolute/path/to/calendar.ics"
 # timezone = "America/Denver"
 # max_bytes = 1000000
+
+# Optional ComfyUI API-format workflow. Grant image.generate/image.result,
+# image.generate, image:studio:generate/read, and a workflow filesystem read scope.
+# [images.studio]
+# base_url = "http://127.0.0.1:8188"
+# workflow = "/absolute/path/to/zimage-api.json"
+# prompt_node = "6"
+# prompt_input = "text"
+# seed_node = "3"
+# seed_input = "seed"
+# token = { env = "COMFY_TOKEN" }
