@@ -20,7 +20,7 @@ or the Discord/job rollout results.
 | [07: Discord](07-channels-discord.md) | Adapter, routing, gating, delivery, mock lifecycle checks and operator-confirmed live DM/server replies | Remaining acceptance scenarios, reconnect/oversized delivery and pilot validation |
 | [08: scheduling](08-scheduling.md) | Persistent cursors, timezone schedules, controls, misfire/non-overlap checks | Live job and channel delivery validation; staged rollout |
 | [09: acceptance](09-domain-tools-verification.md) | Core, services, journal/letters/email, shell, runner-driven journal and profile-isolation acceptance | Operator resource/prompt acceptance and rollout |
-| [17: letters](17-letters-pack.md) | Independent pack, immutable numbering and durable receipts | Actual repository protocol and deliberate live correspondence check |
+| [17: letters](17-letters-pack.md) | Independent pack, immutable numbering and durable receipts | Deliberate live correspondence check; actual repository protocol inspected |
 | [18: email](18-email-pack.md) | TLS mailbox search/read/reply and send evidence | Scratch provider/threading/send verification |
 | [19: printer and later extensions](19-printer-and-seam-provers.md) | USB/serial 58mm ESC/POS pack, grants, bounded text and durable receipts | Physical printer check; image/calendar remain later priorities |
 | [21: compaction controls](21-compaction-controls.md) | Opt-in mid-run and explicit API/UI compaction, summary ordering | Deliberate live summary/continuation check and targeted browser validation |

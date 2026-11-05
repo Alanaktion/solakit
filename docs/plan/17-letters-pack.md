@@ -5,7 +5,7 @@ Status: partial — locally implemented in `packs/letters`; actual protocol/live
 ## Audit checklist
 
 - [x] Independent pack and local bare-remote protocol/receipt regression tests.
-- [ ] Inspect the actual repository's numbering, authors, layout and existing files.
+- [x] Inspect the actual repository's numbering, authors, layout and existing files.
 - [ ] Deliberately validate pull/read/reply/publish against the agreed live protocol;
   retain immutable old-letter bytes and publication evidence.
 
@@ -39,3 +39,13 @@ Tests use local bare remotes: original bytes preserved, external markers, duplic
 sequence refusal, changed-request and resource/capability denials, concurrent
 number allocation, busy operations, torn receipts and failed push. Live conventions
 and production correspondence have not been checked or modified.
+
+## Read-only protocol inspection (2026-11-05)
+
+The configured checkout is clean and contains one peer letter,
+`letters/001-2026-11-03-dingus.md`. Its README requires global numbering, letters
+in `letters/`, an opening `# Letter NNN — From, to To, date` heading and immutable
+pushed letters. The ignored local sidecar incorrectly pointed at `.`; it now
+uses `letters` and a heading/reply-reference layout matching those conventions.
+No old-letter bytes were modified and no reply, commit or push was made.
+Deliberate live correspondence still needs an agreed message and recipient.
