@@ -23,3 +23,17 @@ smtp_security = "tls" # Or "starttls", usually with port 587.
 # smtp_password = { file = "mail-password" } # Relative to this file; mode 0600.
 timeout_s = 15
 max_message_bytes = 1000000
+
+# Optional 58mm ESC/POS thermal printer; replace IDs with actual hardware.
+# No cut command: feed two lines after text.
+# [printers.desk]
+# transport = "usb"
+# vendor_id = 0x1234
+# product_id = 0x5678
+# profile = "simple"
+# columns = 32
+# feed_lines = 2
+# timeout_s = 10
+# max_text_bytes = 16000
+# For USB-to-serial, omit USB IDs and set transport = "serial",
+# serial_device = "/dev/cu.usbserial-EXAMPLE", baudrate = 9600.

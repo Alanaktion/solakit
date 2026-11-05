@@ -11,7 +11,8 @@ services, journal/letters/email packs and built-in shell tools are implemented.
 The operator has confirmed the live OpenViking round-trip and general functionality.
 The [implementation audit](docs/audits/implementation-status.md) distinguishes
 regression coverage from remaining acceptance, browser, provider and rollout checks.
-Printer remains unimplemented. Discord/jobs are disabled by default; this repository
+The optional 58mm USB/serial ESC/POS printer pack is capture-tested; physical output
+remains unverified. Discord/jobs are disabled by default; this repository
 work has not activated a production pilot, deployment or changed Hermes.
 
 ## Development
@@ -307,7 +308,8 @@ exist by default. Registry checks occur at startup and dispatch; arguments are
 strictly validated. `files.read` bounds regular-file reads using nonblocking,
 no-follow descriptor checks. `files.write` creates new files only; `repo_git.status`
 uses a configured repository name. Domain conventions now live in separate packs;
-journal, letters and email packs plus built-in shell tools are available; printer remains planned.
+journal, letters and email packs plus built-in shell tools are available; the
+[thermal printer pack](packs/printer/README.md) supports USB/serial ESC/POS.
 
 Counted truncation markers fit within output budgets. Complete outputs report exact
 omitted characters; bounded reads report a lower bound. Logs distinguish exact from

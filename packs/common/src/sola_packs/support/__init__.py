@@ -30,7 +30,9 @@ def grant(ctx, capability):
 def resource(ctx, section, alias, model, action):
     if not IDENTIFIER.fullmatch(alias):
         raise ToolError("Invalid resource alias")
-    prefix = {"letters": "letters", "mailboxes": "mailbox"}[section]
+    prefix = {"letters": "letters", "mailboxes": "mailbox", "printers": "printer"}[
+        section
+    ]
     grant(ctx, f"{prefix}:{alias}:{action}")
     try:
         path = Path(os.environ["SOLA_PACKS_CONFIG"]).expanduser().resolve()

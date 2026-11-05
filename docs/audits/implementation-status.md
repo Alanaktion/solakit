@@ -39,6 +39,7 @@ or clean weeks of scheduled jobs. Those remain explicit in active plans.
 | Journal | Independent package, configuration-only collections, create/list/publish with collection limits and explicit push grants | `packs/journal/tests/test_journal_pack.py`; real local bare Git remote |
 | Letters | Independent package, immutable sequential replies, peer markers, durable deduplication/uncertain-publication evidence | `packs/letters/tests/test_letters_pack.py`; local bare remotes |
 | Email/common | Named TLS mailboxes, stable IDs, bounded PEEK reads, source-derived replies, redaction, durable send receipts and replay refusal | `packs/email/tests/test_email_pack.py`; mock IMAP/SMTP |
+| Printer (subsequent implementation) | Independent python-escpos USB/serial thermal pack, 32-column text, feed without cut, explicit grants and durable uncertain-send refusal | `packs/printer/tests/test_printer_pack.py`; Dummy/capture only, no physical print |
 | Operator UI | Cookie login, compact moonlight light/dark shell, sessions/chat/tools, Enter/Shift+Enter/IME handling, prompt/run evidence/cancellation, job controls, archival/history and compaction | `test_ui`, `test_evidence_ui`, `test_ui_keyboard`, `test_archival`, `test_compaction_controls`; HTTP/unit checks |
 
 Test modules above are under `tests/` unless a pack path is given. Core remains
@@ -90,7 +91,8 @@ original plan text:
 | 20 shell | Built-in migration complete; ongoing operator guidance is in `docs/operations/shell.md` |
 
 Retained partial plans: 07, 08, 09, 10, 11, 12, 13, 17, 18 and 21. Each now
-separates completed work from remaining checks. Plan 19 remains unimplemented.
+separates completed work from remaining checks. Plan 19 now has a separately packaged USB/serial 58mm ESC/POS printer implementation;
+its physical-device gate remains open.
 UI plans remain because their named browser matrices have not been specifically
 reported complete. Historical adversarial-review resolutions moved from plans to
 `docs/audits/`; they are not remaining tasks.
@@ -102,7 +104,7 @@ reported complete. Historical adversarial-review resolutions moved from plans to
    round-trip does not exercise those API paths.
 3. Complete targeted light/dark/mobile/keyboard UI checks (plans 10–13 and 21).
 4. Check actual letters protocol and scratch mailbox/provider behavior (17–18).
-5. Implement/test printer (19); image/calendar remain later priorities.
+5. Verify physical 58mm USB/serial thermal printer output (19); image/calendar remain later priorities.
 6. Record acceptance and prompt-audit approval, then deliberately stage Discord,
    shadow publishing, jobs and rollback under SPEC §15. No automatic activation.
 

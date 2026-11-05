@@ -26,7 +26,7 @@ or the Discord/job rollout results.
 | [13: archival](13-session-archival.md) | API/UI archival, recovery and read-only history | Targeted browser validation |
 | [17: letters](17-letters-pack.md) | Independent pack, immutable numbering and durable receipts | Actual repository protocol and deliberate live correspondence check |
 | [18: email](18-email-pack.md) | TLS mailbox search/read/reply and send evidence | Scratch provider/threading/send verification |
-| [19: printer and later extensions](19-printer-and-seam-provers.md) | No printer/image/calendar implementation | Printer pack; image/calendar remain later priorities |
+| [19: printer and later extensions](19-printer-and-seam-provers.md) | USB/serial 58mm ESC/POS pack, grants, bounded text and durable receipts | Physical printer check; image/calendar remain later priorities |
 | [21: compaction controls](21-compaction-controls.md) | Opt-in mid-run and explicit API/UI compaction, summary ordering | Deliberate live summary/continuation check and targeted browser validation |
 | [22: Markdown/streaming](22-ui-markdown-streaming.md) | Sanitized assistant Markdown, bounded model SSE and live UI snapshots | Live oMLX and targeted browser verification |
 

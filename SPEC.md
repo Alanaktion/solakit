@@ -151,7 +151,7 @@ sola-server/
     jobs/
       scheduler.py           # APScheduler wiring, misfire policy (§7)
   packs/journal/             # separate distribution: sola_packs.journal
-  # letters/email are independent packs; shell is built in; printer is follow-up
+  # letters/email are independent packs; shell is built in; printer is an optional ESC/POS pack
   tests/                     # mock model endpoint, mock Discord adapter
 data/                        # runtime state lives OUTSIDE the code tree (§10)
 ```

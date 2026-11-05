@@ -7,6 +7,7 @@ move to a separate repository without changes to core execution.
 - `journal`: dated, configured collections (posts, dreams, poems).
 - `letters`: sequential immutable correspondence in a named Git repository.
 - `email`: named TLS mailboxes, read/search and sender-only threaded replies.
+- `printer`: named USB/serial 58mm ESC/POS text receipts with feed and send evidence.
 - `common`: pack-owned config, grants, secret registration, operation evidence,
   optional contract-test fixtures.
 
@@ -15,17 +16,17 @@ From the existing core development checkout:
 ```sh
 uv sync --frozen
 uv pip install --no-deps -e packs/common -e packs/letters -e packs/email
-uv pip install --no-deps -e packs/journal
-uv run --no-sync pytest tests packs/journal/tests packs/letters/tests packs/email/tests -q
+uv pip install --no-deps -e packs/journal -e packs/printer
+uv run --no-sync pytest tests packs/journal/tests packs/letters/tests packs/email/tests packs/printer/tests -q
 ```
 
 Core sync does not manage these optional dependencies. Production/application
 environments should declare desired pack wheels alongside the core in their own
-requirements, including `solakit-packs-common` for letters/email. Use
+requirements, including `solakit-packs-common` for letters/email/printer. Use
 `uv run --no-sync sola serve` for the manually installed development environment.
 
 Set `SOLA_PACKS_CONFIG` to an operator-owned TOML file based on
-[config.example.toml](config.example.toml) for letters/email. Nothing reads or sends
+[config.example.toml](config.example.toml) for letters/email/printer. Nothing reads or sends
 mail, publishes letters, enables jobs or connects production resources simply because a pack is installed. It must also
 be explicitly loaded in core `enabled_tools`, and tools/capabilities granted to
 profiles. These packs are trusted Python, not a sandbox for hostile package code.
