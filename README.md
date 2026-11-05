@@ -58,9 +58,10 @@ light/dark preference, session creation, plain-text chat, collapsed tool evidenc
 and reported health. The Tools page lists loaded tools, argument schemas, write
 requirements, and effective profile grants. Chat links to its profile’s tools
 and shows calls as expandable redacted argument/result cards. Chat fills the viewport with a desktop session sidebar,
-message bubbles, and a bottom-anchored composer; on mobile, the conversation takes
+compact navigation, plain assistant replies, user bubbles, and a bottom-anchored composer; on mobile, the conversation takes
 the full width with a back link to sessions. Sessions use their configured default
-profile for chat.
+profile for chat. Session management uses compact rows and a collapsible creation
+form; evidence and operations views share the denser spacing.
 The Prompt inspector shows API-assembled text, its original SHA and tool schemas.
 Runs lists recorded outcomes and opens stored prompts, messages, redacted tools,
 diagnostics, memory/delivery events and cancellation for active runs. Operations

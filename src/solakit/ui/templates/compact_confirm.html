@@ -2,7 +2,7 @@
 {% block title %}Compact conversation · Solakit{% endblock %}
 {% block content %}
 <section class="panel archive-confirm">
-<span class="eyebrow">MAKE ROOM TO CONTINUE</span><h1>Compact this conversation?</h1>
+<h1>Compact this conversation?</h1>
 <p class="intro">OpenViking will summarize the current history in <strong>{{ session.title or session.id }}</strong>. Original messages stay in a numbered, read-only archive; this conversation continues from the summary.</p>
 <p class="muted">The session, profile and channel pairing stay unchanged. This writes an OpenViking working-memory summary with long-term extraction disabled. Wait for queued/running turns to finish. Failed or incomplete summaries do not replace history.</p>
 {% if session.memory_scope != 'shared' or health.memory == 'disabled' %}<p class="notice notice-error">Compaction requires enabled shared OpenViking memory for this session.</p>{% endif %}

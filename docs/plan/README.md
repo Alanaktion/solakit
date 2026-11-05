@@ -99,6 +99,11 @@ This supersedes the earlier UI deferral for these surfaces only; Discord archiva
 exposure, markdown, streaming and profile selection remain deferred. Prompt/run
 inspectors and operations controls have since been authorized and implemented.
 
+The UI now uses a compact workspace layout: smaller navigation and headings,
+row-based session management, tighter conversation spacing and an inline send
+button. Moonlight colors and system light/dark support remain. HTTP regression
+checks pass; browser visual QA remains outstanding.
+
 ## Tool boundary direction
 
 The user-directed replacement for phase 9 is now recorded in

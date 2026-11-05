@@ -5,7 +5,7 @@
 {% block page_class %}chat-page{% endblock %}
 {% block content %}
 <aside class="chat-sidebar" id="chat-sidebar" aria-label="Sessions">
-  <div class="sidebar-heading"><h2>Conversations</h2><a href="/#session-id" class="new-chat" aria-label="Create a session">＋</a></div>
+  <div class="sidebar-heading"><h2>Conversations</h2><a href="/?new=1#session-id" class="new-chat" aria-label="Create a session">＋</a></div>
   <nav class="conversation-list" aria-label="Conversations">
     {% for item in sessions %}
     <a class="conversation-link {% if item.id == session.id %}is-current{% endif %}" href="/sessions/{{ item.id|urlencode }}" {% if item.id == session.id %}aria-current="page"{% endif %}>
@@ -41,8 +41,9 @@
     <p id="pending" class="pending" role="status" hidden><span class="thinking-dot" aria-hidden="true"></span>Waiting for Sola <span id="elapsed" aria-live="off">0:00</span></p>
     <form id="composer" action="/sessions/{{ session.id|urlencode }}/messages" method="post" hx-post="/sessions/{{ session.id|urlencode }}/messages" hx-target="#conversation" hx-swap="innerHTML" hx-disabled-elt="find textarea, find button">
       <label class="visually-hidden" for="message">Message to Sola</label>
-      <textarea id="message" name="message" placeholder="What’s on your mind?" maxlength="32000" rows="2" required aria-describedby="composer-hint"></textarea>
-      <div class="composer-bottom"><small id="composer-hint">Enter to send · Shift + Enter for a new line</small><button class="primary-button" type="submit">Send <span aria-hidden="true">↗</span></button></div>
+      <div class="composer-input"><textarea id="message" name="message" placeholder="What’s on your mind?" maxlength="32000" rows="2" required aria-describedby="composer-hint"></textarea>
+      <button class="primary-button" type="submit" aria-label="Send message" title="Send message"><span aria-hidden="true">↑</span></button></div>
+      <small id="composer-hint">Enter to send · Shift + Enter for a new line</small>
     </form>
   </div>
   {% endif %}

@@ -1,39 +1,32 @@
 {% extends 'base.html' %}
 {% block title %}Sessions · Solakit{% endblock %}
 {% block content %}
-<section class="page-heading">
-  <div><span class="eyebrow">YOUR CONVERSATIONS</span><h1>Sessions</h1><p class="intro">Pick up a thread, or begin a new one.</p></div>
-  <span class="count-label">{{ sessions|length }} {% if sessions|length == 1 %}session{% else %}sessions{% endif %}</span>
-</section>
+<section class="page-heading"><h1>Sessions</h1><span class="count-label">{{ sessions|length }} {% if sessions|length == 1 %}session{% else %}sessions{% endif %}</span></section>
 <div class="sessions-layout">
-  <section aria-label="Existing sessions" class="session-list">
-  {% for session in sessions %}
-    <a class="session-card panel" href="/sessions/{{ session.id|urlencode }}">
-      <div class="card-top"><span class="session-glyph" aria-hidden="true">◌</span><span class="profile-tag">{{ session.default_profile }}</span><span class="card-arrow" aria-hidden="true">↗</span></div>
-      <h2>{{ session.title or session.id }}</h2>
-      {% if session.title %}<p class="session-id">{{ session.id }}</p>{% endif %}
-      <dl class="session-facts"><div><dt>Memory</dt><dd>{{ session.memory_scope }}</dd></div><div><dt>Channel</dt><dd>{{ session.bound_channel or '—' }}</dd></div></dl>
-      <div class="card-bottom"><span>Created <time datetime="{{ session.created_at }}">{{ session.created_at }}</time></span><span>Open conversation <span aria-hidden="true">→</span></span></div>
-    </a>
-  {% else %}
-    <div class="empty-state panel"><span class="empty-orbit" aria-hidden="true">☾</span><h2>No conversations yet.</h2><p>Give your first session a name.<br>There’s room to take your time.</p></div>
-  {% endfor %}
-  </section>
-  <aside class="new-session panel" aria-labelledby="new-session-title">
-    <span class="eyebrow">A FRESH THREAD</span><h2 id="new-session-title">New session</h2>
-    <p class="muted">A name and a little space to begin.</p>
+<details class="new-session panel" {% if error or not sessions or request.query_params.get('new') == '1' %}open{% endif %}>
+<summary>New session <span aria-hidden="true">＋</span></summary>
     {% if error %}<div class="notice notice-error" role="alert">{{ error }}</div>{% endif %}
-    <form action="/sessions" method="post" class="stack-form">
-      <label for="session-id">Session ID</label>
+    <form action="/sessions" method="post" class="new-session-form">
+      <div><label for="session-id">Session ID</label>
       <input id="session-id" name="id" value="{{ values.get('id', '') }}" placeholder="evening-notes" pattern="[A-Za-z0-9][A-Za-z0-9_\-]{0,127}" maxlength="128" required autocomplete="off" aria-describedby="id-hint">
-      <small id="id-hint" class="field-note">Letters, numbers, underscores, and hyphens.</small>
-      <label for="profile">Default profile</label>
-      <select id="profile" name="default_profile" required>{% for profile in profiles %}<option value="{{ profile }}" {% if values.get('default_profile', 'interactive') == profile %}selected{% endif %}>{{ profile }}</option>{% endfor %}</select>
-      <label for="memory-scope">Memory</label>
-      <select id="memory-scope" name="memory_scope"><option value="shared" {% if values.get('memory_scope') != 'ephemeral' %}selected{% endif %}>Shared memory</option><option value="ephemeral" {% if values.get('memory_scope') == 'ephemeral' %}selected{% endif %}>No memory access</option></select>
-      <small class="field-note">Conversation history is kept in both modes.</small>
-      <button type="submit" class="primary-button full-width">Create session <span aria-hidden="true">+</span></button>
+      </div>
+      <div><label for="profile">Default profile</label>
+      <select id="profile" name="default_profile" required>{% for profile in profiles %}<option value="{{ profile }}" {% if values.get('default_profile', 'interactive') == profile %}selected{% endif %}>{{ profile }}</option>{% endfor %}</select></div>
+      <div><label for="memory-scope">Memory</label>
+      <select id="memory-scope" name="memory_scope"><option value="shared" {% if values.get('memory_scope') != 'ephemeral' %}selected{% endif %}>Shared memory</option><option value="ephemeral" {% if values.get('memory_scope') == 'ephemeral' %}selected{% endif %}>No memory access</option></select></div>
+      <button type="submit" class="primary-button">Create session <span aria-hidden="true">+</span></button>
+      <small id="id-hint" class="field-note">IDs: letters, numbers, underscores, hyphens. History is kept in both memory modes.</small>
     </form>
-  </aside>
+</details>
+<section aria-label="Existing sessions" class="session-list panel">
+{% for session in sessions %}
+<a class="session-row" href="/sessions/{{ session.id|urlencode }}">
+  <span class="session-name"><strong>{{ session.title or session.id }}</strong>{% if session.title %}<small>{{ session.id }}</small>{% endif %}</span>
+  <span class="profile-tag">{{ session.default_profile }}</span>
+  <span class="session-row-facts">{{ session.memory_scope }} · {{ session.bound_channel or 'No channel' }}</span>
+  <time datetime="{{ session.created_at }}">{{ session.created_at }}</time><span class="row-arrow" aria-hidden="true">→</span>
+</a>
+{% else %}<div class="empty-state"><h2>No conversations yet.</h2><p>Create a session to start chatting.</p></div>{% endfor %}
+</section>
 </div>
 {% endblock %}

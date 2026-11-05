@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% block title %}Tools · Solakit{% endblock %}
 {% block content %}
-<section class="page-heading"><div><span class="eyebrow">AVAILABLE CAPABILITIES</span><h1>Tools</h1><p class="intro">Loaded tools and the profiles that may use them.</p></div><span class="count-label">{{ catalog.tools|length }} loaded</span></section>
+<section class="page-heading"><div><h1>Tools</h1><p class="intro">Loaded tools and the profiles that may use them.</p></div><span class="count-label">{{ catalog.tools|length }} loaded</span></section>
 <section class="tool-profiles panel" aria-label="Tools by profile">
   <h2>Profile access</h2>
   <p class="muted">Each conversation uses its session’s default profile. Loading a module alone does not grant its tools.</p>

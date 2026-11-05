@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% block title %}Prompt inspector · Solakit{% endblock %}
 {% block content %}
-<section class="page-heading"><div><span class="eyebrow">EVIDENCE</span><h1>Prompt inspector</h1><p class="intro">Dry-run output from the prompt API. No model call or live memory lookup.</p></div></section>
+<section class="page-heading"><div><h1>Prompt inspector</h1><p class="intro">Dry-run output from the prompt API. No model call or live memory lookup.</p></div></section>
 <form method="get" action="/prompt" class="inspector-form panel">
   <div><label for="inspect-profile">Profile</label><select id="inspect-profile" name="profile">{% for profile in profiles %}<option {% if profile == values.profile %}selected{% endif %}>{{ profile }}</option>{% endfor %}</select></div>
   <div><label for="inspect-session">Session</label><input id="inspect-session" name="session" list="session-options" value="{{ values.session }}" maxlength="128" required><datalist id="session-options">{% for session in sessions %}<option value="{{ session.id }}">{% endfor %}</datalist></div>
