@@ -299,3 +299,37 @@ def test_explicit_openviking_user_checked_before_message_writes(config, actual_u
         await memory.close()
 
     asyncio.run(exercise())
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        (
+            '{"path":"scratch/file","options":{"enabled":false,"limit":0},'
+            '"labels":["月",null]}',
+            {
+                "path": "scratch/file",
+                "options": {"enabled": False, "limit": 0},
+                "labels": ["月", None],
+            },
+        ),
+        ('{"incomplete":', {"invalid_arguments": '{"incomplete":'}),
+    ],
+)
+def test_memory_tool_arguments_preserve_nested_values_and_invalid_evidence(
+    raw, expected
+):
+    messages = [
+        {
+            "role": "assistant",
+            "tool_calls": [
+                {"id": "nested", "function": {"name": "example", "arguments": raw}}
+            ],
+        },
+        {"role": "tool", "tool_call_id": "nested", "content": "complete output"},
+    ]
+    before = json.dumps(messages, ensure_ascii=False)
+    part = memory_messages(messages)[0]["parts"][0]
+    assert part["tool_input"] == expected
+    assert part["tool_output"] == "complete output"
+    assert json.dumps(messages, ensure_ascii=False) == before

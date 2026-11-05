@@ -35,9 +35,9 @@ Completed foundation plans 01–06, 14–16 and 20 have been removed. See the
 - [x] Implement the [printer pack](19-printer-and-seam-provers.md), capture transport
   and grant checks.
 - [ ] Verify deliberate physical-device operation of the thermal printer.
-- [ ] Record remaining live summary/continuation checks from
-  [compaction controls](21-compaction-controls.md).
-- [ ] Close compaction/streaming browser and live checks in plans 21 and 22;
+- [x] Verify live compaction summary/rotation/continuation, full-run archive commit
+  and nonempty tool arguments; see the [compaction acceptance record](../audits/implementation-status.md#phase-21-completion-2026-11-05).
+- [ ] Close streaming browser checks in plan 22;
   foundation/evidence/operations/archival browser matrices are complete.
 - [ ] Record the full §14 acceptance decision, then follow
   [Discord](07-channels-discord.md), [job](08-scheduling.md) and SPEC §15 rollout gates.

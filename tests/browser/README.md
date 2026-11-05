@@ -45,4 +45,4 @@ Phase 21: run `check.cjs 21` for explicit compaction confirmation, ephemeral/bus
 errors and expanded summary ordering, across light/dark desktop/mobile. The
 OpenViking transport is mocked inside this QA process, including startup/commit
 requests, and cannot access a live memory server. Live memory verification is
-recorded separately in the compaction plan.
+recorded separately in the [compaction acceptance audit](../../docs/audits/implementation-status.md#phase-21-completion-2026-11-05).
