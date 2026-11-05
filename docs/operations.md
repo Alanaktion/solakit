@@ -281,6 +281,11 @@ Configure this per profile as `[profiles.<name>].context_budget`. The default is
 for `[model].max_tokens`; serialized bytes are a conservative proxy, not a token
 count. Configuration changes take effect when the server restarts.
 
+Values in `[profile_defaults]` are inherited by every configured profile, and
+values in `[channel_defaults]` are inherited by every `[[channels]]` entry.
+Entry-specific values take precedence. Lists replace their inherited value; they
+are not appended. Defaults are validated even when there are no matching entries.
+
 Optional `[memory].user` sends the verified server's user hint and checks the
 created session URI before appending messages; it must match the server identity.
 `sola memory-test --fact ... --query ... --expected ...` writes a real scratch

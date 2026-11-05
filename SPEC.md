@@ -217,6 +217,11 @@ characters removed to make room for it. Bounded sources with an unknown total
 use an explicit lower bound, e.g. `[truncated >=27 chars]`),
 `repair_attempts: 2`.
 
+Operator configuration may set shared profile values in `[profile_defaults]` and
+shared channel values in `[channel_defaults]`. Each `[profiles.<name>]` or
+`[[channels]]` entry overrides inherited values; list overrides replace rather
+than append. Shared defaults are validated even when no entries use them.
+
 Streaming: the loop stores identical completed messages either way. Discord and
 ordinary API delivery still use completed messages. An opt-in transport callback
 exposes bounded in-memory content previews; validated tool envelopes execute through

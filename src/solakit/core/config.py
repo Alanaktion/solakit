@@ -7,7 +7,7 @@ import tomllib
 from datetime import UTC, datetime
 from pathlib import Path
 from string import Formatter
-from typing import Literal, Self
+from typing import Any, Literal, Self
 from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -245,6 +245,8 @@ class Config(StrictModel):
     memory: MemoryConfig = Field(default_factory=MemoryConfig)
     delegation: DelegationConfig = Field(default_factory=DelegationConfig)
     paths: PathsConfig = Field(default_factory=PathsConfig)
+    profile_defaults: dict[str, Any] = Field(default_factory=dict)
+    channel_defaults: dict[str, Any] = Field(default_factory=dict)
     profiles: dict[str, Profile] = Field(
         default_factory=lambda: {"interactive": Profile(max_steps=60)}
     )
@@ -256,8 +258,76 @@ class Config(StrictModel):
     timezone: str = "America/Denver"
     discord_token: SecretRef | None = None
 
+    @model_validator(mode="before")
+    @classmethod
+    def apply_entry_defaults(cls, values: Any) -> Any:
+        if not isinstance(values, dict):
+            return values
+        values = dict(values)
+        profile_defaults = values.get("profile_defaults", {})
+        channel_defaults = values.get("channel_defaults", {})
+
+        # Preserve the historical implicit interactive profile unless profiles
+        # were supplied explicitly, while still applying configured defaults to it.
+        if (
+            isinstance(profile_defaults, dict)
+            and profile_defaults
+            and "profiles" not in values
+        ):
+            values["profiles"] = {
+                "interactive": {"max_steps": profile_defaults.get("max_steps", 60)}
+            }
+        if isinstance(profile_defaults, dict) and isinstance(
+            values.get("profiles"), dict
+        ):
+            values["profiles"] = {
+                name: (
+                    {
+                        **profile_defaults,
+                        **(
+                            profile.model_dump(exclude_unset=True)
+                            if isinstance(profile, Profile)
+                            else profile
+                        ),
+                    }
+                    if isinstance(profile, (dict, Profile))
+                    else profile
+                )
+                for name, profile in values["profiles"].items()
+            }
+        if isinstance(channel_defaults, dict) and isinstance(
+            values.get("channels"), list
+        ):
+            values["channels"] = [
+                (
+                    {
+                        **channel_defaults,
+                        **(
+                            channel.model_dump(exclude_unset=True)
+                            if isinstance(channel, Channel)
+                            else channel
+                        ),
+                    }
+                    if isinstance(channel, (dict, Channel))
+                    else channel
+                )
+                for channel in values["channels"]
+            ]
+        return values
+
     @model_validator(mode="after")
     def references(self) -> Self:
+        # Validate partial defaults even when no concrete entry happens to use them.
+        Profile.model_validate(self.profile_defaults)
+        Channel.model_validate(
+            {
+                "id": "defaults-check",
+                "type": "api",
+                "channel_id": "defaults-check",
+                "session": "defaults-check",
+                **self.channel_defaults,
+            }
+        )
         ZoneInfo(self.timezone)
         for profile in self.delegation.allowed_profiles:
             if profile not in self.profiles:

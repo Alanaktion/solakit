@@ -48,6 +48,16 @@ data = "~/sola-data"
 soul = "/absolute/path/to/live/SOUL.md"
 fragments = "fragments"
 
+# Optional values inherited by every profile. A value in a named profile replaces
+# its default; list values replace the whole list rather than being appended.
+[profile_defaults]
+context_budget = 32000
+mid_run_compaction = false
+tools = []
+read_scopes = []
+write_scopes = []
+capabilities = []
+
 [profiles.interactive]
 max_steps = 60
 # Conservative serialized request-byte ceiling. Size this below the model's
@@ -90,15 +100,20 @@ trust_env = false
 # api_key = { env = "OPENVIKING_API_KEY" }
 
 
+# Optional values inherited by every [[channels]] entry. Identity and binding
+# fields remain explicit in this example so each channel is easy to audit.
+[channel_defaults]
+profile = "interactive"
+trigger = "mention"
+trigger_authors = []
+enabled = false
+
 [[channels]]
 id = "discord-pilot"
 type = "discord"
 channel_id = "000000000000000000"
 session = "pilot"
-profile = "interactive"
-trigger = "mention"
 trigger_authors = ["ALAN_DISCORD_USER_ID"]
-enabled = false
 
 # Jobs are managed through /operations, /api/jobs and built-in jobs tools.
 # This legacy example is imported once per ID, then managed in app.db.

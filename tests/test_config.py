@@ -39,6 +39,67 @@ def test_profile_context_budget_can_be_configured(tmp_path):
     assert config.profiles["interactive"].context_budget == 196608
 
 
+def test_profile_and_channel_defaults_are_applied_before_entry_overrides(tmp_path):
+    path = tmp_path / "config.toml"
+    path.write_text(
+        """
+[profile_defaults]
+context_budget = 65536
+tools = ["runtime.status"]
+
+[profiles.interactive]
+max_steps = 60
+
+[profiles.worker]
+tools = []
+
+[channel_defaults]
+profile = "worker"
+trigger = "mention"
+enabled = true
+
+[[channels]]
+id = "one"
+type = "discord"
+channel_id = "1"
+session = "one"
+
+[[channels]]
+id = "two"
+type = "api"
+channel_id = "2"
+session = "two"
+profile = "interactive"
+trigger = "all"
+enabled = false
+"""
+    )
+
+    config = load_config(path)
+
+    assert config.profiles["interactive"].context_budget == 65536
+    assert config.profiles["interactive"].tools == ["runtime.status"]
+    assert config.profiles["worker"].tools == []
+    assert config.channels[0].profile == "worker"
+    assert config.channels[0].trigger == "mention"
+    assert config.channels[0].enabled is True
+    assert config.channels[1].profile == "interactive"
+    assert config.channels[1].trigger == "all"
+    assert config.channels[1].enabled is False
+
+
+def test_defaults_apply_to_implicit_profile_and_validate_without_entries():
+    config = Config.model_validate({"profile_defaults": {"context_budget": 12345}})
+    assert config.profiles["interactive"].context_budget == 12345
+    assert config.profiles["interactive"].max_steps == 60
+
+    config = Config.model_validate({"profile_defaults": {"max_steps": 12}})
+    assert config.profiles["interactive"].max_steps == 12
+
+    with pytest.raises(ValidationError, match="trigger"):
+        Config.model_validate({"channel_defaults": {"trigger": "sometimes"}})
+
+
 def test_secret_references(tmp_path, monkeypatch):
     with pytest.raises(ValidationError):
         SecretRef(env="X", file=tmp_path / "x")
