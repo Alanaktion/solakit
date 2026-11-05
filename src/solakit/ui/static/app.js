@@ -10,6 +10,7 @@
         node.title = node.dateTime;
         node.textContent = new Intl.DateTimeFormat(undefined, {
           year: "numeric", month: "short", day: "numeric",
+          ...(node.hasAttribute("data-time") ? {hour: "numeric", minute: "2-digit", second: "2-digit", timeZoneName: "short"} : {}),
         }).format(date);
       }
     });
@@ -68,10 +69,10 @@
     if (field) { field.value = ""; field.focus(); }
   });
   document.addEventListener("keydown", (event) => {
-    if (event.target.id === "message" && event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+    if (event.target.id === "message" && event.key === "Enter" && !event.shiftKey && !event.isComposing && event.keyCode !== 229) {
       event.preventDefault();
       const composer = form();
-      if (composer && composer.getAttribute("aria-busy") !== "true") composer.requestSubmit();
+      if (composer && composer.getAttribute("aria-busy") !== "true" && !event.repeat) composer.requestSubmit();
     }
   });
   dates();

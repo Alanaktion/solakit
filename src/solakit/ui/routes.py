@@ -2,7 +2,7 @@
 
 import asyncio
 from pathlib import Path
-from urllib.parse import parse_qs, quote
+from urllib.parse import parse_qs, quote, urlencode
 
 import httpx
 from fastapi import APIRouter, Request
@@ -365,6 +365,186 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
             await chat_context(request, data, history, error),
             status,
         )
+
+    async def operations_page(request, error=None, status=200):
+        jobs, channels, state = await asyncio.gather(
+            api(request, "GET", "/api/jobs"),
+            api(request, "GET", "/api/channels"),
+            health(request),
+        )
+        return render(
+            request,
+            "operations.html",
+            {
+                "jobs": jobs,
+                "channels": channels,
+                "health": state,
+                "error": error,
+            },
+            status,
+        )
+
+    @router.get("/prompt")
+    async def prompt_page(request: Request):
+        if not logged_in(request):
+            return login_redirect(request)
+        values = {
+            "profile": request.query_params.get("profile", "interactive"),
+            "session": request.query_params.get("session", "inspection"),
+            "origin": request.query_params.get("origin", "api"),
+            "at": request.query_params.get("at", ""),
+        }
+        try:
+            profiles, all_sessions, state = await asyncio.gather(
+                api(request, "GET", "/api/profiles"),
+                api(request, "GET", "/api/sessions"),
+                health(request),
+            )
+        except APIError as exc:
+            return render(request, "error.html", {"error": exc.detail}, exc.status)
+        evidence, error, status = None, None, 200
+        try:
+            if values["profile"] not in profiles:
+                raise APIError(422, "Choose a configured profile.")
+            if any(len(value) > 128 for value in values.values()):
+                raise APIError(422, "Inspector fields must be at most 128 characters.")
+            query = urlencode({key: value for key, value in values.items() if value})
+            evidence = await api(request, "GET", "/api/prompt?" + query)
+        except APIError as exc:
+            error, status = exc.detail, exc.status
+        return render(
+            request,
+            "prompt.html",
+            {
+                "values": values,
+                "profiles": profiles,
+                "sessions": all_sessions,
+                "evidence": evidence,
+                "error": error,
+                "health": state,
+            },
+            status,
+        )
+
+    @router.get("/runs")
+    async def runs_page(request: Request):
+        if not logged_in(request):
+            return login_redirect(request)
+        try:
+            records, state = await asyncio.gather(
+                api(request, "GET", "/api/runs"),
+                health(request),
+            )
+            session_filter = request.query_params.get("session", "")
+            status_filter = request.query_params.get("status", "")
+            statuses = sorted(
+                {record["status"] for record in records}
+                | ({status_filter} if status_filter else set())
+            )
+            records = [
+                record
+                for record in records
+                if (not session_filter or record["session"] == session_filter)
+                and (not status_filter or record["status"] == status_filter)
+            ]
+            records.sort(
+                key=lambda record: timestamp(record["created_at"]), reverse=True
+            )
+            return render(
+                request,
+                "runs.html",
+                {
+                    "runs": records,
+                    "statuses": statuses,
+                    "health": state,
+                    "session_filter": session_filter,
+                    "status_filter": status_filter,
+                },
+            )
+        except APIError as exc:
+            return render(request, "error.html", {"error": exc.detail}, exc.status)
+
+    @router.get("/runs/{identity}")
+    async def run_page(request: Request, identity: str):
+        if not logged_in(request):
+            return login_redirect(request)
+        try:
+            record, state = await asyncio.gather(
+                api(request, "GET", f"/api/runs/{quote(identity, safe='')}"),
+                health(request),
+            )
+            # Transcript tool args/results are verbatim; reuse the redacted-log
+            # presentation path rather than exposing raw message JSON.
+            history = turns(
+                {
+                    "id": record["session"],
+                    "messages": record["messages"],
+                    "default_profile": record["profile"],
+                },
+                [record],
+                {record["id"]: record},
+            )
+            return render(
+                request,
+                "run.html",
+                {
+                    "run": record,
+                    "turns": history,
+                    "health": state,
+                },
+            )
+        except APIError as exc:
+            return render(request, "error.html", {"error": exc.detail}, exc.status)
+
+    @router.post("/runs/{identity}/cancel")
+    async def cancel_run(request: Request, identity: str):
+        if not logged_in(request):
+            return login_redirect(request)
+        try:
+            await api(request, "POST", f"/api/runs/{quote(identity, safe='')}/cancel")
+            return RedirectResponse(
+                f"/runs/{quote(identity, safe='')}", 303, headers=HEADERS
+            )
+        except APIError as exc:
+            return render(request, "error.html", {"error": exc.detail}, exc.status)
+
+    @router.get("/operations")
+    async def operations(request: Request):
+        if not logged_in(request):
+            return login_redirect(request)
+        try:
+            return await operations_page(request)
+        except APIError as exc:
+            return render(request, "error.html", {"error": exc.detail}, exc.status)
+
+    @router.post("/operations/jobs/{identity}/{operation}")
+    async def job_action(request: Request, identity: str, operation: str):
+        if not logged_in(request):
+            return login_redirect(request)
+        if operation not in {"run", "pause", "resume"}:
+            return render(
+                request, "error.html", {"error": "Unknown job operation."}, 404
+            )
+        try:
+            record = await api(
+                request, "POST", f"/api/jobs/{quote(identity, safe='')}/{operation}"
+            )
+            target = (
+                f"/runs/{quote(record['id'], safe='')}"
+                if operation == "run"
+                else "/operations"
+            )
+            return RedirectResponse(target, 303, headers=HEADERS)
+        except APIError as exc:
+            try:
+                return await operations_page(request, exc.detail, exc.status)
+            except APIError as unavailable:
+                return render(
+                    request,
+                    "error.html",
+                    {"error": unavailable.detail},
+                    unavailable.status,
+                )
 
     @router.get("/tools")
     async def tools_page(request: Request):

@@ -1,14 +1,21 @@
-# P3 — operations UI (deferred)
+# P3 — operations UI
 
-Prerequisite: P2 evidence UI and explicit decision to begin operations UI.
+Status: implemented and HTTP/integration verified; browser visual QA pending.
 
-1. Display jobs and channels through existing APIs, accurately reporting current
-   state without inventing live health from configuration.
-2. Add existing job run/pause/resume operations and actionable API error feedback.
-3. Test authentication, status transitions, validation, and read-only channel
-   display. Keep config editing/creation out of the UI.
+`/operations` displays existing API job/channel state: enabled, paused/active,
+cron/timezone, next fire, last run/outcome, adapter status, connected-since and last
+accepted message ID. Missing data remains unknown/empty, never invented health.
+Displayed times use the browser timezone; schedule zones remain explicit.
 
-Live integrations remain subject to existing scratch-memory and acceptance gates.
-Markdown, profile selection in chat, SSE, and shared UI/Discord session archival
-remain separate v2 work. Archival must preserve channel pairing and immutable
-history; settle fresh-context and operator-only semantics before implementation.
+POST controls use existing job run/pause/resume APIs. Run-now waits for the actual
+run and opens its evidence page; failures retain actionable API errors. Pause
+changes future schedule behavior and does not cancel an active run. Disabled or
+active jobs do not offer an enabled Run-now button; server checks stay authoritative.
+Channel display is read-only. No config creation/editing or activation is added.
+
+Mock integration checks verify pause/resume, run evidence, disabled-job rejection,
+unknown actions/jobs, read-only channel state and authentication. Existing live
+memory/integration acceptance gates remain unchanged; no live jobs were enabled.
+
+Still deferred: markdown, per-message profile selection, streaming and Discord
+archival exposure. API/UI archival and read-only archive browsing are implemented.

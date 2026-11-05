@@ -145,8 +145,12 @@ not a security boundary against a malicious installed package.
 ## Scope and deferred work
 
 P1 UI (sessions/chat/status) is implemented, plus read-only tools inspection.
-`docs/plan/11-ui-p2-evidence.md` and `12-ui-p3-operations.md` describe deferred
-prompt/run inspection and job/channel controls. Operator API/UI archival and
+`docs/plan/11-ui-p2-evidence.md` and `12-ui-p3-operations.md` describe implemented
+prompt/run inspection, run cancellation and job/channel controls. All presentation
+and actions use existing APIs; the UI never reconstructs prompts or calls Store/
+Execution directly. Chat sends on Enter, with Shift+Enter for newline and IME guards.
+Keyboard unit tests use Node if available, without requiring a Node build/runtime
+for the app. Browser visual QA remains separate from HTTP/unit checks. Operator API/UI archival and
 read-only archive browsing are implemented; see `docs/plan/13-session-archival.md`.
 Discord archival exposure, markdown, per-message profile selection and SSE remain
 deferred. Generic services and journal/letters/email/shell packs are locally

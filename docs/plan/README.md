@@ -89,14 +89,15 @@ production configuration. Hermes and its schedules stay untouched.
 
 The supplied UI brief authorizes [P1 sessions/chat/status](10-ui-p1.md), now locally
 implemented. [P2 evidence](11-ui-p2-evidence.md) and
-[P3 operations](12-ui-p3-operations.md) have separate deferred plans. They do not
+[P3 operations](12-ui-p3-operations.md) are also locally implemented. They do not
 advance existing live-integration gates. Markdown/profile selection and shared
 UI/Discord session archival remain separate v2 decisions.
 
 [13: session archival](13-session-archival.md) adds operator API/UI archival and
 read-only numbered archive browsing, preserving bindings and existing evidence.
 This supersedes the earlier UI deferral for these surfaces only; Discord archival
-exposure, prompt/run inspectors, markdown and profile selection remain deferred.
+exposure, markdown, streaming and profile selection remain deferred. Prompt/run
+inspectors and operations controls have since been authorized and implemented.
 
 ## Tool boundary direction
 
@@ -113,3 +114,9 @@ pack-owned configuration, secret registration and append-only operation receipts
 [20: maintenance shell](20-shell-pack.md) adds the separately authorized low-level
 pack. Printer is next; protocol/provider checks and complete live acceptance remain
 pending. No changes to core execution or core domain configuration were required.
+
+Evidence and operations UI now use the existing authenticated APIs for prompt
+inspection, run lists/evidence/cancellation, channel/job status and job controls.
+Chat uses Enter-to-send and Shift+Enter for newline, with composition/busy guards.
+Automated checks cover API SHA parity, safe tool evidence, real mocked run
+cancellation and job controls. Browser visual QA remains pending.

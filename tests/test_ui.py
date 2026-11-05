@@ -245,7 +245,7 @@ def test_tool_cards_use_redacted_evidence_only(config, mock_model):
         assert "&lt;b&gt;recorded result&lt;/b&gt;" in page.text
 
 
-def test_local_assets_theme_and_minimal_navigation(config, mock_model):
+def test_local_assets_theme_and_navigation(config, mock_model):
     with TestClient(create_app(config=config, model=mock_model)) as client:
         page = client.get("/login")
         assert "🌙" in page.text
@@ -263,8 +263,9 @@ def test_local_assets_theme_and_minimal_navigation(config, mock_model):
         assert "prefers-color-scheme: dark" in client.get("/static/app.css").text
         sign_in(client)
         page = client.get("/")
-        assert 'href="/prompt"' not in page.text
-        assert 'href="/jobs"' not in page.text
+        for path in ("/prompt", "/runs", "/operations", "/tools"):
+            assert f'href="{path}"' in page.text
+            assert client.get(path).status_code == 200
 
 
 def test_tools_catalog_distinguishes_loaded_from_granted(config, mock_model):

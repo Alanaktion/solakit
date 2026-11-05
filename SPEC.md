@@ -78,10 +78,9 @@ rejected even if it is convenient.
   later, are markdown files loaded by name (§5.3) — nothing self-modifies.
 - Provider abstraction. The server speaks to one OpenAI-compatible local
   endpoint. Supporting "70 providers" is exactly the bloat being escaped.
-- Advanced UI features beyond the authorized P1 sessions/chat/status surface.
-  Prompt/run inspection is P2; jobs/channels controls P3. Operator API/UI archival
-  and archive browsing are implemented; markdown, profile selection, and Discord
-  archival exposure remain deferred.
+- Rich message rendering, per-message profile selection, streaming and Discord
+  archival exposure. The implemented P1 console, P2 evidence and P3 operations
+  surfaces remain thin API clients, alongside archival/browsing.
 - Multi-tenancy, user accounts beyond a single operator token, public
   internet exposure. The app binds localhost/tailnet.
 - Voice, image generation, or TTS in the core. Those stay external and
@@ -659,6 +658,11 @@ The P1 operator UI is a thin server-rendered API client. Shared app contracts:
   small vanilla JS enhance forms; no build step or remote assets. The UI has no
   direct storage/execution access, and never changes prompt/history bytes.
   A read-only `/tools` page lists loaded tools and effective profile grants.
+  `/prompt` displays API-assembled prompt text, original hash and schemas; `/runs`
+  and `/runs/{id}` show evidence with POST cancellation. `/operations` displays
+  reported jobs/channels with POST run/pause/resume. No config editing or new
+  integration activation controls. Chat Enter sends, Shift+Enter adds a newline;
+  composition/repeated-key/busy guards prevent accidental submissions.
   Presentation escapes plain text and masks resolved credentials; tool details
   come only from redacted run logs. Light/dark follows the system preference.
 - **Activation:** integrations stay disabled by default. Enabled Discord channels

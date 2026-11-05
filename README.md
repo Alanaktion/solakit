@@ -61,7 +61,11 @@ and shows calls as expandable redacted argument/result cards. Chat fills the vie
 message bubbles, and a bottom-anchored composer; on mobile, the conversation takes
 the full width with a back link to sessions. Sessions use their configured default
 profile for chat.
-Prompt/run inspectors and jobs/channels controls are deferred.
+The Prompt inspector shows API-assembled text, its original SHA and tool schemas.
+Runs lists recorded outcomes and opens stored prompts, messages, redacted tools,
+diagnostics, memory/delivery events and cancellation for active runs. Operations
+shows adapter/job state and job run/pause/resume controls; it does not edit config.
+Press Enter to send in chat, Shift+Enter for a newline (IME composition is preserved).
 
 Login exchanges the token for an opaque, HttpOnly, SameSite=Lax cookie valid for
 seven days (Secure on HTTPS). Sign out revokes it; server restarts invalidate all

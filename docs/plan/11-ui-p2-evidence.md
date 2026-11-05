@@ -1,16 +1,22 @@
-# P2 — evidence UI (partially implemented)
+# P2 — evidence UI
 
-Prompt/run inspection remains deferred. Read-only archive browsing was authorized
-and implemented with [session archival](13-session-archival.md).
+Status: implemented and HTTP/integration verified; browser visual QA pending.
 
-1. Add a prompt inspector using the existing prompt API. Verify its SHA matches
-   CLI output for identical profile/session/time inputs; never reassemble prompts
-   in the UI. Display escaped, credential-masked presentation only.
-2. Add run evidence views and cancellation through existing API operations.
-   Preserve diagnostic/tool redaction and distinguish status from assistant text.
-3. Done: numbered immutable archive browsing through the existing archive API,
-   alongside operator-triggered archival. No prompt/run inspector yet.
-4. Verify API parity, unavailable backend behavior, escaping and secret masking,
-   plus actual browser use in both color schemes and narrow viewports.
+- `/prompt`: profiles/session/origin/time inputs call the existing prompt API.
+  Original SHA is displayed without recomputing or reconstructing bytes. Prompt
+  text is escaped and credential-masked; the SHA still refers to the original.
+  This is dry-run assembly, not a live recall or model inference operation.
+- `/runs`: recorded status/session filters and links to individual evidence.
+- `/runs/{id}`: metadata, stored prompt/hash, messages, redacted tool-log cards,
+  diagnostics, memory/delivery events and artifacts. No raw transcript tool
+  args/results are rendered. Pending runs offer POST cancellation through the
+  existing durable API operation; terminal runs show their actual status.
+- Numbered immutable archive browsing already shipped with session archival.
+- Navigation and chat run links expose these real pages; no placeholder actions.
 
-Do not change core loop, prompt assembly, or storage for these presentation tasks.
+Checks cover auth, fixed-time prompt/API SHA and byte parity, credential masking,
+escaping, redacted tool source selection, filters, missing records and actual
+mocked active-run cancellation. Core prompt/loop/storage are unchanged.
+
+Still pending: actual light/dark and narrow-screen browser QA. No browser tool is
+available in this workspace; Node keyboard tests are not browser visual QA.
