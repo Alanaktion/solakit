@@ -43,5 +43,5 @@ implemented, with live/browser verification tracked separately.
 
 Packs compose internal Python services. New domain tools must not require core
 execution branches. Publishing grants remain separate from filesystem writes.
-Keep existing Hermes installations/schedules untouched. This audit does not change
-`live_ready`, enable integrations or authorize automatic retries of uncertain sends.
+Keep existing Hermes installations/schedules untouched. This audit does not enable integrations or authorize automatic retries of uncertain
+sends.

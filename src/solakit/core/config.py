@@ -217,7 +217,6 @@ class Config(StrictModel):
     collections: dict[str, CollectionConfig] = Field(default_factory=dict)
     enabled_tools: list[str] = Field(default_factory=list)
     timezone: str = "America/Denver"
-    live_ready: bool = False
     discord_token: SecretRef | None = None
 
     @model_validator(mode="after")

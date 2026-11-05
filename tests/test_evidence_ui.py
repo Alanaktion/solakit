@@ -176,7 +176,6 @@ def test_run_cancellation_uses_existing_durable_operation(config):
 
 
 def test_operations_controls_enabled_and_disabled_jobs(config, mock_model):
-    config.live_ready = True  # Isolated mock fixture, never production activation.
     config.jobs = [
         Job(
             id="sample",

@@ -7,7 +7,7 @@ from test_execution import completion, model_list, setup
 from solakit.channels import Channels
 from solakit.channels.base import Inbound
 from solakit.channels.discord import DiscordAdapter, chunks
-from solakit.core.config import Channel, Delivery
+from solakit.core.config import Channel, Delivery, SecretRef
 from solakit.core.schemas import RunStatus
 from solakit.core.startup import ConfigurationError, prepare
 
@@ -167,10 +167,13 @@ def test_fenced_blocks_never_split_and_oversized_blocks_attach():
     assert chunks("```\n" + "x" * 2000) is None
 
 
-def test_live_discord_requires_explicit_verified_rollout(config):
+def test_enabled_discord_requires_token_but_no_rollout_flag(config, monkeypatch):
     configured(config)
-    with pytest.raises(ConfigurationError, match="live_ready"):
+    with pytest.raises(ConfigurationError, match="bot-token secret reference"):
         prepare(config)
+    monkeypatch.setenv("TEST_DISCORD_TOKEN", "test-bot-token")
+    config.discord_token = SecretRef(env="TEST_DISCORD_TOKEN")
+    assert prepare(config).discord_token == "test-bot-token"
 
 
 def test_discord_lifecycle_without_a_gateway(config, monkeypatch):

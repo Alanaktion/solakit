@@ -17,7 +17,7 @@ or the Discord/job rollout results.
 
 | Plan | Implemented | Remaining |
 | --- | --- | --- |
-| [07: Discord](07-channels-discord.md) | Adapter, routing, gating, delivery and mock lifecycle checks | Acceptance clearance and real gateway/pilot validation |
+| [07: Discord](07-channels-discord.md) | Adapter, routing, gating, delivery, mock lifecycle checks and operator-confirmed live DM/server replies | Remaining acceptance scenarios, reconnect/oversized delivery and pilot validation |
 | [08: scheduling](08-scheduling.md) | Persistent cursors, timezone schedules, controls, misfire/non-overlap checks | Live job and channel delivery validation; staged rollout |
 | [09: acceptance](09-domain-tools-verification.md) | Core, services, journal/letters/email and shell | Exact profile matrix, runner-driven journal end-to-end check, operator acceptance and rollout |
 | [10: UI foundation](10-ui-p1.md) | Login, sessions, chat, tool/status views and compact layout | Targeted light/dark, narrow-screen and keyboard browser checks |

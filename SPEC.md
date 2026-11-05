@@ -667,11 +667,11 @@ The P1 operator UI is a thin server-rendered API client. Shared app contracts:
   composition/repeated-key/busy guards prevent accidental submissions.
   Presentation escapes plain text and masks resolved credentials; tool details
   come only from redacted run logs. Light/dark follows the system preference.
-- **Activation:** integrations stay disabled by default. Enabled Discord channels
-  or jobs additionally require operator-set `live_ready = true`, asserting the
-  live scratch-memory check and §14 acceptance suite have passed. This is a rollout
-  assertion, not a replacement for those checks. `discord_token` is a secret
-  reference; maintenance profiles are never scheduled or triggered by Discord.
+- **Activation:** integrations stay disabled by default and activate through each
+  channel/job's `enabled` setting. Validate the live scratch-memory check and §14
+  acceptance suite before rollout; configuration does not perform those checks.
+  `discord_token` is a secret reference; maintenance profiles are never scheduled
+  or triggered by Discord.
 - **Auth:** one operator token stored as a `0600` file / env var. API Bearer
   auth remains valid. `POST /login` exchanges the token for an opaque in-memory
   seven-day session cookie (HttpOnly, SameSite=Lax, Path=/; Secure on HTTPS).

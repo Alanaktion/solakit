@@ -71,13 +71,6 @@ def prepare(config: Config | None = None) -> Prepared:
                 "Memory secret unavailable; check its env/file reference and mode 0600"
             ) from None
     discord_enabled = any(c.enabled and c.type == "discord" for c in config.channels)
-    if (
-        discord_enabled or any(j.enabled for j in config.jobs)
-    ) and not config.live_ready:
-        raise ConfigurationError(
-            "Live channels/jobs require live_ready after the memory probe "
-            "and acceptance suite"
-        )
     discord_token = None
     if discord_enabled:
         if config.discord_token is None:

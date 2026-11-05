@@ -35,8 +35,7 @@ then accepts its completed-only overview. It sends only the supported
 
 Use a checkout/package of this revision. Supply an operator token reference and
 live SOUL/fragments in local `config.toml`, following `config.example.toml`.
-Add these memory settings, keeping channels and jobs disabled and `live_ready`
-false:
+Add these memory settings, keeping channels and jobs disabled:
 
 ```toml
 [memory]
@@ -88,6 +87,5 @@ Use `POST /api/runs/{id}/memory/refresh` to inspect acknowledged extraction.
 
 For future revalidation, retain endpoint/version, probe result and run IDs in
 private operator evidence. Phase 9 acceptance remains required independently.
-Only after both gates pass should an operator set `live_ready = true` and enable
-a low-stakes pilot channel. Preserve SPEC §15's week-long pilot, shadow publishing,
+Only after both gates pass should an operator enable a low-stakes pilot channel. Preserve SPEC §15's week-long pilot, shadow publishing,
 and rollback stages. No such production activation is performed by this work.

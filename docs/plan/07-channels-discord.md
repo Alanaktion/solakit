@@ -31,7 +31,9 @@ reconnect, connected/failed liveness, stored-message final/artifact/silent deliv
 whole fenced-block handling, mention suppression, and durable send evidence.
 Tests use mock adapters and gateway lifecycle, including continued context,
 independent sessions, artifact scope checks, silent runs and duplicate-send refusal.
-Live Discord is disabled and requires live_ready plus a bot-token reference.
+Discord is disabled by default and requires explicit channel enablement plus a
+bot-token reference. The operator confirmed working live DM and server replies
+on 2026-11-04; reconnect, oversized delivery and the full pilot remain unverified.
 The real gateway pilot remains gated by phase 9 acceptance; the memory round-trip
 prerequisite is now operator-confirmed.
 

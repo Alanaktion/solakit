@@ -36,7 +36,7 @@ interrupted dispatch and cron-to-channel-to-conversation continuity.
 The scheduler intentionally restores declarative jobs from TOML plus owned cursor
 state rather than pickling runtime callbacks into a library job store. This keeps
 state rebuildable, avoids global callback registries, and makes downtime decisions
-explicit. Live jobs remain disabled pending live_ready and acceptance gates.
+explicit. Live jobs remain disabled pending explicit job enablement and acceptance checks.
 
 ## Revised release gates
 

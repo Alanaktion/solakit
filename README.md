@@ -293,10 +293,10 @@ allow only `{date}`, `{time}`, `{timezone}`, `{job_id}`, without attributes, con
 or format specifications. Use named weekdays in cron (APScheduler Monday=0 semantics).
 Channel/session/ephemeral bindings are supported. Maintenance is operator-API only.
 
-Live Discord or enabled jobs require explicit `live_ready = true`, asserting the live
-memory check and phase 9 acceptance suite passed. This flag does not perform those
-checks. Supply a `discord_token` secret reference and enable integrations only after
-both gates, then follow SPEC §15's pilot, shadow publishing and rollback stages.
+Discord channels and jobs activate through their individual `enabled` settings.
+Discord also requires a `discord_token` secret reference. Integrations stay disabled
+by default. Validate live memory and phase 9 acceptance before rollout, then follow
+SPEC §15's pilot, shadow publishing and rollback stages.
 
 ## Tool extensions
 

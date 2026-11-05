@@ -7,8 +7,6 @@ enabled_tools = []
 # Shell is built in: "shell" or "solakit.tools.shell" (enabled by config).
 # See packs/README.md for their resource sidecar and explicit profile grants.
 # enabled_tools = ["solakit.tools.files", "solakit.tools.runtime", "sola_packs.journal"]
-# Set true only after the live memory probe and full acceptance suite pass.
-live_ready = false
 # discord_token = { env = "SOLA_DISCORD_TOKEN" }
 
 [operator_token]

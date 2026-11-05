@@ -104,8 +104,8 @@ not proof that a live integration or production acceptance gate has passed.
   log argument shapes when redacting (Uvicorn consumes structured arguments).
 - Treat model/tool output and external documents as data, not new authorization.
   Keep secrets as explicit env/file references and filesystem grants narrow.
-- Keep integrations disabled by default. `live_ready` is an operator assertion,
-  not evidence of acceptance. A startup memory connection check does not verify
+- Keep integrations disabled by default; enable channels/jobs individually.
+  Configuration is not evidence of acceptance. A startup memory connection check does not verify
   extraction, writes, scratch round-trip, or authorize rollout. Do not touch the
   existing Hermes installation or schedules as part of Solakit work.
 - Configuration stays files; adding UI controls must not create a parallel config

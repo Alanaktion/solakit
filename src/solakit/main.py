@@ -202,12 +202,10 @@ def create_app(
                     "Profile %s: tools=%s", profile, ", ".join(names) or "none"
                 )
             runtime_logger.info(
-                "Storage: %s; configured channels=%d; configured jobs=%d; "
-                "live_ready=%s",
+                "Storage: %s; configured channels=%d; configured jobs=%d",
                 app.state.store.storage_health()["status"],
                 len(cfg.channels),
                 len(cfg.jobs),
-                cfg.live_ready,
             )
             await app.state.channels.start()
             await app.state.jobs.start()
