@@ -35,6 +35,28 @@ async def events(response):
         raise ModelUnavailable("Model stream ended inside an event")
 
 
+def empty_keepalive(data):
+    """Recognize only oMLX's legacy empty heartbeat, never model output."""
+    return (
+        isinstance(data, dict)
+        and isinstance(data.get("id"), str)
+        and data
+        == {
+            "id": data.get("id"),
+            "object": "chat.completion.chunk",
+            "created": 0,
+            "model": "keepalive",
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {"role": "assistant", "content": ""},
+                    "finish_reason": None,
+                }
+            ],
+        }
+    )
+
+
 async def complete_stream(client, request, on_text):
     request = {**request, "stream": True, "stream_options": {"include_usage": True}}
     content, calls = "", {}
@@ -50,6 +72,8 @@ async def complete_stream(client, request, on_text):
                 done = True
                 break
             data = json.loads(event)
+            if empty_keepalive(data):
+                continue
             if data.get("model") != request["model"]:
                 raise ModelUnavailable("Completion model does not match pinned ID")
             if data.get("usage") is not None:

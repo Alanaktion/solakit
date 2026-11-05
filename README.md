@@ -89,6 +89,10 @@ Assistant messages support headings, lists, quotes, links, code fences and table
 Raw HTML and images are disabled and rendered HTML is sanitized. User text, tool
 logs, summaries and prompt/run evidence remain literal; original messages and hashes
 are unchanged. Live output masks full credentials and unfinished secret prefixes.
+The streaming parser accepts oMLX's legacy exact empty keepalive frame as a
+transport heartbeat. It cannot carry content, tool calls, usage or a terminal
+reason; all completion data still requires the exact pinned model ID.
+
 All templates, CSS, JavaScript and vendored HTMX ship locally; Markdown is rendered
 by Python (`markdown-it-py` plus `nh3`), without a Node build, CDN or hosting service.
 

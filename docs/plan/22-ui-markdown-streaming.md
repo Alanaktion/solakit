@@ -30,7 +30,7 @@ and targeted browser checks remain.
 
 ## Remaining verification
 
-- [ ] Deliberately verify oMLX's `stream=true`, `stream_options.include_usage`, pinned
+- [x] Deliberately verify oMLX's `stream=true`, `stream_options.include_usage`, pinned
   model ID, tool-call deltas and terminal events on the Sola host. No JSON fallback
   or automatic resubmission occurs when a backend rejects streaming.
 - [ ] Browser-check code/table overflow and links in light/dark/mobile views.
@@ -43,3 +43,24 @@ in-memory and disappear on failure/restart; they are not saved assistant message
 A model transport interruption produces an explicit run failure. On a first-step
 failure no session messages are appended; earlier completed steps remain evidence.
 Run cancellation remains available through the existing run evidence page/API.
+
+## Live backend verification (2026-11-05)
+
+Using local `.env`, `/models` advertised the configured exact ID
+`Qwen3.6-35B-A3B-mxfp4`. Bounded scratch text/tool SSE probes verified
+`stream=true`, `stream_options.include_usage`, stop/tool_calls terminal reasons,
+usage and `[DONE]`. Text returned 15 prompt/133 completion tokens; a forced
+side-effect-free `verification_echo` schema returned 296/74 tokens and one tool
+delta event. No tool implementation was executed or external message sent.
+
+The first cold probe exposed oMLX's legacy empty `model=keepalive` chunk. The
+parser now ignores only that exact no-output shape (`created=0`, assistant role,
+empty content, no finish reason, no usage/tools/extra fields). Byte and duration
+bounds still include heartbeats; they cannot provide a terminal completion or
+replace pinned-model output. Regression checks reject payload-bearing variants
+and heartbeat-only streams. This behavior matches the upstream
+[empty keepalive definition](https://github.com/jundot/omlx/blob/main/omlx/server.py).
+
+Raw SSE and assembled scratch responses remain in private temporary evidence,
+not source control. The browser matrix above remains open; this backend probe
+does not close the entire phase or activate any channel/job.

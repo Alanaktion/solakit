@@ -455,3 +455,93 @@ def test_active_stream_stays_visible_during_rotation_attribution_race():
     )
     assert len(history) == 2
     assert history[0]["boundary"] and history[1]["pending"]
+
+
+def test_legacy_empty_keepalive_never_becomes_output_or_completion(config):
+    from solakit.core.model import ModelUnavailable
+
+    heartbeat = {
+        "id": "chatcmpl-probe",
+        "object": "chat.completion.chunk",
+        "created": 0,
+        "model": "keepalive",
+        "choices": [
+            {
+                "index": 0,
+                "delta": {"role": "assistant", "content": ""},
+                "finish_reason": None,
+            }
+        ],
+    }
+
+    async def exercise():
+        previews = []
+
+        async def preview(text):
+            previews.append(text)
+
+        raw = ("data: " + json.dumps(heartbeat) + "\n\n").encode()
+        model = backend(
+            config,
+            [raw, frame(config, {"content": "Ready"}, "stop"), b"data: [DONE]\n\n"],
+        )
+        try:
+            result = await model.complete([], [], on_text=preview)
+            assert result["choices"][0]["message"]["content"] == "Ready"
+            assert previews == ["Ready"]
+        finally:
+            await model.close()
+        model = backend(config, [raw, b"data: [DONE]\n\n"])
+        try:
+            with pytest.raises(ModelUnavailable):
+                await model.complete([], [], on_text=preview)
+        finally:
+            await model.close()
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("mutation", ["text", "tools", "usage", "finish", "model"])
+def test_keepalive_with_payload_still_fails_pinned_validation(config, mutation):
+    from solakit.core.model import ModelUnavailable
+
+    event = {
+        "id": "chatcmpl-probe",
+        "object": "chat.completion.chunk",
+        "created": 0,
+        "model": "keepalive",
+        "choices": [
+            {
+                "index": 0,
+                "delta": {"role": "assistant", "content": ""},
+                "finish_reason": None,
+            }
+        ],
+    }
+    if mutation == "text":
+        event["choices"][0]["delta"]["content"] = "Untrusted"
+    elif mutation == "tools":
+        event["choices"][0]["delta"]["tool_calls"] = []
+    elif mutation == "usage":
+        event["usage"] = {"prompt_tokens": 1, "completion_tokens": 1}
+    elif mutation == "finish":
+        event["choices"][0]["finish_reason"] = "stop"
+    else:
+        event["model"] = "another-model"
+
+    async def exercise():
+        async def preview(text):
+            pytest.fail("Invalid keepalive was published")
+
+        raw = ("data: " + json.dumps(event) + "\n\n").encode()
+        model = backend(
+            config,
+            [raw, frame(config, {"content": "Ready"}, "stop"), b"data: [DONE]\n\n"],
+        )
+        try:
+            with pytest.raises(ModelUnavailable):
+                await model.complete([], [], on_text=preview)
+        finally:
+            await model.close()
+
+    asyncio.run(exercise())
