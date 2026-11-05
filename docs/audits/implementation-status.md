@@ -90,7 +90,7 @@ original plan text:
 | 16 journal pack | Independently packaged; scratch contract and mock-model runner acceptance verified |
 | 20 shell | Built-in migration complete; ongoing operator guidance is in `docs/operations/shell.md` |
 
-Retained partial plans: 07, 08, 09, 10, 11, 12, 13, 17, 18 and 21. Each now
+Retained partial plans: 07, 08, 09, 10, 11, 13, 17, 18 and 21. Each now
 separates completed work from remaining checks. Plan 19 now has a separately packaged USB/serial 58mm ESC/POS printer implementation;
 its physical-device gate remains open.
 UI plans remain because their named browser matrices have not been specifically
@@ -102,7 +102,7 @@ reported complete. Historical adversarial-review resolutions moved from plans to
 1. Audit intended operator-owned profile/resource grants and approve prompts in plan 09; the automated blog-profile isolation gap is closed.
 2. Verify live completed summaries, rotation and continuation in plan 21; a recall
    round-trip does not exercise those API paths.
-3. Complete targeted light/dark/mobile/keyboard UI checks (plans 10–13 and 21).
+3. Complete targeted light/dark/mobile/keyboard UI checks (plans 10, 11, 13 and 21).
 4. Check actual letters protocol and scratch mailbox/provider behavior (17–18).
 5. Verify physical 58mm USB/serial thermal printer output (19); image/calendar remain later priorities.
 6. Record acceptance and prompt-audit approval, then deliberately stage Discord,
@@ -123,3 +123,17 @@ were existing Starlette TestClient/httpx and Python `audioop` deprecations. Ruff
 lint/format, core and all four pack builds, packaged-asset checks and local Markdown
 link checks are recorded with this change. Browser and live-provider tests were
 not run by the audit; operator-confirmed memory evidence is distinguished above.
+
+## Subsequent phase 12 browser acceptance (2026-11-04)
+
+Plan 12 is complete and removed. Brave/Chromium headless browser checks against
+an isolated scratch app passed in light/dark at 1440×1000 and 390×844. Screenshots
+were visually reviewed. Browser timezone Europe/London correctly displays GMT
+while schedule labels retain America/Denver. Pause/resume, run-now → completed
+evidence, disabled controls and read-only disabled channel state passed with no
+browser script errors. Narrow tables now preserve readable columns and scroll
+inside their panels, without page overflow. Reproducible harness and artifact
+instructions: [browser QA](../../tests/browser/README.md).
+
+This is real-browser UI acceptance using a mock model and scratch jobs, not live
+scheduling/channel rollout. No operator data or enabled integrations were used.

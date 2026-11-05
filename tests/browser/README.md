@@ -1,0 +1,29 @@
+# Optional real-browser acceptance checks
+
+These checks use a real Chromium browser against an isolated localhost app with
+scratch storage, a mocked OpenAI-compatible transport, disabled channels and
+scratch jobs. They never read `.env` or operator configuration. Node/Playwright
+are QA tools only; the application still has no Node build/runtime requirement.
+
+Install Playwright outside the checkout:
+
+```sh
+npm install --prefix /private/tmp/solakit-browser-qa playwright
+uv run --no-sync python tests/browser/server.py
+```
+
+In a second terminal:
+
+```sh
+NODE_PATH=/private/tmp/solakit-browser-qa/node_modules node tests/browser/check.cjs 12
+```
+
+The default executable is macOS Brave. Override `SOLA_BROWSER_EXECUTABLE` to use
+another installed Chromium browser. Set `SOLA_BROWSER_ARTIFACTS` to change the
+screenshot directory (default `/private/tmp/solakit-browser-artifacts`). Review
+screenshots in addition to assertions. Stop the scratch server after validation;
+it leaves its isolated `solakit-browser-*` temporary data for inspection.
+
+Phase 12: light/dark × 1440×1000 / 390×844, browser timezone Europe/London versus
+America/Denver schedules, pause/resume/run-now feedback, disabled controls and
+channel state, table scrolling, page overflow and browser script errors.
