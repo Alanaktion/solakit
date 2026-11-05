@@ -244,11 +244,11 @@ cannot fit, or a tool loop exceeds the guard, the run ends `context_limit`; it n
 silently drops history or sends unbounded requests.
 
 Optional `[memory].user` sends the verified server's user hint and checks the
-created session URI before appending messages; the Sola guide selects `sola`.
-The supplied endpoint/version/root/key reference and deliberate live scratch
-procedure are in [first contact](docs/operations/first-contact.md). That guide checks
-`openviking-server 0.4.17.1`; the workspace cannot reach the Sola host's loopback or
-read its env binding. `sola memory-test --fact ... --query ... --expected ...` writes
+created session URI before appending messages; it must match the server identity.
+The deliberate live scratch procedure is in
+[first contact](docs/operations/first-contact.md). Current local configuration and
+verified server checks are recorded in the [local integration audit](docs/audits/local-integration.md).
+`sola memory-test --fact ... --query ... --expected ...` writes
 a real scratch fact and verifies actual recall plus the next persisted prompt,
 not a model's success claim. Never automate this first-contact ceremony.
 
