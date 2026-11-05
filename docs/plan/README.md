@@ -23,7 +23,7 @@ phase complete on the strength of a mock alone when its exit requires live work.
 ## Resolved implementation defaults
 
 - Recall precedes final prompt construction and persistence.
-- Shell is maintenance-only until an explicit profile change.
+- Shell is config-granted until an explicit profile change.
 - Filesystem scopes and non-filesystem capabilities are separate grants.
 - Job tasks use `{date}` with a bounded allowlist of substitution keys.
 - Recall failure aborts before transcript mutation; commit failures are recorded
@@ -81,7 +81,7 @@ The review of 81aa667 confirms the small-core/plugin direction. Next work is:
 4. Keep SPEC, behavior, tests, and operator documentation in the same commits.
 
 Retain existing documented MVP decisions: no Discord replay after downtime,
-ignore non-trigger authors entirely, shell maintenance-only, blog publishing
+ignore non-trigger authors entirely, shell config-granted, blog publishing
 capability separated from filesystem writes. Revisit these explicitly before
 production configuration. Hermes and its schedules stay untouched.
 
@@ -111,8 +111,8 @@ adding a pack. Live acceptance and pilot gates remain unchanged.
 
 Letters and email are now locally implemented in their own distributions, with
 pack-owned configuration, secret registration and append-only operation receipts.
-[20: maintenance shell](20-shell-pack.md) adds the separately authorized low-level
-pack. Printer is next; protocol/provider checks and complete live acceptance remain
+[20: shell](20-shell-pack.md) records the separately authorized low-level
+built-in tool. Printer is next; protocol/provider checks and complete live acceptance remain
 pending. No changes to core execution or core domain configuration were required.
 
 Evidence and operations UI now use the existing authenticated APIs for prompt

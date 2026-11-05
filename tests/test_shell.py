@@ -3,21 +3,27 @@ import json
 import sys
 
 import pytest
-from sola_packs import shell
 
-from solakit.tools import ToolError
+from solakit.core.config import Profile
+from solakit.core.schemas import Session
+from solakit.core.store import Store
+from solakit.tools import Registry, ToolContext, ToolError, shell
 
 
 @pytest.fixture
-def fixture(pack_context, tmp_path):
-    registry, ctx = pack_context(
-        ["sola_packs.shell"],
-        ["shell.exec", "shell.run"],
-        profile="maintenance",
-        write=[f"path:{tmp_path}"],
-        capabilities=["shell.exec"],
-    )
-    return registry, ctx, tmp_path
+def fixture(config, tmp_path):
+    config.enabled_tools = ["shell"]
+    config.profiles = {
+        "maintenance": Profile(
+            tools=["shell.exec", "shell.run"],
+            write_scopes=[f"path:{tmp_path}"],
+            capabilities=["shell.exec"],
+        )
+    }
+    store = Store(config.paths.data)
+    session = store.create_session(Session(id="shell", default_profile="maintenance"))
+    ctx = ToolContext(session, "maintenance", config, store, "run")
+    return Registry(config), ctx, tmp_path
 
 
 def test_argv_literal_shell_pipeline_and_nonzero_status(fixture):
@@ -142,8 +148,7 @@ def test_grants_cwd_and_environment_hygiene(fixture, monkeypatch):
             ctx,
         )
         assert result.error
-        ctx.profile = "interactive"
-        with pytest.raises(ToolError, match="maintenance-only"):
+        with pytest.raises(ToolError, match="Missing capability"):
             await shell.run(ctx, "echo denied", str(directory))
 
     asyncio.run(exercise())
@@ -180,12 +185,30 @@ def test_cancellation_kills_process_group_before_return(fixture):
     asyncio.run(exercise())
 
 
-def test_nonmaintenance_profile_cannot_grant_shell_tools(pack_context, tmp_path):
-    with pytest.raises(ValueError, match="not available"):
-        pack_context(
-            ["sola_packs.shell"],
-            ["shell.run"],
-            profile="interactive",
-            write=[f"path:{tmp_path}"],
-            capabilities=["shell.exec"],
-        )
+def test_profile_grants_control_shell_access(config, tmp_path):
+    config.enabled_tools = ["shell"]
+    config.profiles["interactive"] = Profile(
+        tools=["shell.run"],
+        write_scopes=[f"path:{tmp_path}"],
+        capabilities=["shell.exec"],
+    )
+    registry = Registry(config)
+    store = Store(config.paths.data)
+    session = store.create_session(Session(id="interactive"))
+    ctx = ToolContext(session, "interactive", config, store, "run")
+
+    async def exercise():
+        request = json.dumps({"command": "printf allowed", "directory": str(tmp_path)})
+        result = await registry.dispatch("shell.run", request, ctx)
+        assert not result.error and json.loads(result.content)["stdout"] == "allowed"
+        config.profiles["interactive"].tools = []
+        assert (await registry.dispatch("shell.run", request, ctx)).error
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("module", ["shell", "solakit.tools.shell"])
+def test_builtin_module_names(config, module):
+    config.enabled_tools = [module]
+    registry = Registry(config)
+    assert {"shell.exec", "shell.run"} <= registry.tools.keys()

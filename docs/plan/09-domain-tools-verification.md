@@ -1,6 +1,6 @@
 # Phase 9: External packs and complete MVP verification
 
-Status: generic foundation, journal, letters, email and maintenance shell packs
+Status: generic foundation, journal, letters and email packs plus built-in shell tools
 implemented locally; printer and full live acceptance incomplete. Replaces the in-tree blog/letters plan.
 
 Prerequisites, in order:
@@ -28,7 +28,7 @@ Mock checks do not satisfy live gates; keep Discord/jobs disabled until the live
 scratch-memory check and full acceptance pass. Publishing grants remain separate
 from filesystem writes. Existing Hermes installation/schedules stay untouched.
 
-[20: maintenance shell](20-shell-pack.md) is a separately authorized low-level
-pack, not part of inbox/journal/letters grants. The common pack supplies private
+[20: shell](20-shell-pack.md) is a separately authorized low-level
+built-in tool, available only to profiles with explicit config grants. The common pack supplies private
 append-only operation receipts and secret registration. No execution-loop or core
 domain-schema changes were required for these packs.

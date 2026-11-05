@@ -1,19 +1,20 @@
-# Low-level shell pack
+# Built-in shell tools
 
-`solakit-packs-shell`, loaded as `sola_packs.shell`; install alongside core and
-`solakit-packs-common`. No sidecar configuration is required.
+Load `shell` or `solakit.tools.shell` in core `enabled_tools`. No optional pack,
+common support package, sidecar or extra dependency is required. Process execution
+lives in the generic `solakit.services.process` service.
 
 - `shell.exec(argv, directory, timeout_s=30)` executes literal argv without a shell.
 - `shell.run(command, directory, timeout_s=30)` executes `/bin/sh -c`, supporting
   pipelines, redirection and ordinary shell scripting.
 
-Both tools are **maintenance-only**, including startup/profile validation and
-call-time checks. Enable them deliberately:
+Access is controlled by profile tool/capability and working-directory grants.
+Any profile may receive these grants; no profile name is hard-coded:
 
 ```toml
-enabled_tools = ["sola_packs.shell"]
+enabled_tools = ["shell"]
 
-[profiles.maintenance]
+[profiles.interactive]
 tools = ["shell.exec", "shell.run"]
 write_scopes = ["path:/absolute/working/root"]
 capabilities = ["shell.exec"]
@@ -22,8 +23,9 @@ tool_timeout_s = 120
 
 The working directory must be inside explicit write roots. **Commands themselves
 run with the host user's privileges; the cwd check is not a filesystem sandbox.**
-Use this for operator maintenance, not inbox, journal, letters or untrusted-input
-profiles. This pack does not introduce per-command approval dialogs.
+Choose which profiles receive shell access in configuration; there is no
+hard-coded profile-name restriction. These tools do not introduce per-command
+approval dialogs.
 
 Timeout is capped at 300 seconds and the shorter profile budget. Both output
 streams are bounded and drained; timeout/cancellation kills the process group and
@@ -38,3 +40,11 @@ model/memory/mail API variables. This is credential hygiene, not isolation from
 files accessible to the host user. There is no interactive TTY or background job
 manager. Tests run harmless scratch commands and verify literal argv, pipelines,
 nonzero exits, output bounds, timeouts/cancellation and profile/cwd denials.
+
+## Migration from the former pack
+
+Replace `sola_packs.shell` with `shell` (or `solakit.tools.shell`) in enabled_tools,
+and remove `solakit-packs-shell` from deployment dependencies. Tool names,
+capability/write grants and arguments are unchanged. The former maintenance-only
+restriction is removed; profile tool grants now determine access. The
+retired pack is no longer maintained; there is no core dependency on it.

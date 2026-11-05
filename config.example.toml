@@ -3,7 +3,8 @@ timezone = "America/Denver"
 enabled_tools = []
 # Built-ins accept bare names or full paths: ["files", "solakit.tools.repo_git", "runtime"].
 # External packs must be separately installed: "sola_packs.journal",
-# "sola_packs.letters", "sola_packs.email", "sola_packs.shell".
+# "sola_packs.letters", "sola_packs.email".
+# Shell is built in: "shell" or "solakit.tools.shell" (enabled by config).
 # See packs/README.md for their resource sidecar and explicit profile grants.
 # enabled_tools = ["solakit.tools.files", "solakit.tools.runtime", "sola_packs.journal"]
 # Set true only after the live memory probe and full acceptance suite pass.

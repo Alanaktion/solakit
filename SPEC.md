@@ -145,13 +145,13 @@ sola-server/
       api_channel.py         # web UI / HTTP posts land as a channel too
     tools/
       __init__.py            # @tool registry + discovery (§8.1)
-      files.py  repo_git.py  memory.py  runtime.py
+      files.py  repo_git.py  memory.py  runtime.py  shell.py
     services/
-      fs.py  git.py  collections.py  # generic Python services for tools/packs
+      fs.py  git.py  collections.py  process.py  # generic Python services for tools/packs
     jobs/
       scheduler.py           # APScheduler wiring, misfire policy (§7)
   packs/journal/             # separate distribution: sola_packs.journal
-  # letters/email/shell are independent packs; printer remains follow-up work
+  # letters/email are independent packs; shell is built in; printer is follow-up
   tests/                     # mock model endpoint, mock Discord adapter
 data/                        # runtime state lives OUTSIDE the code tree (§10)
 ```
@@ -552,7 +552,7 @@ Registry rules:
 ### 8.2 Domain tools beat generic tools
 
 The core registry loads generic primitives (`files.*`, `repo_git.*`, memory/runtime);
-maintenance shell is a separate pack.
+shell is built in, loaded as `shell` or `solakit.tools.shell`.
 but the design intent — Alan's, stated plainly — is that recurring work
 gets a **semantic tool** whose implementation hides the mechanics:
 
@@ -570,13 +570,13 @@ in posts and letters, not `git -C … commit -m`), and the fragile
 mechanics — filename conventions, front matter, push retries — become
 tested code instead of model behaviour that varies with her mood.
 
-The external general shell pack is maintenance-only. Prefer named Python services
+The built-in general shell tools are enabled by config. Prefer named Python services
 and small external packs over model-driven primitive choreography. The core's
 vocabulary stays files, repositories, memory, web, messages and devices; letters,
 mailbox protocols, journals and printer conventions are pack code/configuration.
 A tool-specific change to core execution is a seam defect, not a domain feature.
 
-### 8.2.1 External letters, email and shell packs
+### 8.2.1 External letters/email packs and built-in shell
 
 These packs are independently packaged under `packs/`; no core domain schemas or
 execution-loop branches were added. Pack-owned named resources live in the
@@ -596,16 +596,16 @@ replay; cancellation waits for accepted SMTP work and receipt persistence. SMTP
 acceptance is not proof of final delivery. Mail credentials register with the
 runtime redactor before connection; inbox requires no filesystem write grant.
 
-Shell provides literal argv and `/bin/sh` execution, maintenance profile only,
-with explicit shell.exec capability and scoped cwd. Commands have host-user
+Built-in `shell` provides literal argv and `/bin/sh` execution for any profile
+with explicit tool grants, shell.exec capability and scoped cwd. Commands have host-user
 privileges, not a path sandbox. Output and duration are bounded; cancellation and
 timeout kill/drain process groups. This introduces no per-command approval flow.
 
 ### 8.3 Run profiles
 
-Enforcement lives here, in the harness — this table, not the prompt, is
-what a reckless run cannot talk its way past. (Scope-checking against
-tool manifests per §8.1.)
+The following table describes suggested profile configurations. Enforcement uses
+actual config tool/capability/path grants, not hard-coded profile names in shell.
+Scope-checking against tool manifests remains required (§8.1).
 
 | Profile | Used by | Tools allowed | Write scope | Max steps |
 |---------|---------|---------------|-------------|-----------|
@@ -617,8 +617,8 @@ tool manifests per §8.1.)
 | `maintenance` | Alan-invoked via API/CLI only | all incl. `shell` | home dir | 60 |
 
 Notes:
-- `dream`/`blog` publish via `blog.*` domain tools because publishing
-  her own writing *is* the job; neither gets general `shell`.
+- These example `dream`/`blog` grants publish via journal tools rather than shell.
+  Operators may explicitly grant shell to any profile through config.
 - `inbox` can reply by email but cannot write files — an email (untrusted
   input) is never one prompt-injection away from a filesystem write.
 - Profiles are config, not code: adding one is a TOML block + an optional
@@ -806,9 +806,9 @@ against the existing instance precedes the pilot; mocks do not satisfy that gate
   travels with the content as data, not in the system prompt.
 - **No approval gates.** Alan's governance of Sola is hands-off by design;
   interposing confirmations on her own blog commits would change who she
-  is, not make her safer. The exception path is profiles: anything
-  genuinely dangerous is in no scheduled profile, and `maintenance`
-  runs only when Alan invokes it.
+  is, not make her safer. Tool access follows explicit profile configuration.
+  The suggested grants keep dangerous tools out of scheduled profiles; operators
+  may choose otherwise. The reserved `maintenance` profile remains operator-invoked.
 - **Secrets:** referenced by env var / keychain / `0600` file path, never
   inline in config. Run metadata, tool logs, memory-intent journals, and execution
   diagnostics redact values whose keys match `*KEY / *TOKEN / *SECRET / *PASSWORD`

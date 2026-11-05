@@ -1,4 +1,4 @@
-"""Bounded POSIX process execution for trusted low-level packs."""
+"""Bounded POSIX process execution for built-in low-level tools and trusted packs."""
 
 import asyncio
 import os

@@ -8,8 +8,8 @@ Python 3.12+ and uv are required. [SPEC.md](SPEC.md) defines behavior;
 
 Phases 1–8 are locally implemented. Phase 6's live OpenViking round-trip is still
 pending on the Sola host, and phase 9's domain tools/complete acceptance remain
-unfinished. Generic services and separate journal/letters/email/shell packs are
-locally implemented; printer and full live acceptance remain pending. Discord and jobs
+unfinished. Generic services, journal/letters/email packs and built-in shell tools
+are locally implemented; printer and full live acceptance remain pending. Discord and jobs
 are disabled by default. No production pilot,
 deployment, Hermes changes, or live memory writes have been performed.
 
@@ -268,7 +268,7 @@ exist by default. Registry checks occur at startup and dispatch; arguments are
 strictly validated. `files.read` bounds regular-file reads using nonblocking,
 no-follow descriptor checks. `files.write` creates new files only; `repo_git.status`
 uses a configured repository name. Domain conventions now live in separate packs;
-journal, letters, email and maintenance shell packs are available; printer remains planned.
+journal, letters and email packs plus built-in shell tools are available; printer remains planned.
 
 Counted truncation markers fit within output budgets. Complete outputs report exact
 omitted characters; bounded reads report a lower bound. Logs distinguish exact from
@@ -322,7 +322,7 @@ installation does not install any pack. [The revised phase 9 roadmap](docs/plan/
 keeps sequential immutable letters, mailbox replies and device conventions in
 their own thin packs, in that order, with production integrations still gated.
 
-## Letters, email and maintenance shell packs
+## Letters/email packs and built-in shell
 
 [Optional pack setup](packs/README.md) covers independent installation and the
 [pack-owned resource sidecar](packs/config.example.toml). Set `SOLA_PACKS_CONFIG`
@@ -335,7 +335,7 @@ for letters/mailboxes; core config only loads modules and grants tools/scopes.
   identities, external-content markers, and receipted sender-only threaded replies.
   The inbox profile needs no filesystem write scopes. SMTP acceptance is reported
   separately from recipient delivery; uncertain sends are not auto-replayed.
-- [Shell](packs/shell/README.md): maintenance-only literal argv and `/bin/sh` tools,
+- [Shell](docs/operations/shell.md): enabled by config literal argv and `/bin/sh` tools,
   explicit `shell.exec` grant, finite timeouts, bounded output and process-group
   cleanup. Commands run with host-user privileges; cwd scopes are not a sandbox.
 

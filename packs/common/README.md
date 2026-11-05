@@ -17,6 +17,5 @@ reads, nonblocking cross-process locks and fsynced intent/results. Pending,
 uncertain or torn evidence is not silently replayed or repaired. These records
 complement the core's existing verbatim tool-call and result evidence.
 
-The POSIX process helper bounds both streams and kills/drains process groups on
-timeout or cancellation. It is host-user execution, not OS isolation. No core
-execution-loop or domain-schema modifications are required by these helpers.
+Bounded POSIX process execution now lives in core `solakit.services.process` for
+the built-in shell tools. Common pack support does not provide a shell dependency.

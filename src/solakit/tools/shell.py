@@ -1,18 +1,15 @@
-"""Explicit host-user low-level tools; maintenance only, not a filesystem sandbox."""
+"""Host-user shell tools with configuration-driven access."""
 
 import json
 import math
 
-from sola_packs.support import grant
-from sola_packs.support.process import execute
-
+from solakit.services.process import execute
 from solakit.tools import ToolContext, ToolError, ToolResult, tool
 
 
 async def run_process(ctx, argv, directory, timeout_s):
-    if ctx.profile != "maintenance":
-        raise ToolError("Shell access is maintenance-only")
-    grant(ctx, "shell.exec")
+    if "shell.exec" not in ctx.config.profiles[ctx.profile].capabilities:
+        raise ToolError("Missing capability: shell.exec")
     if (
         not argv
         or len(argv) > 128
@@ -44,19 +41,19 @@ async def run_process(ctx, argv, directory, timeout_s):
     )
 
 
-@tool(name="shell.exec", profiles=["maintenance"], writes=["filesystem", "shell.exec"])
+@tool(name="shell.exec", profiles=["*"], writes=["filesystem", "shell.exec"])
 async def exec_command(
     ctx: ToolContext, argv: list[str], directory: str, timeout_s: float = 30
 ) -> ToolResult:
-    """Run an argv command without shell parsing. Host-user access; maintenance only."""
+    """Run literal argv with host-user access and configured grants."""
     return await run_process(ctx, argv, directory, timeout_s)
 
 
-@tool(name="shell.run", profiles=["maintenance"], writes=["filesystem", "shell.exec"])
+@tool(name="shell.run", profiles=["*"], writes=["filesystem", "shell.exec"])
 async def run(
     ctx: ToolContext, command: str, directory: str, timeout_s: float = 30
 ) -> ToolResult:
-    """Run a /bin/sh script, including pipelines. Host-user access; maintenance only."""
+    """Run a /bin/sh script with host-user access and configured grants."""
     if not command.strip():
         raise ToolError("Shell script must be nonempty")
     return await run_process(ctx, ["/bin/sh", "-c", command], directory, timeout_s)

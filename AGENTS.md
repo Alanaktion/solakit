@@ -45,7 +45,7 @@ not proof that a live integration or production acceptance gate has passed.
   supports arbitrary configured profiles without granting calls automatically.
   Filesystem
   roots, writes and other capabilities are separate explicit grants.
-- `packs/`: independently packaged journal, letters, email and maintenance shell
+- `packs/`: independently packaged journal, letters and email
   extensions (`sola_packs.*`), plus `solakit-packs-common` support. Core distributions
   exclude packs; install and test them separately. Letters/mailbox schemas live
   in the pack-owned `SOLA_PACKS_CONFIG` sidecar. Resolved pack credentials register
@@ -75,10 +75,11 @@ not proof that a live integration or production acceptance gate has passed.
   intents must not auto-replay, including cancellation and restart. Keep external
   mail/letter content explicitly marked as data. Sender-only email replies derive
   their envelope and threading from an existing stable mailbox message identity.
-- General shell is an explicit maintenance-only pack with `shell.exec` capability.
-  Its cwd check is not a sandbox: commands have host-user privileges. Keep it out
-  of inbox/journal/letters profiles. Bound output and kill/drain process groups on
-  timeout/cancellation; no per-command approval framework is part of this app.
+- Shell is built in with explicit tool grants, `shell.exec` capability and cwd
+  scopes. Any profile may be granted access; do not hard-code profile names.
+  Its cwd check is not a sandbox: commands have host-user privileges. Bound output
+  and kill/drain process groups on timeout/cancellation; no per-command approval
+  framework is part of this app.
 - Git writes check the actual named repository/files. Generic writes require
   exact `repo:<alias>` write grants; collection services enforce directory limits.
   Push additionally requires `git.push`, even inside packs. Do not stage whole
@@ -131,10 +132,10 @@ without force. No public deployment is implied by local implementation.
 Optional pack checks (after the core environment is synced):
 
 ```sh
-uv pip install --no-deps -e packs/journal -e packs/common -e packs/letters -e packs/email -e packs/shell
-uv run --no-sync pytest packs/journal/tests packs/letters/tests packs/email/tests packs/shell/tests -q
+uv pip install --no-deps -e packs/journal -e packs/common -e packs/letters -e packs/email
+uv run --no-sync pytest packs/journal/tests packs/letters/tests packs/email/tests -q
 uv build packs/journal
-# Build each of common, letters, email and shell separately as well.
+# Build each of common, letters and email separately as well.
 ```
 
 Root `uv sync` removes independently installed packs; production deployments must
@@ -153,8 +154,8 @@ Keyboard unit tests use Node if available, without requiring a Node build/runtim
 for the app. Browser visual QA remains separate from HTTP/unit checks. Operator API/UI archival and
 read-only archive browsing are implemented; see `docs/plan/13-session-archival.md`.
 Discord archival exposure, markdown, per-message profile selection and SSE remain
-deferred. Generic services and journal/letters/email/shell packs are locally
-implemented. Printer is the next planned pack, with image/calendar as later seam
+deferred. Generic services, journal/letters/email packs and built-in shell tools
+are locally implemented. Printer is the next planned pack, with image/calendar as later seam
 proofs; see plans 14–20. Verify the actual letters protocol and scratch mailbox
 before live wiring; mock/scratch implementation is not live acceptance. Phase 6 live scratch-memory verification and
 later acceptance/pilot gates remain distinct from local mock-tested implementation. Check the phase plans
