@@ -9,6 +9,8 @@ enabled_tools = []
 # other profiles/sessions/delivery additionally need jobs.manage.all.
 # Delegation is built in: load "delegate" and grant "delegate.run" to the parent.
 # Set delegation.allowed_profiles explicitly; worker profiles should not grant it.
+# Memory tools: load "memory" and explicitly grant memory.search/read/remember.
+# remember stages exact notes for the existing commit; it never claims extraction.
 # Session history search is built in: "sessions" or "solakit.tools.sessions".
 # Grant tools = ["sessions.search"] for current-session history; additionally
 # capabilities = ["sessions.search.all"] allows another session or all sessions.
@@ -59,6 +61,8 @@ write_scopes = []
 capabilities = []
 
 [profiles.interactive]
+# With enabled_tools including "memory", a deliberate grant could be:
+# tools = ["memory.search", "memory.read", "memory.remember"]
 max_steps = 60
 # Conservative serialized request-byte ceiling. Size this below the model's
 # token window, leaving room for [model].max_tokens; this is not a token count.
@@ -72,6 +76,7 @@ write_scopes = []
 capabilities = []
 
 [profiles.maintenance]
+# Optional: tools = ["memory.search", "memory.read", "memory.remember"]
 max_steps = 60
 tools = []
 write_scopes = []
@@ -94,6 +99,15 @@ capabilities = []
 [memory]
 enabled = false
 trust_env = false
+# Automatic recall: recent user/assistant text plus incoming text, tail-capped.
+recall_window = 3
+recall_query_max_chars = 1000
+recall_skip_trivial = true
+# This list replaces the default phrases; add your own acknowledgements here.
+recall_trivial_phrases = ["thanks", "thank you", "ok", "okay", "yes", "yeah", "lol", "nice", "cool", "got it"]
+remember_max_chars = 2000 # Over-limit notes are refused whole, never truncated.
+# Legacy incoming-only recall: window=0, max_chars=32000, skip_trivial=false
+# using the full key names above. Memory itself remains opt-in.
 # base_url = "http://127.0.0.1:1933"
 # roots = ["viking://user/sola/memories"]
 # user = "sola"

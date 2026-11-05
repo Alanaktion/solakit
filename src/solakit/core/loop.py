@@ -14,7 +14,9 @@ from solakit.core.media import ImageRef, Media
 from solakit.core.memory import MemoryClient, MemoryUnavailable
 from solakit.core.model import ModelClient, ModelUnavailable
 from solakit.core.prompt import read_prompt
+from solakit.core.recall import recall_query, trivial_turn
 from solakit.core.schemas import (
+    MemoryNote,
     Message,
     Origin,
     Run,
@@ -256,6 +258,26 @@ class Execution:
                 self.pending.pop(pending.run.id, None)
                 self.session_locks[session_id].release()
 
+    async def stage_memory_note(self, text: str) -> MemoryNote:
+        pending = self.performing.get(asyncio.current_task())
+        if pending is None or pending.run.status != RunStatus.running:
+            raise MemoryUnavailable("Memory notes require a running tool call")
+        session = await durable(self.store.session, pending.run.session)
+        if self.memory is None or session.memory_scope != "shared":
+            raise MemoryUnavailable("Memory notes require enabled shared memory")
+        if not text.strip() or len(text) > self.config.memory.remember_max_chars:
+            raise MemoryUnavailable(
+                "Memory note is empty or exceeds remember_max_chars"
+            )
+        note = MemoryNote(
+            run_id=pending.run.id,
+            session_id=session.id,
+            profile=pending.run.profile,
+            text=text,
+        )
+        await durable(self.store.stage_memory_note, note)
+        return note
+
     async def archive_session(self, session_id: str) -> dict:
         async with self.submit_lock:
             if self.closing:
@@ -366,16 +388,21 @@ class Execution:
             session = await durable(self.store.session, run.session)
             if session.memory_scope == "isolated":
                 raise ValueError("Isolated memory is not implemented")
-            recall = None
+            recall, history = None, None
             if self.memory and session.memory_scope == "shared":
-                run.memory_status = "recalling"
-                recall = await self.memory.scoped(session).search(
-                    pending.text or "Image attachment"
-                )
-                run.memory_status = "recalled"
-                run.recall = recall
+                if trivial_turn(pending.text, self.config.memory):
+                    run.memory_status = run.recall_status = "skipped_trivial"
+                else:
+                    run.memory_status = run.recall_status = "recalling"
+                    history = await durable(self.store.transcript, session.id)
+                    query = recall_query(history, pending.text, self.config.memory)
+                    recall = await self.memory.scoped(session).search(query)
+                    run.memory_status = run.recall_status = "recalled"
+                    run.recall = recall
             elif session.memory_scope == "ephemeral":
-                run.memory_status = "ephemeral"
+                run.memory_status = run.recall_status = "ephemeral"
+            else:
+                run.recall_status = "disabled"
             prompt = await durable(
                 read_prompt,
                 self.config,
@@ -385,7 +412,8 @@ class Execution:
                 at=now(),
                 recall=recall,
             )
-            history = await durable(self.store.transcript, session.id)
+            if history is None:
+                history = await durable(self.store.transcript, session.id)
             tools = self.registry.schemas(run.profile)
             preview = [
                 {"role": "system", "content": prompt},
@@ -420,6 +448,13 @@ class Execution:
                     for m in evidence["messages"]
                     if m["run_id"] == run.id and m.get("kind", "message") == "message"
                 ]
+                new_messages.extend(
+                    {
+                        "role": "assistant",
+                        "content": "[noted for memory]\n" + note["text"],
+                    }
+                    for note in evidence["memory_notes"]
+                )
                 if new_messages:
                     try:
                         run.memory_commit = await self.memory.scoped(session).commit(
@@ -433,7 +468,7 @@ class Execution:
             run.error = str(exc)
         except MemoryUnavailable:
             run.status = RunStatus.memory_unavailable
-            run.memory_status = "recall_failed"
+            run.memory_status = run.recall_status = "recall_failed"
             run.error = "Memory recall failed; no session messages were added"
         except ModelUnavailable as exc:
             run.status = RunStatus.model_unavailable
@@ -493,6 +528,7 @@ class Execution:
             self.store,
             run.id,
             nested_submit=self.submit_nested,
+            stage_memory=self.stage_memory_note,
             memory_client=(
                 self.memory.scoped(session)
                 if self.memory and session.memory_scope == "shared"

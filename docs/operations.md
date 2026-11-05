@@ -255,6 +255,12 @@ Summary markers precede subsequent messages in the UI, rather than following the
 earlier run-admission timestamp. Mid-run current-turn messages are still committed
 to long-term memory in full from archive evidence, not just the active tail.
 
+[Recall direction and deliberate notes](operations/memory-direction.md) explains
+recent-context queries, configurable trivial-turn skips and `memory.remember`.
+The tool stages exact notes for the existing commit; staging is not a storage or
+extraction acknowledgment. Run inspection separates recall status from extraction
+and lists staged note evidence.
+
 Memory is opt-in, scoped to configured canonical roots. Recall precedes prompt
 persistence; failure ends `memory_unavailable` without transcript mutation.
 Post-turn commits retain intent and acknowledgment evidence; ambiguous writes are

@@ -25,7 +25,15 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from solakit.core.schemas import Message, Run, RunStatus, Session, SessionArchived, now
+from solakit.core.schemas import (
+    MemoryNote,
+    Message,
+    Run,
+    RunStatus,
+    Session,
+    SessionArchived,
+    now,
+)
 from solakit.core.search import (
     FTS_INSERT,
     FTS_SCHEMA,
@@ -173,6 +181,7 @@ class Store:
                     "corrupt_record",
                     "invalid_message",
                     "invalid_run",
+                    "invalid_memory_note",
                     "missing_active_transcript",
                 }
                 for issue in self._issues.values()
@@ -989,6 +998,7 @@ class Store:
             m for m in self.all_messages(record["session"]) if m["run_id"] == run_id
         ]
         record["memory_events"] = self.memory_events(run_id)
+        record["memory_notes"] = self.memory_notes(run_id)
         record["tools"] = self._read(self._path("runs", run_id, ".tools.jsonl"))
         record["deliveries"] = self.delivery_events(run_id)
         record["diagnostics"] = self._read(
@@ -1005,6 +1015,25 @@ class Store:
             os.fsync(stream.fileno())
         sync_directory(self.root / "runs")
         return hashlib.sha256(payload).hexdigest()
+
+    def stage_memory_note(self, note: MemoryNote) -> None:
+        # Notes, like transcript and prompt evidence, are intentionally verbatim.
+        self._append(
+            self._path("runs", note.run_id, ".notes.jsonl"),
+            note.model_dump(mode="json"),
+        )
+
+    def memory_notes(self, run_id: str) -> list[dict]:
+        path = self._path("runs", run_id, ".notes.jsonl")
+        records = self._read(path)
+        try:
+            for record in records:
+                note = MemoryNote.model_validate(record)
+                if note.run_id != run_id:
+                    raise ValueError("Memory note run identity mismatch")
+        except ValueError as exc:
+            raise self._corruption(path, "invalid_memory_note") from exc
+        return records
 
     def memory_events(self, run_id: str) -> list[dict]:
         return self._read(self._path("runs", run_id, ".memory.jsonl"))

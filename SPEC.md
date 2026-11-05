@@ -1002,14 +1002,51 @@ real scratch fact; never run automatically at startup or on a cron.
   inline in config. Run metadata, tool logs, memory-intent journals, and execution
   diagnostics redact values whose keys match `*KEY / *TOKEN / *SECRET / *PASSWORD`
   (case-insensitive suffix matching), plus resolved credential values wherever
-  they occur. Session transcripts and exact prompt files are deliberate verbatim
-  exceptions: they preserve the actual conversation and model input for audit
+  they occur. Session transcripts, exact prompt files and staged memory-note files are
+  deliberate verbatim exceptions: they preserve the actual conversation and model input for audit
   and replay (§2.6, §5, §10). Transcript content is not rewritten before being
-  reused as model history. Both are private operator archives, not sanitized
+  reused as model history. These are private operator archives, not sanitized
   diagnostic exports. The suffix rule intentionally also matches keys such as
   `monkey`; a log may redact more than only credential-shaped names.
 - **Model identity check** (§4.2) doubles as the fallback guard: a
   different model answering at the endpoint aborts the run.
+
+### 12.1 Recall direction and deliberate note staging
+
+Shared-memory automatic recall composes the last memory.recall_window eligible
+user/assistant text messages (default 3, active history, oldest first) with incoming
+text, then retains the last recall_query_max_chars characters (default 1000).
+Tool outputs are excluded. Empty image-only turns retain the image-input fallback.
+Jobs and channels follow the same rule. recall_window=0 omits recent context.
+
+With recall_skip_trivial=true (default), a trimmed/case-folded incoming turn of at
+most 12 characters and no ? skips search only if it exactly matches configured
+recall_trivial_phrases or is emoji-only. The default acknowledgement list is
+operator-extensible. False disables skipping. Incoming-only legacy behavior is
+restored with window 0, max chars 32000 and skip false. Disabled/ephemeral memory
+and unsupported isolated scope retain existing boundaries; disabled prompt bytes
+are unchanged. Runs persist recall_status, including skipped_trivial, separately
+from later commit/extraction memory_status. Run journal transitions retain the
+skip's memory_status before extraction updates it.
+
+Opt-in memory.remember(text) requires enabled shared memory and a current run.
+Blank or over-limit notes (remember_max_chars default 2000) are refused whole.
+A staged receipt contains note/run IDs, never a claim of completed storage. Notes
+are verbatim, dated and attributed in runs/<id>.notes.jsonl, separately exposed as
+memory_notes in run inspection and the UI. They are private immutable evidence,
+not sanitized diagnostics. UI presentation still masks credentials and escapes
+content. Normal commit includes one additional assistant message per staged note,
+exactly [noted for memory] plus newline plus original text. It does not alter the
+local transcript or compaction summary-only commits. Existing commit replay guards
+and extraction tracking apply; failed/cancelled/uncommitted notes are not retried
+automatically. Ephemeral delegated workers cannot stage shared notes.
+
+OpenViking v0.4.17.1 has content/write and content/batch-write endpoints, but these
+require explicit managed file paths/content rather than safe semantic note
+placement. This implementation uses the existing session commit path and never
+hand-authors managed memory files. See the pinned source review and mock-versus-
+live coverage in [memory direction](docs/operations/memory-direction.md). Policy
+fragments remain operator-owned; no proposed policy text is installed.
 
 ## 13. Reserved extension: isolated chats & sandboxed memory
 

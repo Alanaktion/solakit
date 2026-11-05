@@ -75,6 +75,15 @@ class RunStatus(StrEnum):
     context_limit = "context_limit"
 
 
+class MemoryNote(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid4()))
+    run_id: str
+    session_id: str
+    profile: str
+    text: str
+    created_at: datetime = Field(default_factory=now)
+
+
 class Run(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid4()))
     session: str
@@ -91,6 +100,7 @@ class Run(BaseModel):
     context_skipped_messages: int = 0
     memory_status: str = "disabled"
     recall: str | None = None
+    recall_status: str = "not_recorded"
     memory_commit: dict[str, Any] | None = None
     delivery_status: str = "none"
     delivery: dict[str, Any] | None = None

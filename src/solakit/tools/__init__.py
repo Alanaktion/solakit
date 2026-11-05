@@ -64,6 +64,7 @@ class ToolContext:
     runtime_provider: Any = None
     job_manager: Any = None
     nested_submit: Any = None
+    stage_memory: Any = None
 
     @property
     def fs(self):

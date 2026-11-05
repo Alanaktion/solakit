@@ -35,7 +35,7 @@ root = Path(tempfile.mkdtemp(prefix="solakit-browser-"))
 (root / "fragments/recall-header.md").write_text("Scratch memory data:")
 os.environ["SOLA_BROWSER_TOKEN"] = "scratch-browser-token"
 config = Config(
-    enabled_tools=["runtime"],
+    enabled_tools=["runtime", "memory"],
     memory=MemoryConfig(
         enabled=True,
         base_url="http://scratch-memory.invalid",
@@ -75,7 +75,7 @@ config = Config(
     ],
 )
 
-config.profiles["interactive"].tools = ["runtime.status"]
+config.profiles["interactive"].tools = ["runtime.status", "memory.remember"]
 
 
 class BrowserStream(httpx.AsyncByteStream):
@@ -118,6 +118,38 @@ async def respond(request):
         ),
         "",
     )
+    if "remember-browser" in task and body["messages"][-1]["role"] == "user":
+        return httpx.Response(
+            200,
+            json={
+                "model": config.model.model_id,
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "content": None,
+                            "tool_calls": [
+                                {
+                                    "id": "browser-note",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "memory.remember",
+                                        "arguments": json.dumps(
+                                            {
+                                                "text": (
+                                                    "Browser exact <note> "
+                                                    "& retained wording."
+                                                ),
+                                            }
+                                        ),
+                                    },
+                                }
+                            ],
+                        }
+                    }
+                ],
+            },
+        )
     if "hold-browser" in task:
         await asyncio.sleep(30)
     if "tool-browser" in task and body["messages"][-1]["role"] == "user":

@@ -80,6 +80,24 @@ class MemoryConfig(StrictModel):
     timeout_s: float = Field(default=30, gt=0)
     trust_env: bool = False
     recall_limit: int = Field(default=5, ge=1, le=20)
+    recall_window: int = Field(default=3, ge=0, le=100)
+    recall_query_max_chars: int = Field(default=1000, ge=1, le=100000)
+    recall_skip_trivial: bool = True
+    recall_trivial_phrases: list[str] = Field(
+        default_factory=lambda: [
+            "thanks",
+            "thank you",
+            "ok",
+            "okay",
+            "yes",
+            "yeah",
+            "lol",
+            "nice",
+            "cool",
+            "got it",
+        ]
+    )
+    remember_max_chars: int = Field(default=2000, ge=1, le=32000)
 
     @model_validator(mode="after")
     def valid_endpoint(self) -> Self:

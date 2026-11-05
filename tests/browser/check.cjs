@@ -155,6 +155,32 @@ async function vision(page) {
   assert.equal((await page.request.get(`${base}/api/media/${fixture.image}`)).status(), 401);
 }
 
+async function memoryDirection(page) {
+  const id = await createSession(page, 'memory-notes', 'shared');
+  const run = await (await page.request.post(`${base}/api/sessions/${id}/messages`, {
+    data: {message: 'remember-browser'},
+  })).json();
+  assert.equal(run.status, 'completed');
+  const evidence = await (await page.request.get(`${base}/api/runs/${run.id}`)).json();
+  assert.equal(evidence.memory_notes.length, 1);
+  assert.equal(evidence.memory_notes[0].text, 'Browser exact <note> & retained wording.');
+  assert.equal(JSON.parse(evidence.tools[0].result.content).status, 'staged');
+  await page.goto(`${base}/runs/${run.id}`);
+  await page.getByText('Staged memory notes', {exact: true}).click();
+  const notes = page.locator('details').filter({has: page.getByText('Staged memory notes', {exact: true})});
+  assert.match(await notes.innerText(), /retained wording/);
+  assert.equal(await notes.locator('note').count(), 0);
+  await noOverflow(page);
+  await page.screenshot({path: path.join(output, `memory-notes-${page.qaLabel}.png`), fullPage: true});
+  const skipped = await (await page.request.post(`${base}/api/sessions/${id}/messages`, {
+    data: {message: 'thanks'},
+  })).json();
+  assert.equal(skipped.recall_status, 'skipped_trivial');
+  await page.goto(`${base}/runs/${skipped.id}`);
+  assert.match(await page.locator('.evidence-facts').innerText(), /skipped_trivial/);
+  await noOverflow(page);
+}
+
 async function sessionRename(page) {
   const fixture = await (await page.request.post(base + '/qa/session-lifecycle')).json();
   const id = fixture.ids[0];
@@ -531,7 +557,8 @@ async function streaming(page) {
         await page.getByLabel('Operator token').fill('scratch-browser-token');
         await page.getByRole('button', {name: 'Sign in'}).click();
         await page.waitForURL(base + '/');
-        if (phase === 'rename') await sessionRename(page);
+        if (phase === 'memory') await memoryDirection(page);
+        else if (phase === 'rename') await sessionRename(page);
         else if (phase === 'search') await sessionSearch(page);
         else if (phase === 'lifecycle') await sessionLifecycle(page);
         else if (phase === 'vision') await vision(page);

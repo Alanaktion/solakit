@@ -59,6 +59,11 @@ Read `SPEC.md` for behavioral contracts, `README.md` for an introduction,
 - `core/memory.py`, `core/memory_ops.py`: scope-bound OpenViking REST access,
   recall, explicit commit/extraction tracking, compaction and operator scratch
   verification. Startup only performs authenticated read-only root checks.
+  Recall uses bounded recent text and configurable trivial-turn skips; persist
+  recall_status independently of extraction status. memory.remember stages exact
+  notes in private immutable runs/*.notes.jsonl, then joins the existing commit
+  with a fixed marker. Never hand-author OpenViking's managed memory layout or
+  claim staged notes are stored. No operator policy fragments are installed.
 - `services/`: internal scope-checked filesystem, alias-bound Git and collection
   resources. `ctx.fs`, `ctx.git(alias)` and `ctx.collection(alias)` let packs
   compose operations privately. Generic tools are thin service wrappers.
