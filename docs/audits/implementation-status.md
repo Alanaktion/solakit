@@ -427,3 +427,46 @@ Verification: five focused wildcard tests cover TOML loading, expansion, mixed
 grants, manifest exclusions, schema/catalog/dispatch consistency, missing grants,
 unknown tools and an empty loaded set. All **316 tests** passed, Ruff lint/format
 passed, and all eight distributions built.
+
+## API, chat and web-managed scheduled jobs (2026-11-05)
+
+Job definitions now live in the authoritative `job_definitions` table in app.db.
+Legacy TOML imports once per ID; managed edits take precedence and deletion
+tombstones prevent stale configuration from resurrecting jobs. Derived table/FTS
+rebuilds preserve definitions. Job cursor JSONL and run/transcript/delivery evidence
+remain intact. Backups must now include app.db as well as the evidence tree.
+The scheduler starts with an empty job list so new enabled jobs work immediately.
+
+Authenticated API CRUD, partial edits and existing run/pause/resume operations
+share scheduler validation and locking. New jobs default disabled. Active jobs
+refuse edits/deletion/overlap; schedule and enablement changes reset next fire.
+Accepted mutations/admissions finish database/live-state publication before
+cancellation propagates. Optional nonblocking manual runs return HTTP 202 with
+accepted job state. Existing cron/misfire/catch-up/channel delivery paths remain.
+
+The built-in `jobs` module adds list/create/update/run/pause/delete tools through
+the injected scheduler, with no execution-loop changes. Mutation/trigger grants
+are separate from permission to affect other profiles/sessions/destinations;
+existing and proposed definitions are rechecked under the mutation lock. Chat
+triggering never waits for the scheduled run, preventing same-conversation queue
+deadlock. Responses mask resolved credentials and mark historical/task text as
+data; runtime status does not expose job task bodies across chats.
+
+Operations now has create/edit forms, enable/polling/catch-up and delivery options,
+run/pause/resume, and deletion confirmation. UI data/mutations go through the same
+Cookie/Bearer authenticated APIs. Validation preserves form input and task markup
+stays escaped. New [operator guidance](../operations/jobs.md) covers migration,
+API fields, tool grants, scheduling semantics and database backup requirements.
+
+Verification: **336 core/pack tests passed**, including 20 new management cases
+covering authenticated CRUD, import/edit/delete/restart, preservation through
+index rebuild, invalid definitions and patches, paused manual triggering, busy
+rejection, HTTP 202 acceptance while inference is busy, retained evidence,
+chat scope/grants, under-lock authorization races,
+cancelled publication and a model-runner create/edit/trigger round-trip in the
+current conversation. Ruff lint/format and all eight distribution builds passed.
+Real Chromium checks passed for new management and existing Operations controls
+in light/dark at 1440×1000 and 390×844: create/validation/edit/run/pause/delete,
+confirmation, page overflow, timezone display and browser errors. Form/list
+screenshots were inspected. These checks used scratch storage, mock model/memory
+and disabled real channels; they do not establish a live job rollout.

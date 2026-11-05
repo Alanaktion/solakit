@@ -62,6 +62,7 @@ class ToolContext:
     memory_client: Any = None
     deliver: Any = None
     runtime_provider: Any = None
+    job_manager: Any = None
 
     @property
     def fs(self):
@@ -164,6 +165,7 @@ class Registry:
         self.config = config
         self.tools: dict[str, Registered] = {}
         self.runtime_status = None
+        self.job_manager = None
         self.distributions: list[dict] = []
         for module in config.enabled_tools:
             if not re.fullmatch(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*", module):
@@ -299,6 +301,7 @@ class Registry:
                 raise ToolError("Tool is not permitted in this profile")
             registered = self.tools[name]
             ctx.runtime_provider = self.runtime_status
+            ctx.job_manager = self.job_manager
             cfg = self.config.profiles[ctx.profile]
             self.check_writes(registered, cfg)
             repairable = True

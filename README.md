@@ -82,7 +82,7 @@ form; evidence and operations views share the denser spacing.
 The Prompt inspector shows API-assembled text, its original SHA and tool schemas.
 Runs lists recorded outcomes and opens stored prompts, messages, redacted tools,
 diagnostics, memory/delivery events and cancellation for active runs. Operations
-shows adapter/job state and job run/pause/resume controls; it does not edit config.
+shows adapter state and lets you create, edit, delete, run, pause and resume jobs.
 Press Enter to send in chat, Shift+Enter for a newline (IME composition is preserved).
 
 Login exchanges the token for an opaque, HttpOnly, SameSite=Lax cookie valid for
@@ -224,7 +224,10 @@ The CLI's equivalent is `sola --trust-env ...`. Process environment is untouched
 
 Runtime data lives outside the code tree. Authoritative JSONL transcripts, run
 journals, tool/memory/delivery/diagnostic evidence, job cursors, immutable prompt
-files and session metadata survive deletion/rebuild of `app.db`. Metadata publishes
+files and session metadata remain authoritative outside `app.db`. Conversation
+indexes are rebuildable, but **managed job definitions live only in `app.db`**.
+Back up the database as well as the evidence tree; do not delete it to repair
+an index. `Store.rebuild()` preserves job definitions. Metadata publishes
 atomically with file/directory fsync. Unfinished runs recover as `interrupted`.
 
 Transcripts and prompt files are private, intentionally verbatim archives, including
@@ -245,7 +248,7 @@ metadata to recreate a session or change recovery hashes to bypass damage report
 
 ## Full-text history search
 
-`GET /api/search?query=journal.publish` searches messages in the same disposable
+`GET /api/search?query=journal.publish` searches messages in the same
 `app.db` as the other indexes, under the existing Cookie/Bearer operator auth.
 Optional filters: `session_id`, `role`, `kind`, `after`, `before`, and `limit`
 (default 50, maximum 200). Timestamps require ISO 8601 with a timezone; `after`
@@ -369,15 +372,25 @@ supported. Oversized fenced blocks attach intact as UTF-8 text; implicit mention
 are suppressed. Intent/results are durable; uncertain sends are not replayed.
 `GET /api/channels` reports status, connection time and last accepted message.
 
-APScheduler 3 supplies wake-ups and cron calculations. TOML defines jobs; JSONL
-cursors indexed in SQLite persist next fire, pause, active dispatch and last result.
+APScheduler 3 supplies wake-ups and cron calculations. Job definitions live in
+SQLite and can be managed through **Operations → New job**, the API, or chat tools.
+Existing TOML jobs import once per ID; later file edits do not overwrite managed
+jobs, and deleted jobs cannot be resurrected by stale TOML. JSONL cursors indexed
+in SQLite persist next fire, pause, active dispatch and last result.
 Runtime callbacks are not pickled into a library job store. Cron-to-channel jobs use
 the same session queue, so their task/result appear in the next conversational turn.
 Queued jobs count as active and never overlap themselves. Model-down jobs become
 `missed` gaps. Downtime misses record a bounded range; `catch_up = true` requires
 `polling = true` and runs once. Intentional paused/disabled intervals are not replayed.
 
-`GET /api/jobs` and `POST /api/jobs/{id}/run|pause|resume` provide operations. Tasks
+`GET/POST /api/jobs`, `GET/PATCH/DELETE /api/jobs/{id}` and
+`POST /api/jobs/{id}/run|pause|resume` provide management without a restart.
+Load the built-in `jobs` module for `jobs.list/create/update/run/pause/delete` tools.
+Mutation tools need `jobs.manage`; triggering needs `jobs.run`. Other profiles,
+sessions or delivery destinations additionally require `jobs.manage.all`. Chat
+triggering queues immediately so jobs can run after the current conversation turn.
+See [job management](docs/operations/jobs.md) for fields, grants, migration and backup
+instructions. New jobs default to disabled; active jobs reject edits/deletion. Tasks
 allow only `{date}`, `{time}`, `{timezone}`, `{job_id}`, without attributes, conversions
 or format specifications. Use named weekdays in cron (APScheduler Monday=0 semantics).
 Channel/session/ephemeral bindings are supported. Maintenance is operator-API only.

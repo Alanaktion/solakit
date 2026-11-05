@@ -1,4 +1,7 @@
-"""Append-only evidence, atomic metadata, and a disposable SQLite index.
+"""Append-only evidence, atomic metadata, and rebuildable SQLite indexes.
+
+The jobs service also owns authoritative job_definitions in app.db. Rebuild
+refreshes only derived tables and must preserve that independently managed data.
 
 Only an unterminated final JSONL fragment may be omitted during recovery. Before
 sealing such a fragment, persist its exact offset and hash as immutable recovery
@@ -240,6 +243,7 @@ class Store:
             )
 
     def rebuild(self) -> None:
+        """Refresh derived tables without deleting authoritative managed tables."""
         with self.lock, sqlite3.connect(self.root / "app.db") as db:
             self._issues.clear()
             for kind in ("sessions", "runs", "jobs"):

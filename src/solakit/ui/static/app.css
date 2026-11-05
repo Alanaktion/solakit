@@ -72,6 +72,13 @@ label { font-size: 11px; font-weight: 500; }
 .stack-form label:not(:first-child) { margin-top: 12px; }
 input, select, textarea { color: var(--ink); background: var(--surface-soft); border: 1px solid var(--line); border-radius: 7px; width: 100%; padding: 8px 10px; font-size: 13px; transition: border-color .15s, box-shadow .15s; }
 input::placeholder, textarea::placeholder { color: var(--muted); opacity: .85; }
+.job-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.job-form label { display: block; margin-bottom: 6px; }
+.job-form-wide { grid-column: 1 / -1; }
+.job-flags { display: flex; flex-wrap: wrap; gap: 10px 24px; }
+.job-flags input { width: auto; margin-right: 6px; }
+.job-form textarea { resize: vertical; }
+@media (max-width: 600px) { .job-form { grid-template-columns: minmax(0, 1fr); } }
 input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 .field-note, .form-note { color: var(--muted); font-size: 10px; line-height: 1.7; }
 .primary-button { display: inline-flex; justify-content: space-between; align-items: center; gap: 25px; padding: 8px 12px; border-radius: 7px; background: var(--accent); color: var(--accent-ink); font-size: 12px; font-weight: 600; min-height: 36px; box-shadow: 0 2px 8px var(--accent-soft); transition: filter .15s, box-shadow .15s; }

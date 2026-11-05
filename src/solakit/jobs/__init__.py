@@ -1,7 +1,7 @@
 """Persistent job cursors and operations; APScheduler supplies the wake-up/cron clock.
 
-Definitions remain TOML. JSONL state is authoritative and SQLite is its index;
-no pickled runtime objects or global callback registry need to survive restart.
+Definitions are authoritative SQLite records, with one-time TOML import.
+Scheduling cursors remain JSONL evidence with a rebuildable SQLite index.
 """
 
 import asyncio
@@ -18,6 +18,9 @@ from pydantic import BaseModel
 from solakit.core.config import Delivery, Job
 from solakit.core.io import durable
 from solakit.core.schemas import Origin, Run, RunStatus, Session, now
+from solakit.core.store import safe_id
+from solakit.jobs.definitions import Definitions
+from solakit.jobs.schemas import JobUpdate
 
 
 def render_task(job: Job, at: datetime) -> str:
@@ -55,18 +58,23 @@ class Jobs:
             channels,
             clock,
         )
+        self.definitions = Definitions(execution.store)
+        self.jobs: dict[str, Job] = {}
         self.states: dict[str, JobState] = {}
-        self.triggers = {
-            j.id: CronTrigger.from_crontab(j.cron, timezone=j.timezone)
-            for j in config.jobs
-        }
+        self.triggers = {}
         self.tasks: dict[str, asyncio.Task] = {}
         self.lock = asyncio.Lock()
         self.scheduler = None
         self.closing = False
 
     async def initialize(self):
-        for job in self.config.jobs:
+        loaded = await durable(self.definitions.load, self.config.jobs)
+        for job in loaded:
+            self.validate_job(job)
+            self.jobs[job.id] = job
+            self.triggers[job.id] = CronTrigger.from_crontab(
+                job.cron, timezone=job.timezone
+            )
             schedule = hashlib.sha256(f"{job.cron}:{job.timezone}".encode()).hexdigest()
             saved = await durable(self.execution.store.job_state, job.id)
             state = (
@@ -102,8 +110,6 @@ class Jobs:
 
     async def start(self):
         await self.initialize()
-        if not any(j.enabled for j in self.config.jobs):
-            return
         self.scheduler = AsyncIOScheduler()
         self.scheduler.add_job(
             self.tick,
@@ -163,7 +169,7 @@ class Jobs:
             if self.closing:
                 return
             at = self.clock()
-            for job in self.config.jobs:
+            for job in self.jobs.values():
                 state = self.states[job.id]
                 if (
                     not job.enabled
@@ -265,32 +271,160 @@ class Jobs:
                     state.last_status = "failed"
                 await self._save(state)
 
-    async def run_now(self, job_id):
+    async def _accept(self, job_id, authorize=None):
         async with self.lock:
-            job = next(j for j in self.config.jobs if j.id == job_id)
+            job = self.job(job_id)
+            if authorize:
+                authorize(job)
             if self.closing or not job.enabled:
                 raise ValueError("Job is disabled or scheduler is shutting down")
             task = await self._launch(job, self.states[job_id], self.clock())
+            accepted = self.get(job_id)
+        return task, accepted
+
+    async def trigger(self, job_id, *, authorize=None):
+        _, accepted = await self._complete(self._accept(job_id, authorize))
+        return accepted
+
+    async def run_now(self, job_id):
+        task, _ = await self._complete(self._accept(job_id))
         return await asyncio.shield(task)
 
-    async def pause(self, job_id, paused):
+    async def pause(self, job_id, paused, *, authorize=None):
         async with self.lock:
+            if self.closing:
+                raise ValueError("Scheduler is shutting down")
+            job = self.job(job_id)
+            if authorize:
+                authorize(job)
             state = self.states[job_id]
             state.paused = paused
             if not paused:
-                job = next(j for j in self.config.jobs if j.id == job_id)
-                state.next_fire = self._next(
-                    job, self.clock() + timedelta(microseconds=1)
+                job = self.job(job_id)
+                state.next_fire = (
+                    self._next(job, self.clock() + timedelta(microseconds=1))
+                    if job.enabled
+                    else None
                 )
             await self._save(state)
 
-    def status(self):
+    def job(self, job_id):
+        if job_id not in self.jobs:
+            raise KeyError("Job not found")
+        return self.jobs[job_id]
+
+    def get(self, job_id):
+        job = self.job(job_id)
+        return {
+            **job.model_dump(mode="json"),
+            **self.states[job_id].model_dump(mode="json"),
+        }
+
+    def status(self, *, definitions=False):
+        if definitions:
+            return [self.get(identity) for identity in self.jobs]
         return [
             {
-                **self.states[j.id].model_dump(mode="json"),
-                "enabled": j.enabled,
-                "timezone": j.timezone,
-                "cron": j.cron,
+                **self.states[job.id].model_dump(mode="json"),
+                "enabled": job.enabled,
+                "cron": job.cron,
+                "timezone": job.timezone,
             }
-            for j in self.config.jobs
+            for job in self.jobs.values()
         ]
+
+    def validate_job(self, job):
+        safe_id(job.id)
+        if not any(c.id == job.bind_session for c in self.config.channels):
+            safe_id(job.bind_session)
+        if job.profile not in self.config.profiles:
+            raise ValueError("Job references unknown profile")
+        if job.profile == "maintenance":
+            raise ValueError("Maintenance cannot be scheduled")
+        if (
+            job.deliver
+            and job.deliver.mode != "silent"
+            and not any(
+                channel.id == job.deliver.to for channel in self.config.channels
+            )
+        ):
+            raise ValueError("Job delivery references unknown channel")
+        # Also bound placeholder expansion, not only the source template.
+        render_task(job, self.clock())
+
+    async def _complete(self, operation):
+        task = asyncio.create_task(operation)
+        try:
+            return await asyncio.shield(task)
+        except asyncio.CancelledError:
+            await task
+            raise
+
+    async def create(self, job, *, authorize=None):
+        return await self._complete(self._change(job, create=True, authorize=authorize))
+
+    async def update(self, job_id, changes, *, authorize=None):
+        return await self._complete(self._update(job_id, changes, authorize))
+
+    async def _update(self, job_id, changes, authorize):
+        async with self.lock:
+            old = self.job(job_id)
+            if authorize:
+                authorize(old)
+            patch = JobUpdate.model_validate(changes).model_dump(exclude_unset=True)
+            job = Job.model_validate({**old.model_dump(), **patch})
+            return await self._change_locked(job, create=False, authorize=authorize)
+
+    async def _change(self, job, *, create, authorize):
+        async with self.lock:
+            return await self._change_locked(job, create=create, authorize=authorize)
+
+    async def _change_locked(self, job, *, create, authorize):
+        if self.closing:
+            raise ValueError("Scheduler is shutting down")
+        self.validate_job(job)
+        if authorize:
+            authorize(job)
+        if create and job.id in self.jobs:
+            raise FileExistsError("Job already exists")
+        if not create and self.states[job.id].active:
+            raise RuntimeError("Job is queued/running; wait before editing")
+        trigger = CronTrigger.from_crontab(job.cron, timezone=job.timezone)
+        schedule = hashlib.sha256(f"{job.cron}:{job.timezone}".encode()).hexdigest()
+        old = self.jobs.get(job.id)
+        state = self.states.get(job.id)
+        if state is None:
+            state = JobState(id=job.id, schedule=schedule)
+        else:
+            state = state.model_copy(deep=True)
+        if old is None or state.schedule != schedule or old.enabled != job.enabled:
+            state.schedule = schedule
+            state.next_fire = (
+                trigger.get_next_fire_time(
+                    None, self.clock() + timedelta(microseconds=1)
+                )
+                if job.enabled
+                else None
+            )
+        await durable(self.definitions.save, job)
+        self.jobs[job.id], self.states[job.id] = job, state
+        self.triggers[job.id] = trigger
+        await self._save(state)
+        return self.get(job.id)
+
+    async def delete(self, job_id, *, authorize=None):
+        return await self._complete(self._delete(job_id, authorize))
+
+    async def _delete(self, job_id, authorize):
+        async with self.lock:
+            if self.closing:
+                raise ValueError("Scheduler is shutting down")
+            job = self.job(job_id)
+            if authorize:
+                authorize(job)
+            if self.states[job_id].active:
+                raise RuntimeError("Job is queued/running; wait before deleting")
+            await durable(self.definitions.save, job, deleted=True)
+            del self.jobs[job_id], self.states[job_id], self.triggers[job_id]
+            self.tasks.pop(job_id, None)
+            return {"id": job_id, "deleted": True}

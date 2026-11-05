@@ -75,7 +75,7 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
             headers=HEADERS | (headers or {}),
         )
 
-    async def form(request, limit=512000):
+    async def form(request, limit=512000, max_fields=8):
         if (
             request.headers.get("content-type", "").split(";", 1)[0]
             != "application/x-www-form-urlencoded"
@@ -88,7 +88,7 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
                 raise APIError(413, "Form submission is too large.")
         try:
             values = parse_qs(
-                body.decode("utf-8"), keep_blank_values=True, max_num_fields=8
+                body.decode("utf-8"), keep_blank_values=True, max_num_fields=max_fields
             )
         except (ValueError, UnicodeError):
             raise APIError(400, "Invalid form submission.") from None
@@ -637,17 +637,165 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
         except APIError as exc:
             return render(request, "error.html", {"error": exc.detail}, exc.status)
 
+    async def job_form_page(
+        request, identity=None, values=None, error=None, status=200
+    ):
+        options, state, sessions_data = await asyncio.gather(
+            api(request, "GET", "/api/job-options"),
+            health(request),
+            api(request, "GET", "/api/sessions"),
+        )
+        if values is None:
+            values = (
+                await api(request, "GET", f"/api/jobs/{quote(identity, safe='')}")
+                if identity
+                else {"timezone": options["timezone"], "bind_session": "ephemeral"}
+            )
+            delivery = values.get("deliver") or {}
+            values = {
+                **values,
+                "delivery_mode": delivery.get("mode", "automatic"),
+                "delivery_to": delivery.get("to", ""),
+            }
+        return render(
+            request,
+            "job_form.html",
+            {
+                "identity": identity,
+                "values": values,
+                "options": options,
+                "session_ids": [session["id"] for session in sessions_data],
+                "health": state,
+                "error": error,
+            },
+            status,
+        )
+
+    @router.get("/operations/jobs/new")
+    async def job_new(request: Request):
+        if not logged_in(request):
+            return login_redirect(request)
+        try:
+            return await job_form_page(request)
+        except APIError as exc:
+            return render(request, "error.html", {"error": exc.detail}, exc.status)
+
+    @router.get("/operations/jobs/{identity}/edit")
+    async def job_edit(request: Request, identity: str):
+        if not logged_in(request):
+            return login_redirect(request)
+        try:
+            return await job_form_page(request, identity)
+        except APIError as exc:
+            return render(request, "error.html", {"error": exc.detail}, exc.status)
+
+    async def save_job_form(request, identity=None):
+        values = None
+        try:
+            values = await form(request, max_fields=20)
+            allowed = {
+                "id",
+                "cron",
+                "timezone",
+                "profile",
+                "task",
+                "bind_session",
+                "delivery_mode",
+                "delivery_to",
+                "enabled",
+                "polling",
+                "catch_up",
+            }
+            if set(values) - allowed:
+                raise APIError(422, "Unknown job form fields.")
+            payload = {
+                key: values.get(key, "")
+                for key in ("cron", "timezone", "profile", "task", "bind_session")
+            }
+            payload.update(
+                {
+                    key: values.get(key) == "on"
+                    for key in ("enabled", "polling", "catch_up")
+                }
+            )
+            mode = values.get("delivery_mode", "automatic")
+            if mode not in {"automatic", "final", "artifact", "silent"}:
+                raise APIError(422, "Invalid delivery mode.")
+            payload["deliver"] = (
+                None
+                if mode == "automatic"
+                else {
+                    "mode": mode,
+                    "to": values.get("delivery_to", ""),
+                }
+            )
+            if identity:
+                if values.get("id", identity) != identity:
+                    raise APIError(422, "Job ID cannot be changed.")
+                await api(
+                    request, "PATCH", f"/api/jobs/{quote(identity, safe='')}", payload
+                )
+            else:
+                await api(
+                    request,
+                    "POST",
+                    "/api/jobs",
+                    {"id": values.get("id", ""), **payload},
+                )
+            return RedirectResponse("/operations", 303, headers=HEADERS)
+        except APIError as exc:
+            message = (
+                exc.detail
+                if exc.status != 422
+                else (
+                    "Check the cron, timezone, profile, task placeholders and delivery."
+                )
+            )
+            return await job_form_page(request, identity, values, message, exc.status)
+
+    @router.post("/operations/jobs")
+    async def job_create_form(request: Request):
+        if not logged_in(request):
+            return login_redirect(request)
+        return await save_job_form(request)
+
+    @router.post("/operations/jobs/{identity}/edit")
+    async def job_update_form(request: Request, identity: str):
+        if not logged_in(request):
+            return login_redirect(request)
+        return await save_job_form(request, identity)
+
+    @router.get("/operations/jobs/{identity}/delete")
+    async def job_delete_confirm(request: Request, identity: str):
+        if not logged_in(request):
+            return login_redirect(request)
+        try:
+            record = await api(request, "GET", f"/api/jobs/{quote(identity, safe='')}")
+            return render(
+                request,
+                "job_delete.html",
+                {
+                    "job": record,
+                    "health": await health(request),
+                },
+            )
+        except APIError as exc:
+            return render(request, "error.html", {"error": exc.detail}, exc.status)
+
     @router.post("/operations/jobs/{identity}/{operation}")
     async def job_action(request: Request, identity: str, operation: str):
         if not logged_in(request):
             return login_redirect(request)
-        if operation not in {"run", "pause", "resume"}:
+        if operation not in {"run", "pause", "resume", "delete"}:
             return render(
                 request, "error.html", {"error": "Unknown job operation."}, 404
             )
         try:
             record = await api(
-                request, "POST", f"/api/jobs/{quote(identity, safe='')}/{operation}"
+                request,
+                "DELETE" if operation == "delete" else "POST",
+                f"/api/jobs/{quote(identity, safe='')}"
+                + ("" if operation == "delete" else f"/{operation}"),
             )
             target = (
                 f"/runs/{quote(record['id'], safe='')}"

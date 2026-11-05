@@ -31,7 +31,8 @@ not proof that a live integration or production acceptance gate has passed.
   evidence; the UI must not reconstruct or rewrite them.
 - `core/store.py`, `core/schemas.py`, `core/io.py`: immutable JSONL evidence,
   atomic metadata, durable I/O, exclusive data ownership and rebuildable SQLite
-  index. `core/search.py` queries standalone trigram FTS in the same `app.db`;
+  indexes. The app.db `job_definitions` table is authoritative for managed jobs;
+  index rebuilds preserve it, and database backups are required. `core/search.py` queries standalone trigram FTS in the same `app.db`;
   physical archive/active line addresses survive rebuild, and failed indexing
   never fails an evidence append. Offline `sola search` reads the index without
   initializing/recovering Store. `core/compaction.py` and `core/archival.py` rotate immutable archives with
@@ -65,7 +66,10 @@ not proof that a live integration or production acceptance gate has passed.
   with the existing redactor before network access. Collections remain named repo
   subdirectories; `collection:<alias>` grants only that directory.
 - `channels/`: API and opt-in Discord adapters through shared session execution.
-  `jobs/`: opt-in APScheduler jobs using the same execution/delivery operations.
+  `jobs/`: API-managed SQLite job definitions, one-time TOML import, durable JSONL
+  cursors and opt-in APScheduler dispatch using shared execution/delivery.
+  Built-in `jobs` tools use the injected scheduler; jobs.run queues without waiting
+  to avoid same-chat deadlock. Capability/scope checks happen under the job lock.
 - `ui/`: Jinja2 pages, packaged local HTMX/CSS/vanilla JS, opaque in-memory login
   sessions, API-only presentation routes and escaped/redacted transcript views.
   No Node build or CDN. Chat fills the viewport with a desktop session sidebar;
@@ -116,8 +120,10 @@ not proof that a live integration or production acceptance gate has passed.
   Configuration is not evidence of acceptance. A startup memory connection check does not verify
   extraction, writes, scratch round-trip, or authorize rollout. Do not touch the
   existing Hermes installation or schedules as part of Solakit work.
-- Configuration stays files; adding UI controls must not create a parallel config
-  or state store. Keep the core small and domain behavior in tool/adaptor modules.
+- Profiles/channels/resources stay in files. Managed scheduled jobs are the
+  authorized exception: API/UI/chat share authoritative app.db job definitions,
+  with one-time legacy TOML import and deletion tombstones. Keep domain behavior
+  in tool/adaptor modules and never add a second job store.
 
 ## Development and validation
 

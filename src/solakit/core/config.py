@@ -138,7 +138,8 @@ class Delivery(StrictModel):
 
 
 class Job(StrictModel):
-    id: str
+    model_config = ConfigDict(extra="forbid", strict=True)
+    id: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")
     cron: str
     timezone: str = "America/Denver"
     profile: str
@@ -151,7 +152,10 @@ class Job(StrictModel):
 
     @model_validator(mode="after")
     def valid_timezone(self) -> Self:
-        ZoneInfo(self.timezone)
+        try:
+            ZoneInfo(self.timezone)
+        except (KeyError, ValueError) as exc:
+            raise ValueError("Invalid job timezone") from exc
         from string import Formatter
 
         from apscheduler.triggers.cron import CronTrigger

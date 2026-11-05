@@ -13,7 +13,7 @@ from starlette.staticfiles import StaticFiles
 
 from solakit.channels import ApiAdapter, Channels
 from solakit.core.compaction import ContextLimit
-from solakit.core.config import Config
+from solakit.core.config import Config, Job
 from solakit.core.loop import Execution
 from solakit.core.memory import MemoryClient, MemoryUnavailable
 from solakit.core.memory_ops import probe, refresh_run, watch_memory
@@ -26,6 +26,7 @@ from solakit.core.secrets import RedactingFilter, Redactor
 from solakit.core.startup import prepare
 from solakit.core.store import StorageCorruption, Store, safe_id
 from solakit.jobs import Jobs
+from solakit.jobs.schemas import JobUpdate
 from solakit.ui import build_ui_router
 from solakit.ui.auth import COOKIE, UISessions
 from solakit.ui.routes import ROOT as UI_ROOT
@@ -105,6 +106,7 @@ def create_app(
             adapters["discord"] = DiscordAdapter(cfg, prepared.discord_token)
         app.state.channels = Channels(cfg, app.state.execution, adapters)
         app.state.jobs = Jobs(cfg, app.state.execution, app.state.channels)
+        app.state.registry.job_manager = app.state.jobs
 
         def runtime_status(profile):
             return app.state.redactor.redact(
@@ -210,14 +212,14 @@ def create_app(
                 runtime_logger.info(
                     "Profile %s: tools=%s", profile, ", ".join(names) or "none"
                 )
-            runtime_logger.info(
-                "Storage: %s; configured channels=%d; configured jobs=%d",
-                app.state.store.storage_health()["status"],
-                len(cfg.channels),
-                len(cfg.jobs),
-            )
             await app.state.channels.start()
             await app.state.jobs.start()
+            runtime_logger.info(
+                "Storage: %s; configured channels=%d; managed jobs=%d",
+                app.state.store.storage_health()["status"],
+                len(cfg.channels),
+                len(app.state.jobs.jobs),
+            )
             if app.state.memory:
                 memory_watch = asyncio.create_task(watch_memory(app.state.execution))
             yield
@@ -286,15 +288,67 @@ def create_app(
 
     @api.get("/jobs")
     async def jobs() -> list[dict]:
-        return app.state.jobs.status()
+        return app.state.jobs.status(definitions=True)
+
+    @api.get("/job-options")
+    async def job_options() -> dict:
+        cfg = app.state.config
+        return {
+            "timezone": cfg.timezone,
+            "profiles": sorted(p for p in cfg.profiles if p != "maintenance"),
+            "channels": [c.id for c in cfg.channels],
+        }
+
+    def job_error(exc):
+        if isinstance(exc, KeyError):
+            return HTTPException(404, "Job not found")
+        if isinstance(exc, (FileExistsError, RuntimeError)):
+            return HTTPException(409, str(exc))
+        return HTTPException(422, "Invalid job definition or references")
+
+    @api.post("/jobs", status_code=201)
+    async def job_create(job: Job) -> dict:
+        try:
+            return await app.state.jobs.create(job)
+        except (ValueError, KeyError, FileExistsError, RuntimeError) as exc:
+            raise job_error(exc) from exc
+
+    @api.get("/jobs/{job_id}")
+    async def job_get(job_id: str) -> dict:
+        try:
+            return app.state.jobs.get(job_id)
+        except KeyError as exc:
+            raise job_error(exc) from exc
+
+    @api.patch("/jobs/{job_id}")
+    async def job_update(job_id: str, changes: JobUpdate) -> dict:
+        try:
+            return await app.state.jobs.update(
+                job_id, changes.model_dump(exclude_unset=True)
+            )
+        except (ValueError, KeyError, RuntimeError) as exc:
+            raise job_error(exc) from exc
+
+    @api.delete("/jobs/{job_id}")
+    async def job_delete(job_id: str) -> dict:
+        try:
+            return await app.state.jobs.delete(job_id)
+        except (ValueError, KeyError, RuntimeError) as exc:
+            raise job_error(exc) from exc
 
     @api.post("/jobs/{job_id}/run")
-    async def job_run(job_id: str) -> dict:
+    async def job_run(job_id: str, wait: bool = True):
         if job_id not in app.state.jobs.states:
             raise HTTPException(404, "Job not found")
         try:
+            if not wait:
+                return JSONResponse(
+                    await app.state.jobs.trigger(job_id), status_code=202
+                )
             run = await app.state.jobs.run_now(job_id)
             return await asyncio.to_thread(app.state.store.run, run.id)
+        except KeyError as exc:
+            raise HTTPException(404, "Job not found") from exc
         except ValueError as exc:
             raise HTTPException(409, str(exc)) from exc
 
@@ -302,7 +356,14 @@ def create_app(
     async def job_control(job_id: str, operation: str) -> dict:
         if job_id not in app.state.jobs.states or operation not in {"pause", "resume"}:
             raise HTTPException(404, "Job operation not found")
-        await app.state.jobs.pause(job_id, operation == "pause")
+        try:
+            await app.state.jobs.pause(job_id, operation == "pause")
+        except KeyError as exc:
+            raise HTTPException(404, "Job not found") from exc
+        except ValueError as exc:
+            raise HTTPException(
+                409, "Job unavailable or scheduler shutting down"
+            ) from exc
         return next(j for j in app.state.jobs.status() if j["id"] == job_id)
 
     @api.get("/prompt")

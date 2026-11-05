@@ -220,8 +220,17 @@ def test_operations_controls_enabled_and_disabled_jobs(config, mock_model):
             "/runs/"
         )
         assert client.get(result.headers["location"]).status_code == 200
-        config.jobs[0].enabled = False
+        assert (
+            client.patch("/api/jobs/sample", json={"enabled": False}).status_code == 200
+        )
         failed = client.post("/operations/jobs/sample/run")
         assert failed.status_code == 409 and "disabled" in failed.text
-        assert client.post("/operations/jobs/sample/delete").status_code == 404
+        assert client.get("/operations/jobs/sample/delete").status_code == 200
+        assert (
+            client.post(
+                "/operations/jobs/sample/delete", follow_redirects=False
+            ).status_code
+            == 303
+        )
+        assert client.get("/api/jobs").json() == []
         assert client.post("/operations/jobs/missing/run").status_code == 404

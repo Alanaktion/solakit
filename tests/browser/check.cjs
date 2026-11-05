@@ -44,6 +44,51 @@ async function operations(page) {
   assert.match(await page.locator('.intro').innerText(), /completed/);
 }
 
+async function jobManagement(page) {
+  const id = `managed-${page.qaLabel}-${Date.now()}`;
+  await page.goto(base + '/operations');
+  await page.getByRole('link', {name: 'New job', exact: true}).click();
+  await page.getByLabel('Job ID', {exact: true}).fill(id);
+  await page.getByLabel('Schedule (cron)', {exact: true}).fill('bad');
+  await page.getByLabel('Task', {exact: true}).fill('Reflect on {date}');
+  await page.getByRole('button', {name: 'Create job', exact: true}).click();
+  await page.getByRole('alert').waitFor();
+  assert.equal(await page.getByLabel('Task', {exact: true}).inputValue(), 'Reflect on {date}');
+  await page.getByLabel('Schedule (cron)', {exact: true}).fill('0 19 * * *');
+  await page.getByLabel('Timezone', {exact: true}).fill('America/Denver');
+  await page.getByLabel('Enable scheduled runs', {exact: true}).check();
+  await noOverflow(page);
+  await page.screenshot({path: path.join(output, `jobs-form-${page.qaLabel}.png`), fullPage: true});
+  await page.getByRole('button', {name: 'Create job', exact: true}).click();
+  await page.waitForURL(base + '/operations');
+  let row = page.locator('tr').filter({hasText: id});
+  await row.getByRole('link', {name: 'Edit', exact: true}).click();
+  assert.equal(await page.getByLabel('Job ID', {exact: true}).inputValue(), id);
+  assert(await page.getByLabel('Job ID', {exact: true}).getAttribute('readonly') !== null);
+  await page.getByLabel('Task', {exact: true}).fill('Updated job <literal> {date}');
+  await page.getByLabel('Schedule (cron)', {exact: true}).fill('0 20 * * *');
+  await page.getByRole('button', {name: 'Save changes', exact: true}).click();
+  await page.waitForURL(base + '/operations');
+  row = page.locator('tr').filter({hasText: id});
+  assert.match(await row.innerText(), /0 20/);
+  await row.getByRole('button', {name: 'Run now', exact: true}).click();
+  await page.waitForURL('**/runs/*');
+  assert.match(await page.locator('.intro').innerText(), /completed/);
+  await page.goto(base + '/operations');
+  row = page.locator('tr').filter({hasText: id});
+  await row.getByRole('button', {name: 'Pause', exact: true}).click();
+  await row.getByRole('button', {name: 'Resume', exact: true}).waitFor();
+  await noOverflow(page);
+  await page.screenshot({path: path.join(output, `jobs-list-${page.qaLabel}.png`), fullPage: true});
+  await row.getByRole('link', {name: 'Delete', exact: true}).click();
+  await page.getByRole('heading', {name: `Delete job ${id}?`, exact: true}).waitFor();
+  await noOverflow(page);
+  await page.getByRole('button', {name: 'Delete job', exact: true}).click();
+  await page.waitForURL(base + '/operations');
+  assert.equal(await page.locator('tr').filter({hasText: id}).count(), 0);
+  assert.equal((await page.request.get(`${base}/api/jobs/${id}`)).status(), 404);
+}
+
 async function createSession(page, prefix, scope = 'ephemeral') {
   const id = `${prefix}-${page.qaLabel}-${Date.now()}`;
   await page.goto(base + '/?new=1');
@@ -339,7 +384,8 @@ async function streaming(page) {
         await page.getByLabel('Operator token').fill('scratch-browser-token');
         await page.getByRole('button', {name: 'Sign in'}).click();
         await page.waitForURL(base + '/');
-        if (phase === '12') await operations(page);
+        if (phase === 'jobs') await jobManagement(page);
+        else if (phase === '12') await operations(page);
         else if (phase === '13') await archival(page);
         else if (phase === '10') await foundation(page);
         else if (phase === '11') await evidence(page);

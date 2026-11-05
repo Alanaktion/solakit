@@ -5,6 +5,8 @@ enabled_tools = []
 # Workspace sync installs external pack distributions; load explicitly: "sola_packs.journal",
 # "sola_packs.letters", "sola_packs.email".
 # Shell is built in: "shell" or "solakit.tools.shell" (enabled by config).
+# Scheduling tools: "jobs"; mutations need jobs.manage, triggering jobs.run;
+# other profiles/sessions/delivery additionally need jobs.manage.all.
 # Session history search is built in: "sessions" or "solakit.tools.sessions".
 # Grant tools = ["sessions.search"] for current-session history; additionally
 # capabilities = ["sessions.search.all"] allows another session or all sessions.
@@ -75,6 +77,8 @@ trigger = "mention"
 trigger_authors = ["ALAN_DISCORD_USER_ID"]
 enabled = false
 
+# Jobs are managed through /operations, /api/jobs and built-in jobs tools.
+# This legacy example is imported once per ID, then managed in app.db.
 [[jobs]]
 id = "example-poll"
 cron = "0 19 * * *"

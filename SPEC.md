@@ -380,14 +380,17 @@ identity, no duplicate "announcement copy" drifting from the record.
 Scheduling is owned by the FastAPI app via **APScheduler**
 (`AsyncIOScheduler` wake-ups and `CronTrigger`), with durable JSONL job cursors
 indexed in SQLite so pause/next-fire/dispatch state survives index rebuilds and
-restarts. TOML restores job definitions; runtime callbacks are never pickled into
+restarts. SQLite stores authoritative job definitions; legacy TOML definitions
+import once per ID and never overwrite managed edits/deletions. Runtime callbacks
+are never pickled into
 library state. This replaces the original SQLAlchemy job-store sketch with owned,
 inspectable state and avoids a global runtime callback registry.
 launchd's only remaining job is starting the app itself at boot.
 
 ### 7.1 Job definition
 
-Jobs are config, like channels:
+Jobs are managed through the API, web UI and optional chat tools (§7.4). The
+following legacy TOML format remains supported for one-time import:
 
 ```toml
 [[jobs]]
@@ -417,21 +420,22 @@ profile       = "inbox"
 task          = "Check the inbox. Handle what needs handling."
 bind_session  = "inbox"
 deliver       = { mode = "silent" }
+polling       = true
 catch_up      = true
 ```
 
-- `task` supports only `{date}` / `{now}`-style placeholders via
-  `string.Template`. No template engine in the MVP.
+- `task` supports only `{date}`, `{time}`, `{timezone}` and `{job_id}`
+  placeholders, without attributes, conversions or format specifications.
 - `bind_session` is the key field. Binding a job to a channel's pinned
-  session is what makes §7.2 work. `ephemeral` gives the run a throwaway
-  session that is archived whole and never continued.
+  session is what makes §7.2 work. `ephemeral` gives the run a fresh
+  session without memory; its transcript remains evidence.
 
 ### 7.2 Cron runs live in the channel's story
 
 When a job is bound to a channel session, the run's task message and its
 resulting assistant/tool messages are appended to **that session's
 transcript**, marked with origin metadata
-(`origin = {kind: "job", job_id, run_id}`). Therefore:
+(`origin = {channel: "job", job: job_id}` with a separate `run_id`). Therefore:
 
 > The blog cron fires at 19:00 → the run enters the `blog` session →
 > its final message is delivered to **#blog** → at 21:30 Alan replies in
@@ -468,10 +472,31 @@ specifiers and oversized expansion are refused.
 
 ### 7.4 Job operations
 
-`GET /api/jobs` (next fire, last run, last status), `POST /api/jobs/{id}/run`
-(trigger now, same binding/delivery), `POST /api/jobs/{id}/pause|resume`.
-Editing schedules = editing `config.toml` + restart (or SIGHUP reload —
-deferred nicety, not MVP).
+`GET/POST /api/jobs` and `GET/PATCH/DELETE /api/jobs/{id}` manage persistent
+job definitions and current scheduling state. IDs are immutable; partial edits
+validate the complete resulting definition, with `deliver: null` clearing delivery.
+`POST /api/jobs/{id}/run` waits for completion; `?wait=false` returns HTTP 202 and
+accepted job state immediately. `POST /api/jobs/{id}/pause|resume` affects future
+firings. Invalid definitions return 422, missing jobs 404, duplicate IDs and busy
+edits/deletions/triggers 409. Maintenance profiles cannot be scheduled. Creation
+defaults to disabled; schedule/enabled changes reset next fire. Accepted mutations
+and manual admission finish durable publication before propagating cancellation.
+
+The scheduler starts even with no jobs, so API-created jobs work without restart.
+Definitions use the authoritative `job_definitions` SQLite table; derived-index
+rebuilds preserve it. Deleted IDs retain tombstones to prevent stale TOML imports.
+Append-only cursor and run/delivery evidence remain separate. Back up app.db as
+well as the evidence tree; job definitions cannot be recovered from transcripts.
+
+Built-in `jobs.list/create/update/run/pause/delete` tools compose the same service.
+Mutation tools require `jobs.manage`; `jobs.run` requires its namesake capability.
+Without `jobs.manage.all`, tools are limited to the calling profile/session with
+no external delivery. The broader grant permits other profiles/sessions/channels
+but never replaces tool or action grants. Authorization rechecks both existing
+and proposed definitions under the scheduler lock. `jobs.run` queues without
+waiting, preventing deadlock for jobs bound to the current chat. Responses mask
+credentials and mark task text as external data. Runtime status exposes schedule
+state without other chats' task bodies. See [job management](docs/operations/jobs.md).
 
 ## 8. Tools — a small plugin API
 
@@ -669,8 +694,9 @@ The P1 operator UI is a thin server-rendered API client. Shared app contracts:
   A read-only `/tools` page lists loaded tools and effective profile grants.
   `/prompt` displays API-assembled prompt text, original hash and schemas; `/runs`
   and `/runs/{id}` show evidence with POST cancellation. `/operations` displays
-  reported jobs/channels with POST run/pause/resume. No config editing or new
-  integration activation controls. Chat Enter sends, Shift+Enter adds a newline;
+  reported channels and full job management, including creation/edit forms, enable
+  controls, run/pause/resume and deletion confirmation. These UI operations use
+  the same authenticated APIs; channel/profile configuration stays in files. Chat Enter sends, Shift+Enter adds a newline;
   composition/repeated-key/busy guards prevent accidental submissions.
   Presentation escapes plain text and masks resolved credentials; tool details
   come only from redacted run logs. Light/dark follows the system preference.
@@ -772,8 +798,8 @@ Code and data are separate trees. Data layout on her machine:
 
 ```
 ~/sola-data/
-  app.db                     # SQLite: sessions index, job state (APScheduler
-                             #   jobstore + last runs), run index, channel cursors
+  app.db                     # Authoritative job_definitions + rebuildable
+                             #   session/run/cursor/FTS indexes
   sessions/
     <session-id>.jsonl       # append-only transcript, OpenAI message format,
                              #   each line carrying origin metadata (§7.2)
@@ -782,13 +808,14 @@ Code and data are separate trees. Data layout on her machine:
                              #   prompt sha256, tokens, steps, status, timing
     <run-id>.prompt.txt      # exact prompt bytes for that run
     <run-id>.tools.jsonl     # one line per tool call
-  config.live.toml           # (optional) runtime copy if config is edited via API later
 ```
 
 Transcripts stay plain JSONL so her history remains as portable as it was
 in the OpenClaw `.jsonl` era — the format she has already outlived once.
-SQLite is an *index over* files, rebuildable from them, never the sole
-copy of a conversation.
+SQLite conversation/run/cursor indexes are rebuildable from files and never the
+sole copy of a conversation. The `job_definitions` table is authoritative for
+managed schedules and deletion tombstones. Rebuild preserves this table; do not
+delete app.db to repair indexes. Back up it alongside private evidence.
 
 ### 10.1 Compaction
 
@@ -977,8 +1004,8 @@ and remaining acceptance, printer, provider and staged rollout work.
   discord.py; Pydantic-generated tool schemas.
 - **Web UI:** sessions/chat/status, evidence/operations, archival, compaction,
   assistant Markdown and live streaming (§9); remaining live checks are in `docs/operations/acceptance.md`.
-- **Config-as-files:** channels/jobs/profiles in `config.toml`;
-  SQLite is index/state, JSONL is the transcript of record.
+- **Configuration:** channels/profiles in `config.toml`; managed jobs in SQLite.
+  Legacy TOML jobs import once. JSONL remains the transcript/cursor evidence.
 - **Concurrency:** per-session queues, global inference semaphore = 1.
 - **Discord triggers:** dedicated channels `all`, shared channels
   `mention`; only Alan triggers in the MVP.

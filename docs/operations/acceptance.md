@@ -80,8 +80,8 @@ proof of real reconnect behavior or a clean pilot week.
   jobs, clean-week observations and rollback checks. Inbox jobs remain separately
   gated despite the completed live mailbox probe.
 
-Job scheduling uses declarative TOML plus durable cursor evidence, not pickled
-callbacks. Controlled-clock tests cover skip/one-time catch-up, restart recovery,
+Job scheduling uses API-managed SQLite definitions (legacy TOML imports once)
+plus durable cursor evidence, not pickled callbacks. Controlled-clock tests cover skip/one-time catch-up, restart recovery,
 pause persistence and non-overlap while queued/running. Live activation stays
 explicit per job. Do not change the existing Hermes installation or schedules.
 

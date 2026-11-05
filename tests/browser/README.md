@@ -54,3 +54,8 @@ interruption, sign-out and server-side expiry. The fixture exposes QA-only
 disconnect/expiry controls; these never exist in the production application.
 The four theme/viewport cases take a few minutes. Accepted runs continue through
 observer failures and authentication changes; no model POST is replayed.
+
+Job management: run `check.cjs jobs` for create/error preservation, editing,
+manual triggering, pause, delete confirmation and actual deletion across
+light/dark desktop/mobile. Checks include page overflow, browser errors and
+form/list screenshots. Jobs use the same scratch mock-model server above.
