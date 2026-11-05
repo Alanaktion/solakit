@@ -159,6 +159,12 @@ A backend `finish_reason: "length"` preserves partial output as evidence but end
 as `budget_exceeded` with an explicit error, without retries or tool execution.
 Tool-free profiles send `tool_choice: "none"` and omit tool schemas. Empty
 `enabled_tools` loads no plugins; individual profiles still determine tool grants.
+Set `tools = ["*"]` in a profile to grant every tool loaded by `enabled_tools`
+whose manifest permits that profile. It does not load additional modules, bypass
+manifest profile restrictions, or grant capabilities/filesystem scopes. Missing
+write grants still fail startup validation. You can mix `"*"` with explicit names;
+schemas are deduplicated, and unknown or disallowed explicit names remain errors.
+The tool catalog, prompts and runtime status show the expanded tool names.
 A long repetitive assistant message with no `tool_calls` is a single model
 response, not a registry loop. Check the run's steps and tool evidence to tell
 these apart. If reasoning appears in `content`, check the backend's model/chat

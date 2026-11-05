@@ -43,6 +43,8 @@ max_steps = 60
 # Opt in to summarizing between completed tool groups when context exceeds budget.
 mid_run_compaction = false
 tools = []
+# tools = ["*"] grants every loaded tool available to this profile.
+# Still requires each tool's capabilities/write scopes; loads no extra modules.
 write_scopes = []
 capabilities = []
 

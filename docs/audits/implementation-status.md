@@ -413,3 +413,17 @@ Final verification: **311 tests passed**, Ruff lint/format checks passed, all ei
 distributions built, and local Markdown file links resolve after plan removal.
 The image response deadline also has a small-chunk regression check. No live
 resource configuration or production integration was changed in this session.
+
+## Profile all-tools grant (2026-11-05)
+
+Profiles now accept `tools = ["*"]` to grant every explicitly loaded tool whose
+manifest permits that profile. Registry validation still requires filesystem and
+capability grants. Schema/catalog expansion and dispatch share the grant logic;
+mixed explicit/wildcard entries deduplicate without mutating TOML configuration.
+Unknown and disallowed explicit names still fail startup, even beside a wildcard.
+No extra modules, integrations or capability grants are enabled by the wildcard.
+
+Verification: five focused wildcard tests cover TOML loading, expansion, mixed
+grants, manifest exclusions, schema/catalog/dispatch consistency, missing grants,
+unknown tools and an empty loaded set. All **316 tests** passed, Ruff lint/format
+passed, and all eight distributions built.

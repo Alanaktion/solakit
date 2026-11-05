@@ -216,12 +216,22 @@ class Registry:
         cfg = self.config.profiles[profile]
         return (
             registered is not None
-            and name in cfg.tools
+            and (name in cfg.tools or "*" in cfg.tools)
             and (
                 profile in registered.manifest.profiles
                 or "*" in registered.manifest.profiles
             )
         )
+
+    def tool_names(self, profile: str) -> list[str]:
+        """Expand the all-tools grant without changing operator configuration."""
+        names = []
+        for name in self.config.profiles[profile].tools:
+            if name == "*":
+                names.extend(name for name in self.tools if self.allowed(name, profile))
+            else:
+                names.append(name)
+        return list(dict.fromkeys(names))
 
     def check_writes(self, registered: Registered, profile: Profile) -> None:
         for scope in registered.manifest.writes:
@@ -240,8 +250,9 @@ class Registry:
                 if scope_root(scope, self.config) is None:
                     raise ValueError(f"unknown resource scope: {scope}")
             for tool_name in profile.tools:
-                if not self.allowed(tool_name, name):
+                if tool_name != "*" and not self.allowed(tool_name, name):
                     raise ValueError(f"tool {tool_name} is not available to {name}")
+            for tool_name in self.tool_names(name):
                 self.check_writes(self.tools[tool_name], profile)
 
     def catalog(self) -> dict:
@@ -272,7 +283,7 @@ class Registry:
     def schemas(self, profile: str) -> list[dict]:
         return [
             self.tools[name].schema()
-            for name in self.config.profiles[profile].tools
+            for name in self.tool_names(profile)
             if self.allowed(name, profile)
         ]
 

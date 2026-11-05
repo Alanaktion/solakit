@@ -49,7 +49,9 @@ not proof that a live integration or production acceptance gate has passed.
 - `tools/`: registry/decorator/manifests, generated argument schemas, tool
   implementations and per-profile capability enforcement. `enabled_tools` loads
   modules by explicit dotted path (bare names are built-in shorthand); profile
-  `tools` grants exact tool names. Both are necessary. A manifest `profiles=["*"]`
+  `tools` grants exact tool names or `"*"` for every loaded, profile-permitted tool.
+  Wildcards do not grant capabilities or bypass write validation. Both module
+  loading and profile grants are necessary. A manifest `profiles=["*"]`
   supports arbitrary configured profiles without granting calls automatically.
   Filesystem
   roots, writes and other capabilities are separate explicit grants.

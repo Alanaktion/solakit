@@ -517,7 +517,12 @@ Registry rules:
   e.g. `enabled_tools = ["solakit.tools.files", "solakit.tools.repo_git",
   "sola_packs.journal"]`. Bare names remain built-in shorthand. Packs are
   independently installed trusted Python packages, not auto-discovered or
-  sandboxed. Exact profile tool grants remain required. A manifest may use
+  sandboxed. Profile tool grants use exact names or `tools = ["*"]` for all loaded
+  tools permitted by their manifests. Wildcard grants do not load modules or
+  bypass capability/filesystem validation. Mixed grants expand in configured order
+  (registry order at each wildcard), deduplicate names and still reject unknown
+  or profile-disallowed explicit names. Schemas, catalog and dispatch use the same
+  effective grants. A manifest may use
   `profiles=["*"]` to support custom profiles without automatically granting it.
   No core/domain module or execution-loop changes for a new pack (§14.8).
 - **Services:** `ctx.fs` and `ctx.git(repository_alias)` provide Python operations
@@ -1053,7 +1058,7 @@ clipped at snippet boundaries. API errors are 422 for invalid input, 503 for an
 unavailable index. No search UI is introduced.
 
 The optional built-in `solakit.tools.sessions` module registers `sessions.search`.
-It must be loaded explicitly and granted by exact tool name. Default search is
+It must be loaded explicitly and granted by name or profile wildcard. Default search is
 restricted to the calling session, including its numbered archives and summaries.
 An explicit other `session_id` or `all_sessions=true` requires the profile
 capability `sessions.search.all`; specifying both is invalid. Scope checks precede
