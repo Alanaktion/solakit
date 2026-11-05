@@ -31,7 +31,11 @@ not proof that a live integration or production acceptance gate has passed.
 - `core/store.py`, `core/schemas.py`, `core/io.py`: immutable JSONL evidence,
   atomic metadata, durable I/O, exclusive data ownership and rebuildable SQLite
   index. `core/compaction.py` and `core/archival.py` rotate immutable archives with
-  recovery metadata. Operator archival rejects busy sessions and preserves bindings.
+  recovery metadata. Operator archival and explicit compaction reject busy sessions
+  and preserve bindings. Profile `mid_run_compaction` opts into between-step
+  compaction after complete tool groups; full run memory commits include archives.
+  Compaction preparation/rotation is one durable operation, and unresolved prepared
+  state blocks further transcript writes until recovery.
 - `core/memory.py`, `core/memory_ops.py`: scope-bound OpenViking REST access,
   recall, explicit commit/extraction tracking, compaction and operator scratch
   verification. Startup only performs authenticated read-only root checks.

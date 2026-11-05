@@ -120,3 +120,8 @@ inspection, run lists/evidence/cancellation, channel/job status and job controls
 Chat uses Enter-to-send and Shift+Enter for newline, with composition/busy guards.
 Automated checks cover API SHA parity, safe tool evidence, real mocked run
 cancellation and job controls. Browser visual QA remains pending.
+
+[21: compaction controls](21-compaction-controls.md) adds opt-in between-step
+compaction and an explicit idle session API/UI action. Summary ordering uses the
+first visible message, and full run memory commits include archived turn segments.
+The existing live OpenViking verification gate is unchanged.

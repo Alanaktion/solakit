@@ -30,7 +30,7 @@
         {% for archive in session.archives %}{% set n = archive.rsplit('.', 1)[1] %}<a href="/sessions/{{ session.id|urlencode }}/archives/{{ n }}" {% if archive_number|string == n %}aria-current="page"{% endif %}>Archive {{ n }}</a>{% endfor %}
       </nav>
     </details>
-    {% if not archive_number %}<a class="archive-action" href="/sessions/{{ session.id|urlencode }}/archive">Archive conversation <span aria-hidden="true">↗</span></a>{% endif %}
+    {% if not archive_number %}<a class="archive-action" href="/sessions/{{ session.id|urlencode }}/compact">Compact conversation</a><a class="archive-action" href="/sessions/{{ session.id|urlencode }}/archive">Archive conversation <span aria-hidden="true">↗</span></a>{% endif %}
   </div>
   <div id="conversation" class="conversation" role="log" aria-label="Message history" aria-live="polite" aria-relevant="additions text">{% include 'fragments/message_tail.html' %}</div>
   {% if archive_number %}

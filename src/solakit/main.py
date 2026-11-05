@@ -12,6 +12,7 @@ from starlette.responses import JSONResponse
 from starlette.staticfiles import StaticFiles
 
 from solakit.channels import ApiAdapter, Channels
+from solakit.core.compaction import ContextLimit
 from solakit.core.config import Config
 from solakit.core.loop import Execution
 from solakit.core.memory import MemoryClient, MemoryUnavailable
@@ -361,6 +362,23 @@ def create_app(
             }
         except (FileNotFoundError, ValueError) as exc:
             raise HTTPException(404, "Session not found") from exc
+
+    @api.post("/sessions/{session_id}/compact")
+    async def compact_session(session_id: str) -> dict:
+        try:
+            safe_id(session_id)
+        except ValueError as exc:
+            raise HTTPException(404, "Session not found") from exc
+        try:
+            return await app.state.execution.compact_session(session_id)
+        except FileNotFoundError as exc:
+            raise HTTPException(404, "Session not found") from exc
+        except (ValueError, ContextLimit) as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(
+                503, "Compaction storage failure; inspect and restart for recovery"
+            ) from exc
 
     @api.post("/sessions/{session_id}/archive")
     async def archive_session(session_id: str) -> dict:

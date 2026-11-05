@@ -1,4 +1,4 @@
-"""Between-turn OpenViking summaries and crash-recoverable transcript rotation."""
+"""OpenViking summaries and crash-recoverable transcript rotation."""
 
 import hashlib
 import json
@@ -101,6 +101,13 @@ def recover_rotations(store: Store) -> None:
                 )
 
 
+def prepare_rotation(store: Store, session_id: str, manifest: dict) -> None:
+    """Persist intent and rotate in one durable operation, with no cancellation gap."""
+    with store.lock:
+        atomic_write(manifest_path(store, session_id), json.dumps(manifest).encode())
+        finish_rotation(store, session_id, manifest)
+
+
 class Compactor:
     def __init__(self, store: Store, memory: MemoryClient | None):
         self.store, self.memory = store, memory
@@ -159,6 +166,5 @@ class Compactor:
             "archive": archive,
             "boundary": boundary.model_dump(mode="json"),
         }
-        await durable(atomic_write, path, json.dumps(manifest).encode())
-        await durable(finish_rotation, self.store, session.id, manifest)
+        await durable(prepare_rotation, self.store, session.id, manifest)
         return {**manifest, "stage": "committed"}

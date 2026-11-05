@@ -324,6 +324,16 @@ class Store:
             except (ValueError, UnicodeDecodeError) as exc:
                 raise self._corruption(path, "invalid_metadata") from exc
 
+    def check_compaction(self, session_id: str) -> None:
+        path = self._path("sessions", session_id, ".compaction.json")
+        if path.exists():
+            try:
+                stage = json.loads(path.read_bytes())["stage"]
+                if stage not in {"summarizing", "committed"}:
+                    raise ValueError("Compaction requires recovery")
+            except (ValueError, KeyError, TypeError) as exc:
+                raise self._corruption(path, "compaction_recovery_required") from exc
+
     def context_started_at(self, session_id: str) -> str | None:
         """Last operator archival boundary; not a synthetic model message."""
         with self.lock:
@@ -343,6 +353,7 @@ class Store:
             self.session(session_id)
             # Refuse writes after a failed rotation.
             self.context_started_at(session_id)
+            self.check_compaction(session_id)
             self._append(
                 self._path("sessions", session_id, ".jsonl"),
                 message.model_dump(mode="json"),
@@ -352,6 +363,7 @@ class Store:
         with self.lock:
             self.session(session_id)
             self.context_started_at(session_id)
+            self.check_compaction(session_id)
             path = self._path("sessions", session_id, ".jsonl")
             manifest = self._path("sessions", session_id, ".compaction.json")
             manual = self._path("sessions", session_id, ".archive.json")

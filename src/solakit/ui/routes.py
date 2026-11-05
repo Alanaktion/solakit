@@ -280,6 +280,36 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
         except APIError as exc:
             return render(request, "error.html", {"error": exc.detail}, exc.status)
 
+    @router.get("/sessions/{identity}/compact")
+    async def compaction_confirmation(request: Request, identity: str):
+        if not logged_in(request):
+            return login_redirect(request)
+        try:
+            data = await api(
+                request, "GET", f"/api/sessions/{quote(identity, safe='')}"
+            )
+            return render(
+                request,
+                "compact_confirm.html",
+                {"session": data, "health": await health(request)},
+            )
+        except APIError as exc:
+            return render(request, "error.html", {"error": exc.detail}, exc.status)
+
+    @router.post("/sessions/{identity}/compact")
+    async def compact_session(request: Request, identity: str):
+        if not logged_in(request):
+            return login_redirect(request)
+        try:
+            await api(
+                request, "POST", f"/api/sessions/{quote(identity, safe='')}/compact"
+            )
+            return RedirectResponse(
+                f"/sessions/{quote(identity, safe='')}", 303, headers=HEADERS
+            )
+        except APIError as exc:
+            return render(request, "error.html", {"error": exc.detail}, exc.status)
+
     @router.get("/sessions/{identity}/archive")
     async def archive_confirmation(request: Request, identity: str):
         if not logged_in(request):

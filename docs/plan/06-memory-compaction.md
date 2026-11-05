@@ -30,3 +30,14 @@ the probe's run IDs/results. This gate precedes any Discord pilot or live job.
 
 Mocks establish implementation behavior, not live compatibility. Ambiguous prior
 writes still require operator reconciliation; polling never replays them.
+
+## Compaction controls follow-up
+
+Profile `mid_run_compaction` is opt-in (default false). At a context overflow after
+a complete tool group, the runner summarizes and resumes with the original task
+reminder, preserving counters and checking the new request size. Full run messages
+are read across archives for normal memory commits. Explicit idle compaction is
+available through API/UI, independent of that flag. Rotation preparation/commit
+is one durable operation and failed prepared state blocks writes until recovery.
+See [21: compaction controls](21-compaction-controls.md). Live verification is still
+pending; these additions are tested against the existing mocked server contract.

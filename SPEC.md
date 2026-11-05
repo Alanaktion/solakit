@@ -689,6 +689,7 @@ The P1 operator UI is a thin server-rendered API client. Shared app contracts:
 | `GET /api/tools` | loaded tool catalog, argument schemas, and effective profile grants |
 | `GET /api/profiles` | configured profile names for session creation |
 | `GET /api/sessions` · `GET /api/sessions/{id}` | session list; metadata + transcript |
+| `POST /api/sessions/{id}/compact` | summarize idle shared session without dropping original evidence |
 | `POST /api/sessions/{id}/archive` | operator-only immutable rotation, fresh context, bindings preserved; 409 while busy |
 | `POST /api/sessions/{id}/messages` | post a message (the **api channel** — lands in that pinned session and runs) |
 | `GET /api/runs` · `GET /api/runs/{id}` | run records incl. prompt, tool log |
@@ -702,7 +703,30 @@ The P1 operator UI is a thin server-rendered API client. Shared app contracts:
   can grow token streaming without a breaking change; the loop (§4.2)
   does not change when it lands.
 
-### 9.1 Operator session archival
+### 9.1 Explicit and mid-run compaction
+
+`POST /api/sessions/{id}/compact` runs the existing summary-only OpenViking
+compaction on an idle session, regardless of context size. Authentication is the
+same operator dependency. Busy/shutting-down sessions, missing shared memory or
+incomplete summaries return 409; no active history is replaced on summary failure.
+The UI has a Compact conversation action and explanation. This preserves session
+bindings and original archived bytes; it differs from archival's empty restart.
+
+Profile `mid_run_compaction` defaults false. When enabled, the between-step context
+check may summarize the active transcript after a complete tool-call/result group.
+The request resumes with the unchanged system prompt, summary context and original
+user task as an unstored reminder. No tool replay or duplicate user record is
+introduced. All counters continue, and the compacted request must pass the same
+byte guard. Without the option, or if irreducible context still exceeds the budget,
+the run ends context_limit. Full original run messages across archives are used
+for the eventual normal memory commit. Rotation/attribution complete before
+cancellation is propagated; prepared rotation and commit have no cancellation gap.
+Unresolved prepared state blocks reads/writes until startup recovery.
+
+Visible summary boundaries precede the messages that rely on them. Turns use
+first-visible-message time rather than admission time for display ordering.
+
+### 9.2 Operator session archival
 
 `POST /api/sessions/{id}/archive` uses the execution admission lock and rejects
 queued/running turns or shutdown (409). It rotates active JSONL byte-for-byte to

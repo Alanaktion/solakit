@@ -60,7 +60,11 @@ def turns(
         if (
             include_empty_runs
             and run["status"] != "completed"
-            and timestamp(run["created_at"]) >= cutoff
+            and max(
+                timestamp(run["created_at"]),
+                timestamp((run.get("compaction") or {}).get("boundary", {}).get("ts")),
+            )
+            >= cutoff
         ):
             grouped.setdefault(identity, [])
     result = boundaries
@@ -114,8 +118,10 @@ def turns(
                 "status_label": LABELS.get(status, "Run record unavailable"),
                 "pending": status in {"queued", "running"},
                 "failed": status not in {"queued", "running", "completed"},
-                "at": timestamp(
-                    run.get("created_at") or (messages[0]["ts"] if messages else None)
+                "at": (
+                    timestamp(messages[0]["ts"])
+                    if messages
+                    else max(cutoff, timestamp(run.get("created_at")))
                 ),
             }
         )

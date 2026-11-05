@@ -97,6 +97,44 @@ class Execution:
             # file operation can race a new turn or runtime shutdown.
             return await durable(archive_session, self.store, session_id)
 
+    async def compact_session(self, session_id: str) -> dict:
+        async with self.submit_lock:
+            if self.closing:
+                raise ValueError("Runtime is shutting down")
+            session = await durable(self.store.session, session_id)
+            if any(
+                p.run.session == session_id and not p.future.done()
+                for p in self.pending.values()
+            ):
+                raise ValueError("Wait for queued or running turns before compacting")
+            self.compactor.memory = self.memory
+            task = asyncio.create_task(self.compactor.compact(session))
+            try:
+                manifest = await asyncio.shield(task)
+            except asyncio.CancelledError:
+                # Finish accepted remote work/rotation before admission or shutdown
+                # can proceed; a disconnected operator does not orphan a compaction.
+                await asyncio.gather(task, return_exceptions=True)
+                raise
+            return {"session": session_id, **manifest}
+
+    async def _compact_run(self, run, session, trigger, step):
+        async def perform():
+            self.compactor.memory = self.memory
+            manifest = await self.compactor.compact(session)
+            run.compaction = {**manifest, "trigger": trigger, "step": step}
+            # Each rotation is retained in append-only run events.
+            await durable(self.store.save_run, run)
+
+        task = asyncio.create_task(perform())
+        try:
+            await asyncio.shield(task)
+        except asyncio.CancelledError:
+            # Keep accepted rotation and its run attribution together, even when
+            # cancellation arrives while the manifest is being committed.
+            await asyncio.gather(task, return_exceptions=True)
+            raise
+
     async def _worker(self, queue: asyncio.Queue) -> None:
         while True:
             pending = await queue.get()
@@ -164,18 +202,19 @@ class Execution:
                     )
                     > self.config.profiles[run.profile].context_budget
                 ):
-                    self.compactor.memory = self.memory
-                    run.compaction = await self.compactor.compact(session)
+                    await self._compact_run(run, session, "before_turn", 0)
                 run.prompt_sha256 = await durable(
                     self.store.write_prompt, run.id, prompt
                 )
                 await durable(self.store.save_run, run)
                 await self._loop(run, session, prompt, pending.text)
                 if self.memory and session.memory_scope == "shared":
-                    history = await durable(self.store.transcript, session.id)
+                    # Mid-run compaction may have moved this run's early messages
+                    # to archives. Commit the whole original run, exactly once.
+                    evidence = await durable(self.store.run, run.id)
                     new_messages = [
                         m
-                        for m in history
+                        for m in evidence["messages"]
                         if m["run_id"] == run.id
                         and m.get("kind", "message") == "message"
                     ]
@@ -255,7 +294,31 @@ class Execution:
                 )
                 > cfg.context_budget
             ):
-                raise ContextLimit("Request exceeds conservative context byte budget")
+                if not cfg.mid_run_compaction or step == 0:
+                    raise ContextLimit(
+                        "Request exceeds conservative context byte budget"
+                    )
+                # The previous iteration persisted every tool result. Never rotate
+                # between an assistant call envelope and its matching result group.
+                await self._compact_run(run, session, "mid_run", step)
+                active = await durable(self.store.transcript, session.id)
+                messages = [
+                    {"role": "system", "content": prompt},
+                    *valid_history(active),
+                    user.model_message(),
+                ]
+                if (
+                    request_bytes(
+                        self.config.model.model_id,
+                        messages,
+                        tools,
+                        self.config.model.max_tokens,
+                    )
+                    > cfg.context_budget
+                ):
+                    raise ContextLimit(
+                        "Compacted request still exceeds context byte budget"
+                    )
             data = await self.model.complete(messages, tools)
             if step == 0:
                 await durable(self.store.append_message, session.id, user)

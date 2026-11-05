@@ -108,6 +108,7 @@ class Profile(StrictModel):
     capabilities: list[str] = Field(default_factory=list)
     max_steps: int = Field(default=40, ge=1)
     context_budget: int = Field(default=32000, ge=1)
+    mid_run_compaction: bool = False
     tool_timeout_s: float = Field(default=120, gt=0)
     tool_output_max_chars: int = Field(default=20000, ge=32)
     repair_attempts: int = Field(default=2, ge=0)

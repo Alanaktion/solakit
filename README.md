@@ -201,6 +201,25 @@ metadata to recreate a session or change recovery hashes to bypass damage report
 
 ## Memory and compaction
 
+Compaction is automatic before a turn when its request exceeds the profile's
+serialized-byte `context_budget`. Set `[profiles.<name>].mid_run_compaction = true`
+to also compact **between model steps**, after all matching tool results are
+stored. Default is false. The original task is carried forward as a request-only
+reminder; step/repair/token accounting continues. Requests that still do not fit
+end as `context_limit`, without an oversized model call.
+
+`POST /api/sessions/{id}/compact` explicitly summarizes an idle shared-memory
+session even below the budget, independently of this flag. In chat choose
+**Compact conversation**, then **Summarize and continue**. OpenViking must be
+enabled; queued/running turns cause HTTP 409. Original bytes remain in numbered
+archives, while active context starts with the summary. Session/channel settings
+stay unchanged. Unlike manual archival, compaction retains summarized context.
+Cancellation waits for accepted compaction work and its rotation bookkeeping;
+unresolved prepared rotations require recovery before further transcript writes.
+Summary markers precede subsequent messages in the UI, rather than following the
+earlier run-admission timestamp. Mid-run current-turn messages are still committed
+to long-term memory in full from archive evidence, not just the active tail.
+
 Memory is opt-in, scoped to configured canonical roots. Recall precedes prompt
 persistence; failure ends `memory_unavailable` without transcript mutation.
 Post-turn commits retain intent and acknowledgment evidence; ambiguous writes are
