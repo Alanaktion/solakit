@@ -21,9 +21,10 @@ Completed foundation plans 01–06, 14–16 and 20 have been removed. See the
   at `shell.exec`, `shell.run` and `email.*` must be absent from advertised schemas,
   refused at dispatch and recorded. Existing tests verify these mechanisms
   separately, but do not establish this complete profile scenario (SPEC §14.4).
-- [ ] Add the runner-driven journal end-to-end acceptance check (SPEC §14.9): mock
+- [x] Runner-driven journal end-to-end acceptance check (SPEC §14.9): mock
   model → `journal.create` → `journal.publish` → scratch remote, exact transcript
-  ordering and no shell calls. Direct registry/scratch Git tests already pass.
+  ordering and no shell calls. Covered by
+  `packs/journal/tests/test_journal_pack.py::test_runner_creates_and_publishes_to_scratch_remote`.
 - [ ] Verify operator-owned prompt/profile/tool grants against the actual intended
   resources; record the prompt audit approval required by SPEC §15.
 - [ ] Finish [letters protocol/live checks](17-letters-pack.md) and

@@ -62,14 +62,14 @@ not validation against every production resource.
 | 6. Session pinning | Covered: `test_channels.py::test_gating_parent_pinning_context_and_stored_delivery` | Real gateway/pilot remains separate |
 | 7. Cron/channel continuity | Covered: `test_jobs.py::test_nonoverlap_includes_queued_jobs_and_channel_continuity` | Deliberate live job/channel validation |
 | 8. Drop-in tool | Covered: external dotted module and fixture registry tests in `test_services`/`test_tools` | No entry-point discovery framework needed |
-| 9. Journal end-to-end | Partial: registry create/list/publish with local bare remote passes | Full mock-model runner path, transcript and no-shell assertion |
+| 9. Journal end-to-end | Covered: `test_journal_pack.py::test_runner_creates_and_publishes_to_scratch_remote` drives a mock model through create/publish to a local bare remote, verifies transcript/request ordering and exact tool names without shell calls | Production publishing remains a separate rollout gate |
 | 10. Misfire | Covered: `test_jobs.py::test_restart_misfire_skip_or_exactly_one_catch_up` | Staged operator rollout remains separate |
 | 11. Recall round-trip | Operator-confirmed live; mocked recall and explicit probe checks also pass | Retain private probe evidence; do not invent IDs |
 
 The old `blog.create_post`/`blog.publish` names in §14.9 were stale: the accepted
 collection architecture implements `journal.create`/`journal.publish`. The spec
-now names the implemented tools. This correction does not make the missing
-runner-level check pass.
+now names the implemented tools. The runner-level check now passes against a
+scratch remote; it does not establish live publishing acceptance.
 
 ## Plan disposition
 
@@ -86,7 +86,7 @@ original plan text:
 | 06 memory/compaction | Implementation complete; original live round-trip gate now operator-confirmed; newer live control checks retained in 21 |
 | 14 pack boundary | Dotted imports, services, named collections and separate packaging implemented |
 | 15 generic tools | File/Git/runtime primitives implemented and locally scratch-tested |
-| 16 journal pack | Independently packaged and scratch contract verified; runner-level acceptance tracked in 09 |
+| 16 journal pack | Independently packaged; scratch contract and mock-model runner acceptance verified |
 | 20 shell | Built-in migration complete; ongoing operator guidance is in `docs/operations/shell.md` |
 
 Retained partial plans: 07, 08, 09, 10, 11, 12, 13, 17, 18 and 21. Each now
@@ -97,7 +97,7 @@ reported complete. Historical adversarial-review resolutions moved from plans to
 
 ## Remaining work and known limits
 
-1. Close the exact profile and runner-driven journal acceptance gaps in plan 09.
+1. Close the exact profile acceptance gap in plan 09.
 2. Verify live completed summaries, rotation and continuation in plan 21; a recall
    round-trip does not exercise those API paths.
 3. Complete targeted light/dark/mobile/keyboard UI checks (plans 10–13 and 21).
