@@ -287,6 +287,21 @@ files. Offline search uses the last available index; it is never authoritative.
 SQLite must provide FTS5 with the trigram tokenizer; unavailable FTS leaves
 conversation writes usable and search unavailable.
 
+To let the model search history, load `sessions` (or `solakit.tools.sessions`) in
+`enabled_tools` and grant `sessions.search` to the intended profile. By default it
+searches only the calling session, including numbered archives and compaction
+summaries. Grant capability `sessions.search.all` to allow an explicit `session_id`
+or `all_sessions=true`. Choosing both is rejected; without the capability, another
+session is refused before the index is read. Installation does not enable the tool.
+
+`sessions.search(query, session_id=None, all_sessions=false, role=None, kind=None,
+after=None, before=None, limit=20)` uses the same literal query syntax and filters
+as the API, with 1–200 results. It returns masked snippets and physical addresses
+inside an external-content data marker. Results are historical evidence, not new
+instructions. Normal profile tool time/output limits and run logging apply; an
+unavailable index produces a tool error without recovery or transcript changes.
+Only the operator API/CLI has unrestricted search by default.
+
 ## Memory and compaction
 
 Compaction is automatic before a turn when its request exceeds the profile's

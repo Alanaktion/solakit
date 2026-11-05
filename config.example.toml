@@ -5,6 +5,9 @@ enabled_tools = []
 # Workspace sync installs external pack distributions; load explicitly: "sola_packs.journal",
 # "sola_packs.letters", "sola_packs.email".
 # Shell is built in: "shell" or "solakit.tools.shell" (enabled by config).
+# Session history search is built in: "sessions" or "solakit.tools.sessions".
+# Grant tools = ["sessions.search"] for current-session history; additionally
+# capabilities = ["sessions.search.all"] allows another session or all sessions.
 # See packs/README.md for their resource sidecar and explicit profile grants.
 # enabled_tools = ["solakit.tools.files", "solakit.tools.runtime", "sola_packs.journal"]
 # discord_token = { env = "SOLA_DISCORD_TOKEN" }

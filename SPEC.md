@@ -1050,4 +1050,19 @@ model/memory calls or server credentials. It uses the configured data root and
 masks available credential references/sensitive environment values. Index text
 is never redacted; result snippets use the shared Redactor, including secrets
 clipped at snippet boundaries. API errors are 422 for invalid input, 503 for an
-unavailable index. No UI or model-call search tool is introduced in this change.
+unavailable index. No search UI is introduced.
+
+The optional built-in `solakit.tools.sessions` module registers `sessions.search`.
+It must be loaded explicitly and granted by exact tool name. Default search is
+restricted to the calling session, including its numbered archives and summaries.
+An explicit other `session_id` or `all_sessions=true` requires the profile
+capability `sessions.search.all`; specifying both is invalid. Scope checks precede
+index access and session IDs use the existing record identifier validation. The
+query, role, kind and timezone-aware after/before filters reuse `Store.search`.
+The default result limit is 20, bounded to 1–200. Redacted snippets, rank and
+physical evidence addresses are JSON inside an external-content marker; angle
+brackets in historical text are escaped. Search never reconstructs or mutates
+transcripts, recovers runs, rebuilds the index or contacts model/memory backends.
+Unavailable indexes and invalid input become tool errors. Registry profile grants,
+timeouts, output truncation and redacted tool logs apply normally. The operator
+API and offline CLI retain their existing unrestricted single-operator behavior.

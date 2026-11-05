@@ -390,3 +390,26 @@ preserved in `docs/operations/acceptance.md`, without claiming live acceptance.
 
 Verification for calendar/image completion: **296 tests passed**, Ruff lint/format
 and all eight distributions (core plus seven packs) built successfully.
+
+## Model-call session search (2026-11-05)
+
+After completing the remaining plan implementations, the built-in opt-in
+`sessions` module adds `sessions.search`. It composes `Store.search` with no core
+execution changes. Default scope is the calling session; another session or all
+sessions requires the explicit `sessions.search.all` capability before any index
+query. It supports role/kind/date/limit filters and literal phrases/column terms,
+returns credential-masked snippets with physical active/archive addresses, and
+marks historical text as external data. Registry schema/profile validation,
+timeouts, bounded output and redacted run logs apply. Missing/broken FTS returns
+a tool error; no evidence is rewritten, index rebuilt or memory backend called.
+
+Fourteen focused tests verify default/cross-session scopes, explicit grants,
+profile schema/dispatch denial, archived/active addresses, compaction/date/role
+filters, read-only behavior, credential/markup masking, invalid arguments,
+unavailable-index logs, and a mock-model runner round-trip with matching
+assistant tool-call/result IDs and nonempty query arguments.
+
+Final verification: **311 tests passed**, Ruff lint/format checks passed, all eight
+distributions built, and local Markdown file links resolve after plan removal.
+The image response deadline also has a small-chunk regression check. No live
+resource configuration or production integration was changed in this session.

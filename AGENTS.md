@@ -53,6 +53,9 @@ not proof that a live integration or production acceptance gate has passed.
   supports arbitrary configured profiles without granting calls automatically.
   Filesystem
   roots, writes and other capabilities are separate explicit grants.
+  `sessions.search` reads indexed active/archive evidence for the calling session;
+  cross-session or all-session search additionally requires `sessions.search.all`.
+  Return masked snippets as historical data and never rewrite the evidence.
 - `packs/`: independently packaged journal, letters and email
   extensions (`sola_packs.*`), plus `solakit-packs-common` support. Core distributions
   exclude packs; install and test them separately. Letters/mailbox schemas live
