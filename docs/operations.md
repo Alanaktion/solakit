@@ -110,6 +110,26 @@ Back up the database as well as the evidence tree; do not delete it to repair
 an index. `Store.rebuild()` preserves job definitions. Metadata publishes
 atomically with file/directory fsync. Unfinished runs recover as `interrupted`.
 
+Startup reuses persisted conversation/search indexes instead of rereading all
+history. It scans source file metadata once and refreshes only changed sessions,
+run journals and job cursors. Title and lifecycle-only edits reuse the indexed
+transcript. Archived history stays searchable without loading its messages.
+Startup logs the refresh mode, changed/reused source counts and index time.
+
+The first start after this upgrade (or with missing/incompatible derived tables)
+performs a full rebuild. Later starts compare file size, nanosecond modification
+and change times, inode and device; new, replaced and deleted files are detected.
+These are cache fingerprints, not a cryptographic integrity audit. Unchanged
+historical bytes are validated when read or during an explicit full
+`Store.rebuild()`. Cached storage damage remains visible until the affected
+evidence is repaired. Recovery-marker changes force full revalidation.
+
+Source fingerprints and their derived rows commit in one transaction. Runtime
+writes leave the previous fingerprint in place, so the next start rechecks those
+files even after a crash or failed index update. Prepared transcript rotations
+still recover before indexing; unfinished runs and pending deliveries recover
+before serving. No model requests or evidence deletion are part of indexing.
+
 Transcripts and prompt files are private, intentionally verbatim archives, including
 user text and tool arguments/results. They are reused as actual conversation history.
 Run metadata and diagnostic logs redact secret-key suffixes and resolved credentials;
@@ -171,8 +191,9 @@ FTS stores raw private evidence text; masking happens when snippets are read,
 including credential fragments clipped at snippet boundaries. Snippets have no
 HTML highlight markup. FTS insert failures degrade storage health but do not
 fail an evidence append. Search then reports index unavailability until
-`Store.rebuild()` (also run at server startup) regenerates it from validated
-files. Offline search uses the last available index; it is never authoritative.
+`Store.rebuild()` regenerates it from validated files. Startup automatically
+refreshes changed sources and rebuilds missing/incompatible or known-unhealthy
+derived indexes. Offline search uses the last available index; it is never authoritative.
 SQLite must provide FTS5 with the trigram tokenizer; unavailable FTS leaves
 conversation writes usable and search unavailable.
 

@@ -39,8 +39,8 @@ Missing legacy message timestamps do not invent activity. Reading, archiving,
 restoring and background run observations do not count as new conversation use.
 
 A derived `session_activity` SQLite table makes listing/cleanup queries independent
-of transcript size. It updates when messages/runs arrive and rebuilds from evidence
-at startup. Existing metadata files default to active without a migration rewrite.
+of transcript size. It updates when messages/runs arrive. Startup reuses indexed
+history and refreshes changed evidence; a full rebuild regenerates it from files. Existing metadata files default to active without a migration rewrite.
 
 Archival skips sessions with queued/running turns, sessions pinned to enabled
 channels, and sessions used by enabled unfinished jobs (including paused jobs)

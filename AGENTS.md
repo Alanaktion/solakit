@@ -32,6 +32,10 @@ Read `SPEC.md` for behavioral contracts, `README.md` for an introduction,
   atomic metadata, durable I/O, exclusive data ownership and rebuildable SQLite
   indexes. The app.db `job_definitions` table is authoritative for managed jobs;
   index rebuilds preserve it, and database backups are required.
+  Startup compares versioned source fingerprints and refreshes changed units only;
+  explicit rebuilds revalidate all evidence. Cache rows/fingerprints commit together;
+  runtime writes leave stale fingerprints for crash-safe startup reconciliation.
+  Metadata-only session edits reuse FTS; cached damage stays visible until repaired.
   Session lifecycle archival is the archived_at field in session metadata, distinct
   from transcript rotation. Default lists hide archived sessions; FTS retains them.
   The derived session_activity table uses messages and run admission times, not

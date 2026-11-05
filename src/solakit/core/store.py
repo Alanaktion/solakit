@@ -12,11 +12,13 @@ are never rewritten, and every omitted fragment is visible in storage health.
 import fcntl
 import hashlib
 import json
+import logging
 import os
 import re
 import sqlite3
 import tempfile
 import threading
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -33,6 +35,8 @@ from solakit.core.search import (
 )
 from solakit.core.secrets import Redactor
 
+# Bump when derived schemas or evidence projection semantics change.
+INDEX_VERSION = "1"
 IDENTIFIER = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}\Z")
 
 
@@ -99,7 +103,7 @@ class Store:
             from solakit.core.compaction import recover_rotations
 
             recover_rotations(self)
-            self.rebuild()
+            self.rebuild(incremental=True)
             self.recover()
         except BaseException:
             self.close()
@@ -242,82 +246,319 @@ class Store:
                 (record_id, json.dumps(payload)),
             )
 
-    def rebuild(self) -> None:
-        """Refresh derived tables without deleting authoritative managed tables."""
+    def _inventory(self):
+        """Stat evidence once per directory; never open unchanged historical files."""
+        units, recovery = {}, []
+        patterns = {
+            "sessions": (
+                r"([A-Za-z0-9][A-Za-z0-9_-]{0,127})\."
+                r"(?:meta\.json|jsonl(?:\.[0-9]+)?|compaction\.json|archive\.json)$"
+            ),
+            "runs": r"([A-Za-z0-9][A-Za-z0-9_-]{0,127})\.(?:events|deliveries)\.jsonl$",
+            "jobs": r"([A-Za-z0-9][A-Za-z0-9_-]{0,127})\.jsonl$",
+        }
+        for kind, pattern in patterns.items():
+            matcher = re.compile(pattern)
+            with os.scandir(self.root / kind) as entries:
+                for entry in entries:
+                    match = matcher.fullmatch(entry.name)
+                    if not match or not entry.is_file():
+                        continue
+                    stat = entry.stat()
+                    units.setdefault((kind, match[1]), []).append(
+                        [
+                            entry.name,
+                            stat.st_size,
+                            stat.st_mtime_ns,
+                            stat.st_ctime_ns,
+                            stat.st_ino,
+                            stat.st_dev,
+                        ]
+                    )
+        with os.scandir(self.root / "recovery") as entries:
+            for entry in entries:
+                if entry.name.endswith(".json") and entry.is_file():
+                    stat = entry.stat()
+                    recovery.append(
+                        [
+                            entry.name,
+                            stat.st_size,
+                            stat.st_mtime_ns,
+                            stat.st_ctime_ns,
+                            stat.st_ino,
+                            stat.st_dev,
+                        ]
+                    )
+        return (
+            {key: json.dumps(sorted(files)) for key, files in units.items()},
+            json.dumps(sorted(recovery)),
+        )
+
+    def rebuild(self, *, incremental=False) -> None:
+        """Refresh changed source units; explicit rebuild always rechecks everything.
+
+        Source stats are a disposable cache, committed with the derived rows.
+        Runtime writes intentionally leave old signatures: a crash or an index
+        failure therefore forces changed evidence to be re-read on restart.
+        """
+        started = time.perf_counter()
         with self.lock, sqlite3.connect(self.root / "app.db") as db:
-            self._issues.clear()
+            sources, recovery = self._inventory()
+            required = {
+                "sessions",
+                "runs",
+                "jobs",
+                "session_activity",
+                "source_activity",
+                "messages_fts",
+                "index_sources",
+                "index_meta",
+            }
+            tables = {
+                row[0]
+                for row in db.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                )
+            }
+            cached, metadata = {}, {}
+            if required <= tables:
+                metadata = dict(db.execute("SELECT key, value FROM index_meta"))
+                if (
+                    incremental
+                    and metadata.get("version") == INDEX_VERSION
+                    and metadata.get("recovery") == recovery
+                ):
+                    cached = {
+                        (kind, identity): signature
+                        for kind, identity, signature in db.execute(
+                            "SELECT kind, id, signature FROM index_sources"
+                        )
+                    }
+                else:
+                    incremental = False
+            else:
+                incremental = False
+            if incremental:
+                try:
+                    self._issues = {
+                        (i["file"], i["offset"]): i
+                        for i in json.loads(metadata.get("issues", "[]"))
+                    }
+                    for signature in cached.values():
+                        json.loads(signature)
+                except (ValueError, TypeError, KeyError):
+                    incremental = False
+                # An unhealthy derived index must be repaired, never cached as good.
+                if any(i["file"] == "app.db" for i in self._issues.values()):
+                    incremental = False
+            if not incremental:
+                self._issues.clear()
+                cached = {}
+            changed = {
+                key
+                for key in sources.keys() | cached.keys()
+                if not incremental or sources.get(key) != cached.get(key)
+            }
+            db.execute("BEGIN")
             for kind in ("sessions", "runs", "jobs"):
                 db.execute(
                     f"CREATE TABLE IF NOT EXISTS {kind} "
                     "(id TEXT PRIMARY KEY, payload TEXT NOT NULL)"
                 )
-                db.execute(f"DELETE FROM {kind}")
+                if not incremental:
+                    db.execute(f"DELETE FROM {kind}")
             db.execute(
                 "CREATE TABLE IF NOT EXISTS session_activity "
                 "(id TEXT PRIMARY KEY, last_activity TEXT NOT NULL)"
             )
-            db.execute("DELETE FROM session_activity")
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS source_activity "
+                "(kind TEXT, id TEXT, session_id TEXT, at TEXT, PRIMARY KEY(kind,id))"
+            )
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS index_sources "
+                "(kind TEXT, id TEXT, signature TEXT, PRIMARY KEY(kind,id))"
+            )
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS index_meta "
+                "(key TEXT PRIMARY KEY, value TEXT NOT NULL)"
+            )
+            if not incremental:
+                db.execute("DELETE FROM source_activity")
+                db.execute("DELETE FROM index_sources")
             fts = True
             try:
-                db.execute("DROP TABLE IF EXISTS messages_fts")
-                db.execute(FTS_SCHEMA)
+                if not incremental:
+                    db.execute("DROP TABLE IF EXISTS messages_fts")
+                    db.execute(FTS_SCHEMA)
             except sqlite3.Error:
                 self._issue(self.root / "app.db", "fts_index_unavailable")
                 fts = False
-            for path in sorted((self.root / "sessions").glob("*.meta.json")):
-                try:
-                    session = self.session(path.name.removesuffix(".meta.json"))
-                except StorageCorruption:
-                    continue
-                db.execute(
-                    "INSERT INTO sessions VALUES (?, ?)",
-                    (session.id, session.model_dump_json()),
+            for kind, identity in sorted(changed):
+                old_files = json.loads(cached.get((kind, identity), "[]"))
+                new_files = json.loads(sources.get((kind, identity), "[]"))
+                history_changed = (
+                    not incremental
+                    or [f for f in old_files if not f[0].endswith(".meta.json")]
+                    != [f for f in new_files if not f[0].endswith(".meta.json")]
+                    or not db.execute(
+                        f"SELECT 1 FROM {kind} WHERE id=?", (identity,)
+                    ).fetchone()
+                    or not any(f[0].endswith(".meta.json") for f in new_files)
                 )
-                try:
-                    rows = self._message_search_rows(session.id)
-                    dates = [row[7] for row in rows if row[7] is not None]
-                    if dates:
-                        self._activity(db, session.id, max(dates))
-                    if fts:
-                        try:
-                            db.executemany(FTS_INSERT, rows)
-                        except sqlite3.Error:
-                            self._issue(self.root / "app.db", "fts_index_unavailable")
-                            fts = False
-                except StorageCorruption:
-                    pass  # Report damage while keeping other sessions usable.
-            for path in sorted((self.root / "runs").glob("*.events.jsonl")):
-                try:
-                    records = self._read(path)
-                    if not records:
-                        continue
-                    run = Run.model_validate(records[-1])
-                except StorageCorruption:
-                    continue
-                except ValidationError:
-                    self._issue(path, "invalid_run")
-                    continue
-                db.execute(
-                    "INSERT INTO runs VALUES (?, ?)", (run.id, run.model_dump_json())
-                )
-                if records[-1].get("created_at"):
-                    self._activity(
-                        db, run.session, self._activity_timestamp(run.created_at)
-                    )
-
-            for path in sorted((self.root / "jobs").glob("*.jsonl")):
-                try:
-                    records = self._read(path)
-                except StorageCorruption:
-                    continue
-                if records:
+                db.execute(f"DELETE FROM {kind} WHERE id=?", (identity,))
+                if kind != "sessions" or history_changed:
                     db.execute(
-                        "INSERT INTO jobs VALUES (?, ?)",
-                        (path.stem, json.dumps(records[-1])),
+                        "DELETE FROM source_activity WHERE kind=? AND id=?",
+                        (kind, identity),
                     )
+                if kind == "sessions" and fts and incremental and history_changed:
+                    db.execute(
+                        "DELETE FROM messages_fts WHERE session_id=?", (identity,)
+                    )
+                # Recheck previous issues for this unit, including deleted files.
+                self._issues = {
+                    key: issue
+                    for key, issue in self._issues.items()
+                    if not (
+                        issue["file"].startswith(f"{kind}/{identity}.")
+                        and (
+                            kind != "sessions"
+                            or history_changed
+                            or issue["file"].endswith(".meta.json")
+                        )
+                    )
+                }
+                db.execute(
+                    "DELETE FROM index_sources WHERE kind=? AND id=?", (kind, identity)
+                )
+                signature = sources.get((kind, identity))
+                if signature is None:
+                    continue
+                db.execute(
+                    "INSERT INTO index_sources VALUES (?, ?, ?)",
+                    (kind, identity, signature),
+                )
+                activity = None
+                try:
+                    if kind == "sessions":
+                        if not self._path(kind, identity, ".meta.json").exists():
+                            continue
+                        session = self.session(identity)
+                        db.execute(
+                            "INSERT INTO sessions VALUES (?, ?)",
+                            (identity, session.model_dump_json()),
+                        )
+                        if not history_changed:
+                            # Title/lifecycle edits never reread old transcripts.
+                            continue
+                        archives = [
+                            item[0]
+                            for item in json.loads(signature)
+                            if re.fullmatch(
+                                re.escape(identity) + r"\.jsonl\.[0-9]+", item[0]
+                            )
+                        ]
+                        archives.sort(key=lambda name: int(name.rsplit(".", 1)[1]))
+                        rows = self._message_search_rows(identity, archives=archives)
+                        dates = [row[7] for row in rows if row[7] is not None]
+                        if dates:
+                            activity = (identity, max(dates))
+                        if fts:
+                            try:
+                                db.executemany(FTS_INSERT, rows)
+                            except sqlite3.Error:
+                                self._issue(
+                                    self.root / "app.db", "fts_index_unavailable"
+                                )
+                                fts = False
+                    elif kind == "runs":
+                        path = self._path(kind, identity, ".events.jsonl")
+                        records = self._read(path)
+                        if not records:
+                            continue
+                        try:
+                            run = Run.model_validate(records[-1])
+                        except ValidationError:
+                            self._issue(path, "invalid_run")
+                            continue
+                        db.execute(
+                            "INSERT INTO runs VALUES (?, ?)",
+                            (run.id, run.model_dump_json()),
+                        )
+                        if records[-1].get("created_at"):
+                            activity = (
+                                run.session,
+                                self._activity_timestamp(run.created_at),
+                            )
+                    else:
+                        records = self._read(self._path(kind, identity, ".jsonl"))
+                        if records:
+                            db.execute(
+                                "INSERT INTO jobs VALUES (?, ?)",
+                                (identity, json.dumps(records[-1])),
+                            )
+                    if activity:
+                        db.execute(
+                            "INSERT INTO source_activity VALUES (?, ?, ?, ?)",
+                            (kind, identity, *activity),
+                        )
+                except StorageCorruption:
+                    # Invalid metadata also invalidates retained history addresses.
+                    if kind == "sessions" and not history_changed:
+                        db.execute(
+                            "DELETE FROM source_activity WHERE kind=? AND id=?",
+                            (kind, identity),
+                        )
+                        if fts:
+                            db.execute(
+                                "DELETE FROM messages_fts WHERE session_id=?",
+                                (identity,),
+                            )
+                    # Keep other sessions usable; retain diagnostics across restarts.
+            db.execute("DELETE FROM session_activity")
+            db.execute(
+                "INSERT INTO session_activity SELECT session_id, max(at) "
+                "FROM source_activity GROUP BY session_id"
+            )
+            db.executemany(
+                "INSERT OR REPLACE INTO index_meta VALUES (?, ?)",
+                [
+                    ("version", INDEX_VERSION),
+                    ("recovery", recovery),
+                    ("issues", json.dumps(list(self._issues.values()))),
+                ],
+            )
+
+        logging.getLogger(__name__).info(
+            "Storage index: %s, %d source units refreshed, %d reused, %.3fs",
+            "incremental" if incremental else "full rebuild",
+            len(changed),
+            len(sources.keys() - changed),
+            time.perf_counter() - started,
+        )
 
     def recover(self) -> None:
-        for record in self.list_records("runs"):
+        # Completed historical runs without delivery evidence need no recovery.
+        with sqlite3.connect(self.root / "app.db") as db:
+            candidates = db.execute(
+                "SELECT payload FROM runs WHERE "
+                "json_extract(payload, '$.status') IN ('queued', 'running') OR "
+                "json_extract(payload, '$.delivery_status')='sending'"
+            ).fetchall()
+            seen = {json.loads(row[0])["id"] for row in candidates}
+            for path in (self.root / "runs").glob("*.deliveries.jsonl"):
+                identity = path.name.removesuffix(".deliveries.jsonl")
+                if identity not in seen:
+                    candidates.extend(
+                        db.execute(
+                            "SELECT payload FROM runs WHERE id=? AND "
+                            "json_extract(payload, '$.delivery_status')='none'",
+                            (identity,),
+                        ).fetchall()
+                    )
+        for (payload,) in candidates:
+            record = json.loads(payload)
             run = Run.model_validate(record)
             if run.status in (RunStatus.queued, RunStatus.running):
                 run.status = RunStatus.interrupted
@@ -614,10 +855,11 @@ class Store:
             message.run_id,
         )
 
-    def _message_search_rows(self, session_id):
+    def _message_search_rows(self, session_id, *, archives=None):
         self.transcript(session_id)  # Validate active evidence and rotation state.
         rows = []
-        for name in [*self.archives(session_id), f"{session_id}.jsonl"]:
+        names = self.archives(session_id) if archives is None else archives
+        for name in [*names, f"{session_id}.jsonl"]:
             path = self.root / "sessions" / name
             for line_no, record in self._read_lines(path):
                 try:

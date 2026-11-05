@@ -1007,8 +1007,19 @@ walked numerically before active history; summaries index as compaction messages
 No synthetic message IDs, separate search database or external-content source is
 introduced. Evidence remains authoritative and immutable.
 
-Store rebuild drops/recreates FTS alongside the existing id/payload tables,
-validating active and archived messages. Corrupt sessions are reported while
+Explicit Store rebuild drops/recreates FTS alongside the existing id/payload
+tables, validating active and archived messages. Startup instead reconciles
+versioned source fingerprints (size, nanosecond mtime/ctime, inode/device), reading
+only changed units. A single directory inventory avoids per-session archive globs.
+Metadata-only edits reuse indexed history. Missing/incompatible or known-unhealthy
+derived indexes and changed recovery markers trigger full revalidation. Source
+fingerprints and derived rows publish in one transaction; runtime writes leave
+old fingerprints so restart rechecks changed evidence after crashes/index failures.
+New/deleted/replaced files reconcile without dropping authoritative managed jobs.
+Unchanged damage diagnostics persist, while repair triggers revalidation.
+Prepared rotations still recover before indexing; run recovery queries only
+unfinished work and pending delivery evidence, not every historical run.
+Unchanged history remains searchable without opening transcripts at startup. Corrupt sessions are reported while
 healthy sessions remain searchable. Appending inserts after the durable JSONL
 append, under the store lock. FTS failure records `fts_index_unavailable` in
 storage health and does not fail the append. Rotation refreshes session addresses
