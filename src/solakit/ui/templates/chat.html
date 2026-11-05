@@ -30,10 +30,12 @@
         {% for archive in session.archives %}{% set n = archive.rsplit('.', 1)[1] %}<a href="/sessions/{{ session.id|urlencode }}/archives/{{ n }}" {% if archive_number|string == n %}aria-current="page"{% endif %}>Archive {{ n }}</a>{% endfor %}
       </nav>
     </details>
-    {% if not archive_number %}<a class="archive-action" href="/sessions/{{ session.id|urlencode }}/compact">Compact conversation</a><a class="archive-action" href="/sessions/{{ session.id|urlencode }}/archive">Archive conversation <span aria-hidden="true">↗</span></a>{% endif %}
+    {% if not archive_number and not session.archived_at %}<a class="archive-action" href="/sessions/{{ session.id|urlencode }}/compact">Compact conversation</a><a class="archive-action" href="/sessions/{{ session.id|urlencode }}/archive">Archive conversation <span aria-hidden="true">↗</span></a>{% endif %}
   </div>
-  <div id="conversation" class="conversation" role="log" aria-label="Message history" aria-live="polite" aria-relevant="additions text" {% if not archive_number %}data-events-url="/sessions/{{ session.id|urlencode }}/events"{% endif %}>{% include 'fragments/message_tail.html' %}</div>
-  {% if archive_number %}
+  <div id="conversation" class="conversation" role="log" aria-label="Message history" aria-live="polite" aria-relevant="additions text" {% if not archive_number and not session.archived_at %}data-events-url="/sessions/{{ session.id|urlencode }}/events"{% endif %}>{% include 'fragments/message_tail.html' %}</div>
+  {% if session.archived_at %}
+  <div class="archive-readonly"><p>This session is archived. Its history and search results are preserved.</p><form method="post" action="/sessions/{{ session.id|urlencode }}/lifecycle/restore"><button class="primary-button" type="submit">Restore session</button></form></div>
+  {% elif archive_number %}
   <div class="archive-readonly">This archive is read only. <a href="/sessions/{{ session.id|urlencode }}">Return to the current conversation →</a></div>
   {% else %}
   <div class="composer-wrap">

@@ -31,7 +31,13 @@ Read `SPEC.md` for behavioral contracts, `README.md` for an introduction,
 - `core/store.py`, `core/schemas.py`, `core/io.py`: immutable JSONL evidence,
   atomic metadata, durable I/O, exclusive data ownership and rebuildable SQLite
   indexes. The app.db `job_definitions` table is authoritative for managed jobs;
-  index rebuilds preserve it, and database backups are required. `core/search.py` queries standalone trigram FTS in the same `app.db`;
+  index rebuilds preserve it, and database backups are required.
+  Session lifecycle archival is the archived_at field in session metadata, distinct
+  from transcript rotation. Default lists hide archived sessions; FTS retains them.
+  The derived session_activity table uses messages and run admission times, not
+  import/recovery bookkeeping dates. Bulk operations protect live bindings/work
+  under scheduler-then-execution locks; restore is explicit before new work.
+  `core/search.py` queries standalone trigram FTS in the same `app.db`;
   physical archive/active line addresses survive rebuild, and failed indexing
   never fails an evidence append. Offline `sola search` reads the index without
   initializing/recovering Store. `core/compaction.py` and `core/archival.py` rotate immutable archives with

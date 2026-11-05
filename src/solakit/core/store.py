@@ -23,7 +23,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from solakit.core.schemas import Message, Run, RunStatus, Session, now
+from solakit.core.schemas import Message, Run, RunStatus, Session, SessionArchived, now
 from solakit.core.search import (
     FTS_INSERT,
     FTS_SCHEMA,
@@ -252,6 +252,11 @@ class Store:
                     "(id TEXT PRIMARY KEY, payload TEXT NOT NULL)"
                 )
                 db.execute(f"DELETE FROM {kind}")
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS session_activity "
+                "(id TEXT PRIMARY KEY, last_activity TEXT NOT NULL)"
+            )
+            db.execute("DELETE FROM session_activity")
             fts = True
             try:
                 db.execute("DROP TABLE IF EXISTS messages_fts")
@@ -270,6 +275,9 @@ class Store:
                 )
                 try:
                     rows = self._message_search_rows(session.id)
+                    dates = [row[7] for row in rows if row[7] is not None]
+                    if dates:
+                        self._activity(db, session.id, max(dates))
                     if fts:
                         try:
                             db.executemany(FTS_INSERT, rows)
@@ -292,6 +300,10 @@ class Store:
                 db.execute(
                     "INSERT INTO runs VALUES (?, ?)", (run.id, run.model_dump_json())
                 )
+                if records[-1].get("created_at"):
+                    self._activity(
+                        db, run.session, self._activity_timestamp(run.created_at)
+                    )
 
             for path in sorted((self.root / "jobs").glob("*.jsonl")):
                 try:
@@ -352,6 +364,152 @@ class Store:
             except (ValueError, UnicodeDecodeError) as exc:
                 raise self._corruption(path, "invalid_metadata") from exc
 
+    @staticmethod
+    def _activity_timestamp(value):
+        return timestamp(value.replace(tzinfo=UTC) if value.tzinfo is None else value)
+
+    @staticmethod
+    def _activity(db, session_id, at):
+        db.execute(
+            "INSERT INTO session_activity VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET "
+            "last_activity=max(last_activity, excluded.last_activity)",
+            (session_id, at),
+        )
+
+    def _touch_session(self, session_id, at):
+        try:
+            with self.lock, sqlite3.connect(self.root / "app.db") as db:
+                self._activity(db, session_id, self._activity_timestamp(at))
+        except sqlite3.Error:
+            self._issue(self.root / "app.db", "session_activity_index_unavailable")
+
+    def set_session_archived(self, session_id, archived):
+        with self.lock:
+            path = self._path("sessions", session_id, ".meta.json")
+            metadata = json.loads(path.read_bytes())
+            session = self.session(session_id)
+            if bool(session.archived_at) == archived:
+                return session
+            # Retain any importer-owned metadata fields as well as known fields.
+            metadata["archived_at"] = now().isoformat() if archived else None
+            atomic_write(path, json.dumps(metadata, ensure_ascii=False).encode())
+            updated = self.session(session_id)
+            self._index("sessions", session_id, updated.model_dump(mode="json"))
+            return updated
+
+    def list_sessions(
+        self,
+        *,
+        status="active",
+        q="",
+        before=None,
+        profile=None,
+        limit=50,
+        offset=0,
+        ids=None,
+    ):
+        if status not in {"active", "archived", "all"}:
+            raise ValueError("Invalid session status")
+        if (
+            type(limit) is not int
+            or not 1 <= limit <= 500
+            or type(offset) is not int
+            or offset < 0
+        ):
+            raise ValueError("Use limit 1–500 and a nonnegative offset")
+        if len(q) > 200:
+            raise ValueError("Session query exceeds 200 characters")
+        at = "coalesce(a.last_activity, json_extract(s.payload, '$.created_at'))"
+        source = "sessions s LEFT JOIN session_activity a ON a.id=s.id"
+        clauses, args = [], []
+        if ids is not None:
+            if not ids or len(ids) > 500:
+                raise ValueError("Select 1–500 session IDs")
+            clauses.append("s.id IN (" + ",".join("?" for _ in ids) + ")")
+            args.extend(ids)
+        if status != "all":
+            clauses.append(
+                "json_extract(s.payload, '$.archived_at') IS "
+                + ("NOT NULL" if status == "archived" else "NULL")
+            )
+        if q:
+            clauses.append(
+                "(instr(lower(s.id), lower(?))>0 OR "
+                "instr(lower(coalesce(json_extract(s.payload, '$.title'), '')), "
+                "lower(?))>0)"
+            )
+            args.extend([q, q])
+        if before:
+            clauses.append(f"julianday({at}) < julianday(?)")
+            args.append(timestamp(before))
+        if profile is not None:
+            clauses.append("json_extract(s.payload, '$.default_profile')=?")
+            args.append(profile)
+        where = " WHERE " + " AND ".join(clauses) if clauses else ""
+        with self.lock, sqlite3.connect(self.root / "app.db") as db:
+            total = db.execute(
+                f"SELECT count(*) FROM {source}" + where, args
+            ).fetchone()[0]
+            rows = db.execute(
+                f"SELECT s.payload, {at} FROM {source}"
+                + where
+                + f" ORDER BY julianday({at}) DESC, s.id LIMIT ? OFFSET ?",
+                [*args, limit, offset],
+            ).fetchall()
+            counts = dict(
+                db.execute(
+                    "SELECT CASE WHEN json_extract(payload, '$.archived_at') IS NULL "
+                    "THEN 'active' ELSE 'archived' END, count(*) "
+                    "FROM sessions GROUP BY 1"
+                ).fetchall()
+            )
+        with self.lock, sqlite3.connect(self.root / "app.db") as db:
+            profiles = [
+                row[0]
+                for row in db.execute(
+                    "SELECT DISTINCT json_extract(payload, '$.default_profile') "
+                    "FROM sessions ORDER BY 1"
+                )
+                if row[0]
+            ]
+        return {
+            "profiles": profiles,
+            "sessions": [
+                {
+                    **json.loads(payload),
+                    "last_activity_at": self._activity_timestamp(
+                        datetime.fromisoformat(at)
+                    ),
+                }
+                for payload, at in rows
+            ],
+            "total": total,
+            "counts": {
+                "active": counts.get("active", 0),
+                "archived": counts.get("archived", 0),
+            },
+            "limit": limit,
+            "offset": offset,
+        }
+
+    def list_runs(self, session_id=None, include_archived=False):
+        clauses, args = [], []
+        if session_id is not None:
+            clauses.append("json_extract(r.payload, '$.session')=?")
+            args.append(session_id)
+        if not include_archived:
+            clauses.append("json_extract(s.payload, '$.archived_at') IS NULL")
+        where = " WHERE " + " AND ".join(clauses) if clauses else ""
+        with self.lock, sqlite3.connect(self.root / "app.db") as db:
+            rows = db.execute(
+                "SELECT r.payload FROM runs r LEFT JOIN sessions s ON "
+                "s.id=json_extract(r.payload, '$.session')"
+                + where
+                + " ORDER BY r.rowid",
+                args,
+            ).fetchall()
+        return [json.loads(row[0]) for row in rows]
+
     def check_compaction(self, session_id: str) -> None:
         path = self._path("sessions", session_id, ".compaction.json")
         if path.exists():
@@ -378,13 +536,17 @@ class Store:
 
     def append_message(self, session_id: str, message: Message) -> None:
         with self.lock:
-            self.session(session_id)
+            if self.session(session_id).archived_at:
+                raise SessionArchived(
+                    "Session is archived; restore it before continuing"
+                )
             # Refuse writes after a failed rotation.
             self.context_started_at(session_id)
             self.check_compaction(session_id)
             path = self._path("sessions", session_id, ".jsonl")
             record = message.model_dump(mode="json")
             self._append(path, record)
+            self._touch_session(session_id, message.ts)
             try:
                 with path.open("rb") as stream:
                     line_no = sum(1 for _ in stream)
@@ -477,6 +639,9 @@ class Store:
         with self.lock:
             try:
                 rows = self._message_search_rows(session_id)
+                dates = [row[7] for row in rows if row[7] is not None]
+                if dates:
+                    self._touch_session(session_id, datetime.fromisoformat(max(dates)))
                 with sqlite3.connect(self.root / "app.db") as db:
                     db.execute(
                         "DELETE FROM messages_fts WHERE session_id = ?", (session_id,)
@@ -525,6 +690,9 @@ class Store:
                 self._path("runs", run.id, ".json"), json.dumps(record).encode()
             )
             self._index("runs", run.id, record)
+            # Recovery/observation may finish ancient imported runs today. Only
+            # request admission and actual message timestamps count as activity.
+            self._touch_session(run.session, run.created_at)
 
     def update_run(self, run_id: str, updates: dict) -> Run:
         """Patch finalized-run observations without overwriting concurrent fields."""

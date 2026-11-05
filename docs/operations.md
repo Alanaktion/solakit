@@ -6,6 +6,12 @@ Create `POST /api/sessions` with `{"id":"web-main","default_profile":"interactiv
 Post `{"message":"Hello"}` to `/api/sessions/web-main/messages`; optional `profile`
 selects that run's profile. Unknown/misplaced fields are rejected, not ignored.
 Inspect `/api/tools` for loaded tools and effective profile grants.
+Session listings default to active sessions, paginated and ordered by last activity.
+Use `status=archived|all`, `q`, `profile`, `before`, `limit`, `offset`, and `page=true`
+for the full catalog. [Session archival](operations/session-archive.md) describes
+reversible metadata archival, bulk cleanup and undo for imported history. Message
+search includes archived sessions; default run listings exclude their runs unless
+`include_archived=true` is requested.
 Inspect `/api/sessions`, `/api/sessions/{id}`, `/api/runs`, and `/api/runs/{id}`.
 Run inspection includes prompt, messages, tool calls, diagnostics, memory and
 send evidence. Session inspection lists numbered archives, available through

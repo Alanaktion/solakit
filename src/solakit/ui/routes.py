@@ -95,7 +95,7 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
             headers=HEADERS | (headers or {}),
         )
 
-    async def form(request, limit=512000, max_fields=8):
+    async def form(request, limit=512000, max_fields=8, multiple=()):
         if (
             request.headers.get("content-type", "").split(";", 1)[0]
             != "application/x-www-form-urlencoded"
@@ -112,7 +112,10 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
             )
         except (ValueError, UnicodeError):
             raise APIError(400, "Invalid form submission.") from None
-        return {key: entries[-1] for key, entries in values.items()}
+        return {
+            key: entries if key in multiple else entries[-1]
+            for key, entries in values.items()
+        }
 
     async def api(request, method, path, payload=None):
         headers = {}
@@ -139,21 +142,43 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
         return await api(request, "GET", "/health")
 
     async def session_page(request, error=None, values=None, status=200):
-        data, profiles, state = await asyncio.gather(
-            api(request, "GET", "/api/sessions"),
+        filters = {
+            key: request.query_params.get(key, default)
+            for key, default in (
+                ("status", "active"),
+                ("q", ""),
+                ("profile", ""),
+                ("offset", "0"),
+            )
+        }
+        parameters = {key: value for key, value in filters.items() if value}
+        parameters["page"] = "true"
+        catalog, profiles, state = await asyncio.gather(
+            api(request, "GET", "/api/sessions?" + urlencode(parameters)),
             api(request, "GET", "/api/profiles"),
             health(request),
         )
-        data.sort(key=lambda item: timestamp(item["created_at"]), reverse=True)
+
+        def page_url(offset):
+            return "/?" + urlencode({**filters, "offset": offset})
+
         return render(
             request,
             "sessions.html",
             {
-                "sessions": data,
+                "sessions": catalog["sessions"],
+                "catalog": catalog,
                 "profiles": profiles,
+                "filters": filters,
                 "health": state,
                 "error": error,
                 "values": values or {},
+                "previous": page_url(max(0, catalog["offset"] - catalog["limit"]))
+                if catalog["offset"]
+                else None,
+                "next": page_url(catalog["offset"] + catalog["limit"])
+                if catalog["offset"] + catalog["limit"] < catalog["total"]
+                else None,
             },
             status,
         )
@@ -161,7 +186,12 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
     async def conversation(request, identity, number=None):
         # Read run state first: a terminal run's transcript is already durable
         # before the following session read (avoids ending a stream on stale text).
-        records = await api(request, "GET", "/api/runs")
+        records = await api(
+            request,
+            "GET",
+            "/api/runs?"
+            + urlencode({"session_id": identity, "include_archived": "true"}),
+        )
         data = await api(request, "GET", f"/api/sessions/{quote(identity, safe='')}")
         if number is not None:
             archived = await api(
@@ -190,7 +220,6 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
             health(request),
             api(request, "GET", "/api/tools"),
         )
-        all_sessions.sort(key=lambda item: timestamp(item["created_at"]), reverse=True)
         return {
             "session": data,
             "turns": history,
@@ -295,6 +324,128 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
         return RedirectResponse(
             f"/sessions/{quote(created['id'], safe='')}", 303, headers=HEADERS
         )
+
+    @router.post("/sessions/{identity}/lifecycle/{operation}")
+    async def session_lifecycle_action(request: Request, identity: str, operation: str):
+        if not logged_in(request):
+            return login_redirect(request)
+        if operation not in {"archive", "restore"}:
+            return render(
+                request, "error.html", {"error": "Unknown lifecycle action."}, 404
+            )
+        try:
+            await api(
+                request,
+                "POST",
+                f"/api/sessions/{quote(identity, safe='')}/lifecycle",
+                {"archived": operation == "archive"},
+            )
+            target = (
+                "/?status=archived"
+                if operation == "archive"
+                else f"/sessions/{quote(identity, safe='')}"
+            )
+            return RedirectResponse(target, 303, headers=HEADERS)
+        except APIError as exc:
+            return render(request, "error.html", {"error": exc.detail}, exc.status)
+
+    @router.get("/sessions/cleanup/preview")
+    async def cleanup_preview(request: Request):
+        if not logged_in(request):
+            return login_redirect(request)
+        try:
+            days = int(request.query_params.get("days", "90"))
+            result = await api(
+                request,
+                "POST",
+                "/api/sessions/archive-batch",
+                {
+                    "inactive_days": days,
+                    "q": request.query_params.get("q", ""),
+                    "profile": request.query_params.get("profile") or None,
+                },
+            )
+            return render(
+                request,
+                "session_cleanup.html",
+                {
+                    "preview": result,
+                    "health": await health(request),
+                    "selection": json.dumps(
+                        {
+                            "ids": [s["id"] for s in result["sessions"]],
+                            "before": result["before"],
+                            "expected_activity": {
+                                s["id"]: s["last_activity_at"]
+                                for s in result["sessions"]
+                            },
+                            "dry_run": False,
+                        }
+                    ),
+                },
+            )
+        except (APIError, ValueError) as exc:
+            return render(
+                request,
+                "error.html",
+                {"error": "Invalid cleanup filters."},
+                getattr(exc, "status", 422),
+            )
+
+    @router.post("/sessions/cleanup/apply")
+    async def cleanup_apply(request: Request):
+        if not logged_in(request):
+            return login_redirect(request)
+        try:
+            values = await form(request, max_fields=510, multiple=("session_ids",))
+            if "selection" in values:
+                payload = json.loads(values["selection"])
+                if not isinstance(payload, dict) or not payload.get("ids"):
+                    raise ValueError("Select at least one session")
+                if values.get("from_preview") == "1":
+                    chosen = set(values.get("session_ids", []))
+                    payload["ids"] = [
+                        identity for identity in payload["ids"] if identity in chosen
+                    ]
+                    if not payload["ids"]:
+                        raise ValueError("Select at least one session")
+                payload["dry_run"] = False
+            else:
+                ids = values.get("session_ids", [])
+                if not ids:
+                    raise ValueError("Select at least one session")
+                payload = {"ids": ids, "dry_run": False}
+            operation = values.get("operation", "archive")
+            if operation not in {"archive", "restore"}:
+                raise ValueError("Invalid lifecycle operation")
+            result = await api(
+                request, "POST", f"/api/sessions/{operation}-batch", payload
+            )
+            return render(
+                request,
+                "session_cleanup_result.html",
+                {
+                    "result": result,
+                    "operation": operation,
+                    "undo": json.dumps(
+                        {
+                            "ids": [s["id"] for s in result["sessions"]],
+                            "expected_activity": {
+                                s["id"]: s["last_activity_at"]
+                                for s in result["sessions"]
+                            },
+                        }
+                    ),
+                    "health": await health(request),
+                },
+            )
+        except (APIError, ValueError) as exc:
+            return render(
+                request,
+                "error.html",
+                {"error": getattr(exc, "detail", str(exc))},
+                getattr(exc, "status", 422),
+            )
 
     @router.get("/sessions/{identity}")
     async def chat(request: Request, identity: str):

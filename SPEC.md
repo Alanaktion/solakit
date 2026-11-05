@@ -832,6 +832,30 @@ presentation, with tool details sourced only from redacted logs. No deletion,
 archive editing or model/job-triggered archival is exposed. Discord can use the
 shared operation later; slash-command UI is outside this change.
 
+### 9.3 Session lifecycle archival
+
+Whole-session archival is a reversible `archived_at` metadata flag, separate from
+transcript rotation above. It never moves or rewrites conversation, prompt, run,
+or media evidence. Archived sessions remain directly readable and included in
+full-text search; new messages, compaction, rotation and new job bindings require
+explicit restoration.
+
+Session lists default to active sessions, ordered by last message/run admission
+time. Imported metadata and recovery completion dates do not refresh activity.
+The API supports active/archived/all, title/ID and profile filters, inactivity
+cutoffs, and bounded pagination. Run lists also hide archived sessions by default,
+with an explicit history opt-in.
+
+The Sessions UI offers individual archive/restore, page selection, and an
+inactivity preview (90 days by default) with deselection and batch undo. Batch
+application rechecks captured activity timestamps and current protections.
+Pending/running work, enabled channel bindings, enabled unfinished jobs and
+active job dispatch protect sessions; completed consumed one-shot jobs do not.
+Scheduler and execution admission locks make these checks atomic with admission.
+Accepted metadata operations complete before cancellation propagates. There is
+no automatic archive policy or deletion. See
+[the operator workflow and API](docs/operations/session-archive.md).
+
 ## 10. Storage
 
 Code and data are separate trees. Data layout on her machine:

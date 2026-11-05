@@ -68,3 +68,8 @@ Vision thumbnails: run `check.cjs vision` to verify authenticated images load in
 chat and archived history, fit desktop/mobile in both themes, and become
 inaccessible after logout. The scratch server generates its own image fixture;
 these browser checks do not connect a Discord gateway or real vision model.
+
+Session lifecycle: run `check.cjs lifecycle` for a 55-session imported fixture,
+pagination, inactivity preview/deselection, bulk archive, retained search/history,
+read-only archived chat, restoration and batch undo. It checks theme/viewport
+overflow and screenshots with scratch data only.

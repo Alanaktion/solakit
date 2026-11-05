@@ -14,6 +14,10 @@ def now() -> datetime:
     return datetime.now(UTC)
 
 
+class SessionArchived(ValueError):
+    """Explicit restore is required before new work or context changes."""
+
+
 class Origin(BaseModel):
     channel: str = "api"
     channel_id: str | None = None
@@ -30,6 +34,7 @@ class Session(BaseModel):
     memory_scope: Literal["shared", "isolated", "ephemeral"] = "shared"
     parent_session: str | None = None
     created_at: datetime = Field(default_factory=now)
+    archived_at: datetime | None = None
 
 
 class Message(BaseModel):

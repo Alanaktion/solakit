@@ -14,7 +14,15 @@ from solakit.core.media import ImageRef, Media
 from solakit.core.memory import MemoryClient, MemoryUnavailable
 from solakit.core.model import ModelClient, ModelUnavailable
 from solakit.core.prompt import read_prompt
-from solakit.core.schemas import Message, Origin, Run, RunStatus, Session, now
+from solakit.core.schemas import (
+    Message,
+    Origin,
+    Run,
+    RunStatus,
+    Session,
+    SessionArchived,
+    now,
+)
 from solakit.core.store import Store
 from solakit.tools import Registry, ToolContext
 
@@ -98,6 +106,10 @@ class Execution:
             if self.closing:
                 raise ValueError("Runtime is shutting down")
             session = await durable(self.store.session, session_id)
+            if session.archived_at:
+                raise SessionArchived(
+                    "Session is archived; restore it before continuing"
+                )
             profile = profile or session.default_profile
             if profile not in self.config.profiles:
                 raise ValueError("Unknown profile")
@@ -148,7 +160,11 @@ class Execution:
         async with self.submit_lock:
             if self.closing:
                 raise ValueError("Runtime is shutting down")
-            await durable(self.store.session, session_id)
+            session = await durable(self.store.session, session_id)
+            if session.archived_at:
+                raise SessionArchived(
+                    "Session is archived; restore it before changing context"
+                )
             if any(
                 pending.run.session == session_id and not pending.future.done()
                 for pending in self.pending.values()
@@ -163,6 +179,10 @@ class Execution:
             if self.closing:
                 raise ValueError("Runtime is shutting down")
             session = await durable(self.store.session, session_id)
+            if session.archived_at:
+                raise SessionArchived(
+                    "Session is archived; restore it before changing context"
+                )
             if any(
                 p.run.session == session_id and not p.future.done()
                 for p in self.pending.values()

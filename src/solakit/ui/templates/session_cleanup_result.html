@@ -1,0 +1,9 @@
+{% extends 'base.html' %}
+{% block title %}Session archive updated · Solakit{% endblock %}
+{% block content %}
+<section class="page-heading"><h1>{{ 'Restored' if operation == 'restore' else 'Archived' }} {{ result.restored if operation == 'restore' else result.archived }} sessions</h1></section>
+<section class="panel evidence-panel"><p>Session files, transcript archives, images and full-text search are preserved.</p>
+<div class="action-group"><a class="primary-button" href="/{{ '?status=archived' if operation == 'archive' else '' }}">{{ 'View archived sessions' if operation == 'archive' else 'View active sessions' }}</a>
+{% if result.sessions %}<form method="post" action="/sessions/cleanup/apply"><input type="hidden" name="operation" value="{{ 'restore' if operation == 'archive' else 'archive' }}"><input type="hidden" name="selection" value="{{ undo }}"><button class="secondary-button" type="submit">Undo this batch</button></form>{% endif %}</div>
+{% if result.skipped %}<h2>{{ result.skipped|length }} skipped</h2><ul>{% for item in result.skipped %}<li>{{ item.id }} — {{ item.reason }}</li>{% endfor %}</ul>{% endif %}</section>
+{% endblock %}

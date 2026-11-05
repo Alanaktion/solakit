@@ -18,6 +18,11 @@
     }
   }
   document.addEventListener("change", event => {
+    if (event.target.id === "select-session-page") {
+      document.querySelectorAll('input[name="session_ids"]').forEach(input => {
+        input.checked = event.target.checked;
+      });
+    }
     if (event.target.id === "job-schedule-kind") jobSchedule();
   });
   function dates(root = document) {

@@ -323,3 +323,16 @@ pre { overflow-x: auto; font-size: 11px; line-height: 1.55; color: var(--ink); }
 .live-preview small { color: var(--muted); font-size: 10px; display: block; margin-top: 6px; }
 
 .message-image { display: block; max-width: min(100%, 512px); max-height: 512px; width: auto; object-fit: contain; border-radius: 8px; margin-top: 8px; }
+.session-filters { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; margin-bottom: 14px; }
+.session-filters > div { flex: 1 1 140px; min-width: 0; }
+.session-filters label { display: block; margin-bottom: 6px; }
+.session-bulk { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+.session-bulk input, .managed-session > input { width: auto; }
+.managed-session { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 4px; padding: 0 12px; border-bottom: 1px solid var(--line); }
+.managed-session .session-row { border-bottom: 0; padding: 12px 8px; }
+.managed-session .session-row time { min-width: 0; overflow-wrap: anywhere; }
+.session-pagination { display: flex; justify-content: space-between; gap: 12px; margin: 14px 0; }
+.session-cleanup { margin: 14px 0; }
+@media (max-width: 640px) { .managed-session .session-row { grid-template-columns: minmax(0, 1fr) auto; } .managed-session .row-arrow { display: none; } .managed-session .secondary-button { padding: 7px; } }
+
+.session-select-all { width: auto; }

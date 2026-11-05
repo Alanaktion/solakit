@@ -5,7 +5,9 @@ import io
 import json
 import os
 import tempfile
+from datetime import UTC, datetime
 from pathlib import Path
+from uuid import uuid4
 
 import httpx
 import uvicorn
@@ -23,7 +25,7 @@ from solakit.core.config import (
 from solakit.core.media import Media
 from solakit.core.memory import MemoryClient
 from solakit.core.model import ModelClient
-from solakit.core.schemas import Session
+from solakit.core.schemas import Message, Origin, Session
 from solakit.main import create_app
 
 root = Path(tempfile.mkdtemp(prefix="solakit-browser-"))
@@ -287,6 +289,31 @@ async def scratch_vision():
     )
     run = await app.state.execution.submit(session.id, "", images=[ref])
     return {"session": session.id, "image": ref.sha256, "status": run.status}
+
+
+@app.post("/qa/session-lifecycle")
+async def scratch_session_lifecycle():
+    prefix = "imported-" + uuid4().hex[:10]
+    ids = [f"{prefix}-{n:02}" for n in range(55)]
+
+    def seed():
+        for n, identity in enumerate(ids):
+            app.state.store.create_session(
+                Session(id=identity, title=f"Imported job {n}")
+            )
+            app.state.store.append_message(
+                identity,
+                Message(
+                    role="user",
+                    content="Lifecycle searchable proof",
+                    ts=datetime(2020, 1, 1, tzinfo=UTC),
+                    run_id="legacy-" + identity,
+                    origin=Origin(channel="job"),
+                ),
+            )
+
+    await asyncio.to_thread(seed)
+    return {"prefix": prefix, "ids": ids}
 
 
 if __name__ == "__main__":

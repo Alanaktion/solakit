@@ -4,7 +4,7 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, StringConstraints
@@ -21,9 +21,14 @@ from solakit.core.memory_ops import probe, refresh_run, watch_memory
 from solakit.core.model import ModelClient, ModelUnavailable, safe_url
 from solakit.core.prompt import inspection, read_prompt
 from solakit.core.routing import SessionRouter
-from solakit.core.schemas import Origin, Session, now
+from solakit.core.schemas import Origin, Session, SessionArchived, now
 from solakit.core.search import SearchUnavailable
 from solakit.core.secrets import RedactingFilter, Redactor
+from solakit.core.session_lifecycle import (
+    ArchiveBatch,
+    LifecycleRequest,
+    SessionLifecycle,
+)
 from solakit.core.startup import prepare
 from solakit.core.store import StorageCorruption, Store, safe_id
 from solakit.jobs import Jobs
@@ -108,6 +113,9 @@ def create_app(
         app.state.channels = Channels(cfg, app.state.execution, adapters)
         app.state.jobs = Jobs(cfg, app.state.execution, app.state.channels)
         app.state.registry.job_manager = app.state.jobs
+        app.state.session_lifecycle = SessionLifecycle(
+            cfg, app.state.execution, app.state.jobs
+        )
 
         def runtime_status(profile):
             return app.state.redactor.redact(
@@ -445,13 +453,61 @@ def create_app(
         return sorted(app.state.config.profiles)
 
     @api.get("/sessions")
-    def sessions() -> list[dict]:
-        return app.state.store.list_records("sessions")
+    def sessions(
+        status: Literal["active", "archived", "all"] = "active",
+        q: str = "",
+        before: str | None = None,
+        profile: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+        page: bool = False,
+    ):
+        try:
+            result = app.state.store.list_sessions(
+                status=status,
+                q=q,
+                before=before,
+                profile=profile,
+                limit=limit,
+                offset=offset,
+            )
+            return result if page else result["sessions"]
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+
+    @api.post("/sessions/archive-batch")
+    async def archive_sessions(request: ArchiveBatch):
+        try:
+            return await app.state.session_lifecycle.batch(request)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+
+    @api.post("/sessions/restore-batch")
+    async def restore_sessions(request: ArchiveBatch):
+        try:
+            return await app.state.session_lifecycle.batch(request, archived=False)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+
+    @api.post("/sessions/{session_id}/lifecycle")
+    async def session_lifecycle(session_id: str, request: LifecycleRequest):
+        try:
+            return await app.state.session_lifecycle.change(
+                session_id, request.archived
+            )
+        except FileNotFoundError as exc:
+            raise HTTPException(404, "Session not found") from exc
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
 
     @api.post("/sessions", status_code=201)
     def create_session(session: CreateSessionRequest) -> dict:
         try:
             safe_id(session.id)
+            if session.archived_at is not None:
+                raise ValueError(
+                    "Use the session lifecycle endpoint to archive a session"
+                )
             if session.default_profile not in app.state.config.profiles:
                 raise ValueError("Unknown profile")
             if session.memory_scope == "isolated":
@@ -527,14 +583,18 @@ def create_app(
                 )
             run = await asyncio.shield(pending.future)
             return await asyncio.to_thread(app.state.store.run, run.id)
+        except SessionArchived as exc:
+            raise HTTPException(409, str(exc)) from exc
         except FileNotFoundError as exc:
             raise HTTPException(404, "Session not found") from exc
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
 
     @api.get("/runs")
-    def runs() -> list[dict]:
-        return app.state.store.list_records("runs")
+    def runs(
+        session_id: str | None = None, include_archived: bool = False
+    ) -> list[dict]:
+        return app.state.store.list_runs(session_id, include_archived)
 
     @api.get("/runs/{run_id}")
     async def run_record(run_id: str, live: bool = False) -> dict:

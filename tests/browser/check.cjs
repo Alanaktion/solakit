@@ -155,6 +155,42 @@ async function vision(page) {
   assert.equal((await page.request.get(`${base}/api/media/${fixture.image}`)).status(), 401);
 }
 
+async function sessionLifecycle(page) {
+  const fixture = await (await page.request.post(base + '/qa/session-lifecycle')).json();
+  const root = `${base}/?q=${fixture.prefix}`;
+  await page.goto(root);
+  assert.equal(await page.locator('.managed-session').count(), 50);
+  await page.getByRole('link', {name: 'Next →', exact: true}).click();
+  assert.equal(await page.locator('.managed-session').count(), 5);
+  await noOverflow(page);
+  await page.goto(`${base}/sessions/cleanup/preview?days=90&q=${fixture.prefix}`);
+  await page.locator(`input[name="session_ids"][value="${fixture.ids[0]}"]`).uncheck();
+  await noOverflow(page);
+  await page.screenshot({path: path.join(output, `lifecycle-preview-${page.qaLabel}.png`), fullPage: true});
+  await page.getByRole('button', {name: 'Archive selected sessions', exact: true}).click();
+  await page.getByRole('heading', {name: 'Archived 54 sessions', exact: true}).waitFor();
+  let active = await (await page.request.get(`${base}/api/sessions?q=${fixture.prefix}`)).json();
+  assert.deepEqual(active.map(s => s.id), [fixture.ids[0]]);
+  const archive = await page.context().newPage();
+  await archive.goto(`${base}/sessions/${fixture.ids[54]}`);
+  assert.equal(await archive.locator('#composer').count(), 0);
+  await archive.getByRole('button', {name: 'Restore session', exact: true}).waitFor();
+  assert.match(await archive.locator('#conversation').innerText(), /Lifecycle searchable proof/);
+  await noOverflow(archive);
+  const hits = await (await page.request.get(`${base}/api/search?query=proof&session_id=${fixture.ids[54]}`)).json();
+  assert.equal(hits[0].session_id, fixture.ids[54]);
+  await archive.getByRole('button', {name: 'Restore session', exact: true}).click();
+  await archive.locator('#composer').waitFor();
+  await archive.close();
+  await page.getByRole('button', {name: 'Undo this batch', exact: true}).click();
+  await page.getByRole('heading', {name: 'Restored 53 sessions', exact: true}).waitFor();
+  const catalog = await (await page.request.get(`${base}/api/sessions?q=${fixture.prefix}&page=true`)).json();
+  assert.equal(catalog.total, 55);
+  await page.goto(root);
+  await noOverflow(page);
+  await page.screenshot({path: path.join(output, `lifecycle-list-${page.qaLabel}.png`), fullPage: true});
+}
+
 async function createSession(page, prefix, scope = 'ephemeral') {
   const id = `${prefix}-${page.qaLabel}-${Date.now()}`;
   await page.goto(base + '/?new=1');
@@ -450,7 +486,8 @@ async function streaming(page) {
         await page.getByLabel('Operator token').fill('scratch-browser-token');
         await page.getByRole('button', {name: 'Sign in'}).click();
         await page.waitForURL(base + '/');
-        if (phase === 'vision') await vision(page);
+        if (phase === 'lifecycle') await sessionLifecycle(page);
+        else if (phase === 'vision') await vision(page);
         else if (phase === 'once') await oneTimeJobs(page);
         else if (phase === 'jobs') await jobManagement(page);
         else if (phase === '12') await operations(page);

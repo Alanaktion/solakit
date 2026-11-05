@@ -304,6 +304,7 @@ class Jobs:
                 authorize(job)
             if self.closing or not job.enabled:
                 raise ValueError("Job is disabled or scheduler is shutting down")
+            await self._check_binding(job)
             task = await self._launch(job, self.states[job_id], self.clock())
             accepted = self.get(job_id)
         return task, accepted
@@ -379,6 +380,22 @@ class Jobs:
         # Also bound placeholder expansion, not only the source template.
         render_task(job, self.clock())
 
+    async def _check_binding(self, job):
+        if job.bind_session == "ephemeral":
+            return
+        identity = next(
+            (c.session for c in self.config.channels if c.id == job.bind_session),
+            job.bind_session,
+        )
+        try:
+            session = await durable(self.execution.store.session, identity)
+        except FileNotFoundError:
+            return
+        if session.archived_at:
+            raise ValueError(
+                "Restore the archived session before scheduling work there"
+            )
+
     async def _complete(self, operation):
         task = asyncio.create_task(operation)
         try:
@@ -421,6 +438,8 @@ class Jobs:
         old = self.jobs.get(job.id)
         state = self.states.get(job.id)
         changed = state is None or state.schedule != schedule
+        if job.enabled and (changed or not state.consumed):
+            await self._check_binding(job)
         if (
             changed
             and job.run_at
