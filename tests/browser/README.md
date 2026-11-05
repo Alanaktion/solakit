@@ -31,3 +31,7 @@ channel state, table scrolling, page overflow and browser script errors.
 Phase 13: run `check.cjs 13` with the same setup for archive confirmation,
 numbered history navigation, preserved messages, read-only composer absence and
 return to the active conversation, across the same theme/viewport matrix.
+
+Phase 10: run `check.cjs 10` for session creation/navigation, Enter/Shift+Enter,
+synthetic browser IME composition/key sequences, keyboard focus, busy duplicate
+submission guards and cancellation recovery, with the same theme/viewport matrix.

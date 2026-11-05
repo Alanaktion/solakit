@@ -54,6 +54,54 @@ async function createSession(page, prefix) {
   return id;
 }
 
+async function foundation(page) {
+  const id = await createSession(page, 'keyboard');
+  const input = page.locator('#message');
+  await input.focus();
+  await input.fill('First line');
+  await input.press('Shift+Enter');
+  assert.equal(await input.inputValue(), 'First line\n');
+  await input.fill('IME draft');
+  await input.evaluate(el => {
+    el.dispatchEvent(new CompositionEvent('compositionstart', {bubbles: true}));
+    el.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'Enter', code: 'Enter', isComposing: true, bubbles: true, cancelable: true,
+    }));
+    el.dispatchEvent(new CompositionEvent('compositionend', {bubbles: true}));
+  });
+  const before = await page.request.get(`${base}/api/sessions/${id}`);
+  assert.equal((await before.json()).messages.length, 0);
+  await input.fill('Browser keyboard acceptance');
+  await input.press('Enter');
+  await page.getByText('Browser reply.', {exact: true}).waitFor();
+  await page.waitForFunction(() => !document.querySelector('#message').disabled);
+  assert.equal(await input.inputValue(), '');
+  await input.focus();
+  await page.keyboard.press('Tab');
+  assert(await page.getByRole('button', {name: 'Send message'}).evaluate(el => el === document.activeElement));
+  await noOverflow(page);
+  await page.screenshot({path: path.join(output, `10-chat-${page.qaLabel}.png`), fullPage: true});
+  await input.fill('hold-browser');
+  await input.press('Enter');
+  await page.waitForFunction(() => document.querySelector('#message').disabled);
+  await page.locator('#composer').evaluate(el => el.requestSubmit());
+  const runs = await (await page.request.get(base + '/api/runs')).json();
+  const active = runs.filter(r => r.session === id && ['queued', 'running'].includes(r.status));
+  assert.equal(active.length, 1);
+  assert.equal((await page.request.post(`${base}/api/runs/${active[0].id}/cancel`)).status(), 200);
+  await page.waitForFunction(() => !document.querySelector('#message').disabled);
+  if (page.viewportSize().width < 600) {
+    await page.getByRole('link', {name: 'All sessions', exact: true}).click();
+    await page.waitForURL(base + '/');
+  } else {
+    await page.getByRole('link', {name: 'Manage sessions'}).click();
+    await page.waitForURL(base + '/');
+  }
+  await page.getByRole('link', {name: 'Tools', exact: true}).click();
+  await page.getByRole('heading', {name: 'Tools', exact: true}).waitFor();
+  await noOverflow(page);
+}
+
 async function archival(page) {
   const id = await createSession(page, 'archive');
   const response = await page.request.post(`${base}/api/sessions/${id}/messages`, {
@@ -103,6 +151,7 @@ async function archival(page) {
         await page.waitForURL(base + '/');
         if (phase === '12') await operations(page);
         else if (phase === '13') await archival(page);
+        else if (phase === '10') await foundation(page);
         else throw new Error(`Unknown phase ${phase}`);
         assert.deepEqual(errors, []);
         console.log(`PASS phase ${phase}: ${page.qaLabel}`);
