@@ -133,6 +133,28 @@ async function oneTimeJobs(page) {
   await page.request.delete(`${base}/api/jobs/${id}`);
 }
 
+async function vision(page) {
+  const response = await page.request.post(base + '/qa/vision');
+  assert.equal(response.status(), 200);
+  const fixture = await response.json();
+  assert.equal(fixture.status, 'completed');
+  await page.goto(`${base}/sessions/${fixture.session}`);
+  const picture = page.locator('.message-image');
+  await picture.waitFor();
+  await page.waitForFunction(() => document.querySelector('.message-image')?.naturalWidth === 1024);
+  assert((await picture.boundingBox()).width <= Math.min(512, page.viewportSize().width));
+  assert.equal((await page.request.get(`${base}/api/media/${fixture.image}`)).status(), 200);
+  await noOverflow(page);
+  await page.screenshot({path: path.join(output, `vision-${page.qaLabel}.png`), fullPage: true});
+  assert.equal((await page.request.post(`${base}/api/sessions/${fixture.session}/archive`)).status(), 200);
+  await page.goto(`${base}/sessions/${fixture.session}/archives/1`);
+  await page.locator('.message-image').waitFor();
+  assert.equal(await page.locator('#composer').count(), 0);
+  await noOverflow(page);
+  await page.request.post(base + '/logout');
+  assert.equal((await page.request.get(`${base}/api/media/${fixture.image}`)).status(), 401);
+}
+
 async function createSession(page, prefix, scope = 'ephemeral') {
   const id = `${prefix}-${page.qaLabel}-${Date.now()}`;
   await page.goto(base + '/?new=1');
@@ -428,7 +450,8 @@ async function streaming(page) {
         await page.getByLabel('Operator token').fill('scratch-browser-token');
         await page.getByRole('button', {name: 'Sign in'}).click();
         await page.waitForURL(base + '/');
-        if (phase === 'once') await oneTimeJobs(page);
+        if (phase === 'vision') await vision(page);
+        else if (phase === 'once') await oneTimeJobs(page);
         else if (phase === 'jobs') await jobManagement(page);
         else if (phase === '12') await operations(page);
         else if (phase === '13') await archival(page);

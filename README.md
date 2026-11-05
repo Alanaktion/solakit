@@ -8,6 +8,8 @@ The moonlight-themed web UI provides streaming chat, session history, prompt and
 run inspection, conversation archival and compaction, and scheduled job management.
 Optional Discord channels share the same session execution. Tool packs add journal
 publishing, letters, email, thermal printing, calendar reads, and image workflows.
+Discord image attachments also pass through to a vision-capable model; see
+[vision input](docs/operations/vision.md) for setup, limits and live verification.
 
 Solakit runs on localhost or a tailnet with Python 3.12+ and uv. Prompts and
 configuration stay under operator control; portable session and run evidence stays

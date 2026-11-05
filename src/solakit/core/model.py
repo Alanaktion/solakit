@@ -8,6 +8,8 @@ import time
 import httpx
 
 from solakit.core.config import ModelConfig, validate_api_token
+from solakit.core.io import durable
+from solakit.core.media import MediaError
 from solakit.core.secrets import Redactor
 
 LOGGER = logging.getLogger(__name__)
@@ -41,6 +43,7 @@ class ModelClient:
         self.redactor = Redactor([key] if key else [])
         self.auth_configured = bool(key)
         self.available = False
+        self.media = None
         self.client = httpx.AsyncClient(
             base_url=config.base_url.rstrip("/") + "/",
             timeout=config.timeout_s,
@@ -134,6 +137,13 @@ class ModelClient:
             "completion POST", "chat/completions", self.config.timeout_s
         )
         try:
+            if any(message.get("images") for message in messages):
+                if self.media is None:
+                    raise ModelUnavailable("Image input storage is not configured")
+                try:
+                    messages = await durable(self.media.project, messages)
+                except MediaError as exc:
+                    raise ModelUnavailable(str(exc)) from exc
             request = {
                 "model": self.config.model_id,
                 "messages": messages,

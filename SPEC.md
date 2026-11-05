@@ -373,6 +373,31 @@ identity, no duplicate "announcement copy" drifting from the record.
   run is visible where it happened instead of only in a log Alan must
   go hunting for.
 
+### 6.5 Vision attachments
+
+Authorized Discord messages may contain static PNG/JPEG/WebP attachments, including
+image-only messages and parent-routed threads. Gating precedes bounded allowlisted
+HTTPS CDN downloads (no redirects, 15 seconds, 8 MB/file, 16 MB/message, four files).
+Image decoding rejects invalid/animated/over-16-megapixel sources. Original bytes
+are immutable content-addressed media evidence; a separate orientation-corrected,
+aspect-preserving JPEG rendition fits within 1024×1024 and 2 MB. Two concurrent
+ingestions bound decoding pressure. Signed URLs and credentials are not persisted.
+
+Run input and user-message evidence reference both image hashes, sizes, dimensions
+and filename while preserving original text. Only the model client expands refs
+into OpenAI user content text/image_url parts with inline JPEG data URLs. Images
+survive tool steps, streaming and later turns; missing/corrupt evidence fails
+closed before inference. Provider rejection never replays as text or uses another
+model. Context accounting reserves 8192 bytes per image in addition to metadata;
+this is not measured image tokens. Model requests cap history at 16 images.
+
+Search remains textual; OpenViking receives image metadata and assistant/text
+observations, not a claim of pixel extraction. Operator chat renders authenticated
+local JPEG thumbnails through `/api/media/{hash}` with no-store/nosniff and checksum
+validation. Assistant Markdown still cannot embed images. Backups include media/.
+See [vision operations](docs/operations/vision.md) for live recognition checks;
+mocked transport evidence does not prove a connected VLM's recognition ability.
+
 ## 7. Scheduled jobs (in-app)
 
 Scheduling is owned by the FastAPI app via **APScheduler**

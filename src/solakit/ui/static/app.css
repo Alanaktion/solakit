@@ -321,3 +321,5 @@ pre { overflow-x: auto; font-size: 11px; line-height: 1.55; color: var(--ink); }
 .markdown-content th, .markdown-content td { min-width: 8ch; overflow-wrap: normal; word-break: normal; border: 1px solid var(--line); padding: 6px 10px; text-align: left; }
 .markdown-content hr { border: 0; border-top: 1px solid var(--line); margin: 1em 0; }
 .live-preview small { color: var(--muted); font-size: 10px; display: block; margin-top: 6px; }
+
+.message-image { display: block; max-width: min(100%, 512px); max-height: 512px; width: auto; object-fit: contain; border-radius: 8px; margin-top: 8px; }

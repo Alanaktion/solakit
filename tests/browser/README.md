@@ -63,3 +63,8 @@ One-time scheduling: run `check.cjs once` for the One time picker, timezone
 conversion, manual consumption, disabled repeat controls, task-only edits and
 explicit date-based rearming, across light/dark desktop/mobile. Form/completed-row
 screenshots, browser errors and overflow are checked with scratch jobs only.
+
+Vision thumbnails: run `check.cjs vision` to verify authenticated images load in
+chat and archived history, fit desktop/mobile in both themes, and become
+inaccessible after logout. The scratch server generates its own image fixture;
+these browser checks do not connect a Discord gateway or real vision model.

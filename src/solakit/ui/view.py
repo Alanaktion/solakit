@@ -86,8 +86,16 @@ def turns(
         logs = iter(evidence.get(identity, {}).get("tools", []))
         items = []
         for message in messages:
-            if message["role"] != "tool" and message.get("content") is not None:
-                items.append({"role": message["role"], "content": message["content"]})
+            if message["role"] != "tool" and (
+                message.get("content") is not None or message.get("images")
+            ):
+                items.append(
+                    {
+                        "role": message["role"],
+                        "content": message.get("content") or "",
+                        "images": message.get("images", []),
+                    }
+                )
             for call in message.get("tool_calls") or []:
                 log = next(logs, None)
                 # Arguments/results come only from redacted run tool logs. Never

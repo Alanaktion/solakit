@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from solakit.core.config import Channel, Config
+from solakit.core.media import ImageAttachment
 
 
 @dataclass(frozen=True)
@@ -19,6 +20,7 @@ class Inbound:
     bot: bool = False
     self_message: bool = False
     mentioned: bool = False
+    attachments: tuple[ImageAttachment, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -43,7 +45,11 @@ class Adapter(Protocol):
 
 
 def route(config: Config, message: Inbound) -> Channel | None:
-    if message.bot or message.self_message or not message.text.strip():
+    if (
+        message.bot
+        or message.self_message
+        or (not message.text.strip() and not message.attachments)
+    ):
         return None
     identity = message.parent_id or message.channel_id
     for channel in config.channels:

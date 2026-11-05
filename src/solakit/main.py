@@ -8,13 +8,14 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, StringConstraints
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, Response
 from starlette.staticfiles import StaticFiles
 
 from solakit.channels import ApiAdapter, Channels
 from solakit.core.compaction import ContextLimit
 from solakit.core.config import Config, Job
 from solakit.core.loop import Execution
+from solakit.core.media import Media, MediaError
 from solakit.core.memory import MemoryClient, MemoryUnavailable
 from solakit.core.memory_ops import probe, refresh_run, watch_memory
 from solakit.core.model import ModelClient, ModelUnavailable, safe_url
@@ -260,6 +261,23 @@ def create_app(
             )
 
     api = APIRouter(prefix="/api", dependencies=[Depends(authorize)])
+
+    @api.get("/media/{digest}")
+    async def image_media(digest: str):
+        try:
+            payload = await asyncio.to_thread(
+                Media(app.state.store.root).read_hash, digest
+            )
+        except MediaError as exc:
+            raise HTTPException(404, "Image unavailable") from exc
+        return Response(
+            payload,
+            media_type="image/jpeg",
+            headers={
+                "Cache-Control": "no-store",
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
 
     @app.get("/health")
     async def health() -> dict:

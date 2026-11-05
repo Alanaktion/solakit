@@ -3,10 +3,13 @@
 import asyncio
 import io
 import re
+from urllib.parse import urlsplit
 
+import aiohttp
 import discord
 
 from solakit.channels.base import Inbound, Outbound, route
+from solakit.core.media import MAX_IMAGE_BYTES, ImageAttachment, MediaError
 from solakit.core.schemas import now
 
 
@@ -86,14 +89,67 @@ class DiscordAdapter:
                 bot=message.author.bot,
                 self_message=user is not None and message.author.id == user.id,
                 mentioned=user is not None and user in message.mentions,
+                attachments=tuple(
+                    ImageAttachment(
+                        attachment.filename,
+                        attachment.size,
+                        lambda attachment=attachment: self.download(attachment.url),
+                    )
+                    for attachment in getattr(message, "attachments", [])
+                ),
             )
             if route(self.config, inbound) is not None:
                 async with message.channel.typing():
-                    await emit(inbound)
+                    try:
+                        await emit(inbound)
+                    except MediaError as exc:
+                        await message.channel.send(
+                            str(exc), allowed_mentions=discord.AllowedMentions.none()
+                        )
 
         self.state = "connecting"
         self.task = asyncio.create_task(self.client.start(self.token, reconnect=True))
         self.task.add_done_callback(self._ended)
+
+    async def download(self, url):
+        try:
+            parsed = urlsplit(url)
+            if (
+                parsed.scheme != "https"
+                or parsed.hostname not in {"cdn.discordapp.com", "media.discordapp.net"}
+                or parsed.port not in {None, 443}
+                or parsed.username is not None
+                or parsed.password is not None
+                or not parsed.path.startswith(
+                    ("/attachments/", "/ephemeral-attachments/")
+                )
+            ):
+                raise MediaError("Invalid Discord attachment location")
+            # No request logger, credentials or redirects expose signed URLs.
+            async with aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=15),
+                trust_env=True,
+                auto_decompress=False,
+            ) as client:
+                async with client.get(
+                    url, allow_redirects=False, headers={"Accept-Encoding": "identity"}
+                ) as response:
+                    if (
+                        response.status != 200
+                        or response.headers.get("Content-Encoding", "identity")
+                        != "identity"
+                    ):
+                        raise MediaError("Image download failed; resend the attachment")
+                    data = bytearray()
+                    async for chunk in response.content.iter_chunked(65536):
+                        data.extend(chunk)
+                        if len(data) > MAX_IMAGE_BYTES:
+                            raise MediaError("Image exceeds the 8 MB download limit")
+                    return bytes(data)
+        except MediaError:
+            raise
+        except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
+            raise MediaError("Image download failed; resend the attachment") from exc
 
     def _ended(self, task):
         if not task.cancelled() and task.exception() is not None:

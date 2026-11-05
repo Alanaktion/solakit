@@ -10,6 +10,7 @@ from solakit.core.archival import archive_session
 from solakit.core.compaction import Compactor, ContextLimit, request_bytes
 from solakit.core.config import Config
 from solakit.core.io import durable
+from solakit.core.media import ImageRef, Media
 from solakit.core.memory import MemoryClient, MemoryUnavailable
 from solakit.core.model import ModelClient, ModelUnavailable
 from solakit.core.prompt import read_prompt
@@ -44,6 +45,7 @@ class Execution:
             registry,
             model,
         )
+        self.model.media = Media(store.root)
         self.memory = memory
         self.compactor = Compactor(store, memory)
         self.semaphore = asyncio.Semaphore(config.model.concurrency)
@@ -62,12 +64,18 @@ class Execution:
         profile: str | None = None,
         origin: Origin | None = None,
         stream: bool = False,
+        images: list[ImageRef] | None = None,
     ) -> Pending:
         # Admission (durable run + queue ownership) is indivisible even if an
         # asynchronous HTTP client disconnects while the run record is written.
         task = asyncio.create_task(
             self._enqueue(
-                session_id, text, profile=profile, origin=origin, stream=stream
+                session_id,
+                text,
+                profile=profile,
+                origin=origin,
+                stream=stream,
+                images=images,
             )
         )
         try:
@@ -84,6 +92,7 @@ class Execution:
         profile: str | None = None,
         origin: Origin | None = None,
         stream: bool = False,
+        images: list[ImageRef] | None = None,
     ) -> Pending:
         async with self.submit_lock:
             if self.closing:
@@ -96,6 +105,7 @@ class Execution:
                 session=session_id,
                 profile=profile,
                 input_message=text,
+                input_images=images or [],
                 origin=origin or Origin(),
             )
             await durable(self.store.save_run, run)
@@ -121,9 +131,15 @@ class Execution:
         profile: str | None = None,
         origin: Origin | None = None,
         stream: bool = False,
+        images: list[ImageRef] | None = None,
     ) -> Run:
         pending = await self.enqueue(
-            session_id, text, profile=profile, origin=origin, stream=stream
+            session_id,
+            text,
+            profile=profile,
+            origin=origin,
+            stream=stream,
+            images=images,
         )
         # A client disconnect does not silently cancel an accepted run.
         return await asyncio.shield(pending.future)
@@ -217,7 +233,9 @@ class Execution:
                 recall = None
                 if self.memory and session.memory_scope == "shared":
                     run.memory_status = "recalling"
-                    recall = await self.memory.scoped(session).search(pending.text)
+                    recall = await self.memory.scoped(session).search(
+                        pending.text or "Image attachment"
+                    )
                     run.memory_status = "recalled"
                     run.recall = recall
                 elif session.memory_scope == "ephemeral":
@@ -236,7 +254,13 @@ class Execution:
                 preview = [
                     {"role": "system", "content": prompt},
                     *valid_history(history),
-                    {"role": "user", "content": pending.text},
+                    Message(
+                        role="user",
+                        content=pending.text,
+                        images=run.input_images,
+                        origin=run.origin,
+                        run_id=run.id,
+                    ).model_message(),
                 ]
                 if (
                     request_bytes(
@@ -312,7 +336,13 @@ class Execution:
         context = valid_history(history)
         run.context_skipped_messages = len(history) - len(context)
         messages.extend(context)
-        user = Message(role="user", content=text, origin=run.origin, run_id=run.id)
+        user = Message(
+            role="user",
+            content=text,
+            images=run.input_images,
+            origin=run.origin,
+            run_id=run.id,
+        )
         messages.append(user.model_message())
         repairs = 0
         usage_complete = True

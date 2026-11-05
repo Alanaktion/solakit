@@ -24,8 +24,14 @@ class ContextLimit(Exception):
 def request_bytes(
     model: str, messages: list[dict], tools: list[dict], max_tokens: int
 ) -> int:
-    """Conservative serialized-byte guard; never reported as measured token usage."""
-    return len(
+    """Text/metadata bytes plus visual reservation; never measured token usage."""
+    from solakit.core.media import IMAGE_CONTEXT_BYTES
+
+    image_budget = (
+        sum(len(message.get("images", [])) for message in messages)
+        * IMAGE_CONTEXT_BYTES
+    )
+    return image_budget + len(
         json.dumps(
             {
                 "model": model,

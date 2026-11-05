@@ -9,6 +9,7 @@ from solakit.channels.base import Adapter, Inbound, Outbound, route
 from solakit.core.config import Config, Delivery
 from solakit.core.io import durable
 from solakit.core.loop import Execution
+from solakit.core.media import Media
 from solakit.core.routing import SessionRouter
 from solakit.core.schemas import Origin, Run, RunStatus
 from solakit.tools import ToolContext
@@ -53,6 +54,8 @@ class Channels:
         self.router = SessionRouter(config, execution.store)
         self.last_message: dict[str, str] = {}
         self.delivery_locks: dict[str, asyncio.Lock] = {}
+        self.media = Media(execution.store.root)
+        self.media_slots = asyncio.Semaphore(2)
 
     async def start(self):
         started = []
@@ -87,11 +90,16 @@ class Channels:
         channel = route(self.config, message)
         if channel is None:
             return None
+        images = []
+        if message.attachments:
+            async with self.media_slots:
+                images = await self.media.ingest(message.attachments)
         session = await durable(self.router.channel, channel.type, channel.channel_id)
         self.last_message[channel.id] = message.external_id
         run = await self.execution.submit(
             session.id,
             message.text,
+            images=images,
             profile=channel.profile,
             origin=Origin(
                 channel=channel.type,

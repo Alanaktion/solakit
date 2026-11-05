@@ -65,6 +65,10 @@ Read `SPEC.md` for behavioral contracts, `README.md` for an introduction,
   with the existing redactor before network access. Collections remain named repo
   subdirectories; `collection:<alias>` grants only that directory.
 - `channels/`: API and opt-in Discord adapters through shared session execution.
+  Discord image attachments use core/media.py for bounded immutable source/JPEG
+  evidence. Messages retain image refs; the model client projects those into
+  OpenAI image_url data parts, including later/tool/streaming turns. Never silently
+  drop pixels or forward signed CDN URLs. Back up media/ with the evidence tree.
   `jobs/`: API-managed SQLite job definitions, one-time TOML import, durable JSONL
   cursors and opt-in APScheduler dispatch using shared execution/delivery.
   Built-in `jobs` tools use the injected scheduler; jobs.run queues without waiting

@@ -81,7 +81,9 @@ does not cancel accepted work or resubmit it. Check recorded state before retryi
 a dropped connection. Cancellation is available from the run evidence page.
 
 Assistant messages support headings, lists, quotes, links, code fences and tables.
-Raw HTML and images are disabled and rendered HTML is sanitized. User text, tool
+Raw HTML and image embeds in assistant Markdown are disabled; rendered HTML is
+sanitized. Discord attachments have a separate
+[authenticated vision path](operations/vision.md). User text, tool
 logs, summaries and prompt/run evidence remain literal; original messages and hashes
 are unchanged. Live output masks full credentials and unfinished secret prefixes.
 The streaming parser accepts oMLX's legacy exact empty keepalive frame as a

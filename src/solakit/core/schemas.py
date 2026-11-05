@@ -7,6 +7,8 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
+from solakit.core.media import ImageRef
+
 
 def now() -> datetime:
     return datetime.now(UTC)
@@ -33,6 +35,7 @@ class Session(BaseModel):
 class Message(BaseModel):
     role: Literal["system", "user", "assistant", "tool"]
     content: str | None = None
+    images: list[ImageRef] = Field(default_factory=list, max_length=4)
     tool_calls: list[dict[str, Any]] | None = None
     tool_call_id: str | None = None
     origin: Origin
@@ -43,10 +46,13 @@ class Message(BaseModel):
     archive: str | None = None
 
     def model_message(self) -> dict[str, Any]:
-        return self.model_dump(
+        result = self.model_dump(
             include={"role", "content", "tool_calls", "tool_call_id"},
             exclude_none=True,
         )
+        if self.images:
+            result["images"] = [image.model_dump() for image in self.images]
+        return result
 
 
 class RunStatus(StrEnum):
@@ -69,6 +75,7 @@ class Run(BaseModel):
     session: str
     profile: str
     input_message: str | None = None
+    input_images: list[ImageRef] = Field(default_factory=list, max_length=4)
     origin: Origin
     status: RunStatus = RunStatus.queued
     created_at: datetime = Field(default_factory=now)

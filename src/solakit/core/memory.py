@@ -303,6 +303,15 @@ def memory_messages(messages: list[dict]) -> list[dict]:
             parts = []
             if message.get("content"):
                 parts.append({"type": "text", "text": message["content"]})
+            for image in message.get("images", []):
+                parts.append(
+                    {
+                        "type": "text",
+                        "text": "[Image attachment metadata; pixels retained locally: "
+                        + json.dumps(image, ensure_ascii=False)
+                        + "]",
+                    }
+                )
             calls = message.get("tool_calls") or []
             following = []
             for candidate in messages[index + 1 : index + 1 + len(calls)]:

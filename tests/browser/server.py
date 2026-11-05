@@ -1,6 +1,7 @@
 """Isolated browser-QA server: scratch data, mock model, no external integrations."""
 
 import asyncio
+import io
 import json
 import os
 import tempfile
@@ -8,6 +9,7 @@ from pathlib import Path
 
 import httpx
 import uvicorn
+from PIL import Image
 
 import solakit.main as main_module
 from solakit.core.config import (
@@ -18,8 +20,10 @@ from solakit.core.config import (
     PathsConfig,
     SecretRef,
 )
+from solakit.core.media import Media
 from solakit.core.memory import MemoryClient
 from solakit.core.model import ModelClient
+from solakit.core.schemas import Session
 from solakit.main import create_app
 
 root = Path(tempfile.mkdtemp(prefix="solakit-browser-"))
@@ -268,6 +272,21 @@ def expire_scratch_sessions():
     for identity in app.state.ui_sessions.sessions:
         app.state.ui_sessions.sessions[identity] = 0
     return {"expired": True}
+
+
+@app.post("/qa/vision")
+async def scratch_vision():
+    # Scratch-only fixture, never mounted by the production application.
+    session = await asyncio.to_thread(
+        app.state.store.create_session, Session(memory_scope="ephemeral")
+    )
+    source = io.BytesIO()
+    Image.new("RGB", (1024, 512), "red").save(source, format="PNG")
+    ref = await asyncio.to_thread(
+        Media(app.state.store.root).save, source.getvalue(), "fixture.png"
+    )
+    run = await app.state.execution.submit(session.id, "", images=[ref])
+    return {"session": session.id, "image": ref.sha256, "status": run.status}
 
 
 if __name__ == "__main__":
