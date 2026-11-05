@@ -35,3 +35,8 @@ return to the active conversation, across the same theme/viewport matrix.
 Phase 10: run `check.cjs 10` for session creation/navigation, Enter/Shift+Enter,
 synthetic browser IME composition/key sequences, keyboard focus, busy duplicate
 submission guards and cancellation recovery, with the same theme/viewport matrix.
+
+Phase 11: run `check.cjs 11` for fixed-time prompt API parity, schema/tool/prompt
+expansion, narrow-screen evidence and actual UI cancellation feedback. The mock
+model calls the built-in read-only runtime.status tool; external integrations
+remain disabled.

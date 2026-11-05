@@ -154,7 +154,7 @@ not a security boundary against a malicious installed package.
 ## Scope and deferred work
 
 The [implementation audit](docs/audits/implementation-status.md) inventories shipped
-features and test evidence. Completed plans 01–06, 14–16 and 20 are removed; consult
+features and test evidence. Completed plans 01–06, 10–16 and 20 are removed; consult
 [remaining plans](docs/plan/README.md), not historical completion notes, before
 expanding scope. Core, generic tools/services, journal/letters/email packs, built-in
 shell and API/UI evidence/operations/archival/compaction are implemented.

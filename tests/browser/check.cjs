@@ -102,6 +102,40 @@ async function foundation(page) {
   await noOverflow(page);
 }
 
+async function evidence(page) {
+  const id = await createSession(page, 'evidence');
+  await page.goto(`${base}/prompt?profile=interactive&session=${id}&origin=api&at=2026-11-04T19%3A00%3A00Z`);
+  await page.getByRole('heading', {name: 'Assembled prompt'}).waitFor();
+  const api = await (await page.request.get(`${base}/api/prompt?profile=interactive&session=${id}&origin=api&at=2026-11-04T19%3A00%3A00Z`)).json();
+  assert.equal(await page.locator('.digest').innerText(), api.sha256);
+  assert.equal(await page.locator('.evidence-text code').innerText(), api.prompt);
+  await page.locator('.schema-details summary').click();
+  assert(await page.locator('.schema-details pre').isVisible());
+  await noOverflow(page);
+  await page.screenshot({path: path.join(output, `11-prompt-${page.qaLabel}.png`), fullPage: true});
+  const completed = await (await page.request.post(`${base}/api/sessions/${id}/messages`, {
+    data: {message: 'tool-browser'},
+  })).json();
+  assert.equal(completed.status, 'completed');
+  await page.goto(`${base}/runs/${completed.id}`);
+  await page.locator('.tool-call summary').click();
+  assert(await page.locator('.tool-details').isVisible());
+  assert.match(await page.locator('.tool-details').innerText(), /Arguments|Result/);
+  await page.getByText('Stored prompt', {exact: true}).click();
+  assert.match(await page.locator('.evidence-text').innerText(), /Browser QA persona/);
+  await noOverflow(page);
+  await page.screenshot({path: path.join(output, `11-run-${page.qaLabel}.png`), fullPage: true});
+  const pending = await (await page.request.post(`${base}/api/sessions/${id}/messages?wait=false`, {
+    data: {message: 'hold-browser'},
+  })).json();
+  await page.goto(`${base}/runs/${pending.id}`);
+  await page.getByRole('button', {name: 'Cancel run'}).click();
+  await page.waitForFunction(() => document.querySelector('.intro')?.textContent.includes('cancelled'));
+  assert.equal(await page.getByRole('button', {name: 'Cancel run'}).count(), 0);
+  await noOverflow(page);
+  await page.screenshot({path: path.join(output, `11-cancel-${page.qaLabel}.png`), fullPage: true});
+}
+
 async function archival(page) {
   const id = await createSession(page, 'archive');
   const response = await page.request.post(`${base}/api/sessions/${id}/messages`, {
@@ -152,6 +186,7 @@ async function archival(page) {
         if (phase === '12') await operations(page);
         else if (phase === '13') await archival(page);
         else if (phase === '10') await foundation(page);
+        else if (phase === '11') await evidence(page);
         else throw new Error(`Unknown phase ${phase}`);
         assert.deepEqual(errors, []);
         console.log(`PASS phase ${phase}: ${page.qaLabel}`);

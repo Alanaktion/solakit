@@ -19,6 +19,7 @@ root = Path(tempfile.mkdtemp(prefix="solakit-browser-"))
 (root / "fragments/profiles/interactive.md").write_text("")
 os.environ["SOLA_BROWSER_TOKEN"] = "scratch-browser-token"
 config = Config(
+    enabled_tools=["runtime"],
     operator_token=SecretRef(env="SOLA_BROWSER_TOKEN"),
     paths=PathsConfig(
         data=root / "data", soul=root / "SOUL.md", fragments=root / "fragments"
@@ -53,6 +54,8 @@ config = Config(
     ],
 )
 
+config.profiles["interactive"].tools = ["runtime.status"]
+
 
 async def respond(request):
     if request.url.path.endswith("/models"):
@@ -61,6 +64,31 @@ async def respond(request):
     task = body["messages"][-1].get("content", "")
     if "hold-browser" in task:
         await asyncio.sleep(30)
+    if "tool-browser" in task and body["messages"][-1]["role"] == "user":
+        return httpx.Response(
+            200,
+            json={
+                "model": config.model.model_id,
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "content": None,
+                            "tool_calls": [
+                                {
+                                    "id": "browser-tool",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "runtime.status",
+                                        "arguments": "{}",
+                                    },
+                                }
+                            ],
+                        }
+                    }
+                ],
+            },
+        )
     text = "Browser reply.\n\n```text\n" + "long-code-" * 24 + "\n```"
     if body.get("stream"):
         events = [

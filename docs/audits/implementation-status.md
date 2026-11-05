@@ -90,7 +90,7 @@ original plan text:
 | 16 journal pack | Independently packaged; scratch contract and mock-model runner acceptance verified |
 | 20 shell | Built-in migration complete; ongoing operator guidance is in `docs/operations/shell.md` |
 
-Retained partial plans: 07, 08, 09, 11, 17, 18 and 21. Each now
+Retained partial plans: 07, 08, 09, 17, 18, 19, 21 and 22. Each now
 separates completed work from remaining checks. Plan 19 now has a separately packaged USB/serial 58mm ESC/POS printer implementation;
 its physical-device gate remains open.
 UI plans remain because their named browser matrices have not been specifically
@@ -102,7 +102,7 @@ reported complete. Historical adversarial-review resolutions moved from plans to
 1. Audit intended operator-owned profile/resource grants and approve prompts in plan 09; the automated blog-profile isolation gap is closed.
 2. Verify live completed summaries, rotation and continuation in plan 21; a recall
    round-trip does not exercise those API paths.
-3. Complete targeted light/dark/mobile/keyboard UI checks (plans 11 and 21).
+3. Complete compaction and streaming browser/live checks (plans 21 and 22); foundation, evidence, operations and archival browser matrices are complete.
 4. Check actual letters protocol and scratch mailbox/provider behavior (17–18).
 5. Verify physical 58mm USB/serial thermal printer output (19); image/calendar remain later priorities.
 6. Record acceptance and prompt-audit approval, then deliberately stage Discord,
@@ -163,3 +163,24 @@ disabled the composer; duplicate form submission admitted only one active run,
 and cancellation restored it. No page overflow or script errors occurred. The
 phase `10` [browser QA](../../tests/browser/README.md) is reproducible. Operator
 backend/live streaming and compaction gates remain separately tracked.
+
+## Subsequent phase 11 browser acceptance (2026-11-04)
+
+Plan 11 is complete and removed. The isolated Brave matrix passed light/dark at
+1440×1000 and 390×844, including screenshot review. Fixed-time prompt text/SHA
+matched the authenticated API, schema details expanded, and a real runtime.status
+tool call through the mock-model runner produced expandable arguments/results.
+Stored prompt evidence expanded correctly. Canceling a held run through its
+actual UI control displayed the cancelled status and removed the action. Long
+evidence stayed within scroll containers with no page overflow or script errors.
+Reproduce with phase `11` in [browser QA](../../tests/browser/README.md).
+
+Plans 10–13 are now retired. Browser acceptance used scratch storage/jobs and a
+mock model; it does not establish live oMLX streaming, OpenViking compaction,
+mailbox/device operation or production scheduling/channel rollout.
+
+Final verification after retiring plans 10–13: 226 core/optional-pack tests passed;
+all sixteen phase/theme/viewport browser scenarios passed. Ruff lint/format,
+`.env`-backed offline `sola check`, core wheel/sdist build and packaged UI assets
+passed. Screenshots remain scratch artifacts under the browser harness output
+directory; no operator data or credentials are included.

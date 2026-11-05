@@ -36,7 +36,8 @@ Completed foundation plans 01–06, 14–16 and 20 have been removed. See the
 - [ ] Verify deliberate physical-device operation of the thermal printer.
 - [ ] Record remaining live summary/continuation checks from
   [compaction controls](21-compaction-controls.md).
-- [ ] Close targeted UI browser checks in plans 11 and 21.
+- [ ] Close compaction/streaming browser and live checks in plans 21 and 22;
+  foundation/evidence/operations/archival browser matrices are complete.
 - [ ] Record the full §14 acceptance decision, then follow
   [Discord](07-channels-discord.md), [job](08-scheduling.md) and SPEC §15 rollout gates.
 
