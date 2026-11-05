@@ -1,4 +1,4 @@
-"""Thin operator CLI: prompt inspection is an authenticated API read."""
+"""Operator CLI: authenticated API inspection and offline local-index search."""
 
 import argparse
 import json
@@ -26,6 +26,14 @@ def main() -> None:
     prompt.add_argument("--profile", default="interactive")
     prompt.add_argument("--session", default="inspection")
     prompt.add_argument("--json", action="store_true")
+    search = commands.add_parser(
+        "search", help="Search the local message index offline"
+    )
+    search.add_argument("query")
+    for field in ("session-id", "role", "kind", "after", "before"):
+        search.add_argument("--" + field)
+    search.add_argument("--limit", type=int, default=50)
+    search.add_argument("--json", action="store_true")
     commands.add_parser(
         "check", help="Validate config, secrets, prompt files and tool grants offline"
     )
@@ -42,6 +50,54 @@ def main() -> None:
         "--log-level", choices=["debug", "info", "warning", "error", "critical"]
     )
     args = parser.parse_args()
+    if args.command == "search":
+        from solakit.core.search import SearchUnavailable, search_index
+        from solakit.core.secrets import SENSITIVE, Redactor
+
+        try:
+            config = load_config()
+        except (OSError, ValueError):
+            parser.exit(
+                1, "Search failed: cannot load configuration; check SOLA_CONFIG.\n"
+            )
+        try:
+            values = [
+                value for key, value in os.environ.items() if SENSITIVE.search(key)
+            ]
+            for reference in (
+                config.operator_token,
+                config.model.api_key,
+                config.memory.api_key,
+                config.discord_token,
+            ):
+                if reference is not None:
+                    try:
+                        values.append(reference.resolve())
+                    except (OSError, ValueError):
+                        pass  # Search does not require working integration credentials.
+            results = search_index(
+                config.paths.data,
+                args.query,
+                session_id=args.session_id,
+                role=args.role,
+                kind=args.kind,
+                after=args.after,
+                before=args.before,
+                limit=args.limit,
+                redactor=Redactor(values),
+            )
+        except (OSError, ValueError, SearchUnavailable) as exc:
+            parser.exit(1, f"Search failed: {exc}\n")
+        if args.json:
+            print(json.dumps(results, ensure_ascii=False, indent=2))
+        else:
+            for hit in results:
+                print(
+                    f"{hit['session_id']}/{hit['archive']}:{hit['line_no']} "
+                    f"{hit['role']} {hit['ts']} (rank {hit['rank']:.6g})"
+                )
+                print(hit["snippet"])
+        return
     if args.command == "serve":
         try:
             prepared = prepare()

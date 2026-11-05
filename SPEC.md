@@ -1012,3 +1012,40 @@ modules by installed distribution/version using importlib.metadata. A configured
 missing pack fails with its distribution name and workspace sync repair command.
 Metadata-less external source modules remain supported and explicitly report an
 unknown distribution/version; metadata inspection does not discover/load plugins.
+
+### Rebuildable full-text message index
+
+`app.db` owns one standalone FTS5 `messages_fts` table with trigram tokenization.
+Indexed columns are content, role, kind and origin channel. Unindexed metadata
+is session_id, archive, one-based physical line_no, UTC ts and run_id. Content
+is verbatim message text plus assistant tool-call names. Numbered archives are
+walked numerically before active history; summaries index as compaction messages.
+No synthetic message IDs, separate search database or external-content source is
+introduced. Evidence remains authoritative and immutable.
+
+Store rebuild drops/recreates FTS alongside the existing id/payload tables,
+validating active and archived messages. Corrupt sessions are reported while
+healthy sessions remain searchable. Appending inserts after the durable JSONL
+append, under the store lock. FTS failure records `fts_index_unavailable` in
+storage health and does not fail the append. Rotation refreshes session addresses
+only after its durable manifest commits; FTS failure does not undo rotation.
+Rebuild is the repair operation. Missing FTS5/trigram degrades search, not chat.
+
+`Store.search(query, *, session_id=None, role=None, kind=None, after=None,
+before=None, limit=50)` returns address metadata, bm25 rank and snippet. Literal
+terms/phrases are quoted by a bounded parser; only content/role/kind/channel
+column scopes are recognized, and remaining filters are SQL parameters. Raw user
+FTS operators are never accepted as executable MATCH syntax. Query length is
+1–2000 characters / at most 32 terms, limit is 1–200, timestamp bounds require
+an explicit timezone (after inclusive, before exclusive). Index timestamps use
+UTC; legacy naive evidence timestamps are interpreted as UTC only for indexing,
+and absent legacy timestamps stay null.
+Trigram terms shorter than three characters match no rows. Expansion is deferred.
+
+Authenticated GET `/api/search` exposes the same filters. Offline `sola search`
+queries the existing database read-only, without Store initialization, recovery,
+model/memory calls or server credentials. It uses the configured data root and
+masks available credential references/sensitive environment values. Index text
+is never redacted; result snippets use the shared Redactor, including secrets
+clipped at snippet boundaries. API errors are 422 for invalid input, 503 for an
+unavailable index. No UI or model-call search tool is introduced in this change.

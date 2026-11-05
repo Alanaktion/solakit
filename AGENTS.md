@@ -31,7 +31,10 @@ not proof that a live integration or production acceptance gate has passed.
   evidence; the UI must not reconstruct or rewrite them.
 - `core/store.py`, `core/schemas.py`, `core/io.py`: immutable JSONL evidence,
   atomic metadata, durable I/O, exclusive data ownership and rebuildable SQLite
-  index. `core/compaction.py` and `core/archival.py` rotate immutable archives with
+  index. `core/search.py` queries standalone trigram FTS in the same `app.db`;
+  physical archive/active line addresses survive rebuild, and failed indexing
+  never fails an evidence append. Offline `sola search` reads the index without
+  initializing/recovering Store. `core/compaction.py` and `core/archival.py` rotate immutable archives with
   recovery metadata. Operator archival and explicit compaction reject busy sessions
   and preserve bindings. Profile `mid_run_compaction` opts into between-step
   compaction after complete tool groups; full run memory commits include archives.

@@ -21,6 +21,7 @@ from solakit.core.model import ModelClient, ModelUnavailable, safe_url
 from solakit.core.prompt import inspection, read_prompt
 from solakit.core.routing import SessionRouter
 from solakit.core.schemas import Origin, Session, now
+from solakit.core.search import SearchUnavailable
 from solakit.core.secrets import RedactingFilter, Redactor
 from solakit.core.startup import prepare
 from solakit.core.store import StorageCorruption, Store, safe_id
@@ -329,6 +330,32 @@ def create_app(
     @api.get("/storage/health")
     def storage_health() -> dict:
         return app.state.store.storage_health()
+
+    @api.get("/search")
+    def search(
+        query: str,
+        session_id: str | None = None,
+        role: str | None = None,
+        kind: str | None = None,
+        after: str | None = None,
+        before: str | None = None,
+        limit: int = 50,
+    ) -> list[dict]:
+        try:
+            results = app.state.store.search(
+                query,
+                session_id=session_id,
+                role=role,
+                kind=kind,
+                after=after,
+                before=before,
+                limit=limit,
+            )
+            return app.state.redactor.redact(results)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from None
+        except SearchUnavailable as exc:
+            raise HTTPException(503, str(exc)) from None
 
     @api.get("/tools")
     async def tools() -> dict:

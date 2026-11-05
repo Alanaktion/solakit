@@ -237,6 +237,56 @@ Stop the server and preserve damaged evidence before restoring verified files
 atomically from a trusted backup, then restart to rebuild indexes. Do not delete
 metadata to recreate a session or change recovery hashes to bypass damage reports.
 
+## Full-text history search
+
+`GET /api/search?query=journal.publish` searches messages in the same disposable
+`app.db` as the other indexes, under the existing Cookie/Bearer operator auth.
+Optional filters: `session_id`, `role`, `kind`, `after`, `before`, and `limit`
+(default 50, maximum 200). Timestamps require ISO 8601 with a timezone; `after`
+is inclusive and `before` exclusive. Results contain `session_id`, `archive`,
+`line_no`, UTC `ts` (null if absent in legacy evidence), `run_id`, `role`, `kind`, `channel`, BM25 `rank` (lower is
+better), and a plain-text credential-masked `snippet`.
+
+Search also works without the server, prompt files or integration credentials:
+
+```sh
+uv run sola search 'journal.publish role:assistant'
+uv run sola search '"moonlit lake"' --session-id evening --json
+uv run sola search 'channel:discord compaction' --after 2026-11-01T00:00:00Z
+```
+
+The offline command reads the existing SQLite index in read-only mode. It does
+not initialize Store, recover/finalize runs, acquire runtime ownership, call an
+API, or rebuild the database. It resolves available configured credentials and
+sensitive environment values for presentation masking. Set `SOLA_CONFIG` for a
+nondefault configuration file. `--json` returns the same result fields as the API.
+
+Whitespace-separated terms are combined with AND; double quotes preserve a
+phrase. Only `content:`, `role:`, `kind:` and `channel:` are recognized column
+filters. Terms are always quoted for FTS, so operator words, punctuation and SQL
+text are literal data. Apostrophes and unquoted backslashes remain literal; phrase quotes can be
+doubled or backslash-escaped. Queries
+are bounded to 2000 characters / 32 terms. [SQLite trigram substring matching](https://www.sqlite.org/fts5.html#the_trigram_tokenizer)
+requires at least three Unicode characters per term/phrase; shorter ones match nothing.
+Stemming and query expansion remain outside this index.
+
+Addresses are physical one-based JSONL lines, including lines skipped through
+explicit recovery markers. `archive="active"` means `sessions/<session_id>.jsonl`;
+otherwise `archive` is the numbered filename, such as `evening.jsonl.2`. Archives
+are indexed in numeric order, then the active file. Assistant tool-call names
+are appended to searchable content; compaction summaries retain their kind.
+Manual archival and compaction refresh addresses immediately after durable
+rotation. No transcript bytes or message IDs are rewritten.
+
+FTS stores raw private evidence text; masking happens when snippets are read,
+including credential fragments clipped at snippet boundaries. Snippets have no
+HTML highlight markup. FTS insert failures degrade storage health but do not
+fail an evidence append. Search then reports index unavailability until
+`Store.rebuild()` (also run at server startup) regenerates it from validated
+files. Offline search uses the last available index; it is never authoritative.
+SQLite must provide FTS5 with the trigram tokenizer; unavailable FTS leaves
+conversation writes usable and search unavailable.
+
 ## Memory and compaction
 
 Compaction is automatic before a turn when its request exceeds the profile's

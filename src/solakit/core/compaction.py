@@ -87,6 +87,8 @@ def finish_rotation(store: Store, session_id: str, manifest: dict) -> None:
             atomic_write(active, payload)
         manifest = {**manifest, "stage": "committed"}
         atomic_write(journal, json.dumps(manifest).encode())
+        if (store.root / "app.db").exists():
+            store.reindex_messages(session_id)
 
 
 def recover_rotations(store: Store) -> None:

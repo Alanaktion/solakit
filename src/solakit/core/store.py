@@ -14,12 +14,20 @@ import re
 import sqlite3
 import tempfile
 import threading
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from pydantic import ValidationError
 
 from solakit.core.schemas import Message, Run, RunStatus, Session, now
+from solakit.core.search import (
+    FTS_INSERT,
+    FTS_SCHEMA,
+    SearchUnavailable,
+    search_index,
+    timestamp,
+)
 from solakit.core.secrets import Redactor
 
 IDENTIFIER = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}\Z")
@@ -201,16 +209,19 @@ class Store:
                 sync_directory(path.parent)
 
     def _read(self, path: Path) -> list[dict]:
+        return [record for _, record in self._read_lines(path)]
+
+    def _read_lines(self, path: Path) -> list[tuple[int, dict]]:
         with self.lock:
             if not path.exists():
                 return []
             data = path.read_bytes()
             records, offset = [], 0
-            for line in data.splitlines(keepends=True):
+            for line_no, line in enumerate(data.splitlines(keepends=True), 1):
                 terminated = line.endswith(b"\n")
                 fragment = line[:-1] if terminated else line
                 try:
-                    records.append(self._decode_record(fragment))
+                    records.append((line_no, self._decode_record(fragment)))
                 except (ValueError, UnicodeDecodeError) as exc:
                     if self._is_recovered(path, offset, fragment):
                         self._issue(path, "recovered_tail", offset)
@@ -237,6 +248,13 @@ class Store:
                     "(id TEXT PRIMARY KEY, payload TEXT NOT NULL)"
                 )
                 db.execute(f"DELETE FROM {kind}")
+            fts = True
+            try:
+                db.execute("DROP TABLE IF EXISTS messages_fts")
+                db.execute(FTS_SCHEMA)
+            except sqlite3.Error:
+                self._issue(self.root / "app.db", "fts_index_unavailable")
+                fts = False
             for path in sorted((self.root / "sessions").glob("*.meta.json")):
                 try:
                     session = self.session(path.name.removesuffix(".meta.json"))
@@ -247,7 +265,13 @@ class Store:
                     (session.id, session.model_dump_json()),
                 )
                 try:
-                    self.transcript(session.id)
+                    rows = self._message_search_rows(session.id)
+                    if fts:
+                        try:
+                            db.executemany(FTS_INSERT, rows)
+                        except sqlite3.Error:
+                            self._issue(self.root / "app.db", "fts_index_unavailable")
+                            fts = False
                 except StorageCorruption:
                     pass  # Report damage while keeping other sessions usable.
             for path in sorted((self.root / "runs").glob("*.events.jsonl")):
@@ -354,10 +378,19 @@ class Store:
             # Refuse writes after a failed rotation.
             self.context_started_at(session_id)
             self.check_compaction(session_id)
-            self._append(
-                self._path("sessions", session_id, ".jsonl"),
-                message.model_dump(mode="json"),
-            )
+            path = self._path("sessions", session_id, ".jsonl")
+            record = message.model_dump(mode="json")
+            self._append(path, record)
+            try:
+                with path.open("rb") as stream:
+                    line_no = sum(1 for _ in stream)
+                with sqlite3.connect(self.root / "app.db") as db:
+                    db.execute(
+                        FTS_INSERT,
+                        self._message_search_row(session_id, "active", line_no, record),
+                    )
+            except (sqlite3.Error, OSError):
+                self._issue(self.root / "app.db", "fts_index_unavailable")
 
     def transcript(self, session_id: str) -> list[dict]:
         with self.lock:
@@ -390,6 +423,95 @@ class Store:
             for name in self.archives(session_id):
                 records.extend(self._read(self.root / "sessions" / name))
             return records + self.transcript(session_id)
+
+    @staticmethod
+    def _message_search_row(session_id, archive, line_no, record):
+        message = Message.model_validate(record)
+        content = message.content or ""
+        if message.role == "assistant":
+            names = []
+            for call in message.tool_calls or []:
+                function = call.get("function")
+                if isinstance(function, dict) and isinstance(function.get("name"), str):
+                    names.append(function["name"])
+            content += "\n" + "\n".join(names) if names else ""
+        stamp = message.ts if "ts" in record else None
+        return (
+            content,
+            message.role,
+            message.kind,
+            message.origin.channel,
+            session_id,
+            archive,
+            line_no,
+            timestamp(stamp.replace(tzinfo=stamp.tzinfo or UTC)) if stamp else None,
+            message.run_id,
+        )
+
+    def _message_search_rows(self, session_id):
+        self.transcript(session_id)  # Validate active evidence and rotation state.
+        rows = []
+        for name in [*self.archives(session_id), f"{session_id}.jsonl"]:
+            path = self.root / "sessions" / name
+            for line_no, record in self._read_lines(path):
+                try:
+                    rows.append(
+                        self._message_search_row(
+                            session_id,
+                            "active" if name == f"{session_id}.jsonl" else name,
+                            line_no,
+                            record,
+                        )
+                    )
+                except ValidationError as exc:
+                    raise self._corruption(path, "invalid_message") from exc
+
+        return rows
+
+    def reindex_messages(self, session_id: str) -> None:
+        """Refresh addresses after durable rotation; index failures lose no evidence."""
+        with self.lock:
+            try:
+                rows = self._message_search_rows(session_id)
+                with sqlite3.connect(self.root / "app.db") as db:
+                    db.execute(
+                        "DELETE FROM messages_fts WHERE session_id = ?", (session_id,)
+                    )
+                    db.executemany(FTS_INSERT, rows)
+            except (sqlite3.Error, OSError, StorageCorruption):
+                self._issue(self.root / "app.db", "fts_index_unavailable")
+
+    def search(
+        self,
+        query: str,
+        *,
+        session_id: str | None = None,
+        role: str | None = None,
+        kind: str | None = None,
+        after: str | datetime | None = None,
+        before: str | datetime | None = None,
+        limit: int = 50,
+    ) -> list[dict]:
+        with self.lock:
+            if any(i["kind"] == "fts_index_unavailable" for i in self._issues.values()):
+                raise SearchUnavailable(
+                    "Search index unavailable; rebuild app.db from evidence"
+                )
+            try:
+                return search_index(
+                    self.root,
+                    query,
+                    session_id=session_id,
+                    role=role,
+                    kind=kind,
+                    after=after,
+                    before=before,
+                    limit=limit,
+                    redactor=self.redactor,
+                )
+            except SearchUnavailable:
+                self._issue(self.root / "app.db", "fts_index_unavailable")
+                raise
 
     def save_run(self, run: Run) -> None:
         with self.lock:

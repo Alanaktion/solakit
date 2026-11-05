@@ -321,3 +321,30 @@ and the all-package sync repair command, even if a source module is importable.
 Missing dependencies receive the same repair guidance. Metadata-less external
 modules remain supported and report unknown identity explicitly. No entry-point
 discovery, tool auto-loading, profile grant or integration activation was added.
+
+## SQLite full-text history search (2026-11-05)
+
+Standalone FTS5/trigram indexing now lives in the existing disposable `app.db`.
+Rebuild validates archived/current messages and recreates FTS; append inserts
+incrementally after durable evidence, and committed archival/compaction refresh
+addresses. Search results address physical one-based file lines and include
+rank/snippet plus metadata. Tool-call names and summary kinds are searchable.
+FTS failures report degraded storage, leave appends/rotation successful, and
+require rebuild before runtime search resumes. No evidence is redacted or edited.
+
+Authenticated GET `/api/search` and read-only offline `sola search` share bounded
+literal-term/phrase parsing, safe column scopes and parameterized filters. Read
+presentation masks resolved credentials, including truncated snippet fragments.
+Offline search does not instantiate/recover Store, mutate runs or contact an API.
+The [operator instructions](../../README.md#full-text-history-search) describe
+bounds, timestamps, addressing, tokenizer requirements and repair behavior.
+
+Verification: 29 focused search regressions cover raw-index/redacted-snippet
+separation, clipped/duplicate secret fragments, archive/active and recovered-tail
+physical addresses, numeric ordering, database deletion/rebuild, committed
+archival/compaction refresh, unsupported/broken FTS, continued appends/rotation,
+safe query syntax/filters, UTC bounds, legacy timestamps, API auth/errors and
+read-only offline behavior. The 269-test core/pack suite passed. A separate CLI
+process also passed with missing credentials, persona and tool provider, without
+changing app.db. `.env`-backed config checks and all six wheel/sdist builds passed.
+No operator session or live integration was changed for these checks.

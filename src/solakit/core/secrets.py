@@ -3,6 +3,7 @@
 import logging
 import re
 import traceback
+from bisect import bisect_left, bisect_right
 from typing import Any
 
 SENSITIVE = re.compile(r"(?:KEY|TOKEN|SECRET|PASSWORD)$", re.IGNORECASE)
@@ -25,6 +26,42 @@ class Redactor:
             default=0,
         )
         return value[:-hold] if hold else value
+
+    def excerpt(self, content: str, window: str) -> str:
+        """Mask even secret fragments clipped at an excerpt's boundaries."""
+        if not window:
+            return ""
+        positions = []
+        at = content.find(window)
+        while at >= 0:
+            positions.append(at)
+            at = content.find(window, at + 1)
+        if not positions:
+            return self.redact(window)
+        start, end = positions[0], positions[0] + len(window)
+        spans = []
+        for secret in self.values:
+            at = content.find(secret)
+            while at >= 0:
+                # Identical excerpts may occur more than once. Mask the union
+                # rather than guessing which occurrence SQLite selected.
+                first = bisect_right(positions, at - len(window))
+                last = bisect_left(positions, at + len(secret))
+                for position in positions[first:last]:
+                    left = max(position, at)
+                    right = min(position + len(window), at + len(secret))
+                    if left < right:
+                        spans.append((left - position, right - position))
+                at = content.find(secret, at + 1)
+        merged = []
+        for left, right in sorted(spans):
+            if merged and left <= merged[-1][1]:
+                merged[-1] = (merged[-1][0], max(merged[-1][1], right))
+            else:
+                merged.append((left, right))
+        for left, right in reversed(merged):
+            window = window[:left] + "[redacted]" + window[right:]
+        return ("…" if start else "") + window + ("…" if end < len(content) else "")
 
     def redact(self, value: Any) -> Any:
         if isinstance(value, dict):
