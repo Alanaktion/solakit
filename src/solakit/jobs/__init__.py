@@ -13,6 +13,7 @@ from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.date import DateTrigger
 from pydantic import BaseModel
 
 from solakit.core.config import Delivery, Job
@@ -48,6 +49,19 @@ class JobState(BaseModel):
     active: bool = False
     last_run: str | None = None
     last_status: str | None = None
+    consumed: bool = False
+
+
+def schedule_key(job):
+    # Keep existing cron keys stable across upgrades.
+    value = f"once:{job.run_at}" if job.run_at else f"{job.cron}:{job.timezone}"
+    return hashlib.sha256(value.encode()).hexdigest()
+
+
+def trigger_for(job):
+    if job.run_at:
+        return DateTrigger(run_date=datetime.fromisoformat(job.run_at))
+    return CronTrigger.from_crontab(job.cron, timezone=job.timezone)
 
 
 class Jobs:
@@ -72,10 +86,8 @@ class Jobs:
         for job in loaded:
             self.validate_job(job)
             self.jobs[job.id] = job
-            self.triggers[job.id] = CronTrigger.from_crontab(
-                job.cron, timezone=job.timezone
-            )
-            schedule = hashlib.sha256(f"{job.cron}:{job.timezone}".encode()).hexdigest()
+            self.triggers[job.id] = trigger_for(job)
+            schedule = schedule_key(job)
             saved = await durable(self.execution.store.job_state, job.id)
             state = (
                 JobState.model_validate(saved)
@@ -84,14 +96,17 @@ class Jobs:
             )
             if not saved or state.schedule != schedule:
                 state.schedule = schedule
+                state.consumed = False
                 state.next_fire = self._next(job, self.clock())
-            if not job.enabled:
+            if not job.enabled or state.consumed:
                 state.next_fire = None
             elif state.next_fire is None:
                 state.next_fire = self._next(job, self.clock())
             self.states[job.id] = state
             if state.active:
                 state.active = False
+                if job.run_at:
+                    state.consumed, state.next_fire = True, None
                 await self._missed(
                     job,
                     state,
@@ -173,13 +188,18 @@ class Jobs:
                 state = self.states[job.id]
                 if (
                     not job.enabled
+                    or state.consumed
                     or state.paused
                     or state.next_fire is None
                     or state.next_fire > at
                 ):
                     continue
                 due = state.next_fire
-                state.next_fire = self._next(job, at + timedelta(microseconds=1))
+                state.next_fire = (
+                    None
+                    if job.run_at
+                    else self._next(job, at + timedelta(microseconds=1))
+                )
                 late = (at - due).total_seconds() > 60
                 if state.active:
                     await self._missed(
@@ -189,7 +209,7 @@ class Jobs:
                         "Skipped firing while prior dispatch is queued/running",
                     )
                     await self._save(state)
-                elif late and not job.catch_up:
+                elif late and not job.catch_up and not job.run_at:
                     await self._missed(
                         job,
                         state,
@@ -198,7 +218,7 @@ class Jobs:
                     )
                     await self._save(state)
                 else:
-                    if late:
+                    if late and not job.run_at:
                         await self._missed(
                             job,
                             state,
@@ -211,6 +231,12 @@ class Jobs:
     async def _launch(self, job, state, at):
         if state.active:
             raise ValueError("Job already queued/running")
+        if job.run_at:
+            if state.consumed:
+                raise RuntimeError(
+                    "One-time job already attempted; change run_at to schedule again"
+                )
+            state.consumed, state.next_fire = True, None
         state.active, state.last_status = True, "queued"
         await self._save(state)  # Persist cursor/intent before creating accepted work.
         task = asyncio.create_task(self._execute(job, state, at))
@@ -303,7 +329,7 @@ class Jobs:
                 job = self.job(job_id)
                 state.next_fire = (
                     self._next(job, self.clock() + timedelta(microseconds=1))
-                    if job.enabled
+                    if job.enabled and not state.consumed
                     else None
                 )
             await self._save(state)
@@ -328,6 +354,7 @@ class Jobs:
                 **self.states[job.id].model_dump(mode="json"),
                 "enabled": job.enabled,
                 "cron": job.cron,
+                "run_at": job.run_at,
                 "timezone": job.timezone,
             }
             for job in self.jobs.values()
@@ -389,21 +416,30 @@ class Jobs:
             raise FileExistsError("Job already exists")
         if not create and self.states[job.id].active:
             raise RuntimeError("Job is queued/running; wait before editing")
-        trigger = CronTrigger.from_crontab(job.cron, timezone=job.timezone)
-        schedule = hashlib.sha256(f"{job.cron}:{job.timezone}".encode()).hexdigest()
+        trigger = trigger_for(job)
+        schedule = schedule_key(job)
         old = self.jobs.get(job.id)
         state = self.states.get(job.id)
+        changed = state is None or state.schedule != schedule
+        if (
+            changed
+            and job.run_at
+            and datetime.fromisoformat(job.run_at) <= self.clock()
+        ):
+            raise ValueError("One-time schedule must be in the future")
         if state is None:
             state = JobState(id=job.id, schedule=schedule)
         else:
             state = state.model_copy(deep=True)
-        if old is None or state.schedule != schedule or old.enabled != job.enabled:
+        if changed:
+            state.consumed = False
+        if changed or old.enabled != job.enabled:
             state.schedule = schedule
             state.next_fire = (
                 trigger.get_next_fire_time(
                     None, self.clock() + timedelta(microseconds=1)
                 )
-                if job.enabled
+                if job.enabled and not state.consumed
                 else None
             )
         await durable(self.definitions.save, job)

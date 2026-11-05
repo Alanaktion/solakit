@@ -70,6 +70,9 @@ not proof that a live integration or production acceptance gate has passed.
   cursors and opt-in APScheduler dispatch using shared execution/delivery.
   Built-in `jobs` tools use the injected scheduler; jobs.run queues without waiting
   to avoid same-chat deadlock. Capability/scope checks happen under the job lock.
+  Jobs choose either cron or a one-time run_at instant. Persist consumed state
+  before one-time dispatch; restart/enable/task edits must never replay it.
+  Only a changed future run_at rearms it. Unattempted overdue jobs catch up once.
 - `ui/`: Jinja2 pages, packaged local HTMX/CSS/vanilla JS, opaque in-memory login
   sessions, API-only presentation routes and escaped/redacted transcript views.
   No Node build or CDN. Chat fills the viewport with a desktop session sidebar;

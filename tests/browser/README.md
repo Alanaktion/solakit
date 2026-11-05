@@ -59,3 +59,8 @@ Job management: run `check.cjs jobs` for create/error preservation, editing,
 manual triggering, pause, delete confirmation and actual deletion across
 light/dark desktop/mobile. Checks include page overflow, browser errors and
 form/list screenshots. Jobs use the same scratch mock-model server above.
+
+One-time scheduling: run `check.cjs once` for the One time picker, timezone
+conversion, manual consumption, disabled repeat controls, task-only edits and
+explicit date-based rearming, across light/dark desktop/mobile. Form/completed-row
+screenshots, browser errors and overflow are checked with scratch jobs only.

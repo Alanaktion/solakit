@@ -3,8 +3,10 @@
 import asyncio
 import json
 import time
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import parse_qs, quote, urlencode
+from zoneinfo import ZoneInfo
 
 import httpx
 from fastapi import APIRouter, Request
@@ -47,6 +49,24 @@ class APIError(Exception):
             )
         else:
             self.detail = str(detail)
+
+
+def job_local_time(job):
+    return (
+        datetime.fromisoformat(job["run_at"])
+        .astimezone(ZoneInfo(job["timezone"]))
+        .replace(tzinfo=None)
+        .isoformat()
+    )
+
+
+def same_job_local_time(job, value):
+    try:
+        return datetime.fromisoformat(job_local_time(job)) == datetime.fromisoformat(
+            value
+        )
+    except ValueError:
+        return False
 
 
 def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRouter:
@@ -654,6 +674,8 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
             delivery = values.get("deliver") or {}
             values = {
                 **values,
+                "schedule_type": "once" if values.get("run_at") else "cron",
+                "run_at": job_local_time(values) if values.get("run_at") else "",
                 "delivery_mode": delivery.get("mode", "automatic"),
                 "delivery_to": delivery.get("to", ""),
             }
@@ -696,6 +718,8 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
             allowed = {
                 "id",
                 "cron",
+                "run_at",
+                "schedule_type",
                 "timezone",
                 "profile",
                 "task",
@@ -710,8 +734,28 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
                 raise APIError(422, "Unknown job form fields.")
             payload = {
                 key: values.get(key, "")
-                for key in ("cron", "timezone", "profile", "task", "bind_session")
+                for key in ("timezone", "profile", "task", "bind_session")
             }
+            schedule_type = values.get("schedule_type", "cron")
+            if schedule_type not in {"cron", "once"}:
+                raise APIError(422, "Invalid schedule type.")
+            payload["cron"] = (
+                values.get("cron", "") if schedule_type == "cron" else None
+            )
+            payload["run_at"] = (
+                values.get("run_at", "") if schedule_type == "once" else None
+            )
+            if identity and schedule_type == "once":
+                prior = await api(
+                    request, "GET", f"/api/jobs/{quote(identity, safe='')}"
+                )
+                if (
+                    prior.get("run_at")
+                    and prior["timezone"] == payload["timezone"]
+                    and same_job_local_time(prior, payload["run_at"])
+                ):
+                    # Preserve the exact instant/fold when only other fields change.
+                    payload["run_at"] = prior["run_at"]
             payload.update(
                 {
                     key: values.get(key) == "on"
@@ -748,7 +792,7 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
                 exc.detail
                 if exc.status != 422
                 else (
-                    "Check the cron, timezone, profile, task placeholders and delivery."
+                    "Check the schedule, date/time, timezone, profile and task fields."
                 )
             )
             return await job_form_page(request, identity, values, message, exc.status)

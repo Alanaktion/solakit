@@ -377,6 +377,13 @@ SQLite and can be managed through **Operations → New job**, the API, or chat t
 Existing TOML jobs import once per ID; later file edits do not overwrite managed
 jobs, and deleted jobs cannot be resurrected by stale TOML. JSONL cursors indexed
 in SQLite persist next fire, pause, active dispatch and last result.
+Jobs support recurring `cron` schedules or a one-time `run_at` date/time. Chat
+can schedule “check on this tomorrow morning” in the current conversation; without
+a more specific time, morning defaults to 09:00 in the configured timezone.
+One-time jobs record their attempt before dispatch and never repeat after restart
+or a task/enablement edit. Unattempted overdue jobs run once when the app returns.
+The web form offers a **One time** date/time picker. A new future date explicitly
+reschedules an attempted one-time job; running it early consumes the planned run.
 Runtime callbacks are not pickled into a library job store. Cron-to-channel jobs use
 the same session queue, so their task/result appear in the next conversational turn.
 Queued jobs count as active and never overlap themselves. Model-down jobs become

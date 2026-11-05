@@ -89,6 +89,50 @@ async function jobManagement(page) {
   assert.equal((await page.request.get(`${base}/api/jobs/${id}`)).status(), 404);
 }
 
+async function oneTimeJobs(page) {
+  const id = `once-${page.qaLabel}-${Date.now()}`;
+  await page.goto(base + '/operations/jobs/new');
+  await page.getByLabel('Job ID', {exact: true}).fill(id);
+  await page.getByLabel('Schedule type', {exact: true}).selectOption('once');
+  assert(await page.getByLabel('Run once at', {exact: true}).isVisible());
+  assert(await page.getByLabel('Schedule (cron)', {exact: true}).isDisabled());
+  await page.getByLabel('Run once at', {exact: true}).fill('2099-01-02T09:00');
+  await page.getByLabel('Timezone', {exact: true}).fill('America/Denver');
+  await page.getByLabel('Task', {exact: true}).fill('Check on this tomorrow morning.');
+  await page.getByLabel('Enable scheduled runs', {exact: true}).check();
+  await noOverflow(page);
+  await page.screenshot({path: path.join(output, `once-form-${page.qaLabel}.png`), fullPage: true});
+  await page.getByRole('button', {name: 'Create job', exact: true}).click();
+  await page.waitForURL(base + '/operations');
+  let row = page.locator('tr').filter({hasText: id});
+  assert.match(await row.innerText(), /One time/);
+  await row.getByRole('button', {name: 'Run now', exact: true}).click();
+  await page.waitForURL('**/runs/*');
+  await page.goto(base + '/operations');
+  row = page.locator('tr').filter({hasText: id});
+  assert.match(await row.innerText(), /attempted once/);
+  assert(await row.getByRole('button', {name: 'Run now', exact: true}).isDisabled());
+  await noOverflow(page);
+  await page.screenshot({path: path.join(output, `once-finished-${page.qaLabel}.png`), fullPage: true});
+  await row.getByRole('link', {name: 'Edit', exact: true}).click();
+  assert.equal(await page.getByLabel('Schedule type', {exact: true}).inputValue(), 'once');
+  await page.getByLabel('Task', {exact: true}).fill('Only edit the task.');
+  await page.getByRole('button', {name: 'Save changes', exact: true}).click();
+  await page.waitForURL(base + '/operations');
+  let job = await (await page.request.get(`${base}/api/jobs/${id}`)).json();
+  assert.equal(job.consumed, true);
+  assert.equal(job.next_fire, null);
+  assert.equal((await page.request.post(`${base}/api/jobs/${id}/run?wait=false`)).status(), 409);
+  await page.locator('tr').filter({hasText: id}).getByRole('link', {name: 'Edit', exact: true}).click();
+  await page.getByLabel('Run once at', {exact: true}).fill('2099-01-03T09:00');
+  await page.getByRole('button', {name: 'Save changes', exact: true}).click();
+  await page.waitForURL(base + '/operations');
+  job = await (await page.request.get(`${base}/api/jobs/${id}`)).json();
+  assert.equal(job.consumed, false);
+  assert.equal(job.run_at, '2099-01-03T16:00:00+00:00');
+  await page.request.delete(`${base}/api/jobs/${id}`);
+}
+
 async function createSession(page, prefix, scope = 'ephemeral') {
   const id = `${prefix}-${page.qaLabel}-${Date.now()}`;
   await page.goto(base + '/?new=1');
@@ -384,7 +428,8 @@ async function streaming(page) {
         await page.getByLabel('Operator token').fill('scratch-browser-token');
         await page.getByRole('button', {name: 'Sign in'}).click();
         await page.waitForURL(base + '/');
-        if (phase === 'jobs') await jobManagement(page);
+        if (phase === 'once') await oneTimeJobs(page);
+        else if (phase === 'jobs') await jobManagement(page);
         else if (phase === '12') await operations(page);
         else if (phase === '13') await archival(page);
         else if (phase === '10') await foundation(page);

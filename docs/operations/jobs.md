@@ -1,12 +1,14 @@
 # Scheduled job management
 
-Use **Operations → New job** to create a recurring task. The form includes cron,
+Use **Operations → New job** to create a recurring or one-time task. Choose
+**Recurring** for cron or **One time** for a date and time. The form includes
 timezone, execution profile, task, session/channel binding, delivery and polling
 options. Edit or delete a job from its row; deletion asks for confirmation and
 keeps past runs and conversations. New jobs default to disabled. Enable one when
 ready, or pause/resume future scheduled firings without changing its enabled flag.
 Active jobs must finish before editing/deletion. Run now requires an enabled job
-and works even while paused; it does not move the scheduled next fire.
+and works even while paused. A recurring job keeps its next scheduled fire;
+for one-time jobs, running early consumes the scheduled attempt.
 
 Job definitions live in `app.db`'s authoritative `job_definitions` table. No
 `[[jobs]]` block or server restart is needed. Legacy TOML jobs import once per ID:
@@ -45,6 +47,35 @@ Example create body:
 }
 ```
 
+For a one-time task, replace `cron` with `run_at`:
+
+```json
+{
+  "id": "check-on-request",
+  "run_at": "2030-01-02T09:00:00-07:00",
+  "timezone": "America/Denver",
+  "profile": "interactive",
+  "task": "Check on the earlier request in this conversation.",
+  "bind_session": "web-main",
+  "enabled": true
+}
+```
+
+Supply exactly one schedule field. `run_at` is an ISO date/time, normalized to
+UTC in responses. Without an offset it is interpreted in `timezone`; nonexistent
+or ambiguous daylight-saving times require an explicit offset. Creation or a
+changed one-time date must be in the future. To change schedule type with PATCH,
+clear the old field with `null` and set the other field.
+
+One-time jobs have durable `consumed` state. Admission, including an early manual
+run, records this before dispatch and clears next fire. Completion, failure,
+interruption, restart and index rebuild do not rearm it. An overdue job that was
+never attempted runs once when the app returns (or when resumed/enabled); no
+polling or `catch_up` flag is needed. An interrupted/uncertain attempt is recorded
+and is not automatically replayed. Run again returns 409 after consumption.
+To schedule another attempt, set a **new future `run_at`**. Task edits, changing
+timezone without moving the instant, and enable/pause toggles do not repeat it.
+
 Tasks accept `{date}`, `{time}`, `{timezone}` and `{job_id}`; double literal
 braces as `{{` / `}}`. The cron has five fields; use weekday names to avoid
 numbering ambiguity. Times use the job's IANA timezone. `bind_session` can name a
@@ -57,7 +88,8 @@ there. `catch_up` requires `polling: true` and must be used for idempotent work.
 Definitions validate cron, timezone, placeholders, profiles, binding IDs and
 delivery channels. Maintenance profiles cannot be scheduled. New jobs remain
 disabled unless requested otherwise. Edits take effect immediately; changing
-cron/timezone or enabled state resets the next firing to a future time.
+cron/timezone or enabled state resets a recurring job's next firing. One-time
+attempt protection persists until an explicit date change.
 Non-overlap, downtime skip/one-time polling catch-up, cancellation and uncertain
 delivery safeguards remain in effect. Busy edits/deletions/triggers return 409;
 missing jobs return 404; invalid definitions return 422. Already accepted work
@@ -71,7 +103,12 @@ or use the profile wildcard. Write tools additionally need `jobs.manage` capabil
 for create/update/pause/delete and `jobs.run` for manual triggering.
 
 Creation defaults to the current chat/profile, configured timezone and disabled
-state. `jobs.update(id, changes)` takes a partial field object; use `enabled: true`
+state. `jobs.create` accepts either `cron` or `run_at`. For a request such as
+“check on this tomorrow morning”, the model resolves tomorrow in the current
+run's timezone, uses 09:00 if no specific morning time was given, and passes
+`run_at` with `enabled: true`. It uses the current conversation so the follow-up
+retains the original context. The model should confirm the actual local date/time.
+`jobs.update(id, changes)` takes a partial field object; use `enabled: true`
 to activate a job and `deliver: null` to clear delivery. `jobs.pause(id, paused=false)`
 resumes. `jobs.run(id)` queues without waiting, so a current-session job can run
 after the calling chat turn instead of deadlocking. Its acknowledgement is job

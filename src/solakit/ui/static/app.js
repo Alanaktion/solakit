@@ -4,6 +4,22 @@
   let timer;
   let events;
   const form = () => document.getElementById("composer");
+  function jobSchedule() {
+    const kind = document.getElementById("job-schedule-kind");
+    if (!kind) return;
+    const once = kind.value === "once";
+    for (const [id, visible] of [["job-cron-fields", !once], ["job-once-fields", once], ["job-cron-options", !once]]) {
+      const group = document.getElementById(id);
+      group.hidden = !visible;
+      group.querySelectorAll("input").forEach(input => {
+        input.disabled = !visible;
+        if (input.type !== "checkbox") input.required = visible;
+      });
+    }
+  }
+  document.addEventListener("change", event => {
+    if (event.target.id === "job-schedule-kind") jobSchedule();
+  });
   function dates(root = document) {
     root.querySelectorAll("time[datetime]").forEach((node) => {
       const date = new Date(node.dateTime);
@@ -153,5 +169,6 @@
     }
   });
   dates();
+  jobSchedule();
   scrollConversation();
 })();

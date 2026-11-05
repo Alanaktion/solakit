@@ -389,6 +389,23 @@ launchd's only remaining job is starting the app itself at boot.
 
 ### 7.1 Job definition
 
+Each job has exactly one schedule: `cron` for recurrence or `run_at` for a
+one-time ISO date/time. Local timestamps use the job's IANA timezone; ambiguous
+or nonexistent DST times require explicit offsets. Stored timestamps normalize
+to UTC. New or changed one-time schedules must be in the future. API and chat
+creation accept either field; PATCH switches types by clearing the old field.
+The web form selects Recurring or One time with the corresponding input.
+
+One-time admission persists `consumed=true` and clears next fire before dispatch,
+including manual early runs. Later completion/failure/interruption, restart,
+index rebuild, enablement/pause changes and task edits never replay it. A new
+future run_at explicitly rearms a job; a timezone-only change preserves its
+absolute instant. Unattempted overdue one-time jobs catch up once after downtime
+without polling/catch_up; interrupted attempts remain visible gaps. Repeated
+manual admission returns 409. Chat resolves “tomorrow morning” using the current
+run time and timezone, defaulting to 09:00 when unspecified, sets enabled=true
+for the user's request, binds to the current conversation and confirms the time.
+
 Jobs are managed through the API, web UI and optional chat tools (§7.4). The
 following legacy TOML format remains supported for one-time import:
 
@@ -451,7 +468,7 @@ because it is in a session, not buried in a scheduler log.
 
 ### 7.3 Misfire policy
 
-App down at fire time, or model unavailable at fire time:
+Recurring jobs when the app is down or model unavailable at fire time:
 
 - Default: **skip**. `coalesce = true`, `max_instances = 1`, misfire
   grace 60s, then the missed run is recorded as `missed` and left as a
@@ -479,7 +496,8 @@ validate the complete resulting definition, with `deliver: null` clearing delive
 accepted job state immediately. `POST /api/jobs/{id}/pause|resume` affects future
 firings. Invalid definitions return 422, missing jobs 404, duplicate IDs and busy
 edits/deletions/triggers 409. Maintenance profiles cannot be scheduled. Creation
-defaults to disabled; schedule/enabled changes reset next fire. Accepted mutations
+defaults to disabled; recurrence/enabled changes reset recurring next fire, while
+one-time protection follows §7.1. Accepted mutations
 and manual admission finish durable publication before propagating cancellation.
 
 The scheduler starts even with no jobs, so API-created jobs work without restart.

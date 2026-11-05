@@ -4,6 +4,7 @@ import os
 import re
 import stat
 import tomllib
+from datetime import UTC, datetime
 from pathlib import Path
 from string import Formatter
 from typing import Literal, Self
@@ -140,7 +141,8 @@ class Delivery(StrictModel):
 class Job(StrictModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     id: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")
-    cron: str
+    cron: str | None = None
+    run_at: str | None = None
     timezone: str = "America/Denver"
     profile: str
     task: str
@@ -153,14 +155,39 @@ class Job(StrictModel):
     @model_validator(mode="after")
     def valid_timezone(self) -> Self:
         try:
-            ZoneInfo(self.timezone)
+            zone = ZoneInfo(self.timezone)
         except (KeyError, ValueError) as exc:
             raise ValueError("Invalid job timezone") from exc
         from string import Formatter
 
         from apscheduler.triggers.cron import CronTrigger
 
-        CronTrigger.from_crontab(self.cron, timezone=self.timezone)
+        if (self.cron is None) == (self.run_at is None):
+            raise ValueError("Choose exactly one of cron or run_at")
+        if self.cron is not None:
+            CronTrigger.from_crontab(self.cron, timezone=self.timezone)
+        else:
+            if "T" not in self.run_at and " " not in self.run_at:
+                raise ValueError("run_at requires a date and time")
+            instant = datetime.fromisoformat(self.run_at)
+            if instant.tzinfo is None:
+                candidates = {
+                    instant.replace(tzinfo=zone, fold=fold).astimezone(UTC)
+                    for fold in (0, 1)
+                    if instant.replace(tzinfo=zone, fold=fold)
+                    .astimezone(UTC)
+                    .astimezone(zone)
+                    .replace(tzinfo=None)
+                    == instant
+                }
+                if len(candidates) != 1:
+                    raise ValueError(
+                        "Ambiguous/nonexistent local time; specify a UTC offset"
+                    )
+                instant = candidates.pop()
+            self.run_at = instant.astimezone(UTC).isoformat()
+            if self.catch_up:
+                raise ValueError("One-time jobs catch up automatically; omit catch_up")
         if self.catch_up and not self.polling:
             raise ValueError("catch_up is reserved for idempotent polling jobs")
         if not self.task.strip() or len(self.task) > 32000:

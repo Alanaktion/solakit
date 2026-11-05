@@ -80,8 +80,9 @@ async def list_jobs(ctx: ToolContext) -> ToolResult:
 async def create(
     ctx: ToolContext,
     id: str,
-    cron: str,
     task: str,
+    cron: str | None = None,
+    run_at: str | None = None,
     timezone: str | None = None,
     enabled: bool = False,
     profile: str | None = None,
@@ -90,9 +91,17 @@ async def create(
     polling: bool = False,
     catch_up: bool = False,
 ) -> ToolResult:
-    """Create a recurring job. Defaults to this chat/profile and disabled.
+    """Schedule a recurring (cron) or one-time (run_at) task in this conversation.
 
-    cron has five fields; timezone is an IANA zone. Tasks accept only {date},
+    Supply exactly one of cron (five fields) or run_at (ISO date and time).
+    Resolve relative requests using the current run's time and configured timezone.
+    For "tomorrow morning", use 09:00 next local day unless a time was specified.
+    Set enabled=true when the user asks to schedule a check. Defaults otherwise
+    are this chat/profile and disabled. run_at accepts an explicit UTC offset,
+    or local time in timezone; ambiguous DST times require an explicit offset.
+    One-time jobs run at most once, including manual triggers, and catch up if the
+    app was offline. Changing task/enablement does not rearm an attempted job;
+    choose a new future run_at to reschedule. Tasks accept only {date},
     {time}, {timezone}, {job_id} placeholders (escape other braces as {{ and }}).
     catch_up requires polling=true. Other profiles/sessions/delivery require
     jobs.manage.all. A stable ID prevents duplicate creation on retry.
@@ -101,6 +110,7 @@ async def create(
         job = Job(
             id=id,
             cron=cron,
+            run_at=run_at,
             task=task,
             timezone=timezone or ctx.config.timezone,
             enabled=enabled,
@@ -119,9 +129,11 @@ async def create(
 
 @tool(name="jobs.update", profiles=["*"], writes=["jobs.manage"])
 async def update(ctx: ToolContext, id: str, changes: dict[str, Any]) -> ToolResult:
-    """Edit job fields (cron, timezone, profile, task, bind_session, deliver,
+    """Edit job fields (cron, run_at, timezone, profile, task, bind_session, deliver,
     enabled, polling, catch_up). ID is immutable; use deliver=null to clear it.
     Active jobs must finish before editing. Scheduling changes reset next fire.
+    To switch schedule types, clear the old field with null and set the new one.
+    A new future run_at rearms a one-time job; other edits do not.
     """
     old = existing(ctx, id)
     from solakit.jobs.schemas import JobUpdate
@@ -142,6 +154,7 @@ async def run(ctx: ToolContext, id: str) -> ToolResult:
 
     Does not enable the job or change its schedule. Active jobs cannot overlap.
     The queued job runs after the current turn if bound to the same session.
+    Running a one-time job early consumes it; it will not fire again at run_at.
     """
     existing(ctx, id)
     return await operation(ctx, "trigger", id)

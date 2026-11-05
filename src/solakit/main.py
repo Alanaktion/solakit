@@ -349,7 +349,7 @@ def create_app(
             return await asyncio.to_thread(app.state.store.run, run.id)
         except KeyError as exc:
             raise HTTPException(404, "Job not found") from exc
-        except ValueError as exc:
+        except (ValueError, RuntimeError) as exc:
             raise HTTPException(409, str(exc)) from exc
 
     @api.post("/jobs/{job_id}/{operation}")

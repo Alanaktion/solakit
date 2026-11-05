@@ -470,3 +470,39 @@ in light/dark at 1440×1000 and 390×844: create/validation/edit/run/pause/delet
 confirmation, page overflow, timezone display and browser errors. Form/list
 screenshots were inspected. These checks used scratch storage, mock model/memory
 and disabled real channels; they do not establish a live job rollout.
+
+## One-time scheduled follow-ups (2026-11-05)
+
+Jobs now choose exactly one schedule: recurring `cron` or one-time `run_at`.
+Local timestamps resolve in the job's IANA timezone and normalize to UTC;
+ambiguous/nonexistent DST wall times require an explicit offset. New or changed
+one-time dates must be future instants. Existing cron fingerprints remain stable.
+
+One-time admission durably records `consumed=true` and clears next fire before
+creating work. Early manual runs consume the planned attempt. Completion, failure,
+interrupted dispatch, restart/rebuild and task/enable/pause edits never rearm it.
+An unattempted overdue job catches up once when the app returns; automatic retry
+of an ambiguous attempt remains forbidden. A new future run_at explicitly rearms
+the job. A timezone-only change preserves the absolute instant and consumed state.
+
+The API and existing chat create/update/run tools support both types. Tool guidance
+resolves “tomorrow morning” from current run metadata and timezone, defaults to
+09:00 without a more specific time, and creates an enabled follow-up bound to the
+current conversation. The mock-model runner verifies the run_at arguments, current
+session binding, schema advertising and completed scheduling turn; this is not a
+claim about live provider interpretation of arbitrary natural language.
+
+The web form adds Recurring/One time selection and a local date/time picker.
+Task-only editing preserves exact offsets/fractions through ambiguous local times,
+including browsers that omit zero seconds. Attempted jobs disable repeat-run
+controls and show their recorded outcome; editing to a new date rearms them.
+
+Verification: **352 core/pack tests passed**, including 16 focused one-time cases
+covering exclusivity/invalid dates, DST gaps/folds, UTC conversion, due/manual
+admission, restart/rebuild, edits/toggles, deliberate rearming, overdue catch-up,
+interruption, API type switches/past dates, chat scheduling and exact UI round-trip.
+Ruff lint/format and all eight distribution builds passed. Chromium checks for
+one-time and existing recurring management passed in light/dark at 1440×1000 and
+390×844, including date entry, execution, disabled replay, task-only editing,
+rescheduling, browser errors, overflow and inspected screenshots. Browser/model
+checks used scratch data and mocks; no production jobs were scheduled.
