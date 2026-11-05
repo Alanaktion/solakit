@@ -32,14 +32,14 @@
     </details>
     {% if not archive_number %}<a class="archive-action" href="/sessions/{{ session.id|urlencode }}/compact">Compact conversation</a><a class="archive-action" href="/sessions/{{ session.id|urlencode }}/archive">Archive conversation <span aria-hidden="true">↗</span></a>{% endif %}
   </div>
-  <div id="conversation" class="conversation" role="log" aria-label="Message history" aria-live="polite" aria-relevant="additions text">{% include 'fragments/message_tail.html' %}</div>
+  <div id="conversation" class="conversation" role="log" aria-label="Message history" aria-live="polite" aria-relevant="additions text" {% if not archive_number %}data-events-url="/sessions/{{ session.id|urlencode }}/events"{% endif %}>{% include 'fragments/message_tail.html' %}</div>
   {% if archive_number %}
   <div class="archive-readonly">This archive is read only. <a href="/sessions/{{ session.id|urlencode }}">Return to the current conversation →</a></div>
   {% else %}
   <div class="composer-wrap">
     <p id="connection-error" class="notice notice-error" role="alert" hidden>The request could not finish. Reload to check the run before sending again.</p>
     <p id="pending" class="pending" role="status" hidden><span class="thinking-dot" aria-hidden="true"></span>Waiting for Sola <span id="elapsed" aria-live="off">0:00</span></p>
-    <form id="composer" action="/sessions/{{ session.id|urlencode }}/messages" method="post" hx-post="/sessions/{{ session.id|urlencode }}/messages" hx-target="#conversation" hx-swap="innerHTML" hx-disabled-elt="find textarea, find button">
+    <form id="composer" action="/sessions/{{ session.id|urlencode }}/messages" method="post">
       <label class="visually-hidden" for="message">Message to Sola</label>
       <div class="composer-input"><textarea id="message" name="message" placeholder="What’s on your mind?" maxlength="32000" rows="2" required aria-describedby="composer-hint"></textarea>
       <button class="primary-button" type="submit" aria-label="Send message" title="Send message"><span aria-hidden="true">↑</span></button></div>

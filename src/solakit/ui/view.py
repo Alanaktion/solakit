@@ -60,11 +60,16 @@ def turns(
         if (
             include_empty_runs
             and run["status"] != "completed"
-            and max(
-                timestamp(run["created_at"]),
-                timestamp((run.get("compaction") or {}).get("boundary", {}).get("ts")),
+            and (
+                run["status"] in {"queued", "running"}
+                or max(
+                    timestamp(run["created_at"]),
+                    timestamp(
+                        (run.get("compaction") or {}).get("boundary", {}).get("ts")
+                    ),
+                )
+                >= cutoff
             )
-            >= cutoff
         ):
             grouped.setdefault(identity, [])
     result = boundaries

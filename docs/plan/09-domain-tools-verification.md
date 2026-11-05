@@ -37,8 +37,9 @@ Completed foundation plans 01–06, 14–16 and 20 have been removed. See the
   [Discord](07-channels-discord.md), [job](08-scheduling.md) and SPEC §15 rollout gates.
 
 Image workflow and calendar read are later seam proofs, independently prioritized;
-they do not block the current MVP. Markdown, streaming, per-message profile choice
-and Discord archival exposure also remain deferred, rather than partially built.
+they do not block the current MVP. Per-message profile choice and Discord archival
+exposure remain deferred. [Markdown/streaming](22-ui-markdown-streaming.md) are now
+implemented, with live/browser verification tracked separately.
 
 Packs compose internal Python services. New domain tools must not require core
 execution branches. Publishing grants remain separate from filesystem writes.

@@ -78,9 +78,9 @@ rejected even if it is convenient.
   later, are markdown files loaded by name (§5.3) — nothing self-modifies.
 - Provider abstraction. The server speaks to one OpenAI-compatible local
   endpoint. Supporting "70 providers" is exactly the bloat being escaped.
-- Rich message rendering, per-message profile selection, streaming and Discord
-  archival exposure. The implemented P1 console, P2 evidence and P3 operations
-  surfaces remain thin API clients, alongside archival/browsing.
+- Per-message profile selection and Discord archival exposure. The implemented
+  console/evidence/operations surfaces, assistant Markdown and chat streaming
+  remain thin API clients, alongside archival/browsing.
 - Multi-tenancy, user accounts beyond a single operator token, public
   internet exposure. The app binds localhost/tailnet.
 - Voice, image generation, or TTS in the core. Those stay external and
@@ -218,9 +218,11 @@ characters removed to make room for it. Bounded sources with an unknown total
 use an explicit lower bound, e.g. `[truncated >=27 chars]`),
 `repair_attempts: 2`.
 
-Streaming: the loop stores identical messages either way. Discord/API
-delivery uses the completed final message in the MVP; token streaming to
-the web UI is an API-layer concern (§9) added without touching the loop.
+Streaming: the loop stores identical completed messages either way. Discord and
+ordinary API delivery still use completed messages. An opt-in transport callback
+exposes bounded in-memory content previews; validated tool envelopes execute through
+the same loop. UI observation and sanitized Markdown presentation stay in the API/UI
+layers (§9). Partial previews never become saved assistant messages on their own.
 
 ## 5. Prompt assembly — the point of the whole project
 
@@ -698,10 +700,23 @@ The P1 operator UI is a thin server-rendered API client. Shared app contracts:
 | `GET /api/channels` | channel configs + adapter status (connected since, last message) |
 | `POST /api/runs/{id}/cancel` | stop a queued/running run |
 
-- **Streaming:** `POST …/messages` returns the completed run in the MVP.
-  An SSE variant (`?stream=1`) is reserved in the API shape so the web UI
-  can grow token streaming without a breaking change; the loop (§4.2)
-  does not change when it lands.
+- **Streaming:** `POST …/messages` returns the completed run by default.
+  `?wait=false` accepts once and returns HTTP 202 with the queued run ID;
+  `?stream=true` requests OpenAI SSE from the model. The existing runner assembles
+  and validates complete content/tool envelopes before persistence/dispatch.
+  `GET /api/runs/{id}?live=true` adds a transient credential-masked preview.
+  The authenticated UI `GET /sessions/{id}/events` emits coalesced `snapshot`
+  events containing sanitized HTML and a pending flag, with keepalive comments.
+  GET observation is resumable by reloading; it never resubmits or cancels work.
+  Browser/API disconnects do not cancel accepted runs. Explicit cancellation
+  remains `POST /api/runs/{id}/cancel`. Streaming requests have a 2 MiB wire bound
+  and a total model.timeout_s deadline per completion. Incomplete/wrong-model
+  streams fail honestly; `length` keeps validated partial evidence without dispatch.
+- **Markdown:** assistant chat messages use CommonMark plus tables with raw HTML
+  and images disabled, then an HTML/attribute/scheme allowlist sanitizer. Credential
+  masking precedes rendering; live suffixes matching unfinished credentials are
+  withheld. Stored/API text and hashes stay verbatim. User messages and tool,
+  summary, prompt and run evidence retain literal rendering.
 
 ### 9.1 Explicit and mid-run compaction
 
@@ -953,7 +968,8 @@ and remaining acceptance, printer, provider and staged rollout work.
 
 - **Stack (Alan's call):** FastAPI single app; APScheduler in-process;
   discord.py; Pydantic-generated tool schemas.
-- **Web UI:** P1 server-rendered sessions/chat/status (§9); later phases deferred.
+- **Web UI:** sessions/chat/status, evidence/operations, archival, compaction,
+  assistant Markdown and live streaming (§9); remaining checks are in the phase plans.
 - **Config-as-files:** channels/jobs/profiles in `config.toml`;
   SQLite is index/state, JSONL is the transcript of record.
 - **Concurrency:** per-session queues, global inference semaphore = 1.

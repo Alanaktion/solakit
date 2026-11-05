@@ -23,7 +23,8 @@ not proof that a live integration or production acceptance gate has passed.
 - `core/routing.py`, `core/loop.py`: persistent session routing, per-session FIFO,
   global inference semaphore, bounded model/tool execution, cancellation and
   orderly shutdown. User-facing failures are run statuses, not invented replies.
-- `core/model.py`: one exact pinned model, preflight and completion validation,
+- `core/model.py`, `core/model_stream.py`: one exact pinned model, preflight and
+  completion validation, bounded OpenAI SSE assembly,
   explicit authentication, bounded generation; no provider fallback.
 - `core/prompt.py`: deterministic assembly from operator-owned SOUL/fragments,
   run metadata, scoped recall and tool definitions. Prompt bytes/hashes are
@@ -70,7 +71,10 @@ not proof that a live integration or production acceptance gate has passed.
   calls/results. Do not silently redact, rewrite or delete history. Diagnostics
   and tool logs are redacted, and UI presentation masks resolved credentials.
   Render tool-card arguments/results from redacted run logs, never raw transcript
-  payloads. Escape plain text; markdown rendering remains deferred.
+  payloads. Assistant chat Markdown is parsed with raw HTML/images disabled and
+  sanitized after credential masking. User/tool/prompt evidence stays literal.
+  Streaming previews are unsaved, bounded and separate from transcript evidence;
+  mask trailing secret prefixes before publication. Never execute partial calls.
 - Domain behavior belongs in external packs. No blog/letters/email/printer
   modules under `src/solakit`, no domain imports or branches in core execution.
   A future tool PR touching `core/loop.py` is a review finding: fix the generic
@@ -164,6 +168,8 @@ unimplemented; image/calendar are later seam proofs.
 
 Chat sends on Enter, Shift+Enter inserts a newline, with IME and busy guards.
 Keyboard unit tests use Node if available; the app needs no Node build/runtime.
-Markdown, per-message profile selection, streaming and Discord archival commands
-remain deferred. Keep live validation distinct from mock/scratch coverage and
+Assistant Markdown and live chat streaming are implemented; see
+[plan 22](docs/plan/22-ui-markdown-streaming.md) for live/browser checks. Per-message
+profile selection and Discord archival commands remain deferred. Keep live validation
+distinct from mock/scratch coverage and
 never infer production activation from implementation or general approval.

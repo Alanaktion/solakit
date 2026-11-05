@@ -398,14 +398,22 @@ def create_app(
             ) from exc
 
     @api.post("/sessions/{session_id}/messages")
-    async def message(session_id: str, request: RunRequest) -> dict:
+    async def message(
+        session_id: str, request: RunRequest, wait: bool = True, stream: bool = False
+    ):
         try:
-            run = await app.state.execution.submit(
+            pending = await app.state.execution.enqueue(
                 session_id,
                 request.message,
                 profile=request.profile,
                 origin=Origin(channel="api", channel_id=session_id),
+                stream=stream,
             )
+            if not wait:
+                return JSONResponse(
+                    pending.run.model_dump(mode="json"), status_code=202
+                )
+            run = await asyncio.shield(pending.future)
             return await asyncio.to_thread(app.state.store.run, run.id)
         except FileNotFoundError as exc:
             raise HTTPException(404, "Session not found") from exc
@@ -417,9 +425,21 @@ def create_app(
         return app.state.store.list_records("runs")
 
     @api.get("/runs/{run_id}")
-    def run_record(run_id: str) -> dict:
+    async def run_record(run_id: str, live: bool = False) -> dict:
         try:
-            return app.state.store.run(run_id)
+            record = await asyncio.to_thread(app.state.store.run, run_id)
+            if live:
+                pending = app.state.execution.pending.get(run_id)
+                preview = pending.preview if pending else None
+                record["preview"] = (
+                    {
+                        **preview,
+                        "content": app.state.redactor.preview(preview["content"]),
+                    }
+                    if preview
+                    else None
+                )
+            return record
         except (FileNotFoundError, ValueError) as exc:
             raise HTTPException(404, "Run not found") from exc
 

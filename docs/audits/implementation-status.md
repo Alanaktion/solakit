@@ -106,7 +106,9 @@ reported complete. Historical adversarial-review resolutions moved from plans to
 6. Record acceptance and prompt-audit approval, then deliberately stage Discord,
    shadow publishing, jobs and rollback under SPEC §15. No automatic activation.
 
-Markdown, streaming, per-message profile selection and Discord archival commands
+At the audit baseline, Markdown and streaming were deferred; the later authorized
+[plan 22](../plan/22-ui-markdown-streaming.md) implements them and records remaining
+live/browser checks. Per-message profile selection and Discord archival commands
 remain deferred. General web/message/device abstractions should grow only for a
 concrete pack need. Trusted Python packs, shell commands and repository Git hooks
 run with host-user privileges; existing scope checks are not an OS sandbox.

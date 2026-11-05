@@ -26,5 +26,6 @@ Mock integration checks verify pause/resume, run evidence, disabled-job rejectio
 unknown actions/jobs, read-only channel state and authentication. Existing live
 memory/integration acceptance gates remain unchanged; no live jobs were enabled.
 
-Still deferred: markdown, per-message profile selection, streaming and Discord
-archival exposure. API/UI archival and read-only archive browsing are implemented.
+Still deferred: per-message profile selection and Discord archival exposure.
+[Markdown and streaming](22-ui-markdown-streaming.md) are now implemented.
+API/UI archival and read-only archive browsing are implemented.

@@ -12,6 +12,20 @@ class Redactor:
     def __init__(self, values: list[str] = ()) -> None:
         self.values = tuple(v for v in values if v)
 
+    def preview(self, value: str) -> str:
+        """Mask full secrets and withhold an unfinished secret at the live edge."""
+        value = self.redact(value)
+        hold = max(
+            (
+                size
+                for secret in self.values
+                for size in range(1, min(len(secret), len(value) + 1))
+                if value.endswith(secret[:size])
+            ),
+            default=0,
+        )
+        return value[:-hold] if hold else value
+
     def redact(self, value: Any) -> Any:
         if isinstance(value, dict):
             return {

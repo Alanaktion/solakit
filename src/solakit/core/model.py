@@ -1,5 +1,6 @@
 """Single pinned oMLX client. No provider abstraction or fallback."""
 
+import asyncio
 import logging
 import re
 import time
@@ -70,7 +71,7 @@ class ModelClient:
                 else "check the backend URL/path and server logs"
             )
             reason = f"HTTP {status}; {hint}"
-        elif isinstance(exc, httpx.TimeoutException):
+        elif isinstance(exc, (httpx.TimeoutException, TimeoutError)):
             reason = (
                 "request timed out; check backend load/connectivity and model.timeout_s"
             )
@@ -126,7 +127,9 @@ class ModelClient:
             self._failure("preflight GET", "models", exc)
             raise ModelUnavailable("Model endpoint unavailable") from exc
 
-    async def complete(self, messages: list[dict], tools: list[dict]) -> dict:
+    async def complete(
+        self, messages: list[dict], tools: list[dict], *, on_text=None
+    ) -> dict:
         started = self._begin(
             "completion POST", "chat/completions", self.config.timeout_s
         )
@@ -141,9 +144,15 @@ class ModelClient:
                 request["tools"] = tools
             else:
                 request["tool_choice"] = "none"
-            response = await self.client.post("chat/completions", json=request)
-            response.raise_for_status()
-            data = response.json()
+            if on_text is not None:
+                from solakit.core.model_stream import complete_stream
+
+                async with asyncio.timeout(self.config.timeout_s):
+                    data = await complete_stream(self.client, request, on_text)
+            else:
+                response = await self.client.post("chat/completions", json=request)
+                response.raise_for_status()
+                data = response.json()
             if data.get("model") != self.config.model_id:
                 raise ModelUnavailable("Completion model does not match pinned ID")
             message = data["choices"][0]["message"]
@@ -160,10 +169,12 @@ class ModelClient:
                     if (
                         not isinstance(call, dict)
                         or not isinstance(call.get("id"), str)
+                        or not call["id"]
                         or call["id"] in ids
                         or call.get("type") != "function"
                         or not isinstance(call.get("function"), dict)
                         or not isinstance(call["function"].get("name"), str)
+                        or not call["function"]["name"]
                         or not isinstance(call["function"].get("arguments"), str)
                     ):
                         raise ModelUnavailable("Invalid tool call envelope")
@@ -182,6 +193,7 @@ class ModelClient:
             raise
         except (
             httpx.HTTPError,
+            TimeoutError,
             ValueError,
             KeyError,
             TypeError,

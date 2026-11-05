@@ -4,14 +4,16 @@
     <details class="context-boundary"><summary>Earlier context was summarized</summary><pre><code>{{ turn.content }}</code></pre></details>
   {% else %}
   <section class="turn" data-run-id="{{ turn.run.id }}" data-run-status="{{ turn.run.status }}">
+    {% if turn.pending and not turn["items"] and turn.run.input_message %}<article class="message message-user"><div class="message-content">{{ turn.run.input_message }}</div></article>{% endif %}
     {% for message in turn["items"] %}
       {% if message.role == 'tool' %}
       <details class="tool-call"><summary><span aria-hidden="true">⌁</span> Tool call: {{ message.name }} <span class="tool-state {% if message.error %}tool-error{% endif %}">{{ message.state }}</span></summary><div class="tool-details"><h3>Arguments</h3><pre><code>{{ message.args }}</code></pre><h3>Result</h3><pre><code>{{ message.content }}</code></pre></div></details>
       {% else %}
-      <article class="message message-{{ message.role }}"><div class="message-author"><span class="avatar avatar-{{ message.role }}" aria-hidden="true">{% if message.role == 'user' %}A{% else %}☾{% endif %}</span><strong>{% if message.role == 'user' %}You{% elif message.role == 'assistant' %}Sola{% else %}{{ message.role }}{% endif %}</strong></div><div class="message-content">{{ message.content }}</div></article>
+      <article class="message message-{{ message.role }}"><div class="message-author"><span class="avatar avatar-{{ message.role }}" aria-hidden="true">{% if message.role == 'user' %}A{% else %}☾{% endif %}</span><strong>{% if message.role == 'user' %}You{% elif message.role == 'assistant' %}Sola{% else %}{{ message.role }}{% endif %}</strong></div><div class="message-content{% if message.role == 'assistant' %} markdown-content{% endif %}">{% if message.role == 'assistant' %}{{ message.content|markdown }}{% else %}{{ message.content }}{% endif %}</div></article>
       {% endif %}
     {% endfor %}
-    {% if turn.failed or turn.pending %}<div class="notice {% if turn.failed %}notice-error{% else %}notice-pending{% endif %}" role="{% if turn.failed %}alert{% else %}status{% endif %}"><strong>{{ turn.status_label }}</strong>{% if turn.run.error %}<p>{{ turn.run.error }}</p>{% endif %}{% if turn.pending %}<p>This turn is still in progress. Reload to check its state.</p>{% endif %}</div>{% endif %}
+    {% if turn.preview %}<article class="message message-assistant live-preview"><div class="message-content markdown-content">{{ turn.preview|markdown }}</div><small>Streaming preview · not yet saved</small></article>{% endif %}
+    {% if turn.failed or turn.pending %}<div class="notice {% if turn.failed %}notice-error{% else %}notice-pending{% endif %}" role="{% if turn.failed %}alert{% else %}status{% endif %}"><strong>{{ turn.status_label }}</strong>{% if turn.run.error %}<p>{{ turn.run.error }}</p>{% endif %}{% if turn.pending %}<p>This turn is still in progress.<noscript> Reload to check its state.</noscript></p>{% endif %}</div>{% endif %}
     <div class="run-meta"><span>Run <a href="/runs/{{ turn.run.id|urlencode }}"><code>{{ turn.run.id[:8] }}</code></a></span><span>{{ turn.run.profile }}</span><span>tokens: {% if turn.run.tokens and 'prompt_tokens' in turn.run.tokens and 'completion_tokens' in turn.run.tokens %}{{ turn.run.tokens.prompt_tokens + turn.run.tokens.completion_tokens }}{% else %}—{% endif %}</span>{% if turn.run.memory_status in ['failed', 'cancelled', 'commit_failed_or_uncertain', 'status_unavailable'] %}<span class="metadata-warning">Memory: {{ turn.run.memory_status }}</span>{% endif %}</div>
   </section>
   {% endif %}

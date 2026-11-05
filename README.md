@@ -58,11 +58,11 @@ Open `http://127.0.0.1:8382/` for the moonlight-themed operator UI. Sign in with
 its silver/violet palette and soft ambient details from
 [Sola’s dreams](https://sola-ryu.github.io/dreams/), with pale lavender light mode
 and a near-black dark mode. It supports system light/dark preference, session
-creation, plain-text chat, collapsed tool evidence,
+creation, sanitized assistant Markdown, collapsed tool evidence,
 and reported health. The Tools page lists loaded tools, argument schemas, write
 requirements, and effective profile grants. Chat links to its profile’s tools
 and shows calls as expandable redacted argument/result cards. Chat fills the viewport with a desktop session sidebar,
-compact navigation, plain assistant replies, user bubbles, and a bottom-anchored composer; on mobile, the conversation takes
+compact navigation, Markdown assistant replies, user bubbles, and a bottom-anchored composer; on mobile, the conversation takes
 the full width with a back link to sessions. Sessions use their configured default
 profile for chat. Session management uses compact rows and a collapsible creation
 form; evidence and operations views share the denser spacing.
@@ -78,11 +78,26 @@ UI sessions. Five failed attempts lock login for 60 seconds. `/api` accepts eith
 this cookie or the existing `Authorization: Bearer <operator-token>` header.
 The token is never placed in page content or browser storage.
 
-The composer waits without a client timeout, showing elapsed time while disabled.
-Reloading during a run shows its recorded state; reload again to check completion.
-A dropped connection does not prove a run failed: check its state before retrying.
-All templates, CSS, JavaScript and vendored HTMX ship locally with the package;
-no Node build, CDN, markdown renderer, or extra hosting service is required.
+Chat streams assistant text as an explicitly unsaved preview, then replaces it
+with the stored turn and redacted tool evidence. The composer stays disabled with
+elapsed time while queued/running. Reloading resumes observation; disconnecting
+does not cancel accepted work or resubmit it. Check recorded state before retrying
+a dropped connection. Cancellation is available from the run evidence page.
+
+Assistant messages support headings, lists, quotes, links, code fences and tables.
+Raw HTML and images are disabled and rendered HTML is sanitized. User text, tool
+logs, summaries and prompt/run evidence remain literal; original messages and hashes
+are unchanged. Live output masks full credentials and unfinished secret prefixes.
+All templates, CSS, JavaScript and vendored HTMX ship locally; Markdown is rendered
+by Python (`markdown-it-py` plus `nh3`), without a Node build, CDN or hosting service.
+
+API messages still wait for completion by default. `?wait=false` returns HTTP 202
+with the accepted run ID; `?stream=true` requests OpenAI token streaming from the
+model. `/api/runs/{id}?live=true` adds a credential-masked transient preview.
+The web UI observes authenticated `/sessions/{id}/events` SSE HTML snapshots,
+coalesced to at most five updates per second. Backends must support OpenAI SSE,
+including `stream_options.include_usage`; unsupported/malformed streams fail
+explicitly, with no automatic fallback/replay. See [remaining streaming checks](docs/plan/22-ui-markdown-streaming.md).
 
 ```sh
 uv run pytest

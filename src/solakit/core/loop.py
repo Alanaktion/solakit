@@ -25,6 +25,8 @@ class Pending:
     future: asyncio.Future
     task: asyncio.Task | None = None
     cancellation: asyncio.Task | None = None
+    stream: bool = False
+    preview: dict | None = None
 
 
 class Execution:
@@ -52,14 +54,37 @@ class Execution:
         self.closing = False
         self._close_task: asyncio.Task | None = None
 
-    async def submit(
+    async def enqueue(
         self,
         session_id: str,
         text: str,
         *,
         profile: str | None = None,
         origin: Origin | None = None,
-    ) -> Run:
+        stream: bool = False,
+    ) -> Pending:
+        # Admission (durable run + queue ownership) is indivisible even if an
+        # asynchronous HTTP client disconnects while the run record is written.
+        task = asyncio.create_task(
+            self._enqueue(
+                session_id, text, profile=profile, origin=origin, stream=stream
+            )
+        )
+        try:
+            return await asyncio.shield(task)
+        except asyncio.CancelledError:
+            await asyncio.gather(task, return_exceptions=True)
+            raise
+
+    async def _enqueue(
+        self,
+        session_id: str,
+        text: str,
+        *,
+        profile: str | None = None,
+        origin: Origin | None = None,
+        stream: bool = False,
+    ) -> Pending:
         async with self.submit_lock:
             if self.closing:
                 raise ValueError("Runtime is shutting down")
@@ -75,11 +100,31 @@ class Execution:
             )
             await durable(self.store.save_run, run)
             pending = Pending(run, text, asyncio.get_running_loop().create_future())
+            pending.stream = stream
+            # Async API clients need not await the result; consume exceptions to
+            # avoid orphan-future warnings without changing await semantics.
+            pending.future.add_done_callback(
+                lambda future: future.exception() if not future.cancelled() else None
+            )
             self.pending[run.id] = pending
             queue = self.queues.setdefault(session_id, asyncio.Queue())
             queue.put_nowait(pending)
             if session_id not in self.workers:
                 self.workers[session_id] = asyncio.create_task(self._worker(queue))
+        return pending
+
+    async def submit(
+        self,
+        session_id: str,
+        text: str,
+        *,
+        profile: str | None = None,
+        origin: Origin | None = None,
+        stream: bool = False,
+    ) -> Run:
+        pending = await self.enqueue(
+            session_id, text, profile=profile, origin=origin, stream=stream
+        )
         # A client disconnect does not silently cancel an accepted run.
         return await asyncio.shield(pending.future)
 
@@ -319,7 +364,27 @@ class Execution:
                     raise ContextLimit(
                         "Compacted request still exceeds context byte budget"
                     )
-            data = await self.model.complete(messages, tools)
+            pending = self.pending[run.id]
+
+            if pending.stream:
+                active = await durable(self.store.transcript, session.id)
+                baseline = sum(
+                    m["role"] == "assistant"
+                    and m.get("kind", "message") == "message"
+                    and m["run_id"] == run.id
+                    for m in active
+                )
+
+                async def preview(content):
+                    pending.preview = {
+                        "step": step,
+                        "baseline": baseline,
+                        "content": content,
+                    }
+
+                data = await self.model.complete(messages, tools, on_text=preview)
+            else:
+                data = await self.model.complete(messages, tools)
             if step == 0:
                 await durable(self.store.append_message, session.id, user)
             run.steps = step + 1
@@ -349,6 +414,7 @@ class Execution:
                 run_id=run.id,
             )
             await durable(self.store.append_message, session.id, assistant)
+            pending.preview = None
             messages.append(assistant.model_message())
             if data["choices"][0].get("finish_reason") == "length":
                 # Keep partial output as evidence, but never execute a potentially

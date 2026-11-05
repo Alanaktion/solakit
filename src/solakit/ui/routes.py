@@ -1,19 +1,29 @@
 """Server-rendered UI P1. Every application-data operation uses existing API routes."""
 
 import asyncio
+import json
+import time
 from pathlib import Path
 from urllib.parse import parse_qs, quote, urlencode
 
 import httpx
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import (
+    HTMLResponse,
+    JSONResponse,
+    RedirectResponse,
+    Response,
+    StreamingResponse,
+)
 from fastapi.templating import Jinja2Templates
 
 from solakit.ui.auth import COOKIE, LIFETIME, UISessions
+from solakit.ui.markdown import markdown
 from solakit.ui.view import timestamp, turns
 
 ROOT = Path(__file__).parent
 TEMPLATES = Jinja2Templates(directory=str(ROOT / "templates"))
+TEMPLATES.env.filters["markdown"] = markdown
 HEADERS = {
     "Cache-Control": "no-store",
     "Vary": "Cookie",
@@ -129,10 +139,10 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
         )
 
     async def conversation(request, identity, number=None):
-        data, records = await asyncio.gather(
-            api(request, "GET", f"/api/sessions/{quote(identity, safe='')}"),
-            api(request, "GET", "/api/runs"),
-        )
+        # Read run state first: a terminal run's transcript is already durable
+        # before the following session read (avoids ending a stream on stale text).
+        records = await api(request, "GET", "/api/runs")
+        data = await api(request, "GET", f"/api/sessions/{quote(identity, safe='')}")
         if number is not None:
             archived = await api(
                 request,
@@ -354,18 +364,32 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
     @router.post("/sessions/{identity}/messages")
     async def send(request: Request, identity: str):
         if not logged_in(request):
+            if request.headers.get("accept") == "application/json":
+                return JSONResponse(
+                    {"detail": "Sign in again."}, status_code=401, headers=HEADERS
+                )
             return login_redirect(request)
         error, status, completed = None, 200, False
         try:
             values = await form(request)
+            asynchronous = request.headers.get("accept") == "application/json"
             record = await api(
                 request,
                 "POST",
-                f"/api/sessions/{quote(identity, safe='')}/messages",
+                f"/api/sessions/{quote(identity, safe='')}/messages"
+                + ("?wait=false&stream=true" if asynchronous else ""),
                 {"message": values.get("message", "")},
             )
+            if asynchronous:
+                return JSONResponse(
+                    {"run_id": record["id"]}, status_code=202, headers=HEADERS
+                )
             completed = record["status"] == "completed"
         except APIError as exc:
+            if request.headers.get("accept") == "application/json":
+                return JSONResponse(
+                    {"detail": exc.detail}, status_code=exc.status, headers=HEADERS
+                )
             error, status = exc.detail, exc.status
         try:
             data, history = await conversation(request, identity)
@@ -394,6 +418,72 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
             "chat.html",
             await chat_context(request, data, history, error),
             status,
+        )
+
+    @router.get("/sessions/{identity}/events")
+    async def conversation_events(request: Request, identity: str):
+        if not logged_in(request):
+            return Response(status_code=401, headers=HEADERS)
+        try:
+            await api(request, "GET", f"/api/sessions/{quote(identity, safe='')}")
+        except APIError as exc:
+            return JSONResponse(
+                {"detail": exc.detail}, status_code=exc.status, headers=HEADERS
+            )
+
+        async def snapshots():
+            previous, heartbeat = None, time.monotonic()
+            while not await request.is_disconnected():
+                if not logged_in(request):
+                    yield "event: expired\ndata: {}\n\n"
+                    return
+                try:
+                    data, history = await conversation(request, identity)
+                    pending = [turn for turn in history if turn.get("pending")]
+                    for turn in pending:
+                        record = await api(
+                            request,
+                            "GET",
+                            f"/api/runs/{quote(turn['run']['id'], safe='')}?live=true",
+                        )
+                        preview = record.get("preview")
+                        # API snapshots may race a durable assistant append. Do not
+                        # render its preview a second time once that step is stored.
+                        saved = sum(
+                            m["role"] == "assistant"
+                            and m.get("kind", "message") == "message"
+                            and m["run_id"] == turn["run"]["id"]
+                            for m in data["messages"]
+                        )
+                        if preview and saved <= preview["baseline"]:
+                            turn["preview"] = preview["content"]
+                    page = render(
+                        request, "fragments/message_tail.html", {"turns": history}
+                    )
+                    snapshot = json.dumps(
+                        {
+                            "html": page.body.decode(),
+                            "pending": bool(pending),
+                        },
+                        ensure_ascii=True,
+                    )
+                    if snapshot != previous:
+                        yield f"event: snapshot\ndata: {snapshot}\n\n"
+                        previous, heartbeat = snapshot, time.monotonic()
+                    elif time.monotonic() - heartbeat >= 15:
+                        yield ": keepalive\n\n"
+                        heartbeat = time.monotonic()
+                    if not pending:
+                        return
+                except APIError:
+                    yield "event: unavailable\ndata: {}\n\n"
+                    return
+                await asyncio.sleep(0.2)
+
+        return StreamingResponse(
+            snapshots(),
+            media_type="text/event-stream",
+            headers={**HEADERS, "X-Accel-Buffering": "no"},
         )
 
     async def operations_page(request, error=None, status=200):

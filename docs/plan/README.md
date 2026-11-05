@@ -28,6 +28,7 @@ or the Discord/job rollout results.
 | [18: email](18-email-pack.md) | TLS mailbox search/read/reply and send evidence | Scratch provider/threading/send verification |
 | [19: printer and later extensions](19-printer-and-seam-provers.md) | No printer/image/calendar implementation | Printer pack; image/calendar remain later priorities |
 | [21: compaction controls](21-compaction-controls.md) | Opt-in mid-run and explicit API/UI compaction, summary ordering | Deliberate live summary/continuation check and targeted browser validation |
+| [22: Markdown/streaming](22-ui-markdown-streaming.md) | Sanitized assistant Markdown, bounded model SSE and live UI snapshots | Live oMLX and targeted browser verification |
 
 Partial plans list completed work separately from unchecked remaining work. General
 operator approval is recorded without treating it as evidence for every named check.
