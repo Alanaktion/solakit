@@ -1,4 +1,4 @@
-# Solakit
+# Solakit 🌙
 
 A small FastAPI runtime for Sola, with a file-defined prompt, pinned model,
 profile-enforced tools, external OpenViking memory, and portable session evidence.
