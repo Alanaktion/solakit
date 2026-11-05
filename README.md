@@ -54,8 +54,11 @@ preventing startup. These checks do not write memory or verify extraction.
 `/health` and its UI chips report the memory startup result and check timestamp,
 not a continuous connectivity guarantee.
 Open `http://127.0.0.1:8382/` for the moonlight-themed operator UI. Sign in with
-**the operator token**, separately from the model API key. The UI supports system
-light/dark preference, session creation, plain-text chat, collapsed tool evidence,
+**the operator token**, separately from the model API key. The compact UI takes
+its silver/violet palette and soft ambient details from
+[Sola’s dreams](https://sola-ryu.github.io/dreams/), with pale lavender light mode
+and a near-black dark mode. It supports system light/dark preference, session
+creation, plain-text chat, collapsed tool evidence,
 and reported health. The Tools page lists loaded tools, argument schemas, write
 requirements, and effective profile grants. Chat links to its profile’s tools
 and shows calls as expandable redacted argument/result cards. Chat fills the viewport with a desktop session sidebar,
