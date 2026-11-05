@@ -155,6 +155,32 @@ async function vision(page) {
   assert.equal((await page.request.get(`${base}/api/media/${fixture.image}`)).status(), 401);
 }
 
+async function sessionSearch(page) {
+  const fixture = await (await page.request.post(base + '/qa/session-lifecycle')).json();
+  const id = fixture.ids[0];
+  assert.equal((await page.request.post(`${base}/api/sessions/${id}/archive`)).status(), 200);
+  assert.equal((await page.request.post(`${base}/api/sessions/${id}/lifecycle`,
+    {data: {archived: true}})).status(), 200);
+  await page.goto(base + '/search');
+  await page.getByLabel('Search query', {exact: true}).fill(fixture.prefix);
+  await page.getByRole('button', {name: 'Search', exact: true}).click();
+  assert.equal(await page.locator('.search-result').count(), 50);
+  assert.match(await page.locator('.search-results').innerText(), /Archived/);
+  await page.getByRole('link', {name: 'Next →', exact: true}).click();
+  assert.equal(await page.locator('.search-result').count(), 5);
+  await page.getByLabel('Search in', {exact: true}).selectOption('text');
+  await page.getByLabel('Search query', {exact: true}).fill(`proof ${id}`);
+  await page.getByRole('button', {name: 'Search', exact: true}).click();
+  assert.equal(await page.locator('.search-result').count(), 1);
+  assert.match(await page.locator('.search-result').innerText(), /Archive 1/);
+  await noOverflow(page);
+  await page.screenshot({path: path.join(output, `search-${page.qaLabel}.png`), fullPage: true});
+  await page.locator('.search-result a').click();
+  await page.waitForURL(`**/sessions/${id}/archives/1`);
+  assert.match(await page.locator('#conversation').innerText(), /searchable proof/);
+  assert.equal(await page.locator('#composer').count(), 0);
+}
+
 async function sessionLifecycle(page) {
   const fixture = await (await page.request.post(base + '/qa/session-lifecycle')).json();
   const root = `${base}/?q=${fixture.prefix}`;
@@ -486,7 +512,8 @@ async function streaming(page) {
         await page.getByLabel('Operator token').fill('scratch-browser-token');
         await page.getByRole('button', {name: 'Sign in'}).click();
         await page.waitForURL(base + '/');
-        if (phase === 'lifecycle') await sessionLifecycle(page);
+        if (phase === 'search') await sessionSearch(page);
+        else if (phase === 'lifecycle') await sessionLifecycle(page);
         else if (phase === 'vision') await vision(page);
         else if (phase === 'once') await oneTimeJobs(page);
         else if (phase === 'jobs') await jobManagement(page);

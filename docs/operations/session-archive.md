@@ -88,6 +88,12 @@ rows, archived/restored counts, skipped IDs/reasons and a `more` indicator.
 
 ## Search and existing conversation archives
 
+The web UI **Search** page finds sessions by name/ID or full text, including
+archived sessions. Name/ID results are paginated; full text shows up to 100
+matching messages in relevance order, with escaped snippets and links to the
+current transcript or numbered archive. Use terms of at least three characters
+and quotes for phrases. Narrow the query if it reaches the result limit.
+
 Full-text history search deliberately includes lifecycle-archived sessions by
 default. `/api/search`, offline `sola search`, and granted `sessions.search` calls
 retain their existing filters and physical line addresses. No message text is

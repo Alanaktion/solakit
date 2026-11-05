@@ -336,3 +336,61 @@ def test_rebuild_does_not_invent_missing_legacy_timestamps(config):
     store.rebuild()
     hit = next(h for h in store.search("needle") if h["archive"] != "active")
     assert hit["ts"] is None
+
+
+def test_web_search_names_ids_archived_text_links_and_errors(config, mock_model):
+    app = create_app(config=config, model=mock_model)
+    with TestClient(app) as client:
+        assert (
+            client.get("/search", follow_redirects=False).headers["location"]
+            == "/login"
+        )
+        client.post("/login", data={"token": "operator-test-token"})
+        store = app.state.store
+        for i in range(55):
+            store.create_session(Session(id=f"import-{i}", title=f"Imported note {i}"))
+        append(
+            store,
+            "Moonstone <script>alert(1)</script> operator-test-token",
+            session="old",
+        )
+        archive_session(store, "old")
+        append(store, "Moonstone active evidence", session="old")
+        store.set_session_archived("old", True)
+        assert 'href="/search"' in client.get("/").text
+        assert "Search sessions" in client.get("/search").text
+        page = client.get("/search", params={"q": "Imported note"})
+        assert page.status_code == 200
+        assert page.text.count('class="panel search-result"') == 50
+        assert "Next →" in page.text
+        page = client.get("/search", params={"q": "Imported note", "offset": 50})
+        assert page.text.count('class="panel search-result"') == 5
+        assert "← Previous" in page.text
+        page = client.get("/search", params={"q": "old"})
+        assert "Archived" in page.text and 'href="/sessions/old"' in page.text
+        page = client.get("/search", params={"mode": "text", "q": "Moonstone"})
+        assert page.status_code == 200
+        assert 'href="/sessions/old/archives/1"' in page.text
+        assert 'href="/sessions/old"' in page.text
+        assert "operator-test-token" not in page.text
+        assert "<script>alert" not in page.text
+        assert "&lt;script&gt;" in page.text
+        assert "Moonstone" in client.get("/sessions/old/archives/1").text
+        assert (
+            "No matching sessions or messages"
+            in client.get("/search", params={"q": "nonexistent"}).text
+        )
+        for params in (
+            {"mode": "bad"},
+            {"mode": "text", "q": '"unclosed'},
+            {"q": "import", "offset": -1},
+        ):
+            response = client.get("/search", params=params)
+            assert response.status_code == 422
+            assert 'role="alert"' in response.text
+        with sqlite3.connect(store.root / "app.db") as db:
+            db.execute("DROP TABLE messages_fts")
+        assert (
+            client.get("/search", params={"mode": "text", "q": "Moonstone"}).status_code
+            == 503
+        )

@@ -305,7 +305,7 @@ async def scratch_session_lifecycle():
                 identity,
                 Message(
                     role="user",
-                    content="Lifecycle searchable proof",
+                    content=f"Lifecycle searchable proof {identity}",
                     ts=datetime(2020, 1, 1, tzinfo=UTC),
                     run_id="legacy-" + identity,
                     origin=Origin(channel="job"),

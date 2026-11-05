@@ -73,3 +73,7 @@ Session lifecycle: run `check.cjs lifecycle` for a 55-session imported fixture,
 pagination, inactivity preview/deselection, bulk archive, retained search/history,
 read-only archived chat, restoration and batch undo. It checks theme/viewport
 overflow and screenshots with scratch data only.
+
+Session search: run `check.cjs search` for name/ID pagination, archived sessions,
+full-text snippets and links to retained numbered archives, in both themes at
+desktop/mobile sizes. Uses the scratch imported-history fixture only.

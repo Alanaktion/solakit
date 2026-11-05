@@ -336,3 +336,8 @@ pre { overflow-x: auto; font-size: 11px; line-height: 1.55; color: var(--ink); }
 @media (max-width: 640px) { .managed-session .session-row { grid-template-columns: minmax(0, 1fr) auto; } .managed-session .row-arrow { display: none; } .managed-session .secondary-button { padding: 7px; } }
 
 .session-select-all { width: auto; }
+
+.search-results { display: grid; gap: 1rem; margin-top: 1.5rem; }
+.search-result { padding: 1rem; min-width: 0; overflow-wrap: anywhere; }
+.search-result h2 { font-size: 1.05rem; margin: 0 0 .5rem; }
+.search-snippet { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; margin-bottom: 0; }

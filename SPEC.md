@@ -856,6 +856,11 @@ Accepted metadata operations complete before cancellation propagates. There is
 no automatic archive policy or deletion. See
 [the operator workflow and API](docs/operations/session-archive.md).
 
+The authenticated web UI `/search` offers session name/ID lookup across active
+and archived sessions, plus full-text `/api/search` results. Name/ID results are
+paginated. Full text shows up to 100 relevance-ranked, masked and escaped message
+snippets linked to their current transcript or numbered archive.
+
 ## 10. Storage
 
 Code and data are separate trees. Data layout on her machine:

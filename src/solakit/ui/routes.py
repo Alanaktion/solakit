@@ -294,6 +294,83 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
         except APIError as exc:
             return render(request, "error.html", {"error": exc.detail}, exc.status)
 
+    @router.get("/search")
+    async def search_sessions(request: Request):
+        if not logged_in(request):
+            return login_redirect(request)
+        query = request.query_params.get("q", "")
+        mode = request.query_params.get("mode", "sessions")
+        results, previous, following, error, status = [], None, None, None, 200
+        try:
+            if mode not in {"sessions", "text"}:
+                raise APIError(422, "Choose session names/IDs or full text.")
+            if query.strip():
+                if mode == "sessions":
+                    catalog = await api(
+                        request,
+                        "GET",
+                        "/api/sessions?"
+                        + urlencode(
+                            {
+                                "status": "all",
+                                "q": query,
+                                "page": "true",
+                                "offset": request.query_params.get("offset", "0"),
+                            }
+                        ),
+                    )
+                    results = catalog["sessions"]
+
+                    def page_url(offset):
+                        return "/search?" + urlencode(
+                            {
+                                "q": query,
+                                "mode": mode,
+                                "offset": offset,
+                            }
+                        )
+
+                    if catalog["offset"]:
+                        previous = page_url(
+                            max(0, catalog["offset"] - catalog["limit"])
+                        )
+                    if catalog["offset"] + catalog["limit"] < catalog["total"]:
+                        following = page_url(catalog["offset"] + catalog["limit"])
+                else:
+                    results = await api(
+                        request,
+                        "GET",
+                        "/api/search?"
+                        + urlencode(
+                            {
+                                "query": query,
+                                "limit": 100,
+                            }
+                        ),
+                    )
+                    for hit in results:
+                        target = "/sessions/" + quote(hit["session_id"], safe="")
+                        if hit["archive"] != "active":
+                            number = hit["archive"].rsplit(".", 1)[-1]
+                            target += "/archives/" + quote(number, safe="")
+                        hit["url"] = target
+        except APIError as exc:
+            error, status = exc.detail, exc.status
+        return render(
+            request,
+            "search.html",
+            {
+                "query": query,
+                "mode": mode,
+                "results": results,
+                "previous": previous,
+                "next": following,
+                "error": error,
+                "health": await health(request),
+            },
+            status,
+        )
+
     @router.post("/sessions")
     async def create_session(request: Request):
         if not logged_in(request):

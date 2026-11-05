@@ -2,6 +2,7 @@
 {% block title %}Sessions · Solakit{% endblock %}
 {% block content %}
 <section class="page-heading"><h1>Sessions</h1><span class="count-label">{{ catalog.total }} matching · {{ catalog.counts.active }} active · {{ catalog.counts.archived }} archived</span></section>
+<p><a class="text-link" href="/search">Search all sessions and full history →</a></p>
 <form class="session-filters" action="/" method="get">
 <div><label for="session-status">Show sessions</label><select id="session-status" name="status">{% for key, label in [('active', 'Active'), ('archived', 'Archived'), ('all', 'All')] %}<option value="{{ key }}" {% if filters.status == key %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
 <div><label for="session-query">Find sessions</label><input id="session-query" name="q" value="{{ filters.q }}" placeholder="Title or ID" maxlength="200"></div>
