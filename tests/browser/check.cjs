@@ -195,6 +195,132 @@ async function archival(page) {
   assert(await page.locator('#composer').isVisible());
 }
 
+async function signIn(page) {
+  await page.goto(base + '/login');
+  await page.getByLabel('Operator token').fill('scratch-browser-token');
+  await page.getByRole('button', {name: 'Sign in'}).click();
+  await page.waitForURL(base + '/');
+}
+
+async function sessionRuns(page, id) {
+  return (await (await page.request.get(base + '/api/runs')).json()).filter(r => r.session === id);
+}
+
+async function send(page, text) {
+  await page.locator('#message').fill(text);
+  await page.locator('#message').press('Enter');
+}
+
+async function settled(page) {
+  await page.waitForFunction(() => !document.querySelector('#message')?.disabled);
+  assert.equal(await page.locator('.live-preview').count(), 0);
+}
+
+async function streaming(page) {
+  const id = await createSession(page, 'stream');
+  await send(page, 'tool-browser stream-browser');
+  await page.locator('.tool-call summary').waitFor();
+  await page.locator('.tool-call summary').click();
+  await page.locator('.live-preview').waitFor();
+  await page.locator('.live-preview strong').waitFor();
+  assert.equal(await page.locator('.live-preview strong').innerText(), 'partial');
+  assert(await page.locator('.tool-call').evaluate(el => el.open));
+  const live = await (await page.request.get(`${base}/api/sessions/${id}`)).json();
+  assert(!live.messages.some(m => m.content?.includes('Stream finished.')));
+  await page.screenshot({path: path.join(output, `22-preview-${page.qaLabel}.png`), fullPage: true});
+  await page.waitForFunction(() => {
+    const el = document.querySelector('#conversation');
+    return el.scrollHeight > el.clientHeight + 200;
+  });
+  await page.locator('#conversation').evaluate(el => { el.scrollTop = 0; });
+  await settled(page);
+  assert(await page.locator('#conversation').evaluate(el => el.scrollTop < 30));
+  assert(await page.locator('.tool-call').evaluate(el => el.open));
+  assert(await page.locator('#message').evaluate(el => el === document.activeElement));
+  const localLink = page.getByRole('link', {name: 'local link', exact: true});
+  assert.equal(await localLink.getAttribute('href'), '/tools');
+  assert.match(await localLink.getAttribute('rel'), /noopener/);
+  assert(await page.locator('.markdown-content pre').last().evaluate(el => el.scrollWidth > el.clientWidth));
+  const table = page.locator('.markdown-content table').last();
+  assert(await table.evaluate(el => el.scrollWidth > el.clientWidth));
+  await table.evaluate(el => { el.scrollLeft = el.scrollWidth; });
+  assert(await table.evaluate(el => el.scrollLeft > 0));
+  await table.evaluate(el => { el.scrollLeft = 0; });
+  await noOverflow(page);
+  await page.screenshot({path: path.join(output, `22-finished-${page.qaLabel}.png`), fullPage: true});
+  await localLink.click();
+  await page.getByRole('heading', {name: 'Tools', exact: true}).waitFor();
+  await page.goto(`${base}/sessions/${id}`);
+
+  // Reload observes the accepted run; it never resubmits its POST.
+  const beforeReload = (await sessionRuns(page, id)).length;
+  await send(page, 'stream-browser reload');
+  await page.locator('.live-preview').waitFor();
+  await page.reload();
+  await page.locator('.live-preview').waitFor();
+  await settled(page);
+  assert.equal((await sessionRuns(page, id)).length, beforeReload + 1);
+
+  // Block the observer GET while allowing the accepted backend run to finish.
+  const events = `${base}/sessions/${id}/events`;
+  await page.route(events, route => route.abort('connectionfailed'));
+  const beforeDisconnect = (await sessionRuns(page, id)).length;
+  await send(page, 'stream-browser disconnect');
+  await page.locator('#connection-error').waitFor({state: 'visible'});
+  await page.waitForFunction(() => !document.querySelector('#message').disabled);
+  await page.unroute(events);
+  await page.reload();
+  await settled(page);
+  assert.equal((await sessionRuns(page, id)).length, beforeDisconnect + 1);
+
+  // Drop the network during an already-open observer stream.
+  const offlineId = await createSession(page, 'stream-offline');
+  await send(page, 'stream-browser offline');
+  await page.locator('.live-preview').waitFor();
+  await page.request.post(`${base}/qa/disconnect/${offlineId}`);
+  await page.locator('#connection-error').waitFor({state: 'visible'});
+  await page.reload();
+  await settled(page);
+  assert.equal((await sessionRuns(page, offlineId)).length, 1);
+
+  // Both a queued and running turn remain observable, then cancel independently.
+  const queueId = await createSession(page, 'stream-queue');
+  const first = await (await page.request.post(`${base}/api/sessions/${queueId}/messages?wait=false&stream=true`, {data: {message: 'hold-browser'}})).json();
+  const second = await (await page.request.post(`${base}/api/sessions/${queueId}/messages?wait=false&stream=true`, {data: {message: 'stream-browser queued'}})).json();
+  await page.reload();
+  await page.locator(`[data-run-id="${second.id}"][data-run-status="queued"]`).waitFor();
+  assert(await page.locator('#message').isDisabled());
+  await page.request.post(`${base}/api/runs/${first.id}/cancel`);
+  await page.locator('.live-preview').waitFor();
+  await page.request.post(`${base}/api/runs/${second.id}/cancel`);
+  await settled(page);
+  const cancelled = await sessionRuns(page, queueId);
+  assert.equal(cancelled.length, 2);
+  assert(cancelled.every(r => r.status === 'cancelled'));
+
+  // A backend stream failure removes previews without saving a partial message.
+  const brokenId = await createSession(page, 'stream-broken');
+  await send(page, 'break-browser');
+  await page.locator('.live-preview').waitFor();
+  await settled(page);
+  assert.equal((await sessionRuns(page, brokenId))[0].status, 'model_unavailable');
+  assert.equal((await (await page.request.get(`${base}/api/sessions/${brokenId}`)).json()).messages.length, 0);
+
+  // Revocation and real expiry are checked against an already-open EventSource.
+  for (const mode of ['logout', 'expire']) {
+    const authId = await createSession(page, `stream-${mode}`);
+    await send(page, 'stream-browser auth');
+    await page.locator('.live-preview').waitFor();
+    await page.request.post(base + (mode === 'logout' ? '/logout' : '/qa/expire'));
+    await page.waitForURL('**/login');
+    assert.equal((await page.request.get(`${base}/api/sessions/${authId}`)).status(), 401);
+    await signIn(page);
+    await page.goto(`${base}/sessions/${authId}`);
+    await settled(page);
+    assert.equal((await sessionRuns(page, authId)).length, 1);
+  }
+}
+
 (async () => {
   await fs.mkdir(output, {recursive: true});
   const browser = await chromium.launch({
@@ -218,6 +344,7 @@ async function archival(page) {
         else if (phase === '10') await foundation(page);
         else if (phase === '11') await evidence(page);
         else if (phase === '21') await compaction(page);
+        else if (phase === '22') await streaming(page);
         else throw new Error(`Unknown phase ${phase}`);
         assert.deepEqual(errors, []);
         console.log(`PASS phase ${phase}: ${page.qaLabel}`);

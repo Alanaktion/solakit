@@ -22,7 +22,6 @@ or the Discord/job rollout results.
 | [09: acceptance](09-domain-tools-verification.md) | Core, services, journal/letters/email, shell, runner-driven journal and profile-isolation acceptance | Operator resource/prompt acceptance and rollout |
 | [17: letters](17-letters-pack.md) | Independent pack, immutable numbering and durable receipts | Deliberate live correspondence check; actual repository protocol inspected |
 | [19: printer and later extensions](19-printer-and-seam-provers.md) | USB/serial 58mm ESC/POS pack, grants, bounded text and durable receipts | Physical printer check; image/calendar remain later priorities |
-| [22: Markdown/streaming](22-ui-markdown-streaming.md) | Sanitized assistant Markdown, bounded model SSE and live UI snapshots | Targeted streaming browser verification; live oMLX text/tool SSE verified |
 
 Partial plans list completed work separately from unchecked remaining work. General
 operator approval is recorded without treating it as evidence for every named check.

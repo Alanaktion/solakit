@@ -46,3 +46,11 @@ errors and expanded summary ordering, across light/dark desktop/mobile. The
 OpenViking transport is mocked inside this QA process, including startup/commit
 requests, and cannot access a live memory server. Live memory verification is
 recorded separately in the [compaction acceptance audit](../../docs/audits/implementation-status.md#phase-21-completion-2026-11-05).
+
+Phase 22: run `check.cjs 22` for delayed partial Markdown/tool SSE, internal code
+and table overflow, link navigation, scroll/focus, reload, observer connection
+failures and actual mid-body SSE reset, running/queued cancellation, model stream
+interruption, sign-out and server-side expiry. The fixture exposes QA-only
+disconnect/expiry controls; these never exist in the production application.
+The four theme/viewport cases take a few minutes. Accepted runs continue through
+observer failures and authentication changes; no model POST is replayed.

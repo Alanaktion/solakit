@@ -72,14 +72,76 @@ config = Config(
 config.profiles["interactive"].tools = ["runtime.status"]
 
 
+class BrowserStream(httpx.AsyncByteStream):
+    def __init__(self, events, *, delay=0, fail=False):
+        self.events, self.delay, self.fail = events, delay, fail
+
+    async def __aiter__(self):
+        for event in self.events:
+            yield ("data: " + json.dumps(event) + "\n\n").encode()
+            await asyncio.sleep(self.delay)
+        if self.fail:
+            raise httpx.ReadError("Deliberate scratch stream interruption")
+        yield b"data: [DONE]\n\n"
+
+
+def chunk(delta, finish=None):
+    return {
+        "model": config.model.model_id,
+        "choices": [{"index": 0, "delta": delta, "finish_reason": finish}],
+    }
+
+
+def streamed(events, *, delay=0, fail=False):
+    return httpx.Response(
+        200,
+        stream=BrowserStream(events, delay=delay, fail=fail),
+        headers={"content-type": "text/event-stream"},
+    )
+
+
 async def respond(request):
     if request.url.path.endswith("/models"):
         return httpx.Response(200, json={"data": [{"id": config.model.model_id}]})
     body = json.loads(request.content)
-    task = body["messages"][-1].get("content", "")
+    task = next(
+        (
+            m.get("content", "")
+            for m in reversed(body["messages"])
+            if m["role"] == "user"
+        ),
+        "",
+    )
     if "hold-browser" in task:
         await asyncio.sleep(30)
     if "tool-browser" in task and body["messages"][-1]["role"] == "user":
+        function = {"name": "runtime.status", "arguments": "{}"}
+        if body.get("stream"):
+            return streamed(
+                [
+                    chunk(
+                        {
+                            "role": "assistant",
+                            "tool_calls": [
+                                {
+                                    "index": 0,
+                                    "id": "browser-tool",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "runtime.status",
+                                        "arguments": "{",
+                                    },
+                                }
+                            ],
+                        }
+                    ),
+                    chunk(
+                        {"tool_calls": [{"index": 0, "function": {"arguments": "}"}}]},
+                        "tool_calls",
+                    ),
+                ],
+                delay=0.3,
+            )
         return httpx.Response(
             200,
             json={
@@ -93,10 +155,7 @@ async def respond(request):
                                 {
                                     "id": "browser-tool",
                                     "type": "function",
-                                    "function": {
-                                        "name": "runtime.status",
-                                        "arguments": "{}",
-                                    },
+                                    "function": function,
                                 }
                             ],
                         }
@@ -106,33 +165,24 @@ async def respond(request):
         )
     text = "Browser reply.\n\n```text\n" + "long-code-" * 24 + "\n```"
     if body.get("stream"):
-        events = [
-            {
-                "model": config.model.model_id,
-                "choices": [
-                    {
-                        "index": 0,
-                        "delta": {"role": "assistant", "content": text},
-                        "finish_reason": None,
-                    }
-                ],
-            },
-            {
-                "model": config.model.model_id,
-                "choices": [
-                    {
-                        "index": 0,
-                        "delta": {},
-                        "finish_reason": "stop",
-                    }
-                ],
-            },
-        ]
-        content = "".join("data: " + json.dumps(e) + "\n\n" for e in events)
-        return httpx.Response(
-            200,
-            text=content + "data: [DONE]\n\n",
-            headers={"content-type": "text/event-stream"},
+        if "stream-browser" in task or "break-browser" in task:
+            pieces = [
+                "## Streaming heading\n\n**par",
+                "tial** [local link](/tools)\n\n",
+                "| Column | Value |\n| --- | --- |\n| "
+                + "widecell" * 40
+                + " | data |\n\n",
+                "```text\n" + "long-code-" * 100 + "\n```\n\n",
+                ("A scrolling paragraph for browser verification.\n\n" * 30),
+                "Stream finished.",
+            ]
+            events = [chunk({"role": "assistant", "content": p}) for p in pieces]
+            if "break-browser" in task:
+                return streamed(events[:1], delay=0.8, fail=True)
+            events.append(chunk({}, "stop"))
+            return streamed(events, delay=0.8)
+        return streamed(
+            [chunk({"role": "assistant", "content": text}), chunk({}, "stop")]
         )
     return httpx.Response(
         200,
@@ -176,5 +226,49 @@ app = create_app(
     config=config,
     model=ModelClient(config.model, transport=httpx.MockTransport(respond)),
 )
+
+
+observer_drops = set()
+
+
+class DisconnectObserver:
+    """Cut a real SSE response mid-body without cancelling accepted execution."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        target = scope.get("path", "")
+
+        async def transmit(message):
+            if (
+                target in observer_drops
+                and message["type"] == "http.response.body"
+                and message.get("body")
+            ):
+                observer_drops.remove(target)
+                raise ConnectionResetError("Deliberate browser-QA observer disconnect")
+            await send(message)
+
+        await self.app(scope, receive, transmit)
+
+
+app.add_middleware(DisconnectObserver)
+
+
+@app.post("/qa/disconnect/{identity}")
+def disconnect_scratch_observer(identity: str):
+    observer_drops.add(f"/sessions/{identity}/events")
+    return {"disconnecting": True}
+
+
+@app.post("/qa/expire")
+def expire_scratch_sessions():
+    # QA-only route in this isolated fixture, never mounted by the application.
+    for identity in app.state.ui_sessions.sessions:
+        app.state.ui_sessions.sessions[identity] = 0
+    return {"expired": True}
+
+
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=18382, log_level="warning")

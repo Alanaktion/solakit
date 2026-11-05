@@ -37,15 +37,16 @@ Completed foundation plans 01–06, 14–16 and 20 have been removed. See the
 - [ ] Verify deliberate physical-device operation of the thermal printer.
 - [x] Verify live compaction summary/rotation/continuation, full-run archive commit
   and nonempty tool arguments; see the [compaction acceptance record](../audits/implementation-status.md#phase-21-completion-2026-11-05).
-- [ ] Close streaming browser checks in plan 22;
-  foundation/evidence/operations/archival browser matrices are complete.
+- [x] Verify streaming browser resilience in light/dark desktop/mobile, including
+  interruption, reload, cancellation, queueing, expiry, scroll/focus and Markdown
+  overflow; see the [streaming acceptance record](../audits/implementation-status.md#phase-22-completion-2026-11-05).
 - [ ] Record the full §14 acceptance decision, then follow
   [Discord](07-channels-discord.md), [job](08-scheduling.md) and SPEC §15 rollout gates.
 
 Image workflow and calendar read are later seam proofs, independently prioritized;
 they do not block the current MVP. Per-message profile choice and Discord archival
-exposure remain deferred. [Markdown/streaming](22-ui-markdown-streaming.md) are now
-implemented, with live/browser verification tracked separately.
+exposure remain deferred. Markdown/streaming implementation and live/backend/browser
+verification are complete; rollout remains separately gated.
 
 Packs compose internal Python services. New domain tools must not require core
 execution branches. Publishing grants remain separate from filesystem writes.

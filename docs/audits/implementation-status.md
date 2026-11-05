@@ -90,7 +90,7 @@ original plan text:
 | 16 journal pack | Independently packaged; scratch contract and mock-model runner acceptance verified |
 | 20 shell | Built-in migration complete; ongoing operator guidance is in `docs/operations/shell.md` |
 
-Retained partial plans: 07, 08, 09, 17, 19 and 22. Each now
+Retained partial plans: 07, 08, 09, 17 and 19. Each now
 separates completed work from remaining checks. Plan 19 now has a separately packaged USB/serial 58mm ESC/POS printer implementation;
 its physical-device gate remains open.
 UI plans remain because their named browser matrices have not been specifically
@@ -101,15 +101,15 @@ reported complete. Historical adversarial-review resolutions moved from plans to
 
 1. Audit intended operator-owned profile/resource grants and approve prompts in plan 09; the automated blog-profile isolation gap is closed.
 2. Live compaction acceptance is complete; retain private summary/archive/extraction evidence.
-3. Complete streaming browser checks (plan 22); foundation, evidence, operations and archival browser matrices are complete.
+3. Streaming, compaction and foundation/evidence/operations/archival browser matrices are complete; retain their acceptance evidence.
 4. Complete deliberate letters correspondence (17); the actual repository protocol and live self-addressed mailbox verification are recorded.
 5. Verify physical 58mm USB/serial thermal printer output (19); image/calendar remain later priorities.
 6. Record acceptance and prompt-audit approval, then deliberately stage Discord,
    shadow publishing, jobs and rollback under SPEC §15. No automatic activation.
 
 At the audit baseline, Markdown and streaming were deferred; the later authorized
-[plan 22](../plan/22-ui-markdown-streaming.md) implements them and records remaining
-live/browser checks. Per-message profile selection and Discord archival commands
+[streaming acceptance record](#phase-22-completion-2026-11-05) now covers their
+implementation and completed live/backend/browser checks. Per-message profile selection and Discord archival commands
 remain deferred. General web/message/device abstractions should grow only for a
 concrete pack need. Trusted Python packs, shell commands and repository Git hooks
 run with host-user privileges; existing scope checks are not an OS sandbox.
@@ -258,3 +258,43 @@ summary and retained input/archive/report evidence. No backend upgrade or
 configuration change was needed. Together with the earlier live explicit/mid-run
 summary, byte-preserving rotation, continuation, full-archive commit/extraction
 and four-way browser matrix, this satisfies the remaining phase gates.
+
+## Phase 22 completion (2026-11-05)
+
+Plan 22 is complete and removed. The earlier live oMLX probes established pinned
+text/tool SSE, usage, stop/tool_calls terminal events and `[DONE]`. An exact empty
+legacy heartbeat is treated only as a transport no-op; payload-bearing variants,
+wrong models and heartbeat-only completions still fail closed.
+
+Real Brave/Chromium checks now pass in light/dark at 1440×1000 and 390×844 against
+the isolated scratch app with delayed, fragmented model streams:
+
+- Partial Markdown previews are labeled unsaved, then replaced by saved evidence.
+- Tool-call deltas execute only after completion; expanded details survive snapshots.
+- Long code and table content scroll within their containers; links work and
+  page width remains bounded. Screenshot review found squeezed table columns;
+  minimum cell widths and normal cell wrapping now preserve readable columns.
+- A reader scrolled above the latest content stays there while snapshots arrive;
+  the composer regains focus when the run completes.
+- Reload observes one accepted run without resubmitting. Both a blocked observer
+  GET and a real mid-body SSE connection reset show connection guidance; reload
+  recovers the same single run and stored completion.
+- Running/queued turns remain observable and cancel independently.
+- An interrupted model stream removes its preview, saves no first-step partial
+  transcript, and reports model_unavailable.
+- Sign-out and actual server-side session expiry invalidate an already-open
+  observer; reauthentication shows the accepted run without replay.
+
+The disconnect/expiry controls exist only in `tests/browser/server.py`, never
+the production app. Browser checks use mock model/memory transports; live oMLX
+verification and live OpenViking compaction are separately recorded above.
+Reproduce phase `22` with the [browser harness](../../tests/browser/README.md).
+Core and optional-pack suites passed 234 tests. Ruff lint/format, `.env`-backed
+`sola check`, core wheel/sdist build and packaged CSS/JS checks passed.
+No production channel, job or publishing rollout is implied.
+
+All twenty earlier browser combinations (phases 10, 11, 12, 13 and 21) were rerun
+after the harness changes and passed. Private screenshots, scratch application
+evidence, fixture source, server log and matrix report are retained under the
+operator data directory's `verification/2026-11-05-streaming-browser/`. The QA
+server was stopped after verification.

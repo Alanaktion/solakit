@@ -102,7 +102,7 @@ model. `/api/runs/{id}?live=true` adds a credential-masked transient preview.
 The web UI observes authenticated `/sessions/{id}/events` SSE HTML snapshots,
 coalesced to at most five updates per second. Backends must support OpenAI SSE,
 including `stream_options.include_usage`; unsupported/malformed streams fail
-explicitly, with no automatic fallback/replay. See [remaining streaming checks](docs/plan/22-ui-markdown-streaming.md).
+explicitly, with no automatic fallback/replay. See [streaming acceptance record](docs/audits/implementation-status.md#phase-22-completion-2026-11-05).
 
 ```sh
 uv run pytest
