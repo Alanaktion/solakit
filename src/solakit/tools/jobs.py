@@ -88,6 +88,7 @@ async def create(
     profile: str | None = None,
     bind_session: str | None = None,
     deliver: dict[str, Any] | None = None,
+    sub_session: bool = False,
     polling: bool = False,
     catch_up: bool = False,
 ) -> ToolResult:
@@ -103,6 +104,8 @@ async def create(
     app was offline. Changing task/enablement does not rearm an attempted job;
     choose a new future run_at to reschedule. Tasks accept only {date},
     {time}, {timezone}, {job_id} placeholders (escape other braces as {{ and }}).
+    sub_session=true runs privately in a fresh child with the parent memory scope;
+    only configured final delivery reaches the channel. No parent history is copied.
     catch_up requires polling=true. Other profiles/sessions/delivery require
     jobs.manage.all. A stable ID prevents duplicate creation on retry.
     """
@@ -117,6 +120,7 @@ async def create(
             profile=profile or ctx.profile,
             bind_session=bind_session or ctx.session.id,
             deliver=deliver,
+            sub_session=sub_session,
             polling=polling,
             catch_up=catch_up,
         )
@@ -130,7 +134,8 @@ async def create(
 @tool(name="jobs.update", profiles=["*"], writes=["jobs.manage"])
 async def update(ctx: ToolContext, id: str, changes: dict[str, Any]) -> ToolResult:
     """Edit job fields (cron, run_at, timezone, profile, task, bind_session, deliver,
-    enabled, polling, catch_up). ID is immutable; use deliver=null to clear it.
+    enabled, sub_session, polling, catch_up). ID is immutable;
+    use deliver=null to clear it.
     Active jobs must finish before editing. Scheduling changes reset next fire.
     To switch schedule types, clear the old field with null and set the new one.
     A new future run_at rearms a one-time job; other edits do not.

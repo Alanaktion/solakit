@@ -258,3 +258,88 @@ def test_apscheduler_wakeup_lifecycle_and_interrupted_dispatch_recovery(config):
         await execution.close()
 
     asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("silent", [False, True])
+def test_sub_sessions_keep_memory_and_deliver_only_final(config, silent):
+    from test_memory import memory_config
+
+    from solakit.core.config import Delivery
+    from solakit.core.memory import MemoryClient
+
+    configured(config)
+    config.jobs[0].sub_session = True
+    if silent:
+        config.jobs[0].deliver = Delivery(mode="silent")
+    config.memory = memory_config()
+    (config.paths.fragments / "recall-header.md").write_text("Recalled records:")
+    captured, memory_paths = [], []
+
+    def model(request):
+        if request.url.path.endswith("/models"):
+            return model_list(config)
+        captured.append(json.loads(request.content)["messages"])
+        return completion(config, "private work final")
+
+    def memory(request):
+        memory_paths.append(request.url.path)
+        result = {}
+        if request.url.path.endswith("search/find"):
+            result = {
+                "memories": [
+                    {
+                        "uri": "viking://user/sola/memories/fact.md",
+                        "abstract": "Shared remembered fact",
+                    }
+                ]
+            }
+        elif request.url.path.endswith("/commit"):
+            result = {"status": "accepted"}
+        return httpx.Response(200, json={"status": "ok", "result": result})
+
+    execution, adapter = setup(config, model), FakeAdapter()
+    execution.memory = MemoryClient(
+        config.memory, transport=httpx.MockTransport(memory)
+    )
+    channels = Channels(config, execution, {"discord": adapter})
+    jobs = Jobs(config, execution, channels)
+
+    async def exercise():
+        await jobs.initialize()
+        parent = channels.router.channel("discord", "100")
+        before = execution.store.all_messages(parent.id)
+        first = await jobs.run_now("scheduled")
+        second = await jobs.run_now("scheduled")
+        assert first.status == second.status == "completed"
+        assert first.session != second.session
+        for run in (first, second):
+            child = execution.store.session(run.session)
+            assert child.parent_session == parent.id
+            assert child.memory_scope == "shared"
+            assert child.bound_channel is None
+            assert run.recall_status == "recalled"
+            assert "Shared remembered fact" in execution.store.run(run.id)["prompt"]
+        assert execution.store.all_messages(parent.id) == before
+        assert len(adapter.sent) == (0 if silent else 2)
+        if not silent:
+            assert all(
+                message.text == "private work final" for _, message in adapter.sent
+            )
+        assert sum(path.endswith("/commit") for path in memory_paths) == 2
+        assert all(len(messages) == 2 for messages in captured)
+        await jobs.stop_admission()
+        await execution.close()
+
+    asyncio.run(exercise())
+
+
+def test_sub_session_requires_parent():
+    with pytest.raises(ValidationError, match="parent session or channel"):
+        Job(
+            id="j",
+            cron="0 * * * *",
+            profile="interactive",
+            task="Check memories",
+            bind_session="ephemeral",
+            sub_session=True,
+        )

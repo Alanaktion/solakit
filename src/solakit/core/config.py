@@ -170,6 +170,7 @@ class Job(StrictModel):
     profile: str
     task: str
     bind_session: str
+    sub_session: bool = False
     deliver: Delivery | None = None
     catch_up: bool = False
     polling: bool = False
@@ -211,6 +212,8 @@ class Job(StrictModel):
             self.run_at = instant.astimezone(UTC).isoformat()
             if self.catch_up:
                 raise ValueError("One-time jobs catch up automatically; omit catch_up")
+        if self.sub_session and self.bind_session == "ephemeral":
+            raise ValueError("Sub-sessions require a parent session or channel")
         if self.catch_up and not self.polling:
             raise ValueError("catch_up is reserved for idempotent polling jobs")
         if not self.task.strip() or len(self.task) > 32000:

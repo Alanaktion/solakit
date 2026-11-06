@@ -109,3 +109,7 @@ uv build
 ```
 
 In the managed workspace use `UV_CACHE_DIR=/workspace/.cache/uv`.
+
+Scheduled jobs can opt into `sub_session = true` for fresh child sessions with
+shared memory and final-only channel delivery. Configure this in the job form,
+API or chat tools; see [job management](operations/jobs.md).

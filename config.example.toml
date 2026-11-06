@@ -138,6 +138,7 @@ timezone = "America/Denver"
 profile = "interactive"
 task = "Review the configured inbox on {date}."
 bind_session = "discord-pilot"
+sub_session = false # Fresh child with inherited memory; only final delivery reaches channel.
 polling = true
 catch_up = false
 enabled = false

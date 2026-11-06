@@ -23,3 +23,7 @@ in a private data directory. Integrations are opt-in.
 - [Session archival](docs/operations/session-archive.md): reversible cleanup of imported history, activity filters and bulk restore.
 - [Optional tool packs](packs/README.md) and their resource configuration.
 - [Configuration example](config.example.toml), [behavioral specification](SPEC.md), and [contributor guide](AGENTS.md).
+
+Scheduled jobs can opt into `sub_session = true` for fresh child sessions with
+shared memory and final-only channel delivery. Configure this in the job form,
+API or chat tools; see [job management](docs/operations/jobs.md).

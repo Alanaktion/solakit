@@ -1229,6 +1229,7 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
                 "delivery_mode",
                 "delivery_to",
                 "enabled",
+                "sub_session",
                 "polling",
                 "catch_up",
             }
@@ -1261,7 +1262,7 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
             payload.update(
                 {
                     key: values.get(key) == "on"
-                    for key in ("enabled", "polling", "catch_up")
+                    for key in ("enabled", "sub_session", "polling", "catch_up")
                 }
             )
             mode = values.get("delivery_mode", "automatic")

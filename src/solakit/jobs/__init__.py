@@ -148,6 +148,20 @@ class Jobs:
         await asyncio.gather(*self.tasks.values(), return_exceptions=True)
 
     async def _session(self, job):
+        parent = await self._bound_session(job)
+        if not job.sub_session:
+            return parent
+        return await durable(
+            self.execution.store.create_session,
+            Session(
+                title=f"Job {job.id}",
+                default_profile=job.profile,
+                memory_scope=parent.memory_scope,
+                parent_session=parent.id,
+            ),
+        )
+
+    async def _bound_session(self, job):
         channel = next(
             (c for c in self.config.channels if c.id == job.bind_session), None
         )

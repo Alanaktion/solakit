@@ -421,3 +421,7 @@ for letters/mailboxes; core config only loads modules and grants tools/scopes.
 - [Shell](operations/shell.md): enabled by config literal argv and `/bin/sh` tools,
   explicit `shell.exec` grant, finite timeouts, bounded output and process-group
   cleanup. Commands run with host-user privileges; cwd scopes are not a sandbox.
+
+Scheduled jobs can opt into `sub_session = true` for fresh child sessions with
+shared memory and final-only channel delivery. Configure this in the job form,
+API or chat tools; see [job management](operations/jobs.md).

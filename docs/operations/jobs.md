@@ -96,6 +96,18 @@ delivery safeguards remain in effect. Busy edits/deletions/triggers return 409;
 missing jobs return 404; invalid definitions return 422. Already accepted work
 finishes publication even if its requesting connection is cancelled.
 
+
+Set `sub_session = true` (API/chat: `"sub_session": true`) or choose **Run in a
+fresh sub-session** in the job form to run each firing in a new child of the
+bound session. The child inherits its memory scope, enabling normal shared
+memory recall, tools and commits, without copying parent conversation history.
+Task, tool calls and intermediate replies remain in the child's evidence.
+Existing final/artifact/silent delivery settings still apply; automatic delivery
+sends only the final reply for non-polling channel bindings. Session-ID bindings
+do not implicitly deliver to a channel. The API channel exposes the stored child
+run; it does not append a copy into the parent transcript. Ephemeral bindings
+cannot use this option. The default is false, preserving existing inline jobs.
+
 ## Chat tools
 
 Load the built-in `jobs` module through `enabled_tools`. Grant the desired names
