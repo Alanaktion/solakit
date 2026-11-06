@@ -9,8 +9,15 @@
   {% for profile, names in catalog.profiles.items() %}
     <details id="profile-{{ profile }}" class="tool-profile">
       <summary><span>{{ profile }}</span><span class="count-label">{{ names|length }} tools granted</span></summary>
-      {% if catalog.summaries.get(profile) %}<p class="muted">{{ catalog.summaries[profile] }}</p>{% endif %}
-      <div class="tool-grants">{% for name in names %}<a class="subtle-tag" href="#tool-{{ name }}"><code>{{ name }}</code></a>{% else %}<p class="muted">No tools granted</p>{% endfor %}</div>
+      {% set access = catalog.access[profile] %}
+      <dl class="tool-profile-access">
+        <div><dt>Tool grants</dt><dd class="tool-grants">{% for grant in catalog.profile_config[profile].tools %}<code class="subtle-tag">{{ grant }}</code>{% else %}None{% endfor %}</dd></div>
+        <div><dt>Read access</dt><dd><code>{{ access.read }}</code>{% for root in access.read_roots %}<code class="tool-access-root">{{ root }}</code>{% endfor %}</dd></div>
+        <div><dt>Write access</dt><dd><code>{{ access.write }}</code>{% for root in access.write_roots %}<code class="tool-access-root">{{ root }}</code>{% endfor %}</dd></div>
+        <div><dt>Effects</dt><dd class="tool-grants">{% for effect in access.effects %}<code class="subtle-tag">{{ effect }}</code>{% else %}None{% endfor %}</dd></div>
+        <div><dt>Resources</dt><dd class="tool-grants">{% for resource in access.resources %}<code class="subtle-tag">{{ resource }}</code>{% else %}None{% endfor %}</dd></div>
+        <div><dt>Available tools</dt><dd class="tool-grants">{% for name in names %}<a href="#tool-{{ name }}"><code>{{ name }}</code></a>{% else %}No tools granted{% endfor %}</dd></div>
+      </dl>
     </details>
   {% endfor %}
   </div>

@@ -7,7 +7,9 @@ Post `{"message":"Hello"}` to `/api/sessions/web-main/messages`; optional `profi
 selects that run's profile. Unknown/misplaced fields are rejected, not ignored.
 Inspect `/api/tools` for loaded tools and effective profile grants. The UI’s
 `/tools` page groups tools by family, shows profile grants on each row, and
-expands descriptions and argument schemas on demand. Expand Profile access
+uses compact rows with descriptions and argument schemas available on demand.
+Profile access separates tool grants, read/write tiers and roots, effects,
+resources, and available tools into labeled rows. Expand Profile access
 for tool links or Configuration & diagnostics for modules and disclosure details.
 Session listings default to active sessions, paginated and ordered by last activity.
 Use `status=archived|all`, `q`, `profile`, `before`, `limit`, `offset`, and `page=true`
