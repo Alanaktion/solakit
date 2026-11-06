@@ -12,3 +12,6 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/sola_packs"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"workflow.json" = "sola_packs/image_workflow.json"

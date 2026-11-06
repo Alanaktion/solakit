@@ -8,7 +8,7 @@ from typing import Annotated
 from urllib.parse import urlsplit
 
 import httpx
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from sola_packs.support import IDENTIFIER, Settings, external, resource, secret
 from sola_packs.support.evidence import Lease, Operation
 
@@ -26,9 +26,34 @@ class Image(Settings):
     prompt_input: str = "text"
     seed_node: str
     seed_input: str = "seed"
+    size_node: str | None = None
+    width_node: str | None = None
+    width_input: str = "width"
+    height_node: str | None = None
+    height_input: str = "height"
     token: SecretRef | None = None
     timeout_s: float = Field(default=15, gt=0, le=60)
     max_response_bytes: int = Field(default=1_000_000, ge=1, le=4_000_000)
+
+    @model_validator(mode="after")
+    def dimension_mapping(self):
+        if self.size_node is not None:
+            self.width_node = self.width_node or self.size_node
+            self.height_node = self.height_node or self.size_node
+        if (self.width_node is None) != (self.height_node is None):
+            raise ValueError("Configure both width_node and height_node")
+        mappings = [
+            (self.prompt_node, self.prompt_input),
+            (self.seed_node, self.seed_input),
+        ]
+        if self.width_node is not None:
+            mappings += [
+                (self.width_node, self.width_input),
+                (self.height_node, self.height_input),
+            ]
+        if len(set(mappings)) != len(mappings):
+            raise ValueError("Configured workflow inputs must be distinct")
+        return self
 
     @field_validator("workflow", mode="before")
     @classmethod
@@ -114,7 +139,7 @@ def submit(ctx, cfg, auth, workflow, workflow_name, operation_id):
 
 
 @tool(
-    summary="Submit a named image workflow with explicit prompt and seed",
+    summary="Submit a named image workflow with prompt, seed and dimensions",
     keywords=("image", "generate", "picture", "workflow"),
     name="image.generate",
     profiles=["*"],
@@ -157,8 +182,31 @@ async def generate(
             )
         ),
     ],
+    width: Annotated[
+        int,
+        Field(
+            ge=64,
+            le=4096,
+            multiple_of=8,
+            description="Output width in pixels; defaults to 768.",
+        ),
+    ] = 768,
+    height: Annotated[
+        int,
+        Field(
+            ge=64,
+            le=4096,
+            multiple_of=8,
+            description="Output height in pixels; defaults to 768.",
+        ),
+    ] = 768,
 ) -> ToolResult:
-    """Submit a named ComfyUI workflow with an explicit seed and stable operation ID."""
+    """Submit a named workflow once; width and height default to 768 pixels.
+
+    Configured dimension inputs are overridden without editing the workflow file.
+    Custom sizes require width/height mappings; legacy unmapped workflows retain
+    their dimensions when both arguments use the defaults.
+    """
     if ctx.config.profiles[ctx.profile].write == "none":
         raise ToolError("Image generation requires filesystem write tier")
     cfg = resource(ctx, "images", workflow, Image, "generate")
@@ -166,6 +214,13 @@ async def generate(
         raise ToolError("A stable operation ID is required")
     if not prompt.strip() or len(prompt) > 16000 or not 0 <= seed <= 2**64 - 1:
         raise ToolError("Prompt must contain 1–16000 characters; seed must be uint64")
+    if any(
+        type(value) is not int or not 64 <= value <= 4096 or value % 8
+        for value in (width, height)
+    ):
+        raise ToolError("Width and height must be multiples of 8 from 64 to 4096")
+    if cfg.width_node is None and (width, height) != (768, 768):
+        raise ToolError("Custom dimensions require configured width/height mappings")
     text = await ctx.fs.read(cfg.workflow, max_chars=1_000_000)
     if not text.content_complete or len(text.content.encode()) > 1_000_000:
         raise ToolError("Workflow exceeds its byte limit")
@@ -183,6 +238,16 @@ async def generate(
             or type(seed_inputs[cfg.seed_input]) is not int
         ):
             raise ValueError("Configured inputs have incorrect types")
+        if cfg.width_node is not None:
+            width_inputs = graph[cfg.width_node]["inputs"]
+            height_inputs = graph[cfg.height_node]["inputs"]
+            if (
+                type(width_inputs[cfg.width_input]) is not int
+                or type(height_inputs[cfg.height_input]) is not int
+            ):
+                raise ValueError("Configured dimensions must be integer inputs")
+            width_inputs[cfg.width_input] = width
+            height_inputs[cfg.height_input] = height
         prompt_inputs[cfg.prompt_input] = prompt
         seed_inputs[cfg.seed_input] = seed
     except (KeyError, ValueError, TypeError) as exc:

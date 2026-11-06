@@ -45,12 +45,18 @@ max_message_bytes = 1000000
 # max_bytes = 1000000
 
 # Optional ComfyUI API-format workflow. Grant image.generate/image.result,
-# image.generate, image:studio:generate/read, and a workflow filesystem read scope.
+# resource image:studio, a non-none write tier, and workflow filesystem read scope.
 # [images.studio]
 # base_url = "http://127.0.0.1:8188"
-# workflow = "/absolute/path/to/zimage-api.json"
-# prompt_node = "6"
+# workflow = "/absolute/path/to/workflow.json"
+# prompt_node = "45"
 # prompt_input = "text"
-# seed_node = "3"
+# seed_node = "44"
 # seed_input = "seed"
+# size_node = "41" # Shorthand for both nodes; explicit mappings below override.
+# width_node = "41"
+# width_input = "width"
+# height_node = "41"
+# height_input = "height"
+# image.generate defaults to width=768 and height=768 (64–4096, multiples of 8).
 # token = { env = "COMFY_TOKEN" }

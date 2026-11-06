@@ -18,12 +18,17 @@ def setup(tmp_path, monkeypatch, pack_context):
             {
                 "6": {"class_type": "CLIPTextEncode", "inputs": {"text": "default"}},
                 "3": {"class_type": "KSampler", "inputs": {"seed": 0, "steps": 9}},
+                "5": {
+                    "class_type": "EmptySD3LatentImage",
+                    "inputs": {"width": 512, "height": 1024, "batch_size": 1},
+                },
             }
         )
     )
     config = tmp_path / "packs.toml"
     config.write_text(
         f'[images.studio]\nworkflow = "{graph}"\nprompt_node = "6"\nseed_node = "3"\n'
+        'width_node = "5"\nheight_node = "5"\n'
     )
     monkeypatch.setenv("SOLA_PACKS_CONFIG", str(config))
     registry, ctx = pack_context(
@@ -411,3 +416,120 @@ def test_download_refuses_redirect_invalid_large_and_slow_images(monkeypatch, mo
             cfg, {}, {"filename": "cover.png", "subfolder": "", "type": "output"}
         )
     assert len(requests) == 1
+
+
+def test_dimensions_default_custom_and_receipt_binding(setup):
+    _, _, calls, graph = setup
+    original = graph.read_bytes()
+    assert not invoke(setup).error
+    assert json.loads(calls[-1].content)["prompt"]["5"]["inputs"] == {
+        "width": 768,
+        "height": 768,
+        "batch_size": 1,
+    }
+    assert not invoke(setup, width=768, height=768).error
+    assert len(calls) == 1
+    assert invoke(setup, width=1024, height=576).error
+    assert len(calls) == 1
+    assert not invoke(setup, operation_id="landscape", width=1024, height=576).error
+    assert json.loads(calls[-1].content)["prompt"]["5"]["inputs"] == {
+        "width": 1024,
+        "height": 576,
+        "batch_size": 1,
+    }
+    assert graph.read_bytes() == original
+    schema = setup[0].tools["image.generate"].schema()["function"]["parameters"]
+    assert schema["properties"]["width"]["default"] == 768
+    assert schema["properties"]["height"]["default"] == 768
+
+
+@pytest.mark.parametrize(
+    "dimensions",
+    [
+        {"width": 0},
+        {"height": -8},
+        {"width": 4097},
+        {"height": 770},
+        {"width": True},
+        {"height": "768"},
+        {"width": 768.0},
+    ],
+)
+def test_bad_dimensions_never_submit(setup, dimensions):
+    assert invoke(setup, **dimensions).error
+    assert not setup[2]
+
+
+def test_unmapped_workflow_compatibility_and_custom_size_refusal(setup):
+    _, _, calls, graph = setup
+    sidecar = graph.parent / "packs.toml"
+    sidecar.write_text(
+        sidecar.read_text().replace('width_node = "5"\nheight_node = "5"\n', "")
+    )
+    assert not invoke(setup).error
+    assert json.loads(calls[-1].content)["prompt"]["5"]["inputs"]["width"] == 512
+    assert "mappings" in invoke(setup, operation_id="custom", width=1024).content
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("mode", ["missing", "linked", "bool", "partial", "collision"])
+def test_bad_dimension_mappings_never_submit(setup, mode):
+    _, _, _, graph = setup
+    data = json.loads(graph.read_text())
+    if mode == "missing":
+        del data["5"]["inputs"]["width"]
+    elif mode == "linked":
+        data["5"]["inputs"]["height"] = ["other", 0]
+    elif mode == "bool":
+        data["5"]["inputs"]["width"] = True
+    else:
+        sidecar = graph.parent / "packs.toml"
+        text = sidecar.read_text()
+        if mode == "partial":
+            text = text.replace('height_node = "5"\n', "")
+        else:
+            text += 'height_input = "width"\n'
+        sidecar.write_text(text)
+    graph.write_text(json.dumps(data))
+    assert invoke(setup).error
+    assert not setup[2]
+
+
+def test_reference_workflow_maps_dimensions_and_is_preserved(setup):
+    from pathlib import Path
+
+    _, _, calls, graph = setup
+    reference = Path(__file__).parents[1] / "workflow.json"
+    graph.write_bytes(reference.read_bytes())
+    sidecar = graph.parent / "packs.toml"
+    sidecar.write_text(
+        sidecar.read_text()
+        .replace('prompt_node = "6"', 'prompt_node = "45"')
+        .replace('seed_node = "3"', 'seed_node = "44"')
+        .replace('width_node = "5"', 'width_node = "41"')
+        .replace('height_node = "5"', 'height_node = "41"')
+    )
+    assert not invoke(setup, width=1024, height=576).error
+    submitted = json.loads(calls[-1].content)["prompt"]
+    expected = json.loads(reference.read_text())
+    expected["45"]["inputs"]["text"] = "A moonlit garden"
+    expected["44"]["inputs"]["seed"] = 42
+    expected["41"]["inputs"].update(width=1024, height=576)
+    assert submitted == expected
+    assert graph.read_bytes() == reference.read_bytes()
+
+
+def test_shared_size_node_shorthand(setup):
+    _, _, calls, graph = setup
+    sidecar = graph.parent / "packs.toml"
+    sidecar.write_text(
+        sidecar.read_text().replace(
+            'width_node = "5"\nheight_node = "5"\n', 'size_node = "5"\n'
+        )
+    )
+    assert not invoke(setup, width=1024, height=576).error
+    assert json.loads(calls[-1].content)["prompt"]["5"]["inputs"] == {
+        "width": 1024,
+        "height": 576,
+        "batch_size": 1,
+    }
