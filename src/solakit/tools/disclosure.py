@@ -8,19 +8,43 @@ from dataclasses import dataclass
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+STOPWORDS = frozenset(
+    (
+        "the a an in on of to for and or is it i me my what did do does about with "
+        "from at by be can you your this that there any all was were has have had "
+        "not no if then so as"
+    ).split()
+)
 DISCLOSURE_STEPS = 8
 META_NAMES = ("tools.search", "tools.load")
 
 
 class Search(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
-    query: str
-    limit: int = Field(default=5, ge=1, le=5)
+    query: str = Field(
+        description=(
+            "Tool name or content words describing the intended task; use "
+            "tools.load for an exact known name."
+        )
+    )
+    limit: int = Field(
+        default=5,
+        ge=1,
+        le=5,
+        description="Maximum matches to activate for the next request, from 1 to 5.",
+    )
 
 
 class Load(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
-    names: list[str] = Field(min_length=1, max_length=5)
+    names: list[str] = Field(
+        min_length=1,
+        max_length=5,
+        description=(
+            "One to five exact granted tool names from the index; patterns are "
+            "not accepted."
+        ),
+    )
 
 
 def meta_schemas():
@@ -209,13 +233,19 @@ def disclose(name, arguments, ctx):
     view = ctx.tool_view
     if name == "tools.search":
         query = args.query.lower()
-        query_tokens = tokens(query)
+        query_tokens = tokens(query) - STOPWORDS or tokens(query)
         matches = []
         for n, summary, keywords, doc, writes in view.entries:
-            score = len(query_tokens & tokens(" ".join((n, summary, *keywords, doc))))
+            signal = (
+                10 * len(query_tokens & tokens(n))
+                + 6 * len(query_tokens & tokens(" ".join(keywords)))
+                + 4 * len(query_tokens & tokens(summary))
+            )
+            score = signal + len(query_tokens & tokens(doc))
             if query in (n.lower(), n.replace(".", "_").lower()):
                 score += 1000
-            if score:
+                signal += 1000
+            if signal >= 4 or score >= 8:
                 matches.append((score, n, summary, writes))
         matches.sort(key=lambda row: (-row[0], row[1]))
         matches = matches[: args.limit]

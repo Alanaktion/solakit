@@ -4,6 +4,7 @@ import json
 import re
 import time
 from pathlib import Path
+from typing import Annotated
 from urllib.parse import urlsplit
 
 import httpx
@@ -113,11 +114,49 @@ def submit(ctx, cfg, auth, workflow, workflow_name, operation_id):
 
 
 @tool(
+    summary="Submit a named image workflow with explicit prompt and seed",
+    keywords=("image", "generate", "picture", "workflow"),
     name="image.generate",
     profiles=["*"],
 )
 async def generate(
-    ctx: ToolContext, workflow: str, prompt: str, seed: int, operation_id: str
+    ctx: ToolContext,
+    workflow: Annotated[
+        str,
+        Field(
+            description=(
+                "Configured image workflow alias granted to this profile, not a "
+                "graph filename."
+            )
+        ),
+    ],
+    prompt: Annotated[
+        str,
+        Field(
+            description=(
+                "Exact text prompt for the workflow; graph/model settings "
+                "remain operator-owned."
+            )
+        ),
+    ],
+    seed: Annotated[
+        int,
+        Field(
+            description=(
+                "Explicit integer generation seed for reproducible input; do "
+                "not invent a random seed on retry."
+            )
+        ),
+    ],
+    operation_id: Annotated[
+        str,
+        Field(
+            description=(
+                "Stable unique operation ID; reuse only for the identical "
+                "request. Uncertain operations never auto-replay."
+            )
+        ),
+    ],
 ) -> ToolResult:
     """Submit a named ComfyUI workflow with an explicit seed and stable operation ID."""
     if ctx.config.profiles[ctx.profile].write == "none":
@@ -217,8 +256,33 @@ def outcome(cfg, auth, prompt_id):
         ) from exc
 
 
-@tool(name="image.result", profiles=["*"])
-async def result(ctx: ToolContext, workflow: str, operation_id: str) -> ToolResult:
+@tool(
+    summary="Inspect an image generation operation without resubmitting",
+    keywords=("image", "result", "generation", "status"),
+    name="image.result",
+    profiles=["*"],
+)
+async def result(
+    ctx: ToolContext,
+    workflow: Annotated[
+        str,
+        Field(
+            description=(
+                "Configured image workflow alias granted to this profile, not a "
+                "graph filename."
+            )
+        ),
+    ],
+    operation_id: Annotated[
+        str,
+        Field(
+            description=(
+                "Stable unique operation ID; reuse only for the identical "
+                "request. Uncertain operations never auto-replay."
+            )
+        ),
+    ],
+) -> ToolResult:
     """Inspect a receipted generation and return ComfyUI output image references."""
     cfg = resource(ctx, "images", workflow, Image, "read")
     if not IDENTIFIER.fullmatch(operation_id):

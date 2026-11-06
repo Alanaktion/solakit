@@ -186,7 +186,44 @@ def test_github_and_wikipedia(config, monkeypatch):
             assert request.headers["Authorization"] == "Bearer test-github"
             if "/pulls/" in request.url.path:
                 return httpx.Response(200, json={"head": {"sha": "abc"}})
-            return httpx.Response(200, json={"ok": True})
+            if request.url.path == "/notifications":
+                return httpx.Response(
+                    200,
+                    json=[
+                        {
+                            "id": "1",
+                            "unread": True,
+                            "subject": {"title": "Issue", "type": "Issue"},
+                            "repository": {"full_name": "a/b"},
+                        }
+                    ],
+                )
+            if request.url.path.endswith("/check-runs"):
+                return httpx.Response(
+                    200,
+                    json={
+                        "total_count": 1,
+                        "check_runs": [
+                            {
+                                "name": "CI",
+                                "status": "completed",
+                                "conclusion": "success",
+                            }
+                        ],
+                    },
+                )
+            if request.url.path.endswith("/status"):
+                return httpx.Response(
+                    200,
+                    json={
+                        "state": "success",
+                        "total_count": 1,
+                        "statuses": [{"context": "CI", "state": "success"}],
+                    },
+                )
+            return httpx.Response(
+                200, json={"tag_name": "v1", "body": "Release notes", "assets": []}
+            )
         assert "Authorization" not in request.headers
         return httpx.Response(200, json={"title": "Python", "wikibase_item": "Q28865"})
 

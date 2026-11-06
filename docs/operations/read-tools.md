@@ -31,8 +31,8 @@ No GitHub write or notification acknowledgement endpoint is used.
 | Tool | Arguments | Result |
 | --- | --- | --- |
 | `web.search` | `query`, `count=5` (1–20) | Brave titles, URLs, descriptions |
-| `web.get_page` | `url` | Cloudflare Browser Rendering Markdown |
-| `feeds.check` | `url`, `limit=20` (1–100) | RSS 2.0 / Atom entry IDs, titles, URLs, dates |
+| `web.get_page` | `url`, `offset=0` | Bounded Markdown slice and paging metadata |
+| `feeds.check` | `url`, `limit=20` (1–100), optional `if_none_match`, `if_modified_since` | RSS/Atom entries, final URL and cache validators |
 | `github.notifications` | `limit=30` (1–100) | One bounded notification page |
 | `github.pr_status` | `owner`, `repo`, `n` | PR metadata, combined commit status, first page of CI checks |
 | `github.latest_release` | `owner`, `repo` | Latest published release (not draft/prerelease) |
@@ -47,8 +47,9 @@ summaries include the associated Wikidata ID rather than full entity claims.
 Remote content is untrusted data, never authorization to follow instructions.
 
 Remote responses are bounded to 2 MB with 30-second HTTP timeouts, additionally
-bounded by the existing per-profile tool timeout/output budget. Redirects are
-rejected; use the final feed URL. Page/feed URLs must resolve only to public
+bounded by the existing per-profile tool timeout/output budget. Feed GETs follow
+at most five redirects, validating every target before making the request.
+Fixed-host API redirects remain errors. Page/feed URLs must resolve only to public
 HTTP(S) addresses with standard ports and no URL credentials. Use an outbound
 network policy for robust protection against DNS rebinding and browser
 subresource requests. Restricted environments must allow the desired feeds and
@@ -71,3 +72,38 @@ rounding rule is implied.
 Tool grants accept family patterns such as `web.*` and `files.*`. Filesystem reads
 use profile read/write tiers and resolved workspace roots; external named pack
 resources use `resources`, independently of filesystem reach.
+
+
+Results project only task-relevant upstream fields. GitHub PR results include
+number/title/state/draft/merged, author, head ref/SHA, base ref, URL/timestamps,
+combined status contexts, projected check runs and `checks_summary`. The summary
+counts fetched first-page runs, not every page. Notifications keep ID, unread,
+reason, update time, subject title/type/URL and repository name. Releases keep
+identity/date/URL/flags, a 4000-character body with `body_truncated`, and asset
+name/size/download count. `rate_remaining` exposes the GitHub quota header when
+present. GitHub result JSON fits within 12000 characters and the profile cap.
+
+Text fields carry explicit bounds; omitted text/lists have `<field>_truncated`
+flags. Under smaller output caps the projection shrinks before JSON encoding,
+so successful remote results remain parseable. If no useful structural result
+fits, `Output cap too small` asks for a larger configured cap. The registry's
+normal counted truncation remains a final backstop for other tools.
+
+Read a long page with `web.get_page(url, offset=0)`, then advance the offset by
+`returned_chars`. Responses include `total_chars` and `truncated`; each slice is
+at most 16000 source characters, and smaller if the cap or JSON escaping requires
+it. Paging fetches the page again, so changing pages may produce inconsistent
+slices. Cloudflare conversion errors include the upstream messages; missing
+results are explicit errors.
+
+Feeds include `final_url`, `not_modified`, and `etag`/`last_modified` when supplied.
+Retain these validators and send them back as `if_none_match`/`if_modified_since`
+to avoid downloading unchanged feeds. A 304 yields `not_modified: true` and an
+empty items list. Atom items expose separate `published` and `updated` fields;
+dates stay as-served rather than being silently normalized. Redirects strip
+Authorization across hosts, and all requests send `User-Agent: Solakit/0.1`.
+
+Datetime failures retain their exact guidance: ambiguous local times ask for
+`fold=0` or `fold=1`, DST gaps say the time does not exist, naive timestamps ask
+for `from_zone`, and unknown IANA zones are named. Invalid proxy URLs and malformed
+remote payloads are expected tool errors rather than generic execution failures.

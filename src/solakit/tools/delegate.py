@@ -34,12 +34,43 @@ def receipt(child, run, *, timed_out=False, report=None):
     )
 
 
-@tool(name="delegate.run", profiles=["*"], manages_timeout=True)
+@tool(
+    summary="Delegate a self-contained task and receive only the final report",
+    keywords=("delegate", "worker", "subtask", "report"),
+    name="delegate.run",
+    profiles=["*"],
+    manages_timeout=True,
+)
 async def run(
     ctx: ToolContext,
-    task: Annotated[str, Field(min_length=1, max_length=32000)],
-    profile: str,
-    session: str | None = None,
+    task: Annotated[
+        str,
+        Field(
+            description=(
+                "Self-contained worker brief, 1\u201332000 characters; the child "
+                "does not see parent history."
+            ),
+            min_length=1,
+            max_length=32000,
+        ),
+    ],
+    profile: Annotated[
+        str,
+        Field(
+            description=(
+                "Worker profile explicitly listed in delegation.allowed_profiles."
+            )
+        ),
+    ],
+    session: Annotated[
+        str | None,
+        Field(
+            description=(
+                "Optional idle, unarchived ephemeral child ID from this "
+                "conversation to continue; omit to start a child."
+            )
+        ),
+    ] = None,
 ) -> ToolResult:
     """Run a self-contained brief in a fresh ephemeral child session.
 

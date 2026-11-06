@@ -1,8 +1,12 @@
 """Exact calendar and timezone tools."""
 
 import json
+from typing import Annotated
+from zoneinfo import ZoneInfoNotFoundError
 
-from solakit.tools import ToolContext, ToolResult, tool
+from pydantic import Field
+
+from solakit.tools import ToolContext, ToolError, ToolResult, tool
 from solakit.tools import _arithmetic_calendar as calendar
 
 
@@ -14,15 +18,51 @@ from solakit.tools import _arithmetic_calendar as calendar
 )
 def convert(
     ctx: ToolContext,
-    value: str,
-    to_zone: str,
-    from_zone: str | None = None,
-    fold: int | None = None,
+    value: Annotated[
+        str,
+        Field(
+            description=(
+                "ISO timestamp with an offset, or a naive timestamp paired with "
+                "from_zone."
+            )
+        ),
+    ],
+    to_zone: Annotated[
+        str,
+        Field(
+            description="Destination IANA time zone, for example America/Denver or UTC."
+        ),
+    ],
+    from_zone: Annotated[
+        str | None,
+        Field(
+            description=(
+                "IANA source zone for a naive timestamp; omit when the "
+                "timestamp already has an offset."
+            )
+        ),
+    ] = None,
+    fold: Annotated[
+        int | None,
+        Field(
+            description=(
+                "For repeated DST local times, 0 selects the first occurrence "
+                "and 1 the second."
+            ),
+            ge=0,
+            le=1,
+        ),
+    ] = None,
 ) -> ToolResult:
     """Convert ISO timestamps. Naive times require from_zone; DST repeats need fold."""
-    return ToolResult(
-        content=json.dumps(calendar.convert(value, to_zone, from_zone, fold))
-    )
+    try:
+        result = calendar.convert(value, to_zone, from_zone, fold)
+    except ZoneInfoNotFoundError as exc:
+        zone = exc.args[0].removeprefix("No time zone found with key ")
+        raise ToolError(f"Unknown time zone: {zone}") from None
+    except ValueError as exc:
+        raise ToolError(str(exc)) from None
+    return ToolResult(content=json.dumps(result))
 
 
 @tool(
@@ -31,9 +71,19 @@ def convert(
     summary="Add or subtract calendar days from an ISO date.",
     keywords=("date", "days", "before", "after", "calendar"),
 )
-def add_days(ctx: ToolContext, value: str, days: int) -> ToolResult:
+def add_days(
+    ctx: ToolContext,
+    value: Annotated[str, Field(description="ISO calendar date in YYYY-MM-DD form.")],
+    days: Annotated[
+        int, Field(description="Calendar days to add; negative values subtract days.")
+    ],
+) -> ToolResult:
     """Add calendar days to YYYY-MM-DD; negative days compute dates before it."""
-    return ToolResult(content=json.dumps(calendar.add_days(value, days)))
+    try:
+        result = calendar.add_days(value, days)
+    except (ValueError, OverflowError) as exc:
+        raise ToolError(str(exc)) from None
+    return ToolResult(content=json.dumps(result))
 
 
 @tool(
@@ -42,6 +92,13 @@ def add_days(ctx: ToolContext, value: str, days: int) -> ToolResult:
     summary="Find the day of the week for an ISO date.",
     keywords=("date", "weekday", "calendar", "day of week"),
 )
-def weekday(ctx: ToolContext, value: str) -> ToolResult:
+def weekday(
+    ctx: ToolContext,
+    value: Annotated[str, Field(description="ISO calendar date in YYYY-MM-DD form.")],
+) -> ToolResult:
     """Return weekday name and ISO number (Monday=1) for YYYY-MM-DD."""
-    return ToolResult(content=json.dumps(calendar.weekday(value)))
+    try:
+        result = calendar.weekday(value)
+    except (ValueError, OverflowError) as exc:
+        raise ToolError(str(exc)) from None
+    return ToolResult(content=json.dumps(result))

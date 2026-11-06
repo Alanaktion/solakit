@@ -10,7 +10,10 @@ passes the live evaluation below.
 Deferred runs receive a static, alphabetically grouped index of granted tool names,
 one-line summaries and write markers. Full schemas initially include `tools.search`,
 `tools.load`, then resident tools in configured order. Search ranks lexical matches
-in names, summaries, keywords and documentation, with exact names first;
+after dropping English function words (falling back if no content words remain).
+Name tokens score ×10, keywords ×6, summaries ×4 and documentation ×1. A tool
+needs a name/keyword/summary hit or total score at least 8; ties sort by name.
+Exact names receive a dominant +1000 bonus;
 `email_search` also matches `email.search`. It returns and activates up to five
 matches. Load accepts up to five exact names, reporting loaded, already-loaded and
 rejected names independently. New schemas appear on the next model request in
@@ -90,3 +93,16 @@ live acceptance from configuration or mock tests alone.
 
 Authority is independently rechecked by `Registry.check_access()` on dispatch.
 Resident and job tool lists also accept family patterns such as `web.*`.
+
+
+The complete 49-tool catalog currently has 124 described parameters and measures
+37863 serialized schema bytes (stable name-sorted catalog snapshot). The default
+32000-byte `context_budget` cannot fit that eager catalog even before prompt,
+history and the incoming message: `37863 + prompt + history + message > 32000`.
+Raise the profile's context budget explicitly (for example to 131072, if the
+pinned model supports the full request plus generation allowance), narrow its
+tool grants, or opt into deferred mode after the live evaluation gate. Each
+profile's `sola check` disclosure diagnostics reports the actual schema bytes
+exposed by that profile. Metadata completeness
+and the golden query tests establish deterministic routing mechanics, not pinned
+model acceptance. Interactive remains eager until that separate live gate passes.

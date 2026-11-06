@@ -1279,7 +1279,11 @@ family/name-sorted index after the profile fragment. Initial schemas are runtime
 `tools.search`, `tools.load`, then residents; activated schemas append in activation
 order. Discovery tools are built into a separate runtime namespace, never wildcard
 grants or profile catalog tools. Search is deterministic lexical ranking with exact
-name/underscore-alias preference and a 1–5 result limit; matches activate. Load takes
+name/underscore-alias preference (+1000) and a 1–5 result limit. Query function
+words are dropped (pure-stopword queries fall back to the original tokens).
+Each distinct query token scores separately per field: name ×10, keyword ×6,
+summary ×4, docstring ×1. A match needs a name/keyword/summary signal or total
+score at least 8. Ties sort by tool name; only qualifying matches activate. Load takes
 1–5 exact names and returns loaded/already-loaded/rejected partitions. An unmatched
 search succeeds with family/load guidance. A wholly rejected load is a nonrepairable
 error; invalid discovery arguments also do not consume repair attempts.
@@ -1318,3 +1322,54 @@ includes summary/keyword metadata for deferred disclosure. API credentials are
 explicit env/file SecretRefs under `tool_apis` and register with redaction before
 use. Remote reads are bounded and do not mutate upstream state; outputs remain
 untrusted data. See `docs/operations/read-tools.md` for arguments and limits.
+
+
+### Tool result and error contracts
+
+Remote results are task-shaped projections, never raw upstream objects. Text
+fields have character bounds and in-payload `<field>_truncated` flags; list
+omissions similarly carry `<field>_truncated`. Structured remote results fit the
+profile output cap before registry truncation. If even the structural minimum
+cannot fit, the tool returns `ToolError("Output cap too small")` rather than
+broken JSON. Original evidence and the registry's counted truncation remain
+unchanged. Every tool has a one-line summary, keywords, and descriptions for all
+parameters; schema constraints advertise numeric bounds before network calls.
+
+A tool that can name its operational failure raises `ToolError` with its
+model-facing message. Bare tool-code `ValueError` is a bug; private validation
+seams may raise it when their caller converts it to `ToolError`. Registry
+argument-validation backstops do not replace domain messages. Datetime tools
+retain DST-gap/fold/naive-time/bad-date guidance and name unknown zones. Invalid
+remote URL/proxy configuration and malformed upstream payloads are expected
+errors without tool-log tracebacks.
+
+GitHub PR output projects PR identity/state, author, head/base, combined status,
+first-page contexts/checks and `checks_summary` over the fetched check runs.
+Notifications project ID/unread/reason/update time, subject title/type/URL and
+repository full name. Releases project tag/name/date/URL/flags, a body bounded
+to 4000 characters with `body_truncated`, and asset name/size/download count.
+GitHub result JSON is bounded to min(profile output cap, 12000 characters),
+preserving summary counts when detail lists are shortened, and includes
+`rate_remaining` when supplied upstream. Lists remain first-page snapshots,
+not claims of exhaustive pagination.
+
+`web.get_page(url, offset=0)` returns `url`, `markdown`, `returned_chars`,
+`total_chars`, `truncated`. Slices contain at most min(profile cap, 16000)
+source characters, reduced further for JSON escaping/envelope overhead. Advance
+by `returned_chars`; the URL is fetched again on each call, so paging assumes
+unchanged upstream content. Cloudflare error messages remain visible; a missing
+successful result is an explicit tool error.
+
+Remote HTTP reads retain status/headers/final URL, enforce 2 MB decoded bodies,
+30-second request timeouts and `User-Agent: Solakit/0.1`. Fixed-host APIs do not
+follow redirects. User-supplied feed GETs follow at most five redirects and
+validate scheme, credentials, port and public DNS addresses on every target
+before requesting it. Cross-host redirects strip Authorization. Private targets
+and excess hops are named errors. This is a fetch guard, not OS containment or
+protection against DNS rebinding.
+
+`feeds.check` returns `final_url`, optional `etag`/`last_modified`,
+`not_modified`, title and projected items. Optional `if_none_match` and
+`if_modified_since` pass validators verbatim. A 304 returns
+`not_modified=true, items=[]` without XML parsing. Atom `published` and `updated`
+are distinct as-served fields; RSS `pubDate` remains an as-served string.

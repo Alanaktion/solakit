@@ -2,6 +2,7 @@
 
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
+from typing import Annotated
 from zoneinfo import ZoneInfo
 
 import recurring_ical_events
@@ -97,16 +98,48 @@ def query(content, cfg, start, end, limit):
     return {"events": results[:limit], "has_more": len(results) > limit}
 
 
-@tool(name="calendar.events", profiles=["*"])
+@tool(
+    summary="Read calendar events within a bounded date window",
+    keywords=("calendar", "events", "agenda", "schedule"),
+    name="calendar.events",
+    profiles=["*"],
+)
 async def events(
-    ctx: ToolContext, calendar: str, after: str, before: str, limit: int = 50
+    ctx: ToolContext,
+    calendar: Annotated[
+        str, Field(description="Configured calendar alias granted to this profile.")
+    ],
+    after: Annotated[
+        str,
+        Field(
+            description=(
+                "Inclusive ISO timestamp with UTC offset for the event window."
+            )
+        ),
+    ],
+    before: Annotated[
+        str,
+        Field(
+            description=(
+                "Exclusive ISO timestamp with UTC offset; at most 31 days after after."
+            )
+        ),
+    ],
+    limit: Annotated[
+        int, Field(description="Maximum number of entries to return.")
+    ] = 50,
 ) -> ToolResult:
     """Read an ICS agenda in [after, before), at most 31 days; use ISO timestamps."""
     cfg = resource(ctx, "calendars", calendar, Calendar, "read")
-    start, end = (
-        datetime.fromisoformat(timestamp(after)),
-        datetime.fromisoformat(timestamp(before)),
-    )
+    try:
+        start, end = (
+            datetime.fromisoformat(timestamp(after)),
+            datetime.fromisoformat(timestamp(before)),
+        )
+    except ValueError:
+        raise ToolError(
+            "Calendar bounds require ISO timestamps with a timezone"
+        ) from None
     if not 1 <= limit <= 200 or not timedelta(0) < end - start <= timedelta(days=31):
         raise ToolError("Calendar requires 1–200 results and at most 31 days")
     try:

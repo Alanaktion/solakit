@@ -3,7 +3,7 @@
 import json
 import textwrap
 import time
-from typing import Literal
+from typing import Annotated, Literal
 
 from escpos.printer import Serial, Usb
 from pydantic import Field, model_validator
@@ -146,9 +146,33 @@ def send(ctx, cfg, printer, text, operation_id):
         return result
 
 
-@tool(name="printer.print_text", profiles=["*"], effect="print")
+@tool(
+    summary="Print a plain text note or receipt on a named printer",
+    keywords=("printer", "print", "note", "receipt", "paper"),
+    name="printer.print_text",
+    profiles=["*"],
+    effect="print",
+)
 async def print_text(
-    ctx: ToolContext, printer: str, text: str, operation_id: str
+    ctx: ToolContext,
+    printer: Annotated[
+        str, Field(description="Configured printer alias granted to this profile.")
+    ],
+    text: Annotated[
+        str,
+        Field(
+            description="Plain receipt text; no control characters or printer commands."
+        ),
+    ],
+    operation_id: Annotated[
+        str,
+        Field(
+            description=(
+                "Stable unique operation ID; reuse only for the identical "
+                "request. Uncertain operations never auto-replay."
+            )
+        ),
+    ],
 ) -> ToolResult:
     """Print thermal receipt text with a stable operation ID to prevent duplicates."""
     if "print" not in ctx.config.profiles[ctx.profile].effects:

@@ -5,7 +5,12 @@ import json
 from solakit.tools import ToolContext, ToolResult, tool
 
 
-@tool(name="runtime.status", profiles=["*"])
+@tool(
+    summary="Inspect runtime health, queues and current tool grants",
+    keywords=("runtime", "health", "status", "queues"),
+    name="runtime.status",
+    profiles=["*"],
+)
 async def status(ctx: ToolContext) -> ToolResult:
     """Report live model, channels, jobs and tools granted to this profile.
 

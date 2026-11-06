@@ -2,7 +2,9 @@
 
 import asyncio
 import json
-from typing import Literal
+from typing import Annotated, Literal
+
+from pydantic import Field
 
 from solakit.core.search import SearchUnavailable
 from solakit.core.store import safe_id
@@ -11,20 +13,73 @@ from solakit.tools import ToolContext, ToolError, ToolResult, tool
 
 @tool(
     summary="Exact wording and attribution in past session transcripts",
-    keywords=("history", "transcript", "wording", "attribution"),
+    keywords=(
+        "history",
+        "transcript",
+        "wording",
+        "attribution",
+        "say",
+        "said",
+        "conversation",
+        "past",
+        "search",
+    ),
     name="sessions.search",
     profiles=["*"],
 )
 async def search(
     ctx: ToolContext,
-    query: str,
-    session_id: str | None = None,
-    all_sessions: bool = False,
-    role: Literal["system", "user", "assistant", "tool"] | None = None,
-    kind: Literal["message", "compaction"] | None = None,
-    after: str | None = None,
-    before: str | None = None,
-    limit: int = 20,
+    query: Annotated[
+        str,
+        Field(
+            description=(
+                "Literal terms of at least 3 characters, quoted phrases or "
+                "content:/role:/kind:/channel: filters; terms combine with AND."
+            )
+        ),
+    ],
+    session_id: Annotated[
+        str | None,
+        Field(
+            description=(
+                "Session to search; omit for this conversation. Another session "
+                "requires operate effect."
+            )
+        ),
+    ] = None,
+    all_sessions: Annotated[
+        bool,
+        Field(
+            description=(
+                "Search all sessions instead of session_id; requires operate effect."
+            )
+        ),
+    ] = False,
+    role: Annotated[
+        Literal["system", "user", "assistant", "tool"] | None,
+        Field(
+            description="Optional message-role filter: system, user, assistant or tool."
+        ),
+    ] = None,
+    kind: Annotated[
+        Literal["message", "compaction"] | None,
+        Field(description="Optional message-kind filter: message or compaction."),
+    ] = None,
+    after: Annotated[
+        str | None,
+        Field(
+            description="Inclusive ISO timestamp with timezone for historical messages."
+        ),
+    ] = None,
+    before: Annotated[
+        str | None,
+        Field(
+            description="Exclusive ISO timestamp with timezone for historical messages."
+        ),
+    ] = None,
+    limit: Annotated[
+        int, Field(description="Maximum number of entries to return.")
+    ] = 20,
 ) -> ToolResult:
     """Search active and archived messages; defaults to this session.
 

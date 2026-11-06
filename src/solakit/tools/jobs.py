@@ -1,7 +1,9 @@
 """Chat operations use the same persistent scheduler as the operator API."""
 
 import json
-from typing import Any
+from typing import Annotated, Any
+
+from pydantic import Field
 
 from solakit.core.config import Job
 from solakit.jobs.schemas import JobToolsError
@@ -96,21 +98,125 @@ async def list_jobs(ctx: ToolContext) -> ToolResult:
 )
 async def create(
     ctx: ToolContext,
-    id: str,
-    task: str,
-    cron: str | None = None,
-    run_at: str | None = None,
-    timezone: str | None = None,
-    enabled: bool = False,
-    profile: str | None = None,
-    bind_session: str | None = None,
-    deliver: dict[str, Any] | None = None,
-    sub_session: bool = False,
-    polling: bool = False,
-    catch_up: bool = False,
-    tools: list[str] | None = None,
-    tool_disclosure: str = "inherit",
-    tool_resident: list[str] | None = None,
+    id: Annotated[
+        str,
+        Field(
+            description=(
+                "Stable scheduled job ID; use the same ID to avoid duplicate creation."
+            )
+        ),
+    ],
+    task: Annotated[
+        str,
+        Field(
+            description=(
+                "Self-contained task; supports {date}, {time}, {timezone}, "
+                "{job_id}. Escape literal braces as {{ and }}."
+            )
+        ),
+    ],
+    cron: Annotated[
+        str | None,
+        Field(
+            description=(
+                "Five-field cron schedule; supply exactly one of cron or run_at."
+            )
+        ),
+    ] = None,
+    run_at: Annotated[
+        str | None,
+        Field(
+            description=(
+                "One-time ISO date and time, with offset or interpreted in "
+                "timezone; DST ambiguity requires an offset."
+            )
+        ),
+    ] = None,
+    timezone: Annotated[
+        str | None,
+        Field(description="IANA schedule timezone; omit to use the operator default."),
+    ] = None,
+    enabled: Annotated[
+        bool,
+        Field(description="Whether the job is enabled; creation defaults to false."),
+    ] = False,
+    profile: Annotated[
+        str | None,
+        Field(
+            description=(
+                "Configured execution profile; its tools and authority cannot "
+                "be widened by this call."
+            )
+        ),
+    ] = None,
+    bind_session: Annotated[
+        str | None,
+        Field(
+            description=(
+                "Session ID or configured channel ID for execution; ephemeral "
+                "creates an isolated session."
+            )
+        ),
+    ] = None,
+    deliver: Annotated[
+        dict[str, Any] | None,
+        Field(
+            description=(
+                "Delivery object with to and mode (final, artifact or silent); "
+                "null clears delivery on update."
+            )
+        ),
+    ] = None,
+    sub_session: Annotated[
+        bool,
+        Field(
+            description=(
+                "Run in a fresh private child session; deliver only its final report."
+            )
+        ),
+    ] = False,
+    polling: Annotated[
+        bool,
+        Field(
+            description="Mark this as a polling job; required when catch_up is true."
+        ),
+    ] = False,
+    catch_up: Annotated[
+        bool,
+        Field(
+            description=(
+                "Run an unattempted overdue polling job once after restart; "
+                "requires polling=true."
+            )
+        ),
+    ] = False,
+    tools: Annotated[
+        list[str] | None,
+        Field(
+            description=(
+                "Tool names or family patterns narrowing the profile; null "
+                "inherits, [] exposes no tools."
+            )
+        ),
+    ] = None,
+    tool_disclosure: Annotated[
+        str,
+        Field(
+            description=(
+                "Schema mode: inherit uses the profile; eager sends all; "
+                "deferred starts with discovery."
+            )
+        ),
+    ] = "inherit",
+    tool_resident: Annotated[
+        list[str] | None,
+        Field(
+            description=(
+                "Initially visible tools in deferred mode; null inherits, [] "
+                "starts with discovery only."
+            )
+        ),
+    ] = None,
 ) -> ToolResult:
     """Schedule a recurring (cron) or one-time (run_at) task in this conversation.
 
@@ -168,7 +274,26 @@ async def create(
     profiles=["*"],
     effect="operate",
 )
-async def update(ctx: ToolContext, id: str, changes: dict[str, Any]) -> ToolResult:
+async def update(
+    ctx: ToolContext,
+    id: Annotated[
+        str,
+        Field(
+            description=(
+                "Stable scheduled job ID; use the same ID to avoid duplicate creation."
+            )
+        ),
+    ],
+    changes: Annotated[
+        dict[str, Any],
+        Field(
+            description=(
+                "Partial job fields to change; omit unchanged fields and use "
+                "null to clear nullable values."
+            )
+        ),
+    ],
+) -> ToolResult:
     """Edit job fields (cron, run_at, timezone, profile, task, bind_session, deliver,
     enabled, sub_session, polling, catch_up, tools). ID is immutable;
     use deliver=null to clear it.
@@ -199,7 +324,17 @@ async def update(ctx: ToolContext, id: str, changes: dict[str, Any]) -> ToolResu
     profiles=["*"],
     effect="operate",
 )
-async def run(ctx: ToolContext, id: str) -> ToolResult:
+async def run(
+    ctx: ToolContext,
+    id: Annotated[
+        str,
+        Field(
+            description=(
+                "Stable scheduled job ID; use the same ID to avoid duplicate creation."
+            )
+        ),
+    ],
+) -> ToolResult:
     """Queue an enabled job once without waiting, including in this chat.
 
     Does not enable the job or change its schedule. Active jobs cannot overlap.
@@ -210,16 +345,57 @@ async def run(ctx: ToolContext, id: str) -> ToolResult:
     return await operation(ctx, "trigger", id)
 
 
-@tool(name="jobs.pause", profiles=["*"], effect="operate")
-async def pause(ctx: ToolContext, id: str, paused: bool = True) -> ToolResult:
+@tool(
+    summary="Pause or resume a scheduled task",
+    keywords=("schedule", "job", "pause", "resume"),
+    name="jobs.pause",
+    profiles=["*"],
+    effect="operate",
+)
+async def pause(
+    ctx: ToolContext,
+    id: Annotated[
+        str,
+        Field(
+            description=(
+                "Stable scheduled job ID; use the same ID to avoid duplicate creation."
+            )
+        ),
+    ],
+    paused: Annotated[
+        bool,
+        Field(
+            description=(
+                "True pauses future firings; false resumes. Does not cancel "
+                "active work or enable a disabled job."
+            )
+        ),
+    ] = True,
+) -> ToolResult:
     """Pause/resume future firings; does not cancel active work or enable a job."""
     existing(ctx, id)
     await operation(ctx, "pause", id, paused)
     return result(ctx, manager(ctx).get(id))
 
 
-@tool(name="jobs.delete", profiles=["*"], effect="operate")
-async def delete(ctx: ToolContext, id: str) -> ToolResult:
+@tool(
+    summary="Delete an idle scheduled task while retaining run evidence",
+    keywords=("schedule", "job", "delete", "remove"),
+    name="jobs.delete",
+    profiles=["*"],
+    effect="operate",
+)
+async def delete(
+    ctx: ToolContext,
+    id: Annotated[
+        str,
+        Field(
+            description=(
+                "Stable scheduled job ID; use the same ID to avoid duplicate creation."
+            )
+        ),
+    ],
+) -> ToolResult:
     """Delete an idle job; retain all prior run evidence."""
     existing(ctx, id)
     return await operation(ctx, "delete", id)
