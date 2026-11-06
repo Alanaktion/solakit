@@ -300,6 +300,11 @@ when diagnosing memory; never automate it at startup or replay uncertain writes.
 
 ## Channels and jobs
 
+When the model's final reply is exactly `[SILENT]` apart from surrounding
+whitespace, channel delivery is marked `silent` and sends nothing, including
+attachments. The original reply remains in session evidence. Replies that mention
+the marker alongside other text are delivered normally.
+
 Discord uses discord.py with author/channel/mention/bot gating, parent-session thread
 routing, typing while queued/running, reconnect and observable liveness. Replies stay
 in the originating thread. Final delivery uses stored transcript text, with no

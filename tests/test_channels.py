@@ -118,6 +118,43 @@ def test_gating_parent_pinning_context_and_stored_delivery(config):
     asyncio.run(exercise())
 
 
+@pytest.mark.parametrize("mode", ["final", "artifact"])
+@pytest.mark.parametrize("text", ["[SILENT]", " \n[SILENT]\n ", "Mention [SILENT]."])
+def test_model_silent_reply_preserves_evidence_and_skips_delivery(config, mode, text):
+    configured(config)
+
+    def model(request):
+        return (
+            model_list(config)
+            if request.url.path.endswith("/models")
+            else completion(config, text)
+        )
+
+    execution, adapter = setup(config, model), FakeAdapter()
+    channels = Channels(config, execution, {"discord": adapter})
+
+    async def exercise():
+        run = await execution.submit("s", "task")
+        before = execution.store.transcript("s")
+        await channels.deliver(run, Delivery(to="one", mode=mode))
+        assert execution.store.transcript("s") == before
+        assert before[-1]["content"] == text
+        if text.strip() == "[SILENT]":
+            assert run.status == RunStatus.completed
+            assert run.delivery_status == "silent"
+            assert execution.store.run(run.id)["delivery_status"] == "silent"
+            assert not execution.store.delivery_events(run.id)
+            assert not adapter.sent
+        elif mode == "final":
+            assert run.delivery_status == "delivered"
+            assert adapter.sent[0][1].text == text
+        else:
+            assert run.delivery_status == "failed_or_uncertain"
+        await execution.close()
+
+    asyncio.run(exercise())
+
+
 def test_artifact_silent_and_duplicate_delivery(config, tmp_path):
     configured(config)
     config.profiles["interactive"].read = "workspace"

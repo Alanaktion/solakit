@@ -363,6 +363,11 @@ If the run's session **is** the delivery channel's pinned session,
 delivery posts exactly the final transcript message — one message, one
 identity, no duplicate "announcement copy" drifting from the record.
 
+A final assistant message consisting only of `[SILENT]` (ignoring surrounding
+whitespace) means no reply. Delivery records `silent` and posts nothing, including
+in artifact mode. The original message remains verbatim in transcript evidence.
+The marker within an otherwise substantive reply is ordinary text.
+
 ### 6.4 Discord adapter specifics (MVP)
 
 - Library: **discord.py**, bot account, `message_content` intent.

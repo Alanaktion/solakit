@@ -151,6 +151,12 @@ class Channels:
                 if not finals:
                     raise ValueError("No stored final message to deliver")
                 outbound = Outbound(finals[-1].get("content") or "")
+                if outbound.text.strip() == "[SILENT]":
+                    run.delivery_status = "silent"
+                    await durable(
+                        store.update_run, run.id, {"delivery_status": "silent"}
+                    )
+                    return
                 if delivery.mode == "artifact":
                     if not run.artifacts:
                         raise ValueError("Run produced no artifact")
