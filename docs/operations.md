@@ -5,7 +5,10 @@
 Create `POST /api/sessions` with `{"id":"web-main","default_profile":"interactive"}`.
 Post `{"message":"Hello"}` to `/api/sessions/web-main/messages`; optional `profile`
 selects that run's profile. Unknown/misplaced fields are rejected, not ignored.
-Inspect `/api/tools` for loaded tools and effective profile grants.
+Inspect `/api/tools` for loaded tools and effective profile grants. The UI’s
+`/tools` page groups tools by family, shows profile grants on each row, and
+expands descriptions and argument schemas on demand. Expand Profile access
+for tool links or Configuration & diagnostics for modules and disclosure details.
 Session listings default to active sessions, paginated and ordered by last activity.
 Use `status=archived|all`, `q`, `profile`, `before`, `limit`, `offset`, and `page=true`
 for the full catalog. [Session archival](operations/session-archive.md) describes

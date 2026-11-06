@@ -217,20 +217,48 @@ pre { overflow-x: auto; font-size: 11px; line-height: 1.55; color: var(--ink); }
 /* Capability inspection uses the same API as startup diagnostics. */
 .nav { display: flex; gap: 20px; }
 .nav-link[aria-current="page"] { color: var(--ink); border-bottom-color: var(--accent); }
-.tool-profiles, .tool-card { padding: 14px; }
-.tool-profiles { margin-bottom: 12px; }
-.tool-profiles dl > div, .tool-card dl > div { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 16px; padding: 8px 0; border-top: 1px solid var(--line); font-size: 12px; }
-.tool-profiles dt, .tool-card dt { color: var(--muted); }
-.tool-profiles dd, .tool-card dd { margin: 0; overflow-wrap: anywhere; }
-.tool-profiles a { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
-.tool-catalog { display: flex; flex-direction: column; gap: 10px; }
-.tool-card h2 { font-size: 16px; overflow-wrap: anywhere; }
+.tool-profiles, .tool-configuration { padding: 16px 20px; }
+.tool-profiles { margin-bottom: 24px; }
+.tool-profile-list { display: flex; flex-direction: column; }
+.tool-profile { border-top: 1px solid var(--line); min-width: 0; }
+.tool-profile > summary { display: flex; align-items: center; gap: 12px; font-size: 13px; }
+.tool-profile > summary::before { content: "+"; color: var(--accent); }
+.tool-profile[open] > summary::before { content: "−"; }
+.tool-profile > summary .count-label { margin-left: auto; padding: 0; text-align: right; }
+.tool-profile .tool-grants { padding-bottom: 14px; }
+.tool-grants { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+.tool-grants a { display: inline-flex; align-items: center; min-height: 44px; }
+.tool-grants a:hover { color: var(--accent); background: var(--hover); }
+.tool-catalog { display: flex; flex-direction: column; gap: 8px; }
+.tool-family { display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px; margin: 16px 0 4px; overflow-wrap: anywhere; }
+.tool-family:first-child { margin-top: 0; }
+.tool-family .count-label { font-size: 10px; }
+.tool-card { min-width: 0; scroll-margin-top: 16px; }
+.tool-card:target, .tool-profile:target { outline: 2px solid var(--accent); outline-offset: 3px; }
+.tool-card > summary { display: grid; grid-template-columns: minmax(0, 1fr) minmax(100px, 30%); align-items: center; gap: 16px; padding: 16px 20px; }
+.tool-card > summary::before { content: "+"; grid-column: 1; grid-row: 1; color: var(--accent); }
+.tool-card[open] > summary::before { content: "−"; }
+.tool-card-heading { grid-column: 1; grid-row: 1; padding-left: 22px; min-width: 0; overflow-wrap: anywhere; }
+.tool-card-heading > code { font-size: 13px; }
+.tool-card-summary { display: block; color: var(--muted); font-size: 12px; margin-top: 4px; line-height: 1.6; }
+.tool-card > summary > .tool-grants { justify-content: flex-end; }
+.tool-card-body { border-top: 1px solid var(--line); padding: 16px 20px; }
+.tool-card dl > div { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 16px; padding: 8px 0; border-top: 1px solid var(--line); font-size: 12px; }
+.tool-card dt { color: var(--muted); }
+.tool-card dd { margin: 0; overflow-wrap: anywhere; }
+.tool-card dd a, .tool-arguments > summary { color: var(--accent); }
 .tool-description { font-size: 13px; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere; }
-.tool-card summary { cursor: pointer; font-size: 12px; color: var(--accent); }
+.tool-arguments { font-size: 12px; }
+.tool-configuration { margin-top: 24px; font-size: 12px; }
+.tool-configuration > summary { color: var(--muted); }
+.tool-configuration h2 { margin-top: 12px; font-size: 13px; }
+.tool-configuration pre, .tool-arguments pre { max-width: 100%; overflow-x: auto; padding: 12px; border-radius: 6px; background: var(--surface-soft); }
 @media (max-width: 640px) {
   .nav { gap: 12px; }
   .chat-app .header-inner { gap: 12px; }
-  .tool-profiles dl > div, .tool-card dl > div { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .tool-card > summary { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .tool-card > summary > .tool-grants { justify-content: flex-start; padding-left: 22px; }
+  .tool-card dl > div { grid-template-columns: minmax(0, 1fr); gap: 6px; }
 }
 .archive-toolbar { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 20px; border-bottom: 1px solid var(--line); font-size: 11px; color: var(--muted); }
 .archive-actions { display: flex; flex: 0 1 auto; align-items: center; gap: 16px; min-width: 0; overflow-x: auto; }

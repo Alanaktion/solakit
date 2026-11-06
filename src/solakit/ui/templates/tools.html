@@ -1,24 +1,39 @@
 {% extends 'base.html' %}
 {% block title %}Tools · Solakit{% endblock %}
 {% block content %}
-<section class="page-heading"><div><h1>Tools</h1><p class="intro">Loaded tools and the profiles that may use them.</p></div><span class="count-label">{{ catalog.tools|length }} loaded</span></section>
-<section class="tool-profiles panel" aria-label="Tools by profile">
-  <h2>Profile access</h2>
-  {% if catalog.disclosure %}<details><summary>Disclosure diagnostics</summary>{% for profile, diagnostic in catalog.disclosure.items() %}<h3>{{ profile }}</h3><pre><code>{{ diagnostic|tojson(indent=2) }}</code></pre>{% endfor %}{% for job, diagnostic in catalog.jobs.items() %}<h3>Job {{ job }}</h3><pre><code>{{ diagnostic|tojson(indent=2) }}</code></pre>{% endfor %}</details>{% endif %}
+<section class="page-heading"><div><h1>Tools</h1><p class="intro">Explore loaded tools and see which profiles can use them.</p></div><span class="count-label">{{ catalog.tools|length }} loaded · {{ catalog.profiles|length }} profiles</span></section>
+<section class="tool-profiles panel" aria-labelledby="profile-access-heading">
+  <h2 id="profile-access-heading">Profile access</h2>
   <p class="muted">Each conversation uses its session’s default profile. Loading a module alone does not grant its tools.</p>
-  <dl>{% for profile, names in catalog.profiles.items() %}<div id="profile-{{ profile }}"><dt>{{ profile }}</dt><dd>{% for name in names %}<a href="#tool-{{ name }}"><code>{{ name }}</code></a>{% if not loop.last %}, {% endif %}{% else %}No tools granted{% endfor %}</dd></div>{% endfor %}</dl>
-  {% for profile, summary in catalog.summaries.items() %}<p>{{ summary }}</p>{% endfor %}
-  <p class="muted">Enabled modules: {% if catalog.modules %}{{ catalog.modules|join(', ') }}{% else %}none{% endif %}</p>
+  <div class="tool-profile-list">
+  {% for profile, names in catalog.profiles.items() %}
+    <details id="profile-{{ profile }}" class="tool-profile">
+      <summary><span>{{ profile }}</span><span class="count-label">{{ names|length }} tools granted</span></summary>
+      {% if catalog.summaries.get(profile) %}<p class="muted">{{ catalog.summaries[profile] }}</p>{% endif %}
+      <div class="tool-grants">{% for name in names %}<a class="subtle-tag" href="#tool-{{ name }}"><code>{{ name }}</code></a>{% else %}<p class="muted">No tools granted</p>{% endfor %}</div>
+    </details>
+  {% endfor %}
+  </div>
 </section>
-<div class="tool-catalog">
-{% for entry in catalog.tools %}
-<section class="tool-card panel" id="tool-{{ entry.name }}">
-  <h2><code>{{ entry.name }}</code></h2><p>{{ entry.summary }}</p><p class="tool-description">{{ entry.description or 'No description provided.' }}</p>
-  <dl><div><dt>Granted profiles</dt><dd>{{ entry.profiles|join(', ') or 'None' }}</dd></div><div><dt>Access requirements</dt><dd>{{ entry.effect or (entry.writes|join(', ')) or 'None declared' }}</dd></div></dl>
-  <details><summary>Arguments</summary><pre><code>{{ entry.parameters|tojson(indent=2) }}</code></pre></details>
-</section>
+<div class="tool-catalog" aria-label="Loaded tools">
+{% for entry in catalog.tools|sort(attribute='name') %}
+  {% if loop.changed(entry.name.split('.')[0]) %}<h2 class="tool-family">{{ entry.name.split('.')[0] }}<span class="count-label">Tool family</span></h2>{% endif %}
+  <details class="tool-card panel" id="tool-{{ entry.name }}">
+    <summary><span class="tool-card-heading"><code>{{ entry.name }}</code><span class="tool-card-summary">{{ entry.summary }}</span></span><span class="tool-grants">{% for profile in entry.profiles %}<span class="profile-tag">{{ profile }}</span>{% else %}<span class="subtle-tag">Not granted</span>{% endfor %}</span></summary>
+    <div class="tool-card-body">
+      <p class="tool-description">{{ entry.description or 'No description provided.' }}</p>
+      <dl><div><dt>Granted profiles</dt><dd>{% for profile in entry.profiles %}<a href="#profile-{{ profile }}">{{ profile }}</a>{% if not loop.last %}, {% endif %}{% else %}None{% endfor %}</dd></div><div><dt>Access requirements</dt><dd>{{ entry.effect or (entry.writes|join(', ')) or 'None declared' }}</dd></div></dl>
+      <details class="tool-arguments"><summary>Arguments schema</summary><pre><code>{{ entry.parameters|tojson(indent=2) }}</code></pre></details>
+    </div>
+  </details>
 {% else %}
-<div class="empty-state panel"><span class="empty-orbit" aria-hidden="true">⌁</span><h2>No tools loaded.</h2><p>Enable tool modules and grant their tool names to profiles in config.toml.<br>Chat still works without tools.</p></div>
+  <div class="empty-state panel"><span class="empty-orbit" aria-hidden="true">⌁</span><h2>No tools loaded.</h2><p>Enable tool modules and grant their tool names to profiles in config.toml.<br>Chat still works without tools.</p></div>
 {% endfor %}
 </div>
+<details class="tool-configuration panel">
+  <summary>Configuration &amp; diagnostics</summary>
+  <h2>Enabled modules</h2>
+  <div class="tool-grants">{% for module in catalog.modules %}<code class="subtle-tag">{{ module }}</code>{% else %}<p class="muted">No modules enabled</p>{% endfor %}</div>
+  {% if catalog.disclosure %}<details><summary>Disclosure diagnostics</summary>{% for profile, diagnostic in catalog.disclosure.items() %}<h3>{{ profile }}</h3><pre><code>{{ diagnostic|tojson(indent=2) }}</code></pre>{% endfor %}{% for job, diagnostic in catalog.jobs.items() %}<h3>Job {{ job }}</h3><pre><code>{{ diagnostic|tojson(indent=2) }}</code></pre>{% endfor %}</details>{% endif %}
+</details>
 {% endblock %}
