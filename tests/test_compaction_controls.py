@@ -44,9 +44,24 @@ def test_mid_run_compaction_preserves_groups_goal_budgets_and_full_commit(
 
     execution = setup(config, backend)
     summary = "s" * 10000 if large_summary else "Task underway; tool completed."
+    config.memory.timeout_s = 0.01
+    config.memory.compaction_timeout_s = 1
+    handler = memory_handler(seen, overview=summary)
+    polls = 0
+
+    async def delayed_memory(request):
+        nonlocal polls
+        if "/tasks/" in request.url.path:
+            polls += 1
+            if polls == 1:
+                return httpx.Response(
+                    200, json={"status": "ok", "result": {"status": "running"}}
+                )
+        return handler(request)
+
     execution.memory = MemoryClient(
         config.memory,
-        transport=httpx.MockTransport(memory_handler(seen, overview=summary)),
+        transport=httpx.MockTransport(delayed_memory),
     )
 
     @tool(name="echo", profiles=["interactive"])

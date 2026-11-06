@@ -80,6 +80,7 @@ class MemoryConfig(StrictModel):
     roots: list[str] = Field(default_factory=list)
     user: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_-]+$", max_length=128)
     timeout_s: float = Field(default=30, gt=0)
+    compaction_timeout_s: float = Field(default=300, gt=0, allow_inf_nan=False)
     trust_env: bool = False
     recall_limit: int = Field(default=5, ge=1, le=20)
     recall_window: int = Field(default=3, ge=0, le=100)

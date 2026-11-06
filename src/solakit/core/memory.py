@@ -260,11 +260,35 @@ class ScopedMemory:
         self, store: Store, operation: str, messages: list[dict]
     ) -> tuple[str, str]:
         await self.commit(store, operation, messages, summary_only=True)
-        outcome = await self.refresh(
-            store, operation, wait_s=self._client.config.timeout_s
-        )
+        budget = self._client.config.compaction_timeout_s
+        try:
+            async with asyncio.timeout(budget):
+                outcome = await self.refresh(store, operation, wait_s=budget)
+                if outcome["status"] in {"pending", "running", "cancelling"}:
+                    raise TimeoutError
+        except TimeoutError:
+            events = await durable(store.memory_events, operation)
+            latest = next(
+                (
+                    event["result"]
+                    for event in reversed(events)
+                    if event["stage"] == "task"
+                ),
+                None,
+            )
+            state = (
+                f"extraction is still {latest['status']}"
+                if latest and latest["status"] in {"pending", "running", "cancelling"}
+                else "extraction has not completed"
+            )
+            raise MemoryUnavailable(
+                f"Compaction timed out after {budget:g} seconds; {state}. "
+                "This turn has stopped."
+            ) from None
         if outcome["status"] != "completed":
-            raise MemoryUnavailable(f"Compaction extraction is {outcome['status']}")
+            raise MemoryUnavailable(
+                f"Compaction extraction is {outcome['status']}. This turn has stopped."
+            )
         remote = f"solakit-{safe_id(operation)}"
         uri = outcome.get("archive_uri", "")
         if not isinstance(uri, str):

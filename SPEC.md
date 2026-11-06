@@ -959,6 +959,12 @@ for the eventual normal memory commit. Rotation/attribution complete before
 cancellation is propagated; prepared rotation and commit have no cancellation gap.
 Unresolved prepared state blocks reads/writes until startup recovery.
 
+Compaction waits up to `[memory].compaction_timeout_s` (default 300 seconds)
+for extraction, independently of the per-request `timeout_s`. Completion within
+this deadline resumes the turn. Deadline expiry stops the turn with an explicit
+error and preserves active history and acknowledged task evidence; later remote
+completion does not automatically restart a stopped turn.
+
 Visible summary boundaries precede the messages that rely on them. Turns use
 first-visible-message time rather than admission time for display ordering.
 

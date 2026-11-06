@@ -118,6 +118,7 @@ resources = []
 # shared-memory roots; confirm its API version before enabling.
 [memory]
 enabled = false
+compaction_timeout_s = 300 # Extraction wait budget, separate from HTTP timeout_s.
 trust_env = false
 # Automatic recall: recent user/assistant text plus incoming text, tail-capped.
 recall_window = 3

@@ -246,6 +246,12 @@ stored. Default is false. The original task is carried forward as a request-only
 reminder; step/repair/token accounting continues. Requests that still do not fit
 end as `context_limit`, without an oversized model call.
 
+Compaction waits up to `[memory].compaction_timeout_s` (default 300 seconds)
+for extraction, independently of the per-request `timeout_s`. Completion within
+this deadline resumes the turn. Deadline expiry stops the turn with an explicit
+error and preserves active history and acknowledged task evidence; later remote
+completion does not automatically restart a stopped turn.
+
 `POST /api/sessions/{id}/compact` explicitly summarizes an idle shared-memory
 session even below the budget, independently of this flag. In chat choose
 **Compact conversation**, then **Summarize and continue**. OpenViking must be

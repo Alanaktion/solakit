@@ -133,7 +133,7 @@ def test_rotation_recovers_crash_after_archive_rename(config, monkeypatch):
 @pytest.mark.parametrize("status", ["pending", "failed", "cancelled"])
 def test_incomplete_summary_never_rotates_history(config, status):
     cfg = memory_config()
-    cfg.timeout_s = 0.001
+    cfg.compaction_timeout_s = 0.001
     memory = MemoryClient(
         cfg, transport=httpx.MockTransport(memory_handler([], task_status=status))
     )
@@ -301,6 +301,86 @@ def test_lost_compacted_active_file_is_not_treated_as_empty_session(config):
             restarted.transcript("s")
         assert restarted.storage_health()["status"] == "degraded"
         assert restarted.archives("s") == ["s.jsonl.1"]
+        await memory.close()
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("value", [0, -1, float("inf"), float("nan")])
+def test_compaction_timeout_must_be_positive_and_finite(value):
+    from pydantic import ValidationError
+
+    from solakit.core.config import MemoryConfig
+
+    with pytest.raises(ValidationError):
+        MemoryConfig(compaction_timeout_s=value)
+
+
+def test_compaction_timeout_preserves_task_and_retry_reuses_commit(config):
+    seen = []
+    state = {"status": "running"}
+    handler = memory_handler(seen)
+
+    def backend(request):
+        if "/tasks/" in request.url.path:
+            seen.append((request.method, request.url.path, None))
+            return httpx.Response(
+                200, json={"status": "ok", "result": {"status": state["status"]}}
+            )
+        return handler(request)
+
+    cfg = memory_config()
+    cfg.compaction_timeout_s = 0.01
+    memory = MemoryClient(cfg, transport=httpx.MockTransport(backend))
+    store = Store(config.paths.data)
+    seed(store)
+    original = (store.root / "sessions/s.jsonl").read_bytes()
+
+    async def exercise():
+        compactor = Compactor(store, memory)
+        with pytest.raises(
+            ContextLimit, match="timed out.*still running.*turn has stopped"
+        ):
+            await compactor.compact(store.session("s"))
+        assert (store.root / "sessions/s.jsonl").read_bytes() == original
+        assert store.archives("s") == []
+        state["status"] = "completed"
+        await compactor.compact(store.session("s"))
+        assert store.archives("s") == ["s.jsonl.1"]
+        assert sum(path.endswith("/commit") for _, path, _ in seen) == 1
+        assert sum(path.endswith("/messages/batch") for _, path, _ in seen) == 1
+        await memory.close()
+
+    asyncio.run(exercise())
+
+
+def test_compaction_deadline_bounds_inflight_task_request(config):
+    handler = memory_handler([])
+    interrupted = []
+
+    async def backend(request):
+        if "/tasks/" in request.url.path:
+            try:
+                await asyncio.Event().wait()
+            finally:
+                interrupted.append(True)
+        return handler(request)
+
+    cfg = memory_config()
+    cfg.compaction_timeout_s = 0.02
+    memory = MemoryClient(cfg, transport=httpx.MockTransport(backend))
+    store = Store(config.paths.data)
+    seed(store)
+    original = (store.root / "sessions/s.jsonl").read_bytes()
+
+    async def exercise():
+        with pytest.raises(ContextLimit, match="timed out.*has not completed"):
+            await asyncio.wait_for(
+                Compactor(store, memory).compact(store.session("s")), timeout=1
+            )
+        assert interrupted == [True]
+        assert (store.root / "sessions/s.jsonl").read_bytes() == original
+        assert store.archives("s") == []
         await memory.close()
 
     asyncio.run(exercise())
