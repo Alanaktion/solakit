@@ -185,7 +185,9 @@ uv build
 ```
 
 `sola check` needs operator-owned configuration, secrets and referenced prompt
-files; automated tests supply isolated fixtures. In the managed workspace use
+files; automated tests supply isolated fixtures. Before running `sola check`,
+you can source `.env` to supply operator secrets (`set -a; source .env; set +a`).
+In the managed workspace use
 `UV_CACHE_DIR=/workspace/.cache/uv` if needed. Never copy live credentials/data
 into fixtures or artifacts. For local UI use `uv run sola serve`, open port 8382,
 and sign in with the operator token (separate from the model API key). Use
