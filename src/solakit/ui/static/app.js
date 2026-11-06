@@ -57,7 +57,7 @@
     const conversation = document.getElementById("conversation");
     if (conversation) conversation.scrollTop = conversation.scrollHeight;
   }
-  function waiting(active, createdAt) {
+  function waiting(active, createdAt, runId) {
     const pending = document.getElementById("pending");
     const composer = form();
     if (!pending || !composer) return;
@@ -65,6 +65,12 @@
     composer.setAttribute("aria-busy", String(active));
     composer.querySelectorAll('button[type="submit"]').forEach((node) => { node.disabled = active; });
     pending.hidden = !active;
+    const stop = document.getElementById("stop-run");
+    if (stop) {
+      if (runId) stop.action = "/runs/" + encodeURIComponent(runId) + "/cancel?return_to_session=true";
+      if (!active) stop.removeAttribute("action");
+      stop.querySelector('button[type="submit"]').disabled = !active || !stop.getAttribute("action");
+    }
     if (active) {
       const seed = Date.parse(createdAt || composer.dataset.startedAt || "");
       started = Number.isFinite(seed) ? seed : (started || Date.now());
@@ -150,8 +156,8 @@
     if (!form() || !conversation?.dataset.eventsUrl || typeof EventSource === "undefined") return;
     events?.close();
     const pending = conversation.querySelector('[data-run-status="queued"], [data-run-status="running"]');
-    waiting(true, createdAt || conversation.dataset.activeCreatedAt || pending?.dataset.createdAt);
     const identity = runId || conversation.dataset.activeRun || pending?.dataset.runId;
+    waiting(true, createdAt || conversation.dataset.activeCreatedAt || pending?.dataset.createdAt, identity);
     const url = conversation.dataset.eventsUrl + (identity ? "?run=" + encodeURIComponent(identity) : "");
     const source = new EventSource(url);
     events = source;
@@ -171,7 +177,7 @@
       if (snapshot.pending) {
         conversation.dataset.activeRun = snapshot.run_id;
         conversation.dataset.activeCreatedAt = snapshot.created_at;
-        waiting(true, snapshot.created_at);
+        waiting(true, snapshot.created_at, snapshot.run_id);
       }
       if (nearBottom) scrollConversation();
       if (!snapshot.pending) {

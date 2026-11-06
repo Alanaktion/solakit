@@ -308,6 +308,8 @@ pre { overflow-x: auto; font-size: 11px; line-height: 1.55; color: var(--ink); }
 .action-group > .text-link { display: inline-flex; align-items: center; min-height: 44px; }
 .archive-confirm-actions > form { display: flex; align-items: center; }
 .secondary-button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; line-height: 1.4; flex: 0 0 auto; background: var(--surface-soft); color: var(--ink); border: 1px solid var(--line); border-radius: 7px; padding: 8px 12px; font-size: 12px; }
+.pending > [role="status"] { display: flex; align-items: center; gap: 10px; }
+.pending .stop-button { min-height: 28px; padding: 3px 9px; font-size: 11px; }
 .record-title { font-family: monospace; font-size: 20px; }
 @media (max-width: 850px) {
   .header-inner { flex-wrap: wrap; gap: 12px; padding-top: 8px; padding-bottom: 4px; }

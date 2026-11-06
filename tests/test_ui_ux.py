@@ -231,7 +231,12 @@ def test_job_run_now_redirects_before_generation_finishes(config, stop):
             )
             session_url = f"/sessions/{run['session']}"
             stop_url = location + "/cancel?return_to_session=true"
-            assert f'action="{stop_url}"' in client.get(session_url).text
+            session_page = client.get(session_url).text
+            assert f'action="{stop_url}"' in session_page
+            assert session_page.index('id="pending"') < session_page.index(
+                'id="stop-run"'
+            )
+            assert 'data-key="stop"' not in session_page
             if stop:
                 response = client.post(stop_url, follow_redirects=False)
                 assert response.status_code == 303

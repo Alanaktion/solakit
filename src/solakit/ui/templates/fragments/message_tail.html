@@ -15,7 +15,6 @@
     {% endfor %}
     {% if turn.preview %}<article class="message message-assistant live-preview" data-key="preview"><div class="message-content markdown-content">{{ turn.preview|markdown }}</div><small>Streaming preview · not yet saved</small></article>{% endif %}
     {% if turn.failed %}<div class="notice notice-error" data-key="failure" role="alert"><strong>{{ turn.status_label }}</strong>{% if turn.run.error %}<p>{{ turn.run.error }}</p>{% endif %}</div>{% endif %}
-    {% if turn.pending %}<div class="action-group" data-key="stop"><form method="post" action="/runs/{{ turn.run.id|urlencode }}/cancel?return_to_session=true"><button class="secondary-button" type="submit" aria-label="Stop run {{ turn.run.id[:8] }}">Stop</button></form></div>{% endif %}
     <div class="run-meta" data-key="meta"><span>Run <a href="/runs/{{ turn.run.id|urlencode }}"><code>{{ turn.run.id[:8] }}</code></a></span><span>{{ turn.run.profile }}</span><span>tokens: {% if turn.run.tokens and 'prompt_tokens' in turn.run.tokens and 'completion_tokens' in turn.run.tokens %}{{ turn.run.tokens.prompt_tokens + turn.run.tokens.completion_tokens }}{% else %}—{% endif %}</span>{% if turn.run.memory_status in ['failed', 'cancelled', 'commit_failed_or_uncertain', 'status_unavailable'] %}<span class="metadata-warning">Memory: {{ turn.run.memory_status }}</span>{% endif %}</div>
   </section>
   {% endif %}

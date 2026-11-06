@@ -62,6 +62,9 @@ const vm = require('node:vm');
   const field = {value:'hello', disabled:false, style:{},
     scrollHeight:40, focus:()=>{}};
   const button = {disabled:false};
+  const stopButton = {disabled:true};
+  const stop = {action:'', querySelector:()=>stopButton,
+    getAttribute:()=>stop.action, removeAttribute:()=>stop.action=''};
   const composer = {action:'/sessions/s/messages', busy:'false', dataset:{},
     getAttribute:()=>composer.busy,
     setAttribute:(k,v)=>composer.busy=v,
@@ -70,7 +73,7 @@ const vm = require('node:vm');
     innerHTML:'settled history', querySelector:()=>null,
     scrollTop:0, scrollHeight:1000, clientHeight:200,
     querySelectorAll:()=>[]};
-  const nodes = {composer, conversation, pending:{hidden:true},
+  const nodes = {composer, conversation, pending:{hidden:true}, 'stop-run':stop,
     elapsed:{textContent:''}, 'connection-error':{hidden:true}};
   const document = {addEventListener:(k,v)=>handlers[k]=v,
     querySelectorAll:()=>[], getElementById:k=>nodes[k],
@@ -95,6 +98,8 @@ const vm = require('node:vm');
   await submit();
   assert.equal(posts,1); assert.equal(field.value,'');
   assert.equal(field.disabled,false); assert.equal(button.disabled,true);
+  assert.equal(stop.action,'/runs/r/cancel?return_to_session=true');
+  assert.equal(stopButton.disabled,false);
   assert.match(nodes.elapsed.textContent,/1:0[5-9]/);
   field.value="next draft";
   await submit(); assert.equal(posts,1); // Busy guard.
@@ -103,6 +108,7 @@ const vm = require('node:vm');
   assert.equal(conversation.scrollTop,0);
   sources[0].handlers.snapshot({data:JSON.stringify({html:'saved',pending:false})});
   assert.equal(field.disabled,false); assert.equal(sources[0].closed,true);
+  assert.equal(stopButton.disabled,true); assert.equal(stop.action,'');
   assert.equal(field.value,"next draft");
   field.value='hello'; await submit(); assert.equal(posts,2);
   sources[0].onerror(); // A stale stream must not close the current one.

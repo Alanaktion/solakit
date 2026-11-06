@@ -45,7 +45,7 @@
   {% else %}
   <div class="composer-wrap">
     <p id="connection-error" class="notice notice-error" role="alert" hidden>The request could not finish. Reload to check the run before sending again.</p>
-    <p id="pending" class="pending" role="status" {% if not session.pending_run %}hidden{% endif %}><span class="thinking-dot" aria-hidden="true"></span>Waiting for Sola <span id="elapsed" aria-live="off">0:00</span><noscript><a href="{{ request.url.path }}">Reload to check progress</a></noscript></p>
+    <div id="pending" class="pending" {% if not session.pending_run %}hidden{% endif %}><span role="status"><span class="thinking-dot" aria-hidden="true"></span>Waiting for Sola <span id="elapsed" aria-live="off">0:00</span></span><div class="action-group"><form id="stop-run" method="post"{% if session.pending_run %} action="/runs/{{ session.pending_run.id|urlencode }}/cancel?return_to_session=true"{% endif %}><button class="secondary-button stop-button" type="submit"{% if not session.pending_run %} disabled{% endif %}>Stop</button></form></div><noscript><a href="{{ request.url.path }}">Reload to check progress</a></noscript></div>
     <form id="composer" action="/sessions/{{ session.id|urlencode }}/messages" method="post" data-draft-key="solakit-draft:{{ session.id }}">
       <label class="visually-hidden" for="message">Message to Sola</label>
       <div class="composer-input"><textarea id="message" name="message" placeholder="What’s on your mind?" maxlength="32000" rows="2" required aria-describedby="composer-hint"></textarea>
