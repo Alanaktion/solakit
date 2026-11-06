@@ -168,7 +168,8 @@ def test_archive_selection_requires_review(config, mock_model):
         assert 'action="/sessions/cleanup/apply"' in review.text
 
 
-def test_job_run_now_redirects_before_generation_finishes(config):
+@pytest.mark.parametrize("stop", [False, True])
+def test_job_run_now_redirects_before_generation_finishes(config, stop):
     import asyncio
     import threading
 
@@ -228,10 +229,21 @@ def test_job_run_now_redirects_before_generation_finishes(config):
                 ).status_code
                 == 409
             )
+            session_url = f"/sessions/{run['session']}"
+            stop_url = location + "/cancel?return_to_session=true"
+            assert f'action="{stop_url}"' in client.get(session_url).text
+            if stop:
+                response = client.post(stop_url, follow_redirects=False)
+                assert response.status_code == 303
+                assert response.headers["location"] == session_url
+                assert client.get("/api" + location).json()["status"] == "cancelled"
+                assert f'action="{stop_url}"' not in client.get(session_url).text
         finally:
             release.set()
         client.get(f"/sessions/{run['session']}/events")
-        assert client.get("/api" + location).json()["status"] == "completed"
+        assert client.get("/api" + location).json()["status"] == (
+            "cancelled" if stop else "completed"
+        )
 
 
 def test_run_view_reads_only_contiguous_tail_and_handles_split_utf8(config, mock_model):

@@ -1195,10 +1195,14 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
         if not logged_in(request):
             return login_redirect(request)
         try:
+            target = f"/runs/{quote(identity, safe='')}"
+            if request.query_params.get("return_to_session") == "true":
+                record = await api(
+                    request, "GET", f"/api/runs/{quote(identity, safe='')}"
+                )
+                target = f"/sessions/{quote(record['session'], safe='')}"
             await api(request, "POST", f"/api/runs/{quote(identity, safe='')}/cancel")
-            return RedirectResponse(
-                f"/runs/{quote(identity, safe='')}", 303, headers=HEADERS
-            )
+            return RedirectResponse(target, 303, headers=HEADERS)
         except APIError as exc:
             return render(request, "error.html", {"error": exc.detail}, exc.status)
 
