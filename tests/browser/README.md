@@ -98,3 +98,20 @@ layout and authenticated history after the dimension change.
 With the same scratch server running, `node tests/browser/measure.cjs` prints
 page and SSE payload bytes for comparable 44/500-turn fixtures and a roughly
 four-second stub stream. This is mocked transport measurement, not live oMLX QA.
+
+
+Layout/alignment: run `node tests/browser/layout.cjs` against the same scratch
+server. It visits 36 screens/states in both themes at 320, 390, 600, 601, 640,
+641, 768, 850, 851, 1024, 1440, and 2048 CSS pixels (864 screenshots/checks).
+Set `SOLA_LAYOUT_WIDTHS=320,1440` for a shorter pass,
+`SOLA_LAYOUT_THEMES=dark` for one theme, or `SOLA_LAYOUT_ONLY=chat` for the
+focused chat/viewport pass (nine states per width/theme). Set
+`SOLA_BROWSER_ARTIFACTS` for screenshots. Assertions check control height,
+button/link text centering, filter/action row alignment, session-record bounds,
+rename action widths/helper spacing, history-menu anchoring and page overflow.
+Coverage includes blank and populated forms, errors, disabled/pending controls,
+recurring/one-time schedules, expanded evidence, long titles/drafts, current and
+archived chat, cleanup review/result/undo, login, and empty search/session lists.
+Fixtures and POSTs use scratch data only. Native checkboxes retain their own
+size inside 44px labels. This checks rendered geometry in Chromium, not CSS
+class strings; review screenshots alongside the assertions.

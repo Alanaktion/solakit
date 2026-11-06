@@ -25,6 +25,6 @@
 </article>
 {% else %}<div class="empty-state"><h2>No matching sessions or messages.</h2><p>{% if mode == 'sessions' %}Try another name or ID, or choose Full text to search message content.{% else %}Try another phrase.{% endif %}</p></div>{% endfor %}
 </section>
-<nav class="session-pagination" aria-label="Search pages">{% if previous %}<a class="text-link" href="{{ previous }}">← Previous</a>{% endif %}{% if next %}<a class="text-link" href="{{ next }}">Next →</a>{% endif %}</nav>
+<nav class="session-pagination" aria-label="Search pages">{% if previous %}<a class="text-link" href="{{ previous }}" rel="prev">← Previous</a>{% endif %}{% if next %}<a class="text-link" href="{{ next }}" rel="next">Next →</a>{% endif %}</nav>
 {% endif %}
 {% endblock %}

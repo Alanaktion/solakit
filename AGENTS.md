@@ -101,6 +101,11 @@ Read `SPEC.md` for behavioral contracts, `README.md` for an introduction,
   sessions, API-only presentation routes and escaped/redacted transcript views.
   No Node build or CDN. Chat fills the viewport with a desktop session sidebar;
   colors follow `prefers-color-scheme`. `/tools` shows loaded versus granted tools.
+  Use grid when both axes have designed tracks (chat/sidebar, job fields, record
+  columns); use flex for a line or stack whose item count/width can change
+  (actions, filters, status chips, metadata). Keep actions in `.action-group`
+  with intrinsic button widths. Single-field editors use `.edit-form` and
+  `.form-field`; do not reuse `.new-session-form`'s fixed creation grid.
 - `cli.py`: offline checks, server launch, API inspection and explicit operator
   operations. Tests are under `tests/` and use mocked transports/controlled clocks.
 
