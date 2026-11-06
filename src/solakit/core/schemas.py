@@ -29,6 +29,7 @@ class Origin(BaseModel):
 class Session(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid4()))
     title: str = ""
+    source: str = Field(default="api", pattern=r"^[a-z][a-z0-9_-]{0,63}$")
     bound_channel: str | None = None
     default_profile: str = "interactive"
     memory_scope: Literal["shared", "isolated", "ephemeral"] = "shared"

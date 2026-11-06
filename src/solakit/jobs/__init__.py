@@ -159,6 +159,7 @@ class Jobs:
             self.execution.store.create_session,
             Session(
                 title=f"Job {job.id}",
+                source="cron",
                 default_profile=job.profile,
                 memory_scope=parent.memory_scope,
                 parent_session=parent.id,
@@ -176,11 +177,13 @@ class Jobs:
         if job.bind_session == "ephemeral":
             return await durable(
                 self.execution.store.create_session,
-                Session(default_profile=job.profile, memory_scope="ephemeral"),
+                Session(
+                    source="cron", default_profile=job.profile, memory_scope="ephemeral"
+                ),
             )
         return await durable(
             self.execution.store.create_session,
-            Session(id=job.bind_session, default_profile=job.profile),
+            Session(id=job.bind_session, source="cron", default_profile=job.profile),
         )
 
     async def _missed(self, job, state, at, reason):

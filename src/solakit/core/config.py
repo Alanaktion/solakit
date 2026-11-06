@@ -262,6 +262,13 @@ class CollectionConfig(StrictModel):
         return self
 
 
+class ToolApisConfig(StrictModel):
+    brave_api_key: SecretRef | None = None
+    cloudflare_account_id: str | None = Field(default=None, pattern=r"^[a-zA-Z0-9_-]+$")
+    cloudflare_api_token: SecretRef | None = None
+    github_token: SecretRef | None = None
+
+
 class Config(StrictModel):
     operator_token: SecretRef = Field(
         default_factory=lambda: SecretRef(env="SOLA_OPERATOR_TOKEN")
@@ -281,6 +288,7 @@ class Config(StrictModel):
     repositories: dict[str, Path] = Field(default_factory=dict)
     collections: dict[str, CollectionConfig] = Field(default_factory=dict)
     enabled_tools: list[str] = Field(default_factory=list)
+    tool_apis: ToolApisConfig = Field(default_factory=ToolApisConfig)
     timezone: str = "America/Denver"
     discord_token: SecretRef | None = None
 
@@ -414,6 +422,14 @@ def load_config(path: Path | None = None) -> Config:
         name: p.expanduser() if p.expanduser().is_absolute() else base / p
         for name, p in config.repositories.items()
     }
+    for reference in (
+        config.tool_apis.brave_api_key,
+        config.tool_apis.cloudflare_api_token,
+        config.tool_apis.github_token,
+    ):
+        if reference is not None and reference.file is not None:
+            value = reference.file.expanduser()
+            reference.file = value if value.is_absolute() else base / value
     code_root = Path(__file__).resolve().parents[3]
     if config.paths.data.resolve().is_relative_to(code_root):
         raise ConfigLoadError(

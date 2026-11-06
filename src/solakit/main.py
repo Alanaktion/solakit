@@ -522,6 +522,7 @@ def create_app(
         q: str = "",
         before: str | None = None,
         profile: str | None = None,
+        exclude_source: str | None = None,
         limit: int = 50,
         offset: int = 0,
         page: bool = False,
@@ -532,6 +533,7 @@ def create_app(
                 q=q,
                 before=before,
                 profile=profile,
+                exclude_source=exclude_source,
                 limit=limit,
                 offset=offset,
             )

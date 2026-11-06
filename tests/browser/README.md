@@ -124,3 +124,8 @@ profile-drift warnings with narrowed execution, and historical prompt/schema
 inspection. The fixture's status-only profile and `/qa/tool-grants` control exist
 only in the isolated test server. Model/memory transports are mocked; screenshots,
 page overflow and script errors are checked separately from Python/API tests.
+
+Session sources: run `node tests/browser/session-sources.cjs` against the scratch
+server to verify default cron exclusion, explicit inclusion, and filter layout at
+390/1440px in light/dark themes. Optional `SOLA_CHROMIUM_PATH` selects an installed
+Chromium executable; `SOLA_BROWSER_ARTIFACTS` selects the screenshot directory.

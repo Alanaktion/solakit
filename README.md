@@ -22,6 +22,7 @@ in a private data directory. Integrations are opt-in.
 - [Conditional tool disclosure](docs/operations/tool-disclosure.md): optional deferred schemas, with eager defaults.
 - [Scheduled jobs](docs/operations/jobs.md) and [shell tools](docs/operations/shell.md).
 - [Session archival](docs/operations/session-archive.md): reversible cleanup of imported history, activity filters and bulk restore.
+- [Web, reference and calculation tools](docs/operations/read-tools.md).
 - [Optional tool packs](packs/README.md) and their resource configuration.
 - [Configuration example](config.example.toml), [behavioral specification](SPEC.md), and [contributor guide](AGENTS.md).
 

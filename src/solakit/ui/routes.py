@@ -190,6 +190,7 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
             key: request.query_params.get(key, default)
             for key, default in (
                 ("status", "active"),
+                ("exclude_source", "cron"),
                 ("q", ""),
                 ("profile", ""),
                 ("offset", "0"),
@@ -497,6 +498,7 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
                 "/api/sessions",
                 {
                     "id": values.get("id", ""),
+                    "source": "web",
                     "default_profile": values.get("default_profile", ""),
                     "memory_scope": values.get("memory_scope", "shared"),
                 },

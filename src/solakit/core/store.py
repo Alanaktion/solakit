@@ -667,6 +667,7 @@ class Store:
         q="",
         before=None,
         profile=None,
+        exclude_source=None,
         limit=50,
         offset=0,
         ids=None,
@@ -695,6 +696,9 @@ class Store:
                 "json_extract(s.payload, '$.archived_at') IS "
                 + ("NOT NULL" if status == "archived" else "NULL")
             )
+        if exclude_source is not None:
+            clauses.append("coalesce(json_extract(s.payload, '$.source'), 'api') != ?")
+            args.append(exclude_source)
         if q:
             clauses.append(
                 "(instr(lower(s.id), lower(?))>0 OR "
@@ -739,6 +743,7 @@ class Store:
             "profiles": profiles,
             "sessions": [
                 {
+                    "source": "api",
                     **json.loads(payload),
                     "last_activity_at": self._activity_timestamp(
                         datetime.fromisoformat(at)

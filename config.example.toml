@@ -16,7 +16,16 @@ enabled_tools = []
 # capabilities = ["sessions.search.all"] allows another session or all sessions.
 # See packs/README.md for their resource sidecar and explicit profile grants.
 # enabled_tools = ["solakit.tools.files", "solakit.tools.runtime", "sola_packs.journal"]
+# Read-only APIs and exact calculation: load "web", "feeds", "github", "wiki",
+# "datetime", "math"; grant their exact names or "*" in the intended profile.
+# See docs/operations/read-tools.md.
 # discord_token = { env = "SOLA_DISCORD_TOKEN" }
+
+[tool_apis]
+# brave_api_key = { env = "BRAVE_API_KEY" }
+# cloudflare_account_id = "your-account-id"
+# cloudflare_api_token = { env = "CLOUDFLARE_API_TOKEN" }
+# github_token = { env = "GITHUB_TOKEN" }
 
 [operator_token]
 env = "SOLA_OPERATOR_TOKEN"

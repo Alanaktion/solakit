@@ -108,3 +108,20 @@ continues to create summaries according to its own existing policy.
 Backups retain session metadata as well as JSONL, run/media evidence and app.db.
 Restoring/rebuilding indexes does not remove lifecycle archive flags. This feature
 does not purge old data or move files to a second storage tree.
+
+## Session sources
+
+Session metadata records the creator in `source`: `api` by default, `web` for UI
+creation, the channel type (for example `discord`) for channel routing, and
+`cron` for sessions created by scheduled jobs, including one-time jobs and fresh
+job sub-sessions. Delegated children use `delegate`; memory probes use `probe`.
+Sources are extensible lowercase identifiers. Reusing a session retains its
+original source, even when a job or another channel subsequently uses it.
+Legacy metadata without this field reads as `api` without rewriting evidence.
+
+The Sessions page hides `cron` sources by default. Choose **Include cron
+sessions** to show them; pagination preserves the selection. The API includes all
+sources by default; `GET /api/sessions?exclude_source=cron` excludes scheduled
+sessions before counting and pagination. Archival status and profile filters
+continue to work independently. Cleanup preview still uses its explicit age,
+query and profile criteria and may include scheduled sessions.

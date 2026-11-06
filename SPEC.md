@@ -297,6 +297,15 @@ The adapter owns everything platform-specific: connection, reconnects,
 chunking, rate limits, typing indicators, external ID mapping. The core
 owns everything else. Adding Telegram later = one new module + config.
 
+### Session creation source
+
+Sessions record an extensible `source` identifier set by their creator: `api`
+(default, also for legacy metadata), `web`, a channel type such as `discord`,
+`cron` for scheduled job creation, `delegate`, or `probe`. Reusing a session
+preserves its original source. The Sessions UI excludes `cron` by default with
+an explicit include option; API lists include every source unless filtered.
+Filtering precedes pagination and never changes stored evidence.
+
 ### 6.2 Session pinning (the OpenClaw behaviour, kept)
 
 Every channel config names a session. Routing is a pure function of
@@ -1268,3 +1277,15 @@ above 25% context budget for deferred initial payload or 50% for eager schemas.
 Warnings neither switch modes nor impose hard limits. See
 [operator guidance](docs/operations/tool-disclosure.md) for the live pinned-model
 acceptance gate; interactive deferred mode remains opt-in and unevaluated live.
+
+### Built-in read-only reference and calculation tools
+
+Opt-in modules `web`, `feeds`, `github`, `wiki`, `datetime`, and `math` use
+the standard tool registry and profile grants. They provide Brave web search,
+Cloudflare Browser Rendering Markdown, RSS/Atom reads, read-only GitHub
+notifications/PR status/releases, MediaWiki REST summaries with Wikidata identity,
+IANA timezone/date math, and AST-whitelisted decimal arithmetic. Every definition
+includes summary/keyword metadata for deferred disclosure. API credentials are
+explicit env/file SecretRefs under `tool_apis` and register with redaction before
+use. Remote reads are bounded and do not mutate upstream state; outputs remain
+untrusted data. See `docs/operations/read-tools.md` for arguments and limits.

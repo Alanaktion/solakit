@@ -41,7 +41,7 @@ async def probe(execution: Execution, fact: str, query: str, expected: str) -> d
         raise ValueError("Enable/configure the existing OpenViking instance first")
     session = await durable(
         execution.store.create_session,
-        Session(id=f"probe-{uuid4().hex}", title="Memory verification"),
+        Session(id=f"probe-{uuid4().hex}", title="Memory verification", source="probe"),
     )
     first = await execution.submit(session.id, fact)
     result = {"session": session.id, "first_run": first.id, "passed": False}

@@ -17,6 +17,7 @@ class SessionRouter:
                     Session(
                         id=channel.session,
                         title=channel.id,
+                        source=channel_type,
                         bound_channel=channel.id,
                         default_profile=channel.profile,
                     )

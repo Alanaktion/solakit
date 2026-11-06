@@ -60,6 +60,7 @@ async def run(
         if session is not None
         else Session(
             parent_session=ctx.session.id,
+            source="delegate",
             default_profile=profile,
             memory_scope="ephemeral",
             title=task.splitlines()[0][:200],
