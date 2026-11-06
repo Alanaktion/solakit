@@ -343,7 +343,7 @@ def test_web_search_names_ids_archived_text_links_and_errors(config, mock_model)
     with TestClient(app) as client:
         assert (
             client.get("/search", follow_redirects=False).headers["location"]
-            == "/login"
+            == "/login?next=%2Fsearch"
         )
         client.post("/login", data={"token": "operator-test-token"})
         store = app.state.store

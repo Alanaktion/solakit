@@ -44,7 +44,10 @@ def new_session(client, identity="evening"):
 def test_login_cookie_api_logout_and_expired_fragment(config, mock_model, auth):
     app = create_app(config=config, model=mock_model)
     with TestClient(app) as client:
-        assert client.get("/", follow_redirects=False).headers["location"] == "/login"
+        assert (
+            client.get("/", follow_redirects=False).headers["location"]
+            == "/login?next=%2F"
+        )
         assert client.get("/api/profiles").status_code == 401
         assert client.get("/api/profiles", headers=auth).json() == list(config.profiles)
         bad = client.post("/login", data={"token": "incorrect-secret"})
@@ -53,7 +56,7 @@ def test_login_cookie_api_logout_and_expired_fragment(config, mock_model, auth):
         assert COOKIE not in client.cookies
         response = sign_in(client)
         cookie = response.headers["set-cookie"]
-        for flag in ("HttpOnly", "SameSite=lax", "Path=/", "Max-Age=604800"):
+        for flag in ("HttpOnly", "SameSite=lax", "Path=/", "Max-Age=432000"):
             assert flag in cookie
         assert "Secure" not in cookie
         assert "operator-test-token" not in cookie + client.get("/").text
@@ -66,7 +69,7 @@ def test_login_cookie_api_logout_and_expired_fragment(config, mock_model, auth):
             client.get("/ui/status", headers={"HX-Request": "true"}).headers[
                 "hx-redirect"
             ]
-            == "/login"
+            == "/login?next=%2F"
         )
         assert client.get("/api/profiles", headers=auth).status_code == 200
 
@@ -78,6 +81,15 @@ def test_https_cookie_and_restart(config, mock_model):
         opaque = client.cookies[COOKIE]
         assert client.get("/").status_code == 200
     assert not app.state.ui_sessions.valid(opaque)
+    from solakit.core.model import ModelClient
+
+    restarted_model = ModelClient(config.model, transport=mock_model.client._transport)
+    with TestClient(
+        create_app(config=config, model=restarted_model), base_url="https://testserver"
+    ) as client:
+        client.cookies.set(COOKIE, opaque)
+        assert client.get("/api/profiles").status_code == 200
+        assert "Max-Age=432000" in client.get("/").headers["set-cookie"]
 
 
 def test_session_expiry_and_login_lockout():
@@ -288,7 +300,8 @@ def test_tools_catalog_distinguishes_loaded_from_granted(config, mock_model):
     with TestClient(create_app(config=config, model=mock_model)) as client:
         assert client.get("/api/tools").status_code == 401
         assert (
-            client.get("/tools", follow_redirects=False).headers["location"] == "/login"
+            client.get("/tools", follow_redirects=False).headers["location"]
+            == "/login?next=%2Ftools"
         )
         sign_in(client)
         catalog = client.get("/api/tools").json()
@@ -396,7 +409,7 @@ def test_ui_archive_confirmation_browsing_and_secret_masking(config, mock_model)
             client.post("/sessions/evening/archive", follow_redirects=False).headers[
                 "location"
             ]
-            == "/login"
+            == "/login?next=%2F"
         )
         sign_in(client)
         new_session(client)
@@ -457,13 +470,13 @@ def test_session_patch_and_rename_ui_preserve_identity_evidence(config, mock_mod
             client.get("/sessions/old/rename", follow_redirects=False).headers[
                 "location"
             ]
-            == "/login"
+            == "/login?next=%2Fsessions%2Fold%2Frename"
         )
         assert (
             client.post(
                 "/sessions/old/rename", data={"title": "New"}, follow_redirects=False
             ).headers["location"]
-            == "/login"
+            == "/login?next=%2F"
         )
         sign_in(client)
         store = app.state.store
@@ -536,3 +549,70 @@ def test_session_patch_and_rename_ui_preserve_identity_evidence(config, mock_mod
     assert restarted.session("old").title == ""
     assert restarted.session("old").archived_at
     assert restarted.search("Original")[0]["session_id"] == "old"
+
+
+def test_persistent_session_sliding_expiry_and_revocation(tmp_path):
+    clock = [100.0]
+    path = tmp_path / "ui-sessions.json"
+    sessions = UISessions(clock=lambda: clock[0])
+    sessions.load(path, "right")
+    identity, _ = sessions.login("right", "right", "peer")
+    assert identity not in path.read_text()
+    assert path.stat().st_mode & 0o777 == 0o600
+    clock[0] += LIFETIME - 1
+    assert sessions.valid(identity)
+    restarted = UISessions(clock=lambda: clock[0])
+    restarted.load(path, "right")
+    clock[0] += LIFETIME - 1
+    assert restarted.valid(identity)
+    restarted.revoke(identity)
+    sessions.load(path, "right")
+    assert not sessions.valid(identity)
+    identity, _ = sessions.login("right", "right", "peer")
+    restarted.load(path, "changed")
+    assert not restarted.valid(identity)
+    identity, _ = restarted.login("changed", "changed", "peer")
+    clock[0] += LIFETIME
+    sessions.load(path, "changed")
+    assert not sessions.valid(identity)
+
+
+def test_login_return_url(config, mock_model):
+    with TestClient(create_app(config=config, model=mock_model)) as client:
+        response = client.get("/runs?session=evening", follow_redirects=False)
+        assert response.headers["location"] == "/login?next=%2Fruns%3Fsession%3Devening"
+        page = client.get(response.headers["location"])
+        assert 'name="next" value="/runs?session=evening"' in page.text
+        bad = client.post(
+            "/login", data={"token": "bad", "next": "/runs?session=evening"}
+        )
+        assert 'name="next" value="/runs?session=evening"' in bad.text
+        fragment = client.get(
+            "/ui/status",
+            headers={
+                "HX-Request": "true",
+                "HX-Current-URL": "http://testserver/runs?session=evening",
+            },
+        )
+        assert fragment.headers["hx-redirect"] == response.headers["location"]
+        good = client.post(
+            "/login",
+            data={
+                "token": "operator-test-token",
+                "next": "/runs?session=evening",
+            },
+            follow_redirects=False,
+        )
+        assert good.headers["location"] == "/runs?session=evening"
+        client.post("/logout")
+        for target in ("https://evil.test", "//evil.test", "/\\evil.test", "/login"):
+            good = client.post(
+                "/login",
+                data={
+                    "token": "operator-test-token",
+                    "next": target,
+                },
+                follow_redirects=False,
+            )
+            assert good.headers["location"] == "/"
+            client.post("/logout")

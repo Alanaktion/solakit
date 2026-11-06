@@ -192,7 +192,7 @@
     };
     source.addEventListener("unavailable", unavailable);
     source.addEventListener("expired", () => {
-      if (source === events) { draft(); source.close(); events = null; window.location.assign("/login"); }
+      if (source === events) { draft(); source.close(); events = null; window.location.assign("/login?next=" + encodeURIComponent(window.location.pathname + window.location.search + window.location.hash)); }
     });
     source.onerror = unavailable; // No automatic POST retry or duplicate submission.
   }
@@ -220,7 +220,7 @@
         method: "POST", body, headers: {Accept: "application/json"},
         credentials: "same-origin",
       });
-      if (response.status === 401) { window.location.assign("/login"); return; }
+      if (response.status === 401) { window.location.assign("/login?next=" + encodeURIComponent(window.location.pathname + window.location.search + window.location.hash)); return; }
       if (response.status !== 202) throw new Error("Submission failed");
       const accepted = await response.json();
       // Keep edits made while the acceptance request was in flight.

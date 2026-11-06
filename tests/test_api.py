@@ -13,7 +13,10 @@ def test_health_and_auth(config, auth):
             == 401
         )
         assert client.get("/api/channels", headers=auth).json() == []
-        assert client.get("/", follow_redirects=False).headers["location"] == "/login"
+        assert (
+            client.get("/", follow_redirects=False).headers["location"]
+            == "/login?next=%2F"
+        )
         assert client.post("/v1/runs", json={"message": "Hi"}).status_code == 404
 
 

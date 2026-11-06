@@ -871,8 +871,8 @@ The P1 operator UI is a thin server-rendered API client. Shared app contracts:
   `created_at`, including after reconnect. Plain POST forms guard duplicate submits.
   Draft text is saved per session in same-tab `sessionStorage`, never auto-sent,
   and cleared only after acceptance (without discarding edits made during admission).
-  This recovers drafts across restart/login; authentication remains in-memory and
-  credentials are never stored by the draft mechanism. Storage-disabled browsers
+  This recovers drafts across restart/login; credentials are never stored by the
+  draft mechanism. Storage-disabled browsers
   retain ordinary editing but cannot recover drafts after navigation.
   `/ui/status?known=<visible-state-digest>` returns 204 when chips are unchanged.
   Chat exposes system status in a toolbar disclosure; mobile omits global nav.
@@ -883,9 +883,15 @@ The P1 operator UI is a thin server-rendered API client. Shared app contracts:
   `discord_token` is a secret reference; maintenance profiles are never scheduled
   or triggered by Discord.
 - **Auth:** one operator token stored as a `0600` file / env var. API Bearer
-  auth remains valid. `POST /login` exchanges the token for an opaque in-memory
-  seven-day session cookie (HttpOnly, SameSite=Lax, Path=/; Secure on HTTPS).
-  `POST /logout` revokes it; restart clears all sessions. Five wrong attempts
+  auth remains valid. `POST /login` exchanges the token for an opaque persistent
+  five-day sliding session cookie (HttpOnly, SameSite=Lax, Path=/; Secure on HTTPS).
+  `POST /logout` revokes it; sessions survive restart and expire after five days
+  without activity.
+  Cookie use renews the expiry; changing the operator token invalidates sessions.
+  Hashed session IDs and expiry times live in private `ui-sessions.json` in the
+  data directory.
+  Login returns to the requested local page via a validated `next` parameter.
+  Five wrong attempts
   produce a 60-second local lockout. Cookies authorize the same API dependency.
   State-changing UI actions are POST-only, with no cross-origin CORS. Discord
   has its own bot token. The model API key is separate from the operator token.

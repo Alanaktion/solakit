@@ -149,7 +149,7 @@ def test_explicit_compaction_api_and_ui_preserve_session_and_archive(memory_app)
             client.post("/sessions/s/compact", follow_redirects=False).headers[
                 "location"
             ]
-            == "/login"
+            == "/login?next=%2F"
         )
         sign_in(client)
         seed(app.state.store)

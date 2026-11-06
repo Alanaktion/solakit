@@ -6,6 +6,12 @@ profile-drift warnings remain visible without expanding. Narrow screens stack
 records so actions remain accessible without horizontal scrolling. Channels show
 adapter-reported connection state separately from whether they are enabled.
 
+UI logins survive restarts using private `ui-sessions.json` in the data directory.
+Sessions expire after five days without requests and renew on use. Signing out
+revokes the current session; changing the operator token invalidates all sessions.
+With the server stopped, removing this file signs out every browser. Login returns
+to the requested local page, including its query parameters.
+
 ## API and execution
 
 Create `POST /api/sessions` with `{"id":"web-main","default_profile":"interactive"}`.

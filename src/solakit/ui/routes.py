@@ -6,7 +6,7 @@ import json
 import time
 from datetime import UTC, datetime
 from pathlib import Path
-from urllib.parse import parse_qs, quote, urlencode
+from urllib.parse import parse_qs, quote, urlencode, urlsplit
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -101,10 +101,43 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
             operator_token(),
         )
 
+    def return_path(value):
+        # Reject browser URL normalization tricks as well as external origins.
+        if (
+            not value
+            or not value.startswith("/")
+            or value.startswith("//")
+            or "\\" in value
+            or any(ord(char) <= 32 for char in value)
+            or urlsplit(value).path in {"/login", "/logout"}
+        ):
+            return "/"
+        return value
+
     def login_redirect(request):
+        target = "/"
+        current = request.headers.get("HX-Current-URL") or request.headers.get(
+            "referer"
+        )
+        if request.headers.get("HX-Request") == "true" or request.method != "GET":
+            if current:
+                parsed = urlsplit(current)
+                if (parsed.scheme, parsed.netloc) == (
+                    request.url.scheme,
+                    request.url.netloc,
+                ):
+                    target = return_path(
+                        parsed.path + ("?" + parsed.query if parsed.query else "")
+                    )
+        else:
+            target = return_path(
+                request.url.path
+                + ("?" + request.url.query if request.url.query else "")
+            )
+        destination = "/login?" + urlencode({"next": target})
         if request.headers.get("HX-Request") == "true":
-            return Response(headers={**HEADERS, "HX-Redirect": "/login"})
-        return RedirectResponse("/login", status_code=303, headers=HEADERS)
+            return Response(headers={**HEADERS, "HX-Redirect": destination})
+        return RedirectResponse(destination, status_code=303, headers=HEADERS)
 
     def render(request, template, context=None, status=200, headers=None):
         # API transcripts are deliberately verbatim. UI presentation additionally
@@ -341,8 +374,14 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
     @router.get("/login")
     async def login_page(request: Request):
         if logged_in(request):
-            return RedirectResponse("/", 303, headers=HEADERS)
-        return render(request, "login.html")
+            return RedirectResponse(
+                return_path(request.query_params.get("next")), 303, headers=HEADERS
+            )
+        return render(
+            request,
+            "login.html",
+            {"next": return_path(request.query_params.get("next"))},
+        )
 
     @router.post("/login")
     async def login(request: Request):
@@ -363,11 +402,13 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
             return render(
                 request,
                 "login.html",
-                {"error": error},
+                {"error": error, "next": return_path(values.get("next"))},
                 status,
                 {"Retry-After": "60"} if status == 429 else None,
             )
-        response = RedirectResponse("/", 303, headers=HEADERS)
+        response = RedirectResponse(
+            return_path(values.get("next")), 303, headers=HEADERS
+        )
         # Single operator, localhost/tailnet: SameSite=Lax plus POST-only mutations.
         # No cross-origin CORS or GET mutations; no separate CSRF framework in v1.
         response.set_cookie(

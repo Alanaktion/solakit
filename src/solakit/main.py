@@ -34,7 +34,7 @@ from solakit.core.store import StorageCorruption, Store, safe_id
 from solakit.jobs import Jobs
 from solakit.jobs.schemas import JobUpdate
 from solakit.ui import build_ui_router
-from solakit.ui.auth import COOKIE, UISessions
+from solakit.ui.auth import COOKIE, LIFETIME, UISessions
 from solakit.ui.routes import ROOT as UI_ROOT
 
 
@@ -98,6 +98,7 @@ def create_app(
         app.state.store = await asyncio.to_thread(
             Store, cfg.paths.data, app.state.redactor, exclusive=True
         )
+        ui_sessions.load(app.state.store.root / "ui-sessions.json", token)
         app.state.memory = (
             MemoryClient(cfg.memory, memory_key) if cfg.memory.enabled else None
         )
@@ -258,6 +259,23 @@ def create_app(
                 ui_sessions.clear()
 
     app = FastAPI(title="Solakit", version="0.1.0", lifespan=lifespan)
+
+    @app.middleware("http")
+    async def refresh_ui_cookie(request: Request, call_next):
+        identity = request.cookies.get(COOKIE)
+        valid = ui_sessions.valid(identity)
+        response = await call_next(request)
+        if valid and request.url.path not in {"/login", "/logout"}:
+            response.set_cookie(
+                COOKIE,
+                identity,
+                max_age=LIFETIME,
+                httponly=True,
+                samesite="lax",
+                secure=request.url.scheme == "https",
+                path="/",
+            )
+        return response
 
     @app.exception_handler(StorageCorruption)
     async def storage_corruption(request, exc: StorageCorruption):

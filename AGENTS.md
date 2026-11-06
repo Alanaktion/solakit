@@ -111,7 +111,7 @@ Read `SPEC.md` for behavioral contracts, `README.md` for an introduction,
   run hash preserves schema inputs. Historical prompt inspection uses saved inputs,
   never today's profile grants or modules. Keep schema definitions out of recursive
   diagnostic key redaction; UI masks resolved values before JSON encoding.
-- `ui/`: Jinja2 pages, packaged local HTMX/CSS/vanilla JS, opaque in-memory login
+- `ui/`: Jinja2 pages, packaged local HTMX/CSS/vanilla JS, opaque persistent login
   sessions, API-only presentation routes and escaped/redacted transcript views.
   No Node build or CDN. Chat fills the viewport with a desktop session sidebar;
   colors follow `prefers-color-scheme`. `/tools` shows loaded versus granted tools.

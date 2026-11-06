@@ -4,6 +4,7 @@ import html
 import re
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from urllib.parse import quote
 
 import httpx
 from fastapi.testclient import TestClient
@@ -18,13 +19,13 @@ from solakit.main import create_app
 def test_evidence_and_operations_require_auth(config, mock_model):
     with TestClient(create_app(config=config, model=mock_model)) as client:
         for path in ("/prompt", "/runs", "/runs/unknown", "/operations"):
-            assert (
-                client.get(path, follow_redirects=False).headers["location"] == "/login"
-            )
+            assert client.get(path, follow_redirects=False).headers[
+                "location"
+            ] == "/login?next=" + quote(path, safe="")
         for path in ("/runs/unknown/cancel", "/operations/jobs/job/run"):
             assert (
                 client.post(path, follow_redirects=False).headers["location"]
-                == "/login"
+                == "/login?next=%2F"
             )
 
 

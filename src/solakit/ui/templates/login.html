@@ -9,6 +9,7 @@
   <p class="intro">Use your operator token.</p>
   {% if error %}<div class="notice notice-error" role="alert">{{ error }}</div>{% endif %}
   <form method="post" action="/login" class="stack-form" autocomplete="off">
+    <input type="hidden" name="next" value="{{ next or '/' }}">
     <label for="token">Operator token</label>
     <input id="token" name="token" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="4096" required autofocus>
     <button class="primary-button full-width" type="submit">Sign in <span aria-hidden="true">→</span></button>

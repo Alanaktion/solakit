@@ -69,8 +69,11 @@ shows adapter state and lets you create, edit, delete, run, pause and resume job
 Press Enter to send in chat, Shift+Enter for a newline (IME composition is preserved).
 
 Login exchanges the token for an opaque, HttpOnly, SameSite=Lax cookie valid for
-seven days (Secure on HTTPS). Sign out revokes it; server restarts invalidate all
-UI sessions. Five failed attempts lock login for 60 seconds. `/api` accepts either
+five days of inactivity (Secure on HTTPS), renewed on use. Sessions survive server
+restarts; signing out or changing the operator token revokes them. Private
+`ui-sessions.json` in the data directory stores hashed IDs and expiry times.
+Login returns to the originally requested local page. Five failed attempts lock
+login for 60 seconds. `/api` accepts either
 this cookie or the existing `Authorization: Bearer <operator-token>` header.
 The token is never placed in page content or browser storage.
 
