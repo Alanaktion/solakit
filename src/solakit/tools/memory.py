@@ -1,6 +1,9 @@
 """Memory tools use only the session-scoped facade supplied by execution."""
 
 import json
+from typing import Annotated
+
+from pydantic import Field
 
 from solakit.core.memory import MemoryUnavailable
 from solakit.tools import ToolContext, ToolError, ToolResult, tool
@@ -9,8 +12,21 @@ PROFILES = ["*"]
 
 
 @tool(name="memory.search", profiles=PROFILES)
-async def search(ctx: ToolContext, query: str) -> ToolResult:
-    """Search configured shared memory roots."""
+async def search(
+    ctx: ToolContext,
+    query: Annotated[
+        str,
+        Field(
+            description=(
+                "Semantic query about remembered facts, decisions or preferences."
+            )
+        ),
+    ],
+) -> ToolResult:
+    """Search long-term semantic memory for facts, decisions and preferences.
+
+    For exact conversation evidence use sessions.search. For current external
+    data use its domain tool. Use returned canonical URIs with memory.read."""
     if ctx.memory_client is None:
         raise ToolError("Memory is disabled for this session")
     try:
@@ -20,7 +36,18 @@ async def search(ctx: ToolContext, query: str) -> ToolResult:
 
 
 @tool(name="memory.read", profiles=PROFILES)
-async def read(ctx: ToolContext, uri: str) -> ToolResult:
+async def read(
+    ctx: ToolContext,
+    uri: Annotated[
+        str,
+        Field(
+            description=(
+                "Canonical URI returned by memory.search, inside "
+                "configured shared roots."
+            )
+        ),
+    ],
+) -> ToolResult:
     """Read a canonical URI inside configured shared memory roots."""
     if ctx.memory_client is None:
         raise ToolError("Memory is disabled for this session")
@@ -31,7 +58,18 @@ async def read(ctx: ToolContext, uri: str) -> ToolResult:
 
 
 @tool(name="memory.remember", profiles=PROFILES)
-async def remember(ctx: ToolContext, text: str) -> ToolResult:
+async def remember(
+    ctx: ToolContext,
+    text: Annotated[
+        str,
+        Field(
+            description=(
+                "Exact durable note to stage; staging does not confirm "
+                "storage or extraction."
+            )
+        ),
+    ],
+) -> ToolResult:
     """Stage an exact note for this run's normal shared-memory commit.
 
     Returns staged note/run IDs, not a claim that storage or extraction succeeded.

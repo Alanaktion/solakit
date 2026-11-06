@@ -2,6 +2,9 @@
 
 import json
 import math
+from typing import Annotated
+
+from pydantic import Field
 
 from solakit.services.process import execute
 from solakit.tools import ToolContext, ToolError, ToolResult, tool
@@ -43,17 +46,77 @@ async def run_process(ctx, argv, directory, timeout_s):
 
 @tool(name="shell.exec", profiles=["*"], writes=["filesystem", "shell.exec"])
 async def exec_command(
-    ctx: ToolContext, argv: list[str], directory: str, timeout_s: float = 30
+    ctx: ToolContext,
+    argv: Annotated[
+        list[str],
+        Field(
+            description="Executable followed by literal arguments; no shell expansion."
+        ),
+    ],
+    directory: Annotated[
+        str,
+        Field(
+            description=(
+                "Existing working directory inside profile write scopes; "
+                "commands run as the host user."
+            )
+        ),
+    ],
+    timeout_s: Annotated[
+        float,
+        Field(
+            gt=0,
+            le=300,
+            description=(
+                "Maximum seconds, additionally bounded by the profile tool timeout."
+            ),
+        ),
+    ] = 30,
 ) -> ToolResult:
-    """Run literal argv with host-user access and configured grants."""
+    """Run literal argv with host-user access and configured grants.
+
+    Use only when no granted domain tool covers the task. Do not use shell to
+    bypass a domain error or discover runtime configuration or credentials."""
     return await run_process(ctx, argv, directory, timeout_s)
 
 
 @tool(name="shell.run", profiles=["*"], writes=["filesystem", "shell.exec"])
 async def run(
-    ctx: ToolContext, command: str, directory: str, timeout_s: float = 30
+    ctx: ToolContext,
+    command: Annotated[
+        str,
+        Field(
+            description=(
+                "Nonempty /bin/sh script; use shell.exec when shell syntax "
+                "is unnecessary."
+            )
+        ),
+    ],
+    directory: Annotated[
+        str,
+        Field(
+            description=(
+                "Existing working directory inside profile write scopes; "
+                "commands run as the host user."
+            )
+        ),
+    ],
+    timeout_s: Annotated[
+        float,
+        Field(
+            gt=0,
+            le=300,
+            description=(
+                "Maximum seconds, additionally bounded by the profile tool timeout."
+            ),
+        ),
+    ] = 30,
 ) -> ToolResult:
-    """Run a /bin/sh script with host-user access and configured grants."""
+    """Run a /bin/sh script with host-user access and configured grants.
+
+    Use shell.exec for literal argv; use this for shell syntax. Use only when no
+    granted domain tool covers the task. Do not bypass domain errors or discover
+    runtime configuration or credentials."""
     if not command.strip():
         raise ToolError("Shell script must be nonempty")
     return await run_process(ctx, ["/bin/sh", "-c", command], directory, timeout_s)

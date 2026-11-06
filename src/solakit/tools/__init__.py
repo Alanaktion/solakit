@@ -338,6 +338,26 @@ class Registry:
                 message = "Tool timed out"
             elif isinstance(exc, ToolError):
                 message = str(exc)
+            elif isinstance(exc, ValidationError):
+                # Locations can contain attacker-supplied extra keys. Only expose
+                # declared field names and numeric array positions, never values,
+                # custom validator messages or arbitrary extra-key text.
+                fields = registered.arguments.model_fields
+                issues = []
+                for issue in exc.errors(include_input=False, include_url=False)[:8]:
+                    location = (
+                        ".".join(
+                            str(part)
+                            if isinstance(part, int) or part in fields
+                            else "<argument>"
+                            for part in issue["loc"]
+                        )
+                        or "arguments"
+                    )
+                    issues.append(f"{location}: {issue['type']}")
+                message = "Invalid tool arguments: " + "; ".join(issues)
+            elif isinstance(exc, json.JSONDecodeError):
+                message = "Invalid tool arguments: expected a JSON object"
             else:
                 message = "Invalid tool arguments or capability grant"
             result = ToolResult(content=message, error=True, repairable=repairable)

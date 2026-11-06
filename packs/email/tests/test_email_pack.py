@@ -459,3 +459,88 @@ def test_pack_credentials_are_masked_by_existing_ui_without_changing_history(
             client.get("/api/sessions/test").json()["messages"][0]["content"]
             == password
         )
+
+
+def test_unread_search_criteria_flags_totals_and_schema(fixture):
+    registry, ctx, net, _, _ = fixture
+    schemas = {s["function"]["name"]: s["function"] for s in registry.schemas("inbox")}
+    for schema in schemas.values():
+        assert all(
+            p.get("description") for p in schema["parameters"]["properties"].values()
+        )
+    assert (
+        "Message-ID"
+        in schemas["email.read"]["parameters"]["properties"]["message_id"][
+            "description"
+        ]
+    )
+
+    async def exercise():
+        for query, expected in [
+            ("", (None, "UNSEEN")),
+            ("invoice", ("CHARSET", "UTF-8", "UNSEEN", "TEXT", b'"invoice"')),
+        ]:
+            result = await dispatch(
+                registry,
+                ctx,
+                "email.search",
+                mailbox="personal",
+                query=query,
+                unseen_only=True,
+            )
+            assert not result.error, result.content
+            assert net.commands[-2] == ("SEARCH", expected)
+            assert "FLAGS BODY.PEEK[" in net.commands[-1][1][1]
+            payload = json.loads(result.content.split("\n")[1])
+            assert payload["address"] == "sola@example.invalid"
+            assert payload["folder"] == "INBOX" and payload["total_matching"] == 1
+            assert payload["messages"][0]["seen"] is False
+        net.messages.clear()
+        result = await dispatch(
+            registry, ctx, "email.search", mailbox="personal", unseen_only=True
+        )
+        payload = json.loads(result.content.split("\n")[1])
+        assert payload["total_matching"] == 0 and payload["messages"] == []
+
+    asyncio.run(exercise())
+
+
+def test_mailbox_discovery_is_grant_filtered_and_does_not_resolve_secrets(
+    fixture, monkeypatch
+):
+    registry, ctx, net, settings, password = fixture
+    ctx.config.profiles["inbox"].tools.append("email.list_mailboxes")
+    settings.write_text(
+        settings.read_text() + '\n[mailboxes.hidden]\nimap_host="private.invalid"\n'
+        'username="private"\naddress="hidden@example.invalid"\n'
+        'password={env="MISSING"}\n'
+    )
+    monkeypatch.delenv("PACK_MAIL_PASSWORD")
+    result = asyncio.run(dispatch(registry, ctx, "email.list_mailboxes"))
+    assert not result.error, result.content
+    payload = json.loads(result.content.split("\n")[1])
+    assert payload == [
+        {
+            "alias": "personal",
+            "address": "sola@example.invalid",
+            "folder": "INBOX",
+            "actions": ["read", "reply"],
+        }
+    ]
+    assert password not in result.content and "imap.example" not in result.content
+    assert net.imap_connections == 0
+    ctx.config.profiles["inbox"].capabilities = []
+    result = asyncio.run(dispatch(registry, ctx, "email.list_mailboxes"))
+    assert json.loads(result.content.split("\n")[1]) == []
+
+
+def test_fetch_reports_seen_flag():
+    class Client:
+        def uid(self, *args):
+            return "OK", [
+                (b"1 (FLAGS (\\Seen) BODY[] {18}", b"Subject: test\n\n"),
+                b")",
+            ]
+
+    _, seen = mail.fetch(Client(), "1", 1000, headers=True, with_flags=True)
+    assert seen is True

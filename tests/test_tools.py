@@ -220,3 +220,57 @@ def test_bounded_file_truncation_does_not_invent_a_total(config, tmp_path):
     assert logged["output_observed_chars"] == 20001
     assert logged["omitted_chars"] is None
     assert logged["omitted_chars_min"] == minimum
+
+
+def test_argument_errors_teach_without_echoing_submitted_values(config):
+    config.enabled_tools = ["files"]
+    config.profiles["interactive"] = Profile(tools=["files.list"])
+    registry, ctx = Registry(config), context(config)
+
+    async def exercise():
+        result = await registry.dispatch(
+            "files.list",
+            json.dumps(
+                {"limit": "private-value", "private-extra-key": "private-value"}
+            ),
+            ctx,
+        )
+        assert result.error and result.repairable
+        assert "path: missing" in result.content
+        assert "limit: int_type" in result.content
+        assert "extra_forbidden" in result.content
+        assert "private" not in result.content
+        result = await registry.dispatch("files.list", "{private-invalid-json", ctx)
+        assert result.repairable and "expected a JSON object" in result.content
+        assert "private" not in result.content
+
+    asyncio.run(exercise())
+
+
+def test_generic_schema_routing_and_parameter_guidance(config):
+    config.enabled_tools = ["files", "memory", "shell", "runtime"]
+    config.profiles["interactive"] = Profile(
+        tools=[
+            "files.read",
+            "files.list",
+            "memory.search",
+            "memory.read",
+            "shell.exec",
+            "shell.run",
+            "runtime.status",
+        ],
+        write_scopes=["path:/tmp"],
+        capabilities=["shell.exec"],
+    )
+    schemas = {
+        item["function"]["name"]: item["function"]
+        for item in Registry(config).schemas("interactive")
+    }
+    for schema in schemas.values():
+        assert all(
+            field.get("description")
+            for field in schema["parameters"]["properties"].values()
+        )
+    for name in ("files.read", "files.list", "shell.exec", "shell.run"):
+        assert "domain" in schemas[name]["description"]
+    assert "sessions.search" in schemas["memory.search"]["description"]

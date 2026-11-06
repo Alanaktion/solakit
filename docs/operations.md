@@ -425,3 +425,13 @@ for letters/mailboxes; core config only loads modules and grants tools/scopes.
 Scheduled jobs can opt into `sub_session = true` for fresh child sessions with
 shared memory and final-only channel delivery. Configure this in the job form,
 API or chat tools; see [job management](operations/jobs.md).
+
+Tool selection contracts: schemas describe tool purpose and argument semantics;
+filesystem and shell tools direct models to granted domain tools first. Validation
+errors expose declared field paths and error kinds without submitted values or
+arbitrary extra keys. Email resource discovery is the explicitly granted pack tool
+`email.list_mailboxes`; it exposes only granted aliases, addresses, folders and
+actions, with no connection or credential resolution. `email.search` supports
+`unseen_only`, returns seen state and total matches, and preserves unread state.
+Use a narrow report-only inbox profile and name aliases in scheduled tasks; see
+[email pack guidance](../packs/email/README.md).

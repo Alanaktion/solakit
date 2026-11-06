@@ -1182,3 +1182,13 @@ transcripts, recovers runs, rebuilds the index or contacts model/memory backends
 Unavailable indexes and invalid input become tool errors. Registry profile grants,
 timeouts, output truncation and redacted tool logs apply normally. The operator
 API and offline CLI retain their existing unrestricted single-operator behavior.
+
+Tool selection contracts: schemas describe tool purpose and argument semantics;
+filesystem and shell tools direct models to granted domain tools first. Validation
+errors expose declared field paths and error kinds without submitted values or
+arbitrary extra keys. Email resource discovery is the explicitly granted pack tool
+`email.list_mailboxes`; it exposes only granted aliases, addresses, folders and
+actions, with no connection or credential resolution. `email.search` supports
+`unseen_only`, returns seen state and total matches, and preserves unread state.
+Use a narrow report-only inbox profile and name aliases in scheduled tasks; see
+[email pack guidance](packs/email/README.md).

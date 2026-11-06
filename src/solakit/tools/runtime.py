@@ -7,5 +7,7 @@ from solakit.tools import ToolContext, ToolResult, tool
 
 @tool(name="runtime.status", profiles=["*"])
 async def status(ctx: ToolContext) -> ToolResult:
-    """Report live model, channels, jobs and tools granted to this profile."""
+    """Report live model, channels, jobs and tools granted to this profile.
+
+    Diagnostic status only; use domain discovery tools for pack resource aliases."""
     return ToolResult(content=json.dumps(ctx.runtime(), ensure_ascii=False))

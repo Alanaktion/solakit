@@ -43,6 +43,7 @@ async def run(
 ) -> ToolResult:
     """Run a self-contained brief in a fresh ephemeral child session.
 
+    Complete simple operations directly in one or two calls rather than delegating.
     Only delegation.allowed_profiles may be used. Supply session to continue an
     idle, unarchived child of this conversation. The child sees its own history,
     not this conversation; return includes child session/run IDs, status and only
