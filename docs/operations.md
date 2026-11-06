@@ -1,5 +1,11 @@
 # Runtime operations
 
+The `/operations` page keeps job schedules, state, timing, and actions visible.
+Expand **Job details** for the task, session binding, and labeled tool settings;
+profile-drift warnings remain visible without expanding. Narrow screens stack
+records so actions remain accessible without horizontal scrolling. Channels show
+adapter-reported connection state separately from whether they are enabled.
+
 ## API and execution
 
 Create `POST /api/sessions` with `{"id":"web-main","default_profile":"interactive"}`.

@@ -27,16 +27,22 @@ async function operations(page) {
     .getByRole('button', {name: 'Run now'}).isDisabled());
   assert.match(await page.locator('tr').filter({hasText: 'disabled-channel'}).innerText(),
     /disabled/);
+  const details = row.locator('.operation-details');
+  await details.locator('summary').click();
+  assert.deepEqual(await details.locator('dt').allTextContents(),
+    ['Task', 'Profile', 'Session binding', 'Tools', 'Disclosure', 'Residents']);
+  assert(await details.locator('.operation-task').isVisible());
+  await noOverflow(page);
+  await page.screenshot({path: path.join(output, `operations-details-${page.qaLabel}.png`), fullPage: true});
+  await details.locator('summary').click();
   const timestamp = row.locator('time');
   assert.match(await timestamp.getAttribute('title'), /UTC|[+-]|Z/);
   assert.match(await timestamp.innerText(), /GMT|BST/);
   await noOverflow(page);
   if (page.viewportSize().width < 640) {
-    const scroller = page.locator('.table-scroll').first();
-    assert(await scroller.evaluate(el => el.scrollWidth > el.clientWidth));
-    await scroller.evaluate(el => { el.scrollLeft = el.scrollWidth; });
-    assert(await scroller.evaluate(el => el.scrollLeft > 0));
-    await scroller.evaluate(el => { el.scrollLeft = 0; });
+    const bounds = await row.getByRole('button', {name: 'Run now'}).boundingBox();
+    assert(bounds.x >= 0 && bounds.x + bounds.width <= page.viewportSize().width);
+    assert(await page.locator('.table-scroll').first().evaluate(el => el.scrollWidth <= el.clientWidth + 1));
   }
   await page.screenshot({path: path.join(output, `12-${page.qaLabel}.png`), fullPage: true});
   await row.getByRole('button', {name: 'Run now'}).click();

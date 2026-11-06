@@ -440,3 +440,50 @@ pre { overflow-x: auto; font-size: 11px; line-height: 1.55; color: var(--ink); }
 .data-table small.metadata-warning { color: var(--warning); }
 
 .resident-controls { display: flex; flex-direction: column; gap: 12px; }
+
+/* Operations keeps schedules/actions visible and configuration in labeled rows. */
+.operations-page > .page-heading > .action-group { flex: 0 0 auto; }
+.operations-panel .table-scroll::before { display: none; }
+.operations-layout { display: flex; flex-direction: column; gap: 20px; }
+.operations-panel { min-width: 0; overflow: hidden; }
+.operations-section-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 16px; }
+.operations-section-heading > div:first-child { flex: 1 1 260px; min-width: 0; }
+.operations-section-heading h2 { display: flex; align-items: baseline; gap: 10px; margin-bottom: 4px; }
+.operations-section-heading p { margin: 0; }
+.operations-table { table-layout: fixed; min-width: 0; }
+.operations-table th { background: var(--surface-soft); border-top: 1px solid var(--line); }
+.operations-table td { padding: 14px 16px; line-height: 1.6; }
+.jobs-table th:nth-child(1) { width: 34%; }
+.jobs-table th:nth-child(2) { width: 15%; }
+.jobs-table th:nth-child(3) { width: 25%; }
+.jobs-table th:nth-child(4) { width: 26%; }
+.operation-name { display: block; font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+.operation-schedule { margin-top: 4px; }
+.operation-meta { display: block; margin-top: 4px; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+.operation-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
+.operation-attention, .operation-warning { color: var(--warning); }
+.operation-warning { font-size: 11px; margin: 8px 0 0; }
+.operation-label { display: block; color: var(--muted); font-size: 10px; margin-bottom: 4px; }
+.operation-last-run { margin-top: 12px; }
+.operation-run-link { font-family: var(--font-meta); font-size: 11px; }
+.operation-details { margin-top: 6px; }
+.operation-details > summary { color: var(--accent); font-size: 11px; }
+.operation-facts { margin: 0 0 8px; font-size: 11px; }
+.operation-facts > div { display: grid; grid-template-columns: 85px minmax(0, 1fr); gap: 8px; padding: 7px 0; border-top: 1px solid var(--line); }
+.operation-facts dt { color: var(--muted); }
+.operation-facts dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.operation-task { white-space: pre-wrap; max-height: 16rem; overflow-y: auto; }
+.operations-note { border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; line-height: 1.7; padding: 12px 16px; background: var(--surface-soft); }
+.operations-empty { text-align: center; color: var(--muted); padding: 28px 16px !important; }
+.operations-empty h3 { color: var(--ink); font-size: 14px; font-weight: 500; margin-bottom: 6px; }
+.operations-empty p { margin: 0; }
+@media (max-width: 850px) {
+  .operations-table, .operations-table tbody, .operations-table tr, .operations-table td { display: block; width: 100%; }
+  .operations-table thead { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); }
+  .operations-table tr { border-top: 1px solid var(--line); padding: 10px 16px; }
+  .operations-table td { border: 0; padding: 6px 0; }
+  .operations-table td[data-label]::before { content: attr(data-label); display: block; color: var(--muted); font-size: 10px; margin-bottom: 4px; }
+  .operations-table td:first-child::before { display: none; }
+  .operation-last-run { margin-top: 8px; }
+  .operations-table .operations-empty { padding: 16px 0 !important; }
+}

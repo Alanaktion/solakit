@@ -26,7 +26,8 @@ it leaves its isolated `solakit-browser-*` temporary data for inspection.
 
 Phase 12: light/dark × 1440×1000 / 390×844, browser timezone Europe/London versus
 America/Denver schedules, pause/resume/run-now feedback, disabled controls and
-channel state, table scrolling, page overflow and browser script errors.
+channel state, stacked mobile job/channel records with reachable actions, page overflow and
+browser script errors.
 
 Phase 13: run `check.cjs 13` with the same setup for archive confirmation,
 numbered history navigation, preserved messages, read-only composer absence and
