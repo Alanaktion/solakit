@@ -20,6 +20,7 @@ from solakit.core.config import (
     Job,
     MemoryConfig,
     PathsConfig,
+    Profile,
     SecretRef,
 )
 from solakit.core.media import Media
@@ -77,6 +78,8 @@ config = Config(
 
 config.profiles["interactive"].context_budget = 1_000_000
 config.profiles["interactive"].tools = ["runtime.status", "memory.remember"]
+config.profiles["status-only"] = Profile(tools=["runtime.status"])
+(root / "fragments/profiles/status-only.md").write_text("Scratch status-only job mode.")
 
 
 class BrowserStream(httpx.AsyncByteStream):
@@ -432,6 +435,13 @@ async def scratch_ux_history(count: int = 500):
         "first": f"{identity}-0000",
         "last": f"{identity}-{count - 1:04}",
     }
+
+
+@app.post("/qa/tool-grants")
+def scratch_tool_grants(trim: bool = False):
+    # Deliberate config drift in a mock-only fixture, never a production API.
+    config.profiles["status-only"].tools = [] if trim else ["runtime.status"]
+    return {"trimmed": trim}
 
 
 if __name__ == "__main__":

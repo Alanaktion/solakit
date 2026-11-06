@@ -137,6 +137,9 @@ cron = "0 19 * * *"
 timezone = "America/Denver"
 profile = "interactive"
 task = "Review the configured inbox on {date}."
+# Omit tools to inherit profile grants; an explicit list only narrows them.
+# tools = [] # No model-callable tools (for example, a pure announcement).
+# tools = ["runtime.status"] # Must already be granted by this profile.
 bind_session = "discord-pilot"
 sub_session = false # Fresh child with inherited memory; only final delivery reaches channel.
 polling = true

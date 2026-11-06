@@ -1002,6 +1002,16 @@ class Store:
         record["prompt"] = (
             prompt.read_bytes().decode("utf-8") if prompt.exists() else None
         )
+        schemas = self._path("runs", run_id, ".tool-schemas.json")
+        record["tool_schemas"] = None
+        if record.get("tool_schema_sha256"):
+            try:
+                payload = schemas.read_bytes()
+            except FileNotFoundError as exc:
+                raise self._corruption(schemas, "missing_tool_schemas") from exc
+            if hashlib.sha256(payload).hexdigest() != record["tool_schema_sha256"]:
+                raise self._corruption(schemas, "tool_schema_hash_mismatch")
+            record["tool_schemas"] = json.loads(payload)
         record["messages"] = [
             m for m in self.all_messages(record["session"]) if m["run_id"] == run_id
         ]
@@ -1072,7 +1082,17 @@ class Store:
     def write_prompt(self, run_id: str, prompt: str) -> str:
         payload = prompt.encode("utf-8")
         # Never redact prompt bytes: this is the exact model input for audit.
-        with self._path("runs", run_id, ".prompt.txt").open("xb") as stream:
+        return self._write_run_input(run_id, ".prompt.txt", payload)
+
+    def write_tool_schemas(self, run_id: str, schemas: list[dict]) -> str:
+        # Input evidence, not diagnostics: preserve schema property names/types.
+        payload = json.dumps(schemas, ensure_ascii=False, sort_keys=True).encode(
+            "utf-8"
+        )
+        return self._write_run_input(run_id, ".tool-schemas.json", payload)
+
+    def _write_run_input(self, run_id: str, suffix: str, payload: bytes) -> str:
+        with self._path("runs", run_id, suffix).open("xb") as stream:
             stream.write(payload)
             stream.flush()
             os.fsync(stream.fileno())

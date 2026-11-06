@@ -97,6 +97,14 @@ Read `SPEC.md` for behavioral contracts, `README.md` for an introduction,
   Jobs choose either cron or a one-time run_at instant. Persist consumed state
   before one-time dispatch; restart/enable/task edits must never replay it.
   Only a changed future run_at rearms it. Unattempted overdue jobs catch up once.
+  Job tools=None inherits profile grants; an exact list (including []) narrows
+  schemas and dispatch through the generic per-run ceiling. Never clone/replace
+  profile capabilities, scopes, budgets or fragments for a job. Validate saves;
+  persisted profile drift shrinks exposure and remains visible in jobs inspection.
+  effective_tools is admission evidence; immutable *.tool-schemas.json plus its
+  run hash preserves schema inputs. Historical prompt inspection uses saved inputs,
+  never today's profile grants or modules. Keep schema definitions out of recursive
+  diagnostic key redaction; UI masks resolved values before JSON encoding.
 - `ui/`: Jinja2 pages, packaged local HTMX/CSS/vanilla JS, opaque in-memory login
   sessions, API-only presentation routes and escaped/redacted transcript views.
   No Node build or CDN. Chat fills the viewport with a desktop session sidebar;

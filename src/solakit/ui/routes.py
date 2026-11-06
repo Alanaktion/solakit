@@ -160,6 +160,24 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
             )
         return data
 
+    def schema_views(schemas):
+        # Schema property names are definitions, not diagnostic credential keys.
+        # Mask resolved values before JSON encoding (including escaped secrets).
+        def masked(value):
+            if isinstance(value, dict):
+                return {redact(key): masked(item) for key, item in value.items()}
+            if isinstance(value, list):
+                return [masked(item) for item in value]
+            return redact(value)
+
+        return [
+            {
+                "name": schema["function"]["name"],
+                "text": json.dumps(masked(schema), ensure_ascii=False, indent=2),
+            }
+            for schema in schemas
+        ]
+
     async def health(request):
         return await api(request, "GET", "/health")
 
@@ -1030,6 +1048,24 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
     async def prompt_page(request: Request):
         if not logged_in(request):
             return login_redirect(request)
+        recorded_run = request.query_params.get("run_id")
+        if recorded_run is not None:
+            try:
+                evidence = await api(
+                    request, "GET", "/api/prompt?" + urlencode({"run_id": recorded_run})
+                )
+                return render(
+                    request,
+                    "prompt.html",
+                    {
+                        "evidence": evidence,
+                        "recorded_run": recorded_run,
+                        "schema_views": schema_views(evidence["tools"]),
+                        "health": await health(request),
+                    },
+                )
+            except APIError as exc:
+                return render(request, "error.html", {"error": exc.detail}, exc.status)
         values = {
             "profile": request.query_params.get("profile", "interactive"),
             "session": request.query_params.get("session", "inspection"),
@@ -1062,6 +1098,7 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
                 "profiles": profiles,
                 "sessions": all_sessions,
                 "evidence": evidence,
+                "schema_views": schema_views(evidence["tools"]) if evidence else [],
                 "error": error,
                 "health": state,
             },
@@ -1180,6 +1217,24 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
                 "run_at": job_local_time(values) if values.get("run_at") else "",
                 "delivery_mode": delivery.get("mode", "automatic"),
                 "delivery_to": delivery.get("to", ""),
+                "tools_mode": "inherit"
+                if values.get("tools") is None
+                else ("none" if values["tools"] == [] else "selected"),
+            }
+        elif identity and "tools_mode" not in values:
+            try:
+                prior = await api(
+                    request, "GET", f"/api/jobs/{quote(identity, safe='')}"
+                )
+            except APIError as exc:
+                return render(request, "error.html", {"error": exc.detail}, exc.status)
+            selected = prior.get("tools")
+            values = {
+                **values,
+                "tools": selected,
+                "tools_mode": "inherit"
+                if selected is None
+                else ("none" if selected == [] else "selected"),
             }
         return render(
             request,
@@ -1188,6 +1243,12 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
                 "identity": identity,
                 "values": values,
                 "options": options,
+                "tool_choices": options["tools"]
+                + [
+                    {"name": name, "profiles": []}
+                    for name in (values.get("tools") or [])
+                    if name not in {t["name"] for t in options["tools"]}
+                ],
                 "session_ids": [session["id"] for session in sessions_data],
                 "health": state,
                 "error": error,
@@ -1216,7 +1277,7 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
     async def save_job_form(request, identity=None):
         values = None
         try:
-            values = await form(request, max_fields=20)
+            values = await form(request, max_fields=280, multiple=("tools",))
             allowed = {
                 "id",
                 "cron",
@@ -1232,6 +1293,8 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
                 "sub_session",
                 "polling",
                 "catch_up",
+                "tools_mode",
+                "tools",
             }
             if set(values) - allowed:
                 raise APIError(422, "Unknown job form fields.")
@@ -1239,6 +1302,15 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
                 key: values.get(key, "")
                 for key in ("timezone", "profile", "task", "bind_session")
             }
+            tools_mode = values.get("tools_mode", "inherit")
+            if tools_mode not in {"inherit", "selected", "none"}:
+                raise APIError(422, "Choose inherited, selected, or no job tools.")
+            if "tools_mode" in values or identity is None:
+                payload["tools"] = (
+                    None
+                    if tools_mode == "inherit"
+                    else (values.get("tools", []) if tools_mode == "selected" else [])
+                )
             schedule_type = values.get("schedule_type", "cron")
             if schedule_type not in {"cron", "once"}:
                 raise APIError(422, "Invalid schedule type.")
@@ -1293,9 +1365,10 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
         except APIError as exc:
             message = (
                 exc.detail
-                if exc.status != 422
+                if exc.status != 422 or exc.detail.startswith("Job tools ")
                 else (
-                    "Check the schedule, date/time, timezone, profile and task fields."
+                    "Check the schedule, date/time, timezone, profile, tools "
+                    "and task fields."
                 )
             )
             return await job_form_page(request, identity, values, message, exc.status)

@@ -4,6 +4,7 @@ import json
 from typing import Any
 
 from solakit.core.config import Job
+from solakit.jobs.schemas import JobToolsError
 from solakit.tools import ToolContext, ToolError, ToolResult, tool
 
 
@@ -61,6 +62,8 @@ async def operation(ctx, name, *args):
         raise ToolError(str(exc)) from exc
     except KeyError as exc:
         raise ToolError("Job not found") from exc
+    except JobToolsError as exc:
+        raise ToolError(str(exc)) from exc
     except ValueError as exc:
         raise ToolError(
             "Invalid job definition, disabled job or scheduler shutting down"
@@ -91,6 +94,7 @@ async def create(
     sub_session: bool = False,
     polling: bool = False,
     catch_up: bool = False,
+    tools: list[str] | None = None,
 ) -> ToolResult:
     """Schedule a recurring (cron) or one-time (run_at) task in this conversation.
 
@@ -108,6 +112,8 @@ async def create(
     only configured final delivery reaches the channel. No parent history is copied.
     catch_up requires polling=true. Other profiles/sessions/delivery require
     jobs.manage.all. A stable ID prevents duplicate creation on retry.
+    tools=null inherits profile tools; tools=[] exposes none; an explicit list
+    must be a subset of profile grants and cannot add capabilities or scopes.
     """
     try:
         job = Job(
@@ -123,6 +129,7 @@ async def create(
             sub_session=sub_session,
             polling=polling,
             catch_up=catch_up,
+            tools=tools,
         )
     except ValueError as exc:
         raise ToolError("Invalid job definition") from exc
@@ -134,8 +141,9 @@ async def create(
 @tool(name="jobs.update", profiles=["*"], writes=["jobs.manage"])
 async def update(ctx: ToolContext, id: str, changes: dict[str, Any]) -> ToolResult:
     """Edit job fields (cron, run_at, timezone, profile, task, bind_session, deliver,
-    enabled, sub_session, polling, catch_up). ID is immutable;
+    enabled, sub_session, polling, catch_up, tools). ID is immutable;
     use deliver=null to clear it.
+    tools=null restores profile inheritance; tools=[] disables all tools.
     Active jobs must finish before editing. Scheduling changes reset next fire.
     To switch schedule types, clear the old field with null and set the new one.
     A new future run_at rearms a one-time job; other edits do not.

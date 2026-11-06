@@ -5,6 +5,10 @@ from pydantic import ConfigDict, Field, create_model
 from solakit.core.config import Job, StrictModel
 
 
+class JobToolsError(ValueError):
+    """A job requests tools outside its profile's current grants."""
+
+
 class StrictUpdate(StrictModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 

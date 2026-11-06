@@ -2,7 +2,7 @@
 
 Use **Operations → New job** to create a recurring or one-time task. Choose
 **Recurring** for cron or **One time** for a date and time. The form includes
-timezone, execution profile, task, session/channel binding, delivery and polling
+timezone, execution profile, task, enabled tools, session/channel binding, delivery and polling
 options. Edit or delete a job from its row; deletion asks for confirmation and
 keeps past runs and conversations. New jobs default to disabled. Enable one when
 ready, or pause/resume future scheduled firings without changing its enabled flag.
@@ -16,6 +16,44 @@ later file edits do not replace managed definitions, and deleted IDs retain a
 tombstone so stale TOML cannot resurrect them. Remove imported TOML job blocks
 when convenient; keep profiles, channels and tool/capability grants in config.
 An explicit new creation may reuse a deleted ID. Its old run evidence stays intact.
+
+## Tools for a job
+
+Choose **Inherit profile tools**, **Choose tools**, or **No tools** in the job
+form. Selected names must already be granted by the chosen profile. Changing
+the profile revalidates the selection; an invalid selection remains visible so
+you can remove it. No tools is valid for a pure announcement, and configured
+scheduler delivery still works without a model-callable delivery tool.
+
+The API field `tools` has three states:
+
+| Value | Exposure |
+| --- | --- |
+| omitted or `null` | Inherit the profile's current effective tools |
+| `["runtime.status"]` | Only those listed names that the profile grants |
+| `[]` | No tools; model requests use `tool_choice: none` |
+
+For example, `PATCH /api/jobs/{id}` with `{"tools": ["runtime.status"]}` narrows
+an already granted tool set. `{"tools": null}` restores inheritance. Names outside
+the profile's grants are rejected at save time; loading a module alone is not a
+grant, and `"*"` is not a job tool name. Capabilities, filesystem scopes, budgets,
+timeouts and prompt fragments remain profile-owned. A job list cannot grant
+shell, writing or other authority its profile lacks. Both advertised schemas and
+dispatch enforce the job restriction, including when a model guesses an excluded
+name. A changed profile can shrink future runs; Operations shows excluded names
+and job inspection returns `unavailable_tools` until you repair the selection.
+
+The run's `effective_tools` records its admission ceiling, refreshed against grants
+when execution starts. Run evidence links **Inspect recorded prompt and tool
+schemas**. This uses saved input evidence, so later job/profile/module edits do
+not alter what an earlier run was given. `tool_schema_sha256` verifies the private
+`runs/*.tool-schemas.json` file; include these files in evidence backups. Older
+runs without a snapshot are marked not recorded and cannot reproduce tool schemas.
+Legacy TOML jobs omit `tools` to inherit, or use an explicit array such as
+`tools = []`. New imports validate grants; existing imported definitions are
+preserved across profile trims. API and chat create/update commands use the same
+validation, including profile changes. Old UI edit submissions that omit the new
+field preserve the existing policy.
 
 ## Operator API
 
@@ -32,7 +70,7 @@ All routes use the existing Cookie or Bearer operator authentication.
 | `POST /api/jobs/{id}/run?wait=false` | Queue once and return HTTP 202 with accepted job state |
 | `POST /api/jobs/{id}/run?admission=true` | Return HTTP 202 with the durable run receipt before generation; used by UI Run now |
 | `POST /api/jobs/{id}/pause` or `/resume` | Control future firings |
-| `GET /api/job-options` | Configured default timezone, schedulable profiles and channels |
+| `GET /api/job-options` | Configured default timezone, schedulable profiles, channels and tool choices |
 
 Example create body:
 

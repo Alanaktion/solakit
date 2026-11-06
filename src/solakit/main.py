@@ -328,9 +328,14 @@ def create_app(
             "timezone": cfg.timezone,
             "profiles": sorted(p for p in cfg.profiles if p != "maintenance"),
             "channels": [c.id for c in cfg.channels],
+            "tools": app.state.registry.catalog()["tools"],
         }
 
     def job_error(exc):
+        from solakit.jobs.schemas import JobToolsError
+
+        if isinstance(exc, JobToolsError):
+            return HTTPException(422, app.state.redactor.redact(str(exc)))
         if isinstance(exc, KeyError):
             return HTTPException(404, "Job not found")
         if isinstance(exc, (FileExistsError, RuntimeError)):
@@ -408,7 +413,25 @@ def create_app(
         recall: str | None = None,
         at: datetime | None = None,
         origin: str = "api",
+        run_id: str | None = None,
     ) -> dict:
+        if run_id is not None:
+            try:
+                record = await asyncio.to_thread(app.state.store.run, run_id)
+            except (FileNotFoundError, ValueError) as exc:
+                raise HTTPException(404, "Run not found") from exc
+            if record.get("prompt") is None or record.get("tool_schemas") is None:
+                raise HTTPException(
+                    409, "Prompt or tool schema snapshot was not recorded for this run"
+                )
+            return {
+                **inspection(record["prompt"], record["tool_schemas"]),
+                "run_id": run_id,
+                "profile": record["profile"],
+                "session": record["session"],
+                "effective_tools": record["effective_tools"],
+                "tool_schema_sha256": record["tool_schema_sha256"],
+            }
         try:
             result = await asyncio.to_thread(
                 read_prompt,

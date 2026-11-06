@@ -395,3 +395,11 @@ pre { overflow-x: auto; font-size: 11px; line-height: 1.55; color: var(--ink); }
 @media (max-width: 640px) {
   .header-status .status-list { min-height: 52px; align-content: center; }
 }
+
+/* Variable tool choices are a wrapping line inside the designed job-form tracks. */
+.job-tools { min-width: 0; border: 1px solid var(--line); border-radius: 7px; padding: 12px; }
+.job-tools legend { font-size: 12px; padding: 0 6px; }
+.job-tools-list { display: flex; flex-wrap: wrap; gap: 8px 16px; max-height: 20rem; overflow-y: auto; }
+.job-tools-list label { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; max-width: 100%; margin: 0; }
+.job-tools-list label > span, .job-tools-list small { min-width: 0; overflow-wrap: anywhere; }
+.data-table small.metadata-warning { color: var(--warning); }

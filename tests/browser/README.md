@@ -115,3 +115,12 @@ archived chat, cleanup review/result/undo, login, and empty search/session lists
 Fixtures and POSTs use scratch data only. Native checkboxes retain their own
 size inside 44px labels. This checks rendered geometry in Chromium, not CSS
 class strings; review screenshots alongside the assertions.
+
+
+Job tool policies: run `node tests/browser/job-tools.cjs` with the scratch server
+for light/dark at 320, 390, 768 and 1440px. It checks inherit/selected/none form
+round-trips, selection retention on validation errors, profile-change validation,
+profile-drift warnings with narrowed execution, and historical prompt/schema
+inspection. The fixture's status-only profile and `/qa/tool-grants` control exist
+only in the isolated test server. Model/memory transports are mocked; screenshots,
+page overflow and script errors are checked separately from Python/API tests.

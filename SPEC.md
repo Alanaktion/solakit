@@ -531,6 +531,34 @@ defaults to disabled; recurrence/enabled changes reset recurring next fire, whil
 one-time protection follows §7.1. Accepted mutations
 and manual admission finish durable publication before propagating cancellation.
 
+Jobs accept `tools: list[str] | null` as a narrowing-only override. Omission/null
+inherits the profile's effective tools; `[]` exposes none. An explicit list is
+intersected with loaded, profile-permitted grants (including expansion of a
+profile's `"*"`). Job lists contain exact names, not wildcard grants. Create,
+update (including profile changes), and first TOML import reject names outside
+those grants with HTTP 422 / a clear job-tool validation error. Restoring persisted
+jobs after a profile trim retains their definitions and computes the smaller
+intersection. Job inspection includes `effective_tools` and `unavailable_tools`;
+Operations displays drift warnings rather than silently rewriting the list.
+
+The execution layer admits a per-run name ceiling and re-intersects it at start.
+Both model schema exposure and registry dispatch enforce that ceiling. Profile
+capability/scope checks still run at dispatch. Jobs cannot replace capabilities,
+read/write scopes, step/context/token/time limits, or the profile prompt fragment.
+The same path applies to scheduled cron, one-time runs, and manual triggers;
+job edits do not change already admitted work or rearm consumed one-time jobs.
+
+New runs snapshot `effective_tools` (legacy records remain unknown/null). Before
+generation, exact tool schema definitions are saved as immutable, private
+`runs/<id>.tool-schemas.json` with `tool_schema_sha256` on the run. This is model
+input evidence, like the saved prompt, not diagnostic metadata. Full run reads
+verify the schema hash. `GET /api/prompt?run_id=<id>` returns the saved prompt and
+schemas without consulting current profiles, tool modules, or prompt files; old
+or not-yet-recorded inputs return 409 rather than inventing historical grants.
+The UI links this inspection from run evidence and masks resolved credential
+values while preserving schema property definitions. `GET /api/job-options`
+includes loaded tool choices and their profile grants for the job form.
+
 The scheduler starts even with no jobs, so API-created jobs work without restart.
 Definitions use the authoritative `job_definitions` SQLite table; derived-index
 rebuilds preserve it. Deleted IDs retain tombstones to prevent stale TOML imports.
@@ -962,6 +990,7 @@ Code and data are separate trees. Data layout on her machine:
     <run-id>.json            # one record per run: profile, session, origin,
                              #   prompt sha256, tokens, steps, status, timing
     <run-id>.prompt.txt      # exact prompt bytes for that run
+    <run-id>.tool-schemas.json # exact tool definitions, hash on run metadata
     <run-id>.tools.jsonl     # one line per tool call
 ```
 

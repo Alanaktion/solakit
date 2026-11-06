@@ -168,6 +168,7 @@ class Job(StrictModel):
     run_at: str | None = None
     timezone: str = "America/Denver"
     profile: str
+    tools: list[str] | None = Field(default=None, max_length=256)
     task: str
     bind_session: str
     sub_session: bool = False

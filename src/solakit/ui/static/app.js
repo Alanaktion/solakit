@@ -17,6 +17,21 @@
       });
     }
   }
+  function jobTools() {
+    const mode = document.getElementById("job-tools-mode");
+    const profile = document.getElementById("job-profile");
+    const options = document.getElementById("job-tool-options");
+    if (!mode || !profile || !options) return;
+    const selected = mode.value === "selected";
+    options.hidden = !selected;
+    options.querySelectorAll("[data-job-tool]").forEach(label => {
+      const input = label.querySelector("input");
+      const granted = label.dataset.profiles.split(" ").includes(profile.value);
+      label.hidden = !granted && !input.checked;
+      input.disabled = !selected || (!granted && !input.checked);
+      label.querySelector("[data-tool-warning]").hidden = granted || !input.checked;
+    });
+  }
   document.addEventListener("change", event => {
     if (event.target.id === "select-session-page") {
       document.querySelectorAll('input[name="session_ids"]').forEach(input => {
@@ -24,6 +39,7 @@
       });
     }
     if (event.target.id === "job-schedule-kind") jobSchedule();
+    if (["job-tools-mode", "job-profile"].includes(event.target.id) || event.target.name === "tools") jobTools();
   });
   function dates(root = document) {
     root.querySelectorAll("time[datetime]").forEach((node) => {
@@ -291,5 +307,6 @@
   });
   dates();
   jobSchedule();
+  jobTools();
   if (!globalThis.location?.hash) scrollConversation();
 })();

@@ -65,6 +65,7 @@ class ToolContext:
     job_manager: Any = None
     nested_submit: Any = None
     stage_memory: Any = None
+    tool_allowlist: frozenset[str] | None = None
 
     @property
     def fs(self):
@@ -85,7 +86,17 @@ class ToolContext:
     def runtime(self) -> dict:
         if self.runtime_provider is None:
             raise ToolError("Live runtime status is not available in this context")
-        return self.runtime_provider(self.profile)
+        status = self.runtime_provider(self.profile)
+        if self.tool_allowlist is not None and "granted_tools" in status:
+            status = {
+                **status,
+                "granted_tools": [
+                    name
+                    for name in status["granted_tools"]
+                    if name in self.tool_allowlist
+                ],
+            }
+        return status
 
     def path(self, path: str, *, write: bool = False) -> Path:
         """Resolve symlinks and enforce the actual path against explicit roots."""
@@ -288,11 +299,20 @@ class Registry:
             ],
         }
 
-    def schemas(self, profile: str) -> list[dict]:
+    def effective_tools(
+        self, profile: str, tools: list[str] | None = None
+    ) -> list[str]:
+        """A task may narrow profile grants, never replace or expand them."""
+        selected = None if tools is None else set(tools)
         return [
-            self.tools[name].schema()
+            name
             for name in self.tool_names(profile)
-            if self.allowed(name, profile)
+            if self.allowed(name, profile) and (selected is None or name in selected)
+        ]
+
+    def schemas(self, profile: str, tools: list[str] | None = None) -> list[dict]:
+        return [
+            self.tools[name].schema() for name in self.effective_tools(profile, tools)
         ]
 
     async def dispatch(self, name: str, arguments: str, ctx: ToolContext) -> ToolResult:
@@ -302,6 +322,9 @@ class Registry:
         detail = None
         repairable = False
         try:
+            if ctx.tool_allowlist is not None and name not in ctx.tool_allowlist:
+                repairable = True
+                raise ToolError("Tool is not permitted for this run")
             if not self.allowed(name, ctx.profile):
                 repairable = True
                 raise ToolError("Tool is not permitted in this profile")

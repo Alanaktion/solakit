@@ -21,7 +21,7 @@ from solakit.core.io import durable
 from solakit.core.schemas import Origin, Run, RunStatus, Session, now
 from solakit.core.store import safe_id
 from solakit.jobs.definitions import Definitions
-from solakit.jobs.schemas import JobUpdate
+from solakit.jobs.schemas import JobToolsError, JobUpdate
 
 
 def render_task(job: Job, at: datetime) -> str:
@@ -83,9 +83,13 @@ class Jobs:
         self.closing = False
 
     async def initialize(self):
-        loaded = await durable(self.definitions.load, self.config.jobs)
+        loaded = await durable(
+            self.definitions.load, self.config.jobs, validate=self.validate_job
+        )
         for job in loaded:
-            self.validate_job(job)
+            # Persisted jobs may outlive a profile edit. Retain the definition,
+            # expose drift, and intersect at execution rather than widen access.
+            self.validate_job(job, check_tools=False)
             self.jobs[job.id] = job
             self.triggers[job.id] = trigger_for(job)
             schedule = schedule_key(job)
@@ -282,6 +286,9 @@ class Jobs:
                 run = Run(
                     session=session.id,
                     profile=job.profile,
+                    effective_tools=self.execution.registry.effective_tools(
+                        job.profile, job.tools
+                    ),
                     origin=Origin(channel="job", job=job.id),
                     input_message=render_task(job, at),
                     status=RunStatus.cancelled,
@@ -295,6 +302,7 @@ class Jobs:
                 session.id,
                 render_task(job, at),
                 profile=job.profile,
+                tools=job.tools,
                 origin=Origin(channel="job", job=job.id),
             )
             admitted.set_result(pending.run.model_dump(mode="json"))
@@ -377,9 +385,12 @@ class Jobs:
 
     def get(self, job_id):
         job = self.job(job_id)
+        effective = self.execution.registry.effective_tools(job.profile, job.tools)
         return {
             **job.model_dump(mode="json"),
             **self.states[job_id].model_dump(mode="json"),
+            "effective_tools": effective,
+            "unavailable_tools": sorted(set(job.tools or []) - set(effective)),
         }
 
     def status(self, *, definitions=False):
@@ -396,7 +407,7 @@ class Jobs:
             for job in self.jobs.values()
         ]
 
-    def validate_job(self, job):
+    def validate_job(self, job, *, check_tools=True):
         safe_id(job.id)
         if not any(c.id == job.bind_session for c in self.config.channels):
             safe_id(job.bind_session)
@@ -404,6 +415,14 @@ class Jobs:
             raise ValueError("Job references unknown profile")
         if job.profile == "maintenance":
             raise ValueError("Maintenance cannot be scheduled")
+        if check_tools and job.tools is not None:
+            granted = set(self.execution.registry.effective_tools(job.profile))
+            unavailable = sorted(set(job.tools) - granted)
+            if unavailable:
+                names = ", ".join(name[:128] for name in unavailable[:8])
+                raise JobToolsError(
+                    f"Job tools not granted by profile {job.profile}: {names}"
+                )
         if (
             job.deliver
             and job.deliver.mode != "silent"

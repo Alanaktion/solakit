@@ -95,6 +95,8 @@ class Run(BaseModel):
     created_at: datetime = Field(default_factory=now)
     finished_at: datetime | None = None
     prompt_sha256: str | None = None
+    effective_tools: list[str] | None = None
+    tool_schema_sha256: str | None = None
     tokens: dict[str, int] | None = None
     steps: int = 0
     context_skipped_messages: int = 0

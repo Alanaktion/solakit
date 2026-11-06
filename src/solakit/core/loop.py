@@ -78,6 +78,7 @@ class Execution:
         origin: Origin | None = None,
         stream: bool = False,
         images: list[ImageRef] | None = None,
+        tools: list[str] | None = None,
     ) -> Pending:
         # Admission (durable run + queue ownership) is indivisible even if an
         # asynchronous HTTP client disconnects while the run record is written.
@@ -89,6 +90,7 @@ class Execution:
                 origin=origin,
                 stream=stream,
                 images=images,
+                tools=tools,
             )
         )
         try:
@@ -106,6 +108,7 @@ class Execution:
         origin: Origin | None = None,
         stream: bool = False,
         images: list[ImageRef] | None = None,
+        tools: list[str] | None = None,
         nested_parent: Pending | None = None,
         nested_task: asyncio.Task | None = None,
     ) -> Pending:
@@ -142,6 +145,7 @@ class Execution:
                 profile=profile,
                 input_message=text,
                 input_images=images or [],
+                effective_tools=self.registry.effective_tools(profile, tools),
                 origin=origin or Origin(),
             )
             await durable(self.store.save_run, run)
@@ -178,6 +182,7 @@ class Execution:
         origin: Origin | None = None,
         stream: bool = False,
         images: list[ImageRef] | None = None,
+        tools: list[str] | None = None,
     ) -> Run:
         pending = await self.enqueue(
             session_id,
@@ -186,6 +191,7 @@ class Execution:
             origin=origin,
             stream=stream,
             images=images,
+            tools=tools,
         )
         # A client disconnect does not silently cancel an accepted run.
         return await asyncio.shield(pending.future)
@@ -382,6 +388,11 @@ class Execution:
         previous = self.performing.get(task)
         self.performing[task] = pending
         try:
+            # Refresh against current grants after queueing, retaining the admission
+            # ceiling. Profile capabilities/scopes and budgets remain unchanged.
+            run.effective_tools = self.registry.effective_tools(
+                run.profile, run.effective_tools
+            )
             run.status = RunStatus.running
             await durable(self.store.save_run, run)
             await self.model.preflight()
@@ -414,7 +425,7 @@ class Execution:
             )
             if history is None:
                 history = await durable(self.store.transcript, session.id)
-            tools = self.registry.schemas(run.profile)
+            tools = self.registry.schemas(run.profile, run.effective_tools)
             preview = [
                 {"role": "system", "content": prompt},
                 *valid_history(history),
@@ -436,6 +447,9 @@ class Execution:
                 > self.config.profiles[run.profile].context_budget
             ):
                 await self._compact_run(run, session, "before_turn", 0)
+            run.tool_schema_sha256 = await durable(
+                self.store.write_tool_schemas, run.id, tools
+            )
             run.prompt_sha256 = await durable(self.store.write_prompt, run.id, prompt)
             await durable(self.store.save_run, run)
             await self._loop(run, session, prompt, pending.text)
@@ -529,6 +543,9 @@ class Execution:
             run.id,
             nested_submit=self.submit_nested,
             stage_memory=self.stage_memory_note,
+            tool_allowlist=frozenset(run.effective_tools)
+            if run.effective_tools is not None
+            else None,
             memory_client=(
                 self.memory.scoped(session)
                 if self.memory and session.memory_scope == "shared"
@@ -538,7 +555,7 @@ class Execution:
         for step in range(cfg.max_steps):
             if self.pending[run.id].cancellation is not None:
                 raise asyncio.CancelledError
-            tools = self.registry.schemas(run.profile)
+            tools = self.registry.schemas(run.profile, run.effective_tools)
             if (
                 request_bytes(
                     self.config.model.model_id,

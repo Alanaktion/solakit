@@ -12,13 +12,20 @@ class Definitions:
     def connect(self):
         return sqlite3.connect(self.store.root / "app.db")
 
-    def load(self, seeds):
+    def load(self, seeds, *, validate=None):
         with self.store.lock, self.connect() as db:
             db.execute(
                 "CREATE TABLE IF NOT EXISTS job_definitions "
                 "(id TEXT PRIMARY KEY, payload TEXT NOT NULL, deleted INTEGER NOT NULL)"
             )
             for job in seeds:
+                if (
+                    validate
+                    and not db.execute(
+                        "SELECT 1 FROM job_definitions WHERE id=?", (job.id,)
+                    ).fetchone()
+                ):
+                    validate(job)
                 db.execute(
                     "INSERT OR IGNORE INTO job_definitions VALUES (?, ?, 0)",
                     (job.id, job.model_dump_json()),
