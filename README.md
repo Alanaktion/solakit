@@ -14,7 +14,9 @@ Discord image attachments also pass through to a vision-capable model; see
 
 Solakit runs on localhost or a tailnet with Python 3.12+ and uv. Prompts and
 configuration stay under operator control; portable session and run evidence stays
-in a private data directory. Integrations are opt-in.
+in a private data directory. Integrations are opt-in. Set `[server].cwd` to choose
+the base directory for relative tool paths such as `files.list(".")`; profile
+filesystem grants still apply.
 
 - [Setup and configuration](docs/setup.md): installation, server settings, authentication, UI, and diagnostics.
 - [Runtime operations](docs/operations.md): API, prompts, storage and recovery, search, memory, channels, and tool grants.

@@ -44,6 +44,11 @@ def prepare(config: Config | None = None) -> Prepared:
     except KeyError:
         raise ConfigurationError("Invalid timezone in configuration") from None
     try:
+        if (
+            config.server.cwd is not None
+            and not config.server.cwd.expanduser().is_dir()
+        ):
+            raise ValueError("server.cwd must name an existing directory")
         validate_prompt_files(config)
         registry = Registry(config)
     except (OSError, ValueError, ImportError) as exc:

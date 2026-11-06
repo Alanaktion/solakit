@@ -116,3 +116,11 @@ In the managed workspace use `UV_CACHE_DIR=/workspace/.cache/uv`.
 Scheduled jobs can opt into `sub_session = true` for fresh child sessions with
 shared memory and final-only channel delivery. Configure this in the job form,
 API or chat tools; see [job management](operations/jobs.md).
+
+Relative tool paths resolve against optional `[server].cwd`, including `files.list(".")`,
+shared filesystem services and shell directory arguments. The directory must exist;
+`~` expands and relative configuration values resolve against the configuration
+directory. When omitted, paths use the server process working directory as before.
+This setting does not change the process working directory or grant filesystem
+access: profile read/write scopes and symlink checks still apply. Absolute tool
+paths are unaffected.

@@ -33,6 +33,8 @@ env = "SOLA_OPERATOR_TOKEN"
 # Alternatively: file = "/absolute/path/to/operator-token" (mode 0600)
 
 [server]
+# Base for relative tool paths; ~ expands, relative values use the config directory.
+# cwd = "~/workspace" # Must exist; profile filesystem grants still apply.
 host = "127.0.0.1"
 port = 8382 # ASCII decimal S=83, R=82 (sola-ryu)
 log_level = "info" # Set debug for backend connection diagnostics.

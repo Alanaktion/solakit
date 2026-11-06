@@ -487,3 +487,11 @@ Profile access uses `tools`, filesystem tiers (`read`, `write`, `workspace`,
 resolved summaries and `profile_toml` replacements for deprecated access keys.
 Legacy translation keeps separate read and write roots; live integration
 acceptance is required before retiring old configuration keys.
+
+Relative tool paths resolve against optional `[server].cwd`, including `files.list(".")`,
+shared filesystem services and shell directory arguments. The directory must exist;
+`~` expands and relative configuration values resolve against the configuration
+directory. When omitted, paths use the server process working directory as before.
+This setting does not change the process working directory or grant filesystem
+access: profile read/write scopes and symlink checks still apply. Absolute tool
+paths are unaffected.

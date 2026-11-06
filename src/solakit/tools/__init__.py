@@ -105,7 +105,10 @@ class ToolContext:
 
     def path(self, path: str, *, write: bool = False) -> Path:
         """Resolve symlinks and enforce the actual path against explicit roots."""
-        candidate = Path(path).expanduser().resolve()
+        candidate = Path(path).expanduser()
+        if not candidate.is_absolute() and self.config.server.cwd is not None:
+            candidate = self.config.server.cwd.expanduser() / candidate
+        candidate = candidate.resolve()
         profile = self.config.profiles[self.profile]
         roots = tier_roots(profile, self.config, write=write)
         if not any(root and candidate.is_relative_to(root) for root in roots):

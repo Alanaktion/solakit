@@ -207,3 +207,25 @@ def test_config_load_errors_identify_path_and_position_without_contents(
     assert str(path) in str(error.value)
     assert "line 1, column" in str(error.value)
     assert "DO_NOT_ECHO" not in str(error.value)
+
+
+def test_server_cwd_config_relative_and_home(tmp_path, monkeypatch):
+    path = tmp_path / "config.toml"
+    path.write_text('[server]\ncwd = "workspace"\n')
+    assert load_config(path).server.cwd == tmp_path / "workspace"
+    monkeypatch.setenv("HOME", str(tmp_path))
+    path.write_text('[server]\ncwd = "~/work"\n')
+    assert load_config(path).server.cwd == tmp_path / "work"
+    assert Config().server.cwd is None
+
+
+@pytest.mark.parametrize("kind", ["missing", "file"])
+def test_server_cwd_must_be_existing_directory(tmp_path, kind):
+    from solakit.core.startup import ConfigurationError, prepare
+
+    cwd = tmp_path / kind
+    if kind == "file":
+        cwd.write_text("not a directory")
+    config = Config.model_validate({"server": {"cwd": cwd}})
+    with pytest.raises(ConfigurationError, match="server.cwd.*existing directory"):
+        prepare(config)

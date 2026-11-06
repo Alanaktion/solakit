@@ -68,6 +68,7 @@ class ModelConfig(StrictModel):
 
 
 class ServerConfig(StrictModel):
+    cwd: Path | None = None
     host: str = "127.0.0.1"
     port: int = Field(default=8382, ge=1, le=65535)
     log_level: Literal["debug", "info", "warning", "error", "critical"] = "info"
@@ -518,6 +519,9 @@ def load_config(path: Path | None = None) -> Config:
     for name in ("data", "soul", "fragments"):
         value = getattr(config.paths, name).expanduser()
         setattr(config.paths, name, value if value.is_absolute() else base / value)
+    if config.server.cwd is not None:
+        value = config.server.cwd.expanduser()
+        config.server.cwd = value if value.is_absolute() else base / value
     config.repositories = {
         name: p.expanduser() if p.expanduser().is_absolute() else base / p
         for name, p in config.repositories.items()

@@ -1411,3 +1411,11 @@ protection against DNS rebinding.
 `if_modified_since` pass validators verbatim. A 304 returns
 `not_modified=true, items=[]` without XML parsing. Atom `published` and `updated`
 are distinct as-served fields; RSS `pubDate` remains an as-served string.
+
+Relative tool paths resolve against optional `[server].cwd`, including `files.list(".")`,
+shared filesystem services and shell directory arguments. The directory must exist;
+`~` expands and relative configuration values resolve against the configuration
+directory. When omitted, paths use the server process working directory as before.
+This setting does not change the process working directory or grant filesystem
+access: profile read/write scopes and symlink checks still apply. Absolute tool
+paths are unaffected.

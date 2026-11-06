@@ -388,3 +388,42 @@ def test_git_publication_transaction_lifetime_and_literal_changed_paths(
         assert await service.changed_paths() == {"README", "renamed"}
 
     asyncio.run(exercise())
+
+
+def test_server_cwd_resolves_tool_paths_without_expanding_grants(config, tmp_path):
+    root = tmp_path / "workspace"
+    root.mkdir()
+    (root / "note.txt").write_text("workspace note")
+    outside = tmp_path / "private.txt"
+    outside.write_text("private")
+    (root / "escape").symlink_to(outside)
+    config.server.cwd = root
+    config.enabled_tools = ["files"]
+    config.profiles["interactive"] = Profile(
+        tools=["files.list", "files.read", "files.write"],
+        workspace=[f"path:{root}"],
+        write="workspace",
+    )
+    registry, ctx = Registry(config), context(config)
+
+    async def exercise():
+        result = await registry.dispatch("files.list", '{"path":"."}', ctx)
+        assert not result.error
+        assert "note.txt" in result.content
+        assert (await ctx.fs.read("note.txt")).content == "workspace note"
+        assert await ctx.fs.write("created.txt", "new") == root / "created.txt"
+
+    asyncio.run(exercise())
+    assert ctx.path(str(root / "note.txt")) == root / "note.txt"
+    for path in ("../private.txt", "escape"):
+        with pytest.raises(ToolError, match="outside profile"):
+            ctx.path(path)
+    config.profiles["interactive"].write = "none"
+    with pytest.raises(ToolError, match="outside profile"):
+        ctx.path("note.txt", write=True)
+
+
+def test_unset_server_cwd_preserves_process_directory(config, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    config.profiles["interactive"] = Profile(workspace=[f"path:{tmp_path}"])
+    assert context(config).path(".") == tmp_path
