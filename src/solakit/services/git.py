@@ -246,16 +246,69 @@ class Git:
         async with repository_lock(self.root):
             return await self._push(commit)
 
-    async def commit_push(self, paths: list[str], message: str) -> ToolResult:
+    async def changed_paths(self) -> set[str]:
+        """Return literal changed/untracked paths, including both sides of renames."""
+        await self._ready()
+        records = (
+            await self._text("status", "--porcelain=v1", "--untracked-files=all", "-z")
+        ).split("\x00")
+        paths = set()
+        position = 0
+        while position < len(records) and records[position]:
+            record = records[position]
+            paths.add(record[3:])
+            position += 1
+            if "R" in record[:2] or "C" in record[:2]:
+                paths.add(records[position])
+                position += 1
+        return paths
+
+    @asynccontextmanager
+    async def publication(self):
+        """Hold publishing admission and the repository lock across preparation.
+
+        Trusted callers may create and validate files inside this transaction,
+        then commit and push once. No rollback or retry occurs on interruption.
+        """
         self._publish_access()
         async with repository_lock(self.root):
             await self._ready()
             await self._upstream()
+            if await self._text("diff", "--cached", "--name-only"):
+                raise ToolError("Commit requires an initially empty index")
             if await self._text("rev-list", "@{upstream}..HEAD"):
                 raise ToolError(
                     "Unpublished commits already exist; reconcile before publishing"
                 )
             if await self._text("rev-list", "HEAD..@{upstream}"):
                 raise ToolError("Upstream is ahead; pull before publishing")
-            commit = await self._commit(paths, message)
-            return await self._push(commit)
+            publication = Publication(self)
+            try:
+                yield publication
+            finally:
+                publication.active = False
+
+    async def commit_push(self, paths: list[str], message: str) -> ToolResult:
+        async with self.publication() as publication:
+            commit = await publication.commit(paths, message)
+            return await publication.push(commit)
+
+
+class Publication:
+    """Single-commit publisher valid only while its owning transaction is open."""
+
+    def __init__(self, git):
+        self.git = git
+        self.commit_id = None
+        self.active = True
+
+    async def commit(self, paths: list[str], message: str) -> str:
+        if not self.active or self.commit_id is not None:
+            raise ToolError("Publication already committed")
+        self.commit_id = await self.git._commit(paths, message)
+        return self.commit_id
+
+    async def push(self, commit: str) -> ToolResult:
+        if not self.active or commit != self.commit_id:
+            raise ToolError("Publication commit identity does not match")
+        return await self.git._push(commit)

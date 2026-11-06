@@ -131,6 +131,7 @@ def test_unknown_workspace_and_effect_registration(config):
         ("sola_packs.email", "email.reply", "send"),
         ("sola_packs.printer", "printer.print_text", "print"),
         ("sola_packs.journal", "journal.publish", "push"),
+        ("sola_packs.blog", "blog.publish", "push"),
     ],
 )
 def test_effects_fail_startup_and_recheck_dispatch(config, module, name, effect):

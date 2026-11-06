@@ -149,6 +149,7 @@ sola-server/
       fs.py  git.py  collections.py  process.py  # generic Python services for tools/packs
     jobs/
       scheduler.py           # APScheduler wiring, misfire policy (§7)
+  packs/blog/                # separate distribution: sola_packs.blog
   packs/journal/             # separate distribution: sola_packs.journal
   # letters/email are independent packs; shell is built in; printer is an optional ESC/POS pack
   tests/                     # mock model endpoint, mock Discord adapter
@@ -1181,7 +1182,7 @@ them later is exactly the kind of surgery this project exists to avoid:
 
 ### Source workspace and tool distribution visibility
 
-The checkout is a uv workspace containing core plus seven independently packaged
+The checkout is a uv workspace containing core plus eight independently packaged
 packs. `uv sync --frozen --all-packages` reproduces their shared lockfile in one
 environment. Root project dependencies must not include pack distributions; the
 core wheel contains neither pack code nor pack Requires-Dist entries. Workspace
@@ -1191,6 +1192,26 @@ modules by installed distribution/version using importlib.metadata. A configured
 missing pack fails with its distribution name and workspace sync repair command.
 Metadata-less external source modules remain supported and explicitly report an
 unknown distribution/version; metadata inspection does not discover/load plugins.
+
+### Astro blog pack
+
+The optional `sola_packs.blog` distribution owns Astro content conventions:
+`src/content/blog/<slug>.md` posts and `src/content/dreams/YYYY-MM-DD.md` dreams.
+Tools list/read both kinds and create new entries without overwriting. Posts have
+title, description, timezone-aware date, tags, draft status and an optional local
+cover; dreams have date, body and optional left/center/right alignment only.
+Writing publishes by default (fixed npm build, exact-file commit, upstream push);
+explicit save-only calls defer those stages to `blog.publish`. Publication requires
+whole-repository write reach and the push effect, not an additional shell effect.
+The generic Git publication transaction serializes preparation through push.
+Build failure leaves files without a commit. Private immutable operation receipts
+bind stable IDs to requests and retain build results and commit identities;
+failed/interrupted/uncertain operations never resume automatically.
+Optional image integration resolves completed image-pack receipts, rechecks the
+resource grant and endpoint, downloads a bounded output without redirects/retries,
+and creates a PNG cover with an Astro-relative frontmatter reference. It does not
+submit generation. Core code and dependencies remain domain-free; installing the
+pack does not activate tools, publish site content or verify deployment.
 
 ### Rebuildable full-text message index
 

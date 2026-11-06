@@ -4,6 +4,7 @@ Core distributions contain no pack code. Each directory is an independently
 installable distribution using the `sola_packs` namespace. These directories can
 move to a separate repository without changes to core execution.
 
+- `blog`: Astro posts and dreams, optional generated covers, one-call publication.
 - `journal`: dated, configured collections (posts, dreams, poems).
 - `letters`: sequential immutable correspondence in a named Git repository.
 - `email`: named TLS mailboxes, read/search and sender-only threaded replies.
@@ -20,7 +21,7 @@ uv sync --frozen --all-packages
 uv run pytest tests packs/*/tests -q
 ```
 
-The root and all seven packs share one uv workspace and lockfile. Sync installs
+The root and all eight packs share one uv workspace and lockfile. Sync installs
 them together, including inter-pack dependencies, without manual ordering.
 `uv run` keeps the synced members available; no `--no-sync` is needed.
 Workspace membership does not add pack dependencies or code to the core wheel.

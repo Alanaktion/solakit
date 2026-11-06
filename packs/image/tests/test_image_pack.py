@@ -274,3 +274,140 @@ def test_deadline_checks_small_chunks_without_waiting_for_a_full_buffer(monkeypa
     cfg = image.Image(workflow="/tmp/workflow.json", prompt_node="6", seed_node="3")
     with pytest.raises(TimeoutError, match="deadline"):
         image.request(cfg, {}, "GET", "/history/prompt-1")
+
+
+def test_completed_png_download_uses_receipt_auth_and_normalizes(
+    setup, monkeypatch, tmp_path
+):
+    import io
+
+    from PIL import Image as Raster
+
+    _, ctx, calls, _ = setup
+    assert not invoke(setup).error
+    buffer = io.BytesIO()
+    Raster.new("RGB", (16, 9), "purple").save(buffer, format="JPEG")
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        assert request.headers["Authorization"] == "Bearer fixture-image-secret"
+        assert request.url.path == "/view"
+        assert dict(request.url.params) == {
+            "filename": "moon.png",
+            "subfolder": "",
+            "type": "output",
+        }
+        return httpx.Response(200, content=buffer.getvalue())
+
+    # Keep history lookup deterministic while replacing the download transport.
+    original_outcome = image.outcome
+    cfg_path = tmp_path / "packs.toml"
+    with cfg_path.open("a") as stream:
+        stream.write('token = { env = "FIXTURE_IMAGE_TOKEN" }\n')
+    monkeypatch.setenv("FIXTURE_IMAGE_TOKEN", "fixture-image-secret")
+    outcome = original_outcome(
+        image.resource(ctx, "images", "studio", image.Image, "read"), {}, "prompt-1"
+    )
+    monkeypatch.setattr(image, "outcome", lambda *args: outcome)
+    monkeypatch.setattr(
+        image.httpx,
+        "Client",
+        lambda **kwargs: HTTPClient(transport=httpx.MockTransport(handler), **kwargs),
+    )
+    result = asyncio.run(image.completed_png(ctx, "studio", "picture-1"))
+    assert result.startswith(b"\x89PNG\r\n\x1a\n")
+    assert Raster.open(io.BytesIO(result)).size == (16, 9)
+    assert len(requests) == 1
+    assert ctx.store.redactor.redact("fixture-image-secret") == "[redacted]"
+    assert sum(r.method == "POST" for r in calls) == 1
+
+
+@pytest.mark.parametrize("status", ["pending", "failed", "pending_or_missing"])
+def test_completed_png_refuses_incomplete_and_never_resubmits(
+    setup, monkeypatch, status
+):
+    from solakit.tools import ToolError
+
+    _, ctx, calls, _ = setup
+    assert not invoke(setup).error
+    monkeypatch.setattr(image, "outcome", lambda *args: {"status": status})
+    with pytest.raises(ToolError, match="not complete"):
+        asyncio.run(image.completed_png(ctx, "studio", "picture-1"))
+    assert len(calls) == 1
+
+
+def test_completed_png_rechecks_resource_endpoint_and_selection(
+    setup, monkeypatch, tmp_path
+):
+    from solakit.tools import ToolError
+
+    _, ctx, _, _ = setup
+    assert not invoke(setup).error
+    with pytest.raises(ToolError, match="output is missing"):
+        asyncio.run(image.completed_png(ctx, "studio", "picture-1", 1))
+    ctx.config.profiles[ctx.profile].resources.clear()
+    with pytest.raises(ToolError, match="Missing resource"):
+        asyncio.run(image.completed_png(ctx, "studio", "picture-1"))
+    ctx.config.profiles[ctx.profile].resources.append("image:studio")
+    with (tmp_path / "packs.toml").open("a") as stream:
+        stream.write('base_url = "http://other.invalid"\n')
+    with pytest.raises(ToolError, match="endpoint changed"):
+        asyncio.run(image.completed_png(ctx, "studio", "picture-1"))
+
+
+@pytest.mark.parametrize(
+    "reference",
+    [
+        {"filename": "../escape.png", "subfolder": "", "type": "output"},
+        {"filename": "cover.png", "subfolder": "../escape", "type": "output"},
+        {"filename": "cover.png", "subfolder": "", "type": "input"},
+        {"filename": "cover.png", "subfolder": "/escape", "type": "output"},
+    ],
+)
+def test_download_refuses_unsafe_output_references(reference):
+    from solakit.tools import ToolError
+
+    with pytest.raises(ToolError, match="safe ComfyUI"):
+        image.download_png(SimpleNamespace(), {}, reference)
+
+
+@pytest.mark.parametrize(
+    "mode", ["redirect", "invalid", "oversize", "dimensions", "timeout"]
+)
+def test_download_refuses_redirect_invalid_large_and_slow_images(monkeypatch, mode):
+    import io
+
+    from PIL import Image as Raster
+
+    from solakit.tools import ToolError
+
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        if mode == "redirect":
+            return httpx.Response(
+                302, headers={"Location": "http://other.invalid/private"}
+            )
+        if mode == "oversize":
+            return httpx.Response(200, content=b"x" * 20_000_001)
+        if mode == "dimensions":
+            buffer = io.BytesIO()
+            Raster.new("1", (6400, 6400)).save(buffer, format="PNG")
+            return httpx.Response(200, content=buffer.getvalue())
+        if mode == "timeout":
+            raise httpx.ReadTimeout("timed out")
+        return httpx.Response(200, content=b"not an image")
+
+    monkeypatch.setattr(
+        image.httpx,
+        "Client",
+        lambda **kwargs: HTTPClient(transport=httpx.MockTransport(handler), **kwargs),
+    )
+    cfg = SimpleNamespace(base_url="http://fixture.invalid", timeout_s=1)
+    with pytest.raises(ToolError, match="valid bounded"):
+        image.download_png(
+            cfg, {}, {"filename": "cover.png", "subfolder": "", "type": "output"}
+        )
+    assert len(requests) == 1

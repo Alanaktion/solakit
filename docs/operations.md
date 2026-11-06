@@ -403,12 +403,22 @@ filename = "{date}-{slug}.md"
 
 A profile can grant `collection:dreams` workspace roots without granting the
 entire repository. Layout strings are optional data; the journal pack owns default
-front matter. A blog is simply another collection.
+front matter. Simple dated content can use journal collections.
 
 [Journal pack installation and use](../packs/journal/README.md) documents its separate
 distribution, create/list/publish tools, and scratch-only contract tests. Core
 installation does not install any pack. Calendar reads and receipted ComfyUI workflows
 are available as optional packs; see [pack setup](../packs/README.md).
+
+The [blog pack](../packs/blog/README.md) targets Astro posts and dreams directly.
+`blog.write_post` and `blog.write_dream` create new Markdown, run `npm run build`,
+commit exact files and push in one call by default. Set `publish=false` to save
+locally; `blog.publish` publishes a saved entry later. Post covers may reference a
+completed image-pack operation; dreams have only a date, text and optional
+alignment. Configure a named repository, grant filesystem reach and tools, and
+allow `push` for publication. Builds execute trusted site code with repository
+write access. Receipts retain failures/commit identities; uncertain pushes never
+auto-retry. A successful push does not verify GitHub Actions deployment.
 
 ## Letters/email packs and built-in shell
 

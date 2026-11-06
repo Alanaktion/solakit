@@ -290,3 +290,71 @@ async def result(
     prompt_id = await durable(receipt, ctx, workflow, operation_id, cfg.base_url)
     data = await durable(outcome, cfg, headers(ctx, cfg), prompt_id)
     return ToolResult(content=external("image:" + workflow, data))
+
+
+def download_png(cfg, auth, reference):
+    """Download a selected server output with fixed bounds; never accept a URL."""
+    import io
+    import warnings
+
+    from PIL import Image as Raster
+
+    filename, subfolder, kind = (
+        reference[key] for key in ("filename", "subfolder", "type")
+    )
+    if (
+        not filename
+        or Path(filename).name != filename
+        or "\\" in filename
+        or "\x00" in filename + subfolder
+        or "\\" in subfolder
+        or Path(subfolder).is_absolute()
+        or ".." in Path(subfolder).parts
+        or kind != "output"
+    ):
+        raise ToolError("Cover must reference a safe ComfyUI output image")
+    deadline = time.monotonic() + cfg.timeout_s
+    try:
+        with httpx.Client(timeout=cfg.timeout_s, follow_redirects=False) as client:
+            with client.stream(
+                "GET",
+                cfg.base_url + "/view",
+                headers=auth,
+                params={"filename": filename, "subfolder": subfolder, "type": kind},
+            ) as response:
+                response.raise_for_status()
+                content = bytearray()
+                for chunk in response.iter_bytes():
+                    if time.monotonic() >= deadline:
+                        raise TimeoutError("Image download deadline exceeded")
+                    content.extend(chunk)
+                    if len(content) > 20_000_000:
+                        raise ValueError("Image download exceeds 20 MB")
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", Raster.DecompressionBombWarning)
+            with Raster.open(io.BytesIO(content)) as picture:
+                if picture.width * picture.height > 40_000_000:
+                    raise ValueError("Image exceeds 40 megapixels")
+                picture.load()
+                output = io.BytesIO()
+                picture.convert("RGBA" if "A" in picture.getbands() else "RGB").save(
+                    output, format="PNG"
+                )
+                if output.tell() > 20_000_000:
+                    raise ValueError("Converted image exceeds 20 MB")
+                return output.getvalue()
+    except (httpx.HTTPError, OSError, ValueError, Warning, TimeoutError) as exc:
+        raise ToolError("Cannot download valid bounded cover image") from exc
+
+
+async def completed_png(ctx, workflow: str, operation_id: str, image_index: int = 0):
+    """Private composition seam: resolve a receipted output and return PNG bytes."""
+    cfg = resource(ctx, "images", workflow, Image, "read")
+    if not IDENTIFIER.fullmatch(operation_id) or not 0 <= image_index < 100:
+        raise ToolError("Invalid image operation or output index")
+    auth = headers(ctx, cfg)
+    prompt_id = await durable(receipt, ctx, workflow, operation_id, cfg.base_url)
+    data = await durable(outcome, cfg, auth, prompt_id)
+    if data["status"] != "completed" or image_index >= len(data["images"]):
+        raise ToolError("Cover generation is not complete or output is missing")
+    return await durable(download_png, cfg, auth, data["images"][image_index])

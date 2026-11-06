@@ -9,6 +9,7 @@ resolution-markers = [
 [manifest]
 members = [
     "solakit",
+    "solakit-packs-blog",
     "solakit-packs-calendar",
     "solakit-packs-common",
     "solakit-packs-email",
@@ -1452,6 +1453,30 @@ dev = [
     { name = "pytest", specifier = ">=8,<10" },
     { name = "ruff", specifier = ">=0.11,<1" },
 ]
+
+[[package]]
+name = "solakit-packs-blog"
+version = "0.1.0"
+source = { editable = "packs/blog" }
+dependencies = [
+    { name = "pyyaml" },
+    { name = "solakit" },
+    { name = "solakit-packs-common" },
+]
+
+[package.optional-dependencies]
+image = [
+    { name = "solakit-packs-image" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "pyyaml", specifier = ">=6,<7" },
+    { name = "solakit", editable = "." },
+    { name = "solakit-packs-common", editable = "packs/common" },
+    { name = "solakit-packs-image", marker = "extra == 'image'", editable = "packs/image" },
+]
+provides-extras = ["image"]
 
 [[package]]
 name = "solakit-packs-calendar"

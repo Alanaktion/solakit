@@ -15,6 +15,8 @@ enabled_tools = []
 # effects = ["operate"] allows another session or all sessions.
 # See packs/README.md for their resource sidecar and explicit profile grants.
 # enabled_tools = ["solakit.tools.files", "solakit.tools.runtime", "sola_packs.journal"]
+# Astro blog/dream creation and publication: load "sola_packs.blog"; see
+# packs/blog/README.md for repo scopes, push grants and optional image covers.
 # Read-only APIs and exact calculation: load "web", "feeds", "github", "wiki",
 # "datetime", "math"; grant their exact names or "*" in the intended profile.
 # See docs/operations/read-tools.md.

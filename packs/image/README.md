@@ -38,3 +38,12 @@ references. Empty history is ambiguous (queued, cleared or unknown), not proof o
 failure. Images stay on the configured ComfyUI server; no local file or delivery
 artifact is claimed. Result text is external data, with bounded response size and
 output count. Endpoints cannot be switched under an existing receipt.
+
+Trusted packs can compose `completed_png(ctx, workflow, operation_id, image_index)`
+to retrieve one completed output as PNG bytes without submitting generation.
+It revalidates the image resource grant and original receipt endpoint, accepts
+only safe output references, and downloads from the configured `/view` endpoint
+with registered credentials, no redirects/retries, a bounded request deadline,
+a 20 MB download/output limit and a 40 megapixel decoded-image limit. The caller
+owns scope-checked exclusive file creation and publication receipts. The optional
+[blog pack](../blog/README.md) uses this seam for Astro cover images.

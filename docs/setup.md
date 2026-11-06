@@ -10,7 +10,7 @@ uv run sola check
 uv run sola serve
 ```
 
-Core and all seven packs share one uv workspace lockfile. The sync above installs
+Core and all eight packs share one uv workspace lockfile. The sync above installs
 every distribution; enabled modules and profile grants still control use. Run
 `uv run pytest tests packs/*/tests -q` for the full suite. Plain `uv sync` selects
 only core when that is wanted; the core wheel has no pack code or dependencies.

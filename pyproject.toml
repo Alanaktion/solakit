@@ -46,3 +46,4 @@ members = ["packs/*"]
 [tool.uv.sources]
 solakit = { workspace = true }
 solakit-packs-common = { workspace = true }
+solakit-packs-image = { workspace = true }

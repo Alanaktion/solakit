@@ -363,3 +363,28 @@ def test_exact_edit_rejects_overlapping_matches_and_preserves_other_bytes(
         assert path.read_bytes() == source.replace(b"typo", b"word")
 
     asyncio.run(exercise())
+
+
+def test_git_publication_transaction_lifetime_and_literal_changed_paths(
+    config, repository
+):
+    root, remote = repository
+    service = context(config).git("site")
+
+    async def exercise():
+        async with service.publication() as publication:
+            (root / "literal[1]\n.txt").write_text("exact")
+            assert await service.changed_paths() == {"literal[1]\n.txt"}
+            commit = await publication.commit(["literal[1]\n.txt"], "Exact path")
+            with pytest.raises(ToolError, match="already committed"):
+                await publication.commit(["README"], "Second commit")
+            await publication.push(commit)
+        assert git(remote, "rev-parse", "main") == commit
+        with pytest.raises(ToolError):
+            await publication.push(commit)
+        with pytest.raises(ToolError):
+            await publication.commit(["README"], "Expired transaction")
+        git(root, "mv", "README", "renamed")
+        assert await service.changed_paths() == {"README", "renamed"}
+
+    asyncio.run(exercise())
