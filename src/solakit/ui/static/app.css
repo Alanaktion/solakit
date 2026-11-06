@@ -403,3 +403,5 @@ pre { overflow-x: auto; font-size: 11px; line-height: 1.55; color: var(--ink); }
 .job-tools-list label { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; max-width: 100%; margin: 0; }
 .job-tools-list label > span, .job-tools-list small { min-width: 0; overflow-wrap: anywhere; }
 .data-table small.metadata-warning { color: var(--warning); }
+
+.resident-controls { display: flex; flex-direction: column; gap: 12px; }

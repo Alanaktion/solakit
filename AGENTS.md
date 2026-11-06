@@ -101,6 +101,12 @@ Read `SPEC.md` for behavioral contracts, `README.md` for an introduction,
   schemas and dispatch through the generic per-run ceiling. Never clone/replace
   profile capabilities, scopes, budgets or fragments for a job. Validate saves;
   persisted profile drift shrinks exposure and remains visible in jobs inspection.
+  Generic ToolView resolves eager/deferred schema visibility independently of authority.
+  Deferred search/load and inactive-tool notices use a separate eight-step budget;
+  real/mixed work still uses profile max_steps. Keep activation state per run,
+  and budget the currently visible schemas. tools.* is reserved, never wildcard-granted.
+  Deferred *.tool-catalog.json plus hash and per-step visible names preserve later
+  schema exposure; job overrides apply to sub-sessions, not delegated child profiles.
   effective_tools is admission evidence; immutable *.tool-schemas.json plus its
   run hash preserves schema inputs. Historical prompt inspection uses saved inputs,
   never today's profile grants or modules. Keep schema definitions out of recursive

@@ -43,3 +43,21 @@ class Definitions:
                 "INSERT OR REPLACE INTO job_definitions VALUES (?, ?, ?)",
                 (job.id, job.model_dump_json(), int(deleted)),
             )
+
+
+def inspect_definitions(path, seeds):
+    """Read authoritative definitions without importing seeds or mutating storage."""
+    jobs = {job.id: job for job in seeds}
+    if not path.exists():
+        return list(jobs.values())
+    with sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True) as db:
+        if db.execute(
+            "SELECT 1 FROM sqlite_master WHERE name='job_definitions'"
+        ).fetchone():
+            for identity, payload, deleted in db.execute(
+                "SELECT id, payload, deleted FROM job_definitions"
+            ):
+                jobs.pop(identity, None)
+                if not deleted:
+                    jobs[identity] = Job.model_validate_json(payload)
+    return list(jobs.values())

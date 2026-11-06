@@ -435,3 +435,8 @@ actions, with no connection or credential resolution. `email.search` supports
 `unseen_only`, returns seen state and total matches, and preserves unread state.
 Use a narrow report-only inbox profile and name aliases in scheduled tasks; see
 [email pack guidance](../packs/email/README.md).
+
+
+For large granted tool sets, see [conditional disclosure](operations/tool-disclosure.md):
+profile/job eager or deferred modes, resident tools, discovery and audit evidence.
+Eager remains the default; interactive deferred use requires pinned-model evaluation.

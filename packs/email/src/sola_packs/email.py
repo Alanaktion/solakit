@@ -203,7 +203,12 @@ def read_message(ctx, cfg, token):
         close(client)
 
 
-@tool(name="email.list_mailboxes", profiles=["*"])
+@tool(
+    summary="List configured mailbox aliases",
+    keywords=("mail", "mailbox", "accounts"),
+    name="email.list_mailboxes",
+    profiles=["*"],
+)
 async def list_mailboxes(ctx: ToolContext) -> ToolResult:
     """Discover configured email aliases, addresses, folders and granted actions.
 
@@ -239,7 +244,12 @@ async def list_mailboxes(ctx: ToolContext) -> ToolResult:
     return ToolResult(content=external("mailboxes", rows))
 
 
-@tool(name="email.search", profiles=["*"])
+@tool(
+    summary="Search one mailbox; unseen_only=true for unread checks",
+    keywords=("mail", "inbox", "unread", "message"),
+    name="email.search",
+    profiles=["*"],
+)
 async def search(
     ctx: ToolContext,
     mailbox: MailboxAlias,
@@ -332,7 +342,12 @@ async def search(
     return ToolResult(content=external(f"mailbox:{mailbox}", result))
 
 
-@tool(name="email.read", profiles=["*"])
+@tool(
+    summary="Read one message body by search id",
+    keywords=("mail", "message", "body"),
+    name="email.read",
+    profiles=["*"],
+)
 async def read(
     ctx: ToolContext, mailbox: MailboxAlias, message_id: MessageIdentity
 ) -> ToolResult:
@@ -466,7 +481,13 @@ def send(ctx, cfg, mailbox, source, body, operation_id):
         return result
 
 
-@tool(name="email.reply", profiles=["*"], writes=["email.reply"])
+@tool(
+    summary="Reply to one existing mailbox message",
+    keywords=("mail", "reply", "send"),
+    name="email.reply",
+    profiles=["*"],
+    writes=["email.reply"],
+)
 async def reply(
     ctx: ToolContext,
     mailbox: MailboxAlias,

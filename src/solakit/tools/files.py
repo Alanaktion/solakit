@@ -8,7 +8,12 @@ from pydantic import Field
 from solakit.tools import ToolContext, ToolResult, tool
 
 
-@tool(name="files.read", profiles=["*"])
+@tool(
+    summary="Read a local file within filesystem scopes",
+    keywords=("file", "read", "disk"),
+    name="files.read",
+    profiles=["*"],
+)
 async def read(
     ctx: ToolContext,
     path: Annotated[
@@ -27,7 +32,13 @@ async def read(
     return await ctx.fs.read(path)
 
 
-@tool(name="files.write", profiles=["*"], writes=["filesystem"])
+@tool(
+    summary="Replace a local file within write scopes",
+    keywords=("file", "overwrite", "save"),
+    name="files.write",
+    profiles=["*"],
+    writes=["filesystem"],
+)
 async def write(
     ctx: ToolContext,
     path: Annotated[
@@ -45,7 +56,13 @@ async def write(
     return ToolResult(content=str(target), artifacts=[str(target)])
 
 
-@tool(name="files.edit", profiles=["*"], writes=["filesystem"])
+@tool(
+    summary="Replace exact matching text in a local file",
+    keywords=("file", "edit", "replace"),
+    name="files.edit",
+    profiles=["*"],
+    writes=["filesystem"],
+)
 async def edit(
     ctx: ToolContext,
     path: Annotated[
@@ -68,7 +85,13 @@ async def edit(
     return ToolResult(content=str(target), artifacts=[str(target)])
 
 
-@tool(name="files.append", profiles=["*"], writes=["filesystem"])
+@tool(
+    summary="Append text to a local file",
+    keywords=("file", "append"),
+    name="files.append",
+    profiles=["*"],
+    writes=["filesystem"],
+)
 async def append(
     ctx: ToolContext,
     path: Annotated[
@@ -86,7 +109,12 @@ async def append(
     return ToolResult(content=str(target), artifacts=[str(target)])
 
 
-@tool(name="files.list", profiles=["*"])
+@tool(
+    summary="List a local directory",
+    keywords=("file", "directory", "list"),
+    name="files.list",
+    profiles=["*"],
+)
 async def list_files(
     ctx: ToolContext,
     path: Annotated[

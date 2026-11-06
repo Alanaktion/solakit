@@ -65,6 +65,10 @@ class ToolContext:
     job_manager: Any = None
     nested_submit: Any = None
     stage_memory: Any = None
+    configured_tool_names: frozenset[str] = frozenset()
+    tool_view: Any = None
+    activate_tools: Any = None
+    active_tools: Any = None
     tool_allowlist: frozenset[str] | None = None
 
     @property
@@ -141,6 +145,8 @@ class Manifest:
     writes: tuple[str, ...]
     timeout: float | None
     manages_timeout: bool = False
+    summary: str | None = None
+    keywords: tuple[str, ...] = ()
 
 
 def tool(
@@ -150,10 +156,18 @@ def tool(
     writes: list[str] = (),
     timeout: float | None = None,
     manages_timeout: bool = False,
+    summary: str | None = None,
+    keywords: tuple[str, ...] = (),
 ):
     def decorate(function: Callable) -> Callable:
         function.__sola_tool__ = Manifest(
-            name, tuple(profiles), tuple(writes), timeout, manages_timeout
+            name,
+            tuple(profiles),
+            tuple(writes),
+            timeout,
+            manages_timeout,
+            summary,
+            tuple(keywords),
         )
         return function
 
@@ -212,6 +226,14 @@ class Registry:
 
     def register(self, function: Callable, manifest: Manifest | None = None) -> None:
         manifest = manifest or function.__sola_tool__
+        if manifest.name.startswith("tools."):
+            raise ValueError("tools.* is reserved for runtime disclosure")
+        if manifest.summary is not None and (
+            len(manifest.summary) > 100
+            or "\n" in manifest.summary
+            or "\r" in manifest.summary
+        ):
+            raise ValueError("Tool summary must be one line of at most 100 characters")
         if manifest.name in self.tools:
             raise ValueError(f"duplicate tool: {manifest.name}")
         hints = get_type_hints(function, include_extras=True)
@@ -265,6 +287,7 @@ class Registry:
 
     def validate(self) -> None:
         for name, profile in self.config.profiles.items():
+            self.view(name)
             for scope in profile.read_scopes + profile.write_scopes:
                 if scope_root(scope, self.config) is None:
                     raise ValueError(f"unknown resource scope: {scope}")
@@ -277,6 +300,12 @@ class Registry:
     def catalog(self) -> dict:
         """Loaded tools and effective grants, shared by diagnostics and API."""
         return {
+            "disclosure": {
+                name: self.view(name).diagnostics(
+                    self.config.profiles[name].context_budget
+                )
+                for name in self.config.profiles
+            },
             "modules": list(self.config.enabled_tools),
             "distributions": list(self.distributions),
             "profiles": {
@@ -286,6 +315,9 @@ class Registry:
             "tools": [
                 {
                     "name": name,
+                    "family": name.split(".")[0],
+                    "summary": self.summary(name),
+                    "keywords": list(registered.manifest.keywords),
                     "description": inspect.getdoc(registered.function) or "",
                     "parameters": registered.schema()["function"]["parameters"],
                     "profiles": [
@@ -315,6 +347,18 @@ class Registry:
             self.tools[name].schema() for name in self.effective_tools(profile, tools)
         ]
 
+    def summary(self, name: str) -> str:
+        item = self.tools[name]
+        return (
+            item.manifest.summary
+            or (inspect.getdoc(item.function) or name).splitlines()[0][:100]
+        )
+
+    def view(self, profile, tools=None, mode="inherit", resident=None, *, strict=True):
+        from solakit.tools.disclosure import resolve
+
+        return resolve(self, profile, tools, mode, resident, strict=strict)
+
     async def dispatch(self, name: str, arguments: str, ctx: ToolContext) -> ToolResult:
         start = time.monotonic()
         result = ToolResult(content="Tool execution failed", error=True)
@@ -322,6 +366,15 @@ class Registry:
         detail = None
         repairable = False
         try:
+            if (
+                ctx.tool_view is not None
+                and ctx.tool_view.mode == "deferred"
+                and name in ("tools.search", "tools.load")
+            ):
+                from solakit.tools.disclosure import disclose
+
+                result = disclose(name, arguments, ctx)
+                return result
             if ctx.tool_allowlist is not None and name not in ctx.tool_allowlist:
                 repairable = True
                 raise ToolError("Tool is not permitted for this run")
@@ -329,6 +382,17 @@ class Registry:
                 repairable = True
                 raise ToolError("Tool is not permitted in this profile")
             registered = self.tools[name]
+            if (
+                ctx.tool_view is not None
+                and ctx.tool_view.mode == "deferred"
+                and name not in ctx.active_tools
+            ):
+                ctx.activate_tools([name])
+                repairable = False
+                raise ToolError(
+                    f"{name} was not loaded; its full schema is now loaded "
+                    "for this run. It was not executed — call it again."
+                )
             ctx.runtime_provider = self.runtime_status
             ctx.job_manager = self.job_manager
             cfg = self.config.profiles[ctx.profile]

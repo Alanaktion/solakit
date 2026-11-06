@@ -7,11 +7,13 @@
   <div><label for="inspect-session">Session</label><input id="inspect-session" name="session" list="session-options" value="{{ values.session }}" maxlength="128" required><datalist id="session-options">{% for session in sessions %}<option value="{{ session.id }}">{% endfor %}</datalist></div>
   <div><label for="inspect-at">Timestamp (ISO 8601)</label><input id="inspect-at" name="at" value="{{ values.at }}" placeholder="Blank uses the current time" maxlength="128"></div>
   <div><label for="inspect-origin">Origin</label><input id="inspect-origin" name="origin" value="{{ values.origin }}" maxlength="128" required></div>
+  <div><label for="inspect-job">Job ID (optional)</label><input id="inspect-job" name="job" value="{{ values.job }}" maxlength="128"><small class="field-note">Uses this job’s profile and disclosure settings.</small></div>
   <button class="primary-button" type="submit">Inspect prompt →</button>
 </form>{% else %}<p><a class="text-link" href="/runs/{{ recorded_run|urlencode }}">Return to run</a></p>{% endif %}
 {% if error %}<div class="notice notice-error" role="alert">{{ error }}</div>{% endif %}
 {% if evidence %}
+{% if evidence.tool_view %}<section class="evidence-panel panel"><h2>Tool disclosure</h2><p>{{ evidence.tool_view.mode|capitalize }} · Effective: {{ evidence.tool_view.effective|join(', ') or 'none' }} · Resident: {{ evidence.tool_view.resident|join(', ') or 'none' }}</p><p class="digest">Index SHA-256: {{ evidence.tool_view.index_sha256 }}</p>{% if evidence.tool_view.activations %}<pre><code>{{ evidence.tool_view.activations|tojson(indent=2) }}</code></pre>{% endif %}</section>{% endif %}
 <section class="evidence-panel panel"><h2>Assembled prompt</h2><dl class="evidence-facts"><div><dt>SHA-256</dt><dd class="digest">{{ evidence.sha256 }}</dd></div><div><dt>Tokens</dt><dd>{{ evidence.tokens if evidence.tokens is not none else 'Not measured' }}</dd></div></dl><p class="muted">The SHA covers original prompt bytes from the API. This display masks resolved credentials; masking can change the displayed text.</p><pre class="evidence-text"><code>{{ evidence.prompt }}</code></pre></section>
-<section class="evidence-panel panel"><h2>Granted tool schemas · {{ evidence.tools|length }}</h2>{% for tool in schema_views %}<details class="schema-details"><summary>{{ tool.name }}</summary><pre><code>{{ tool.text }}</code></pre></details>{% else %}<p class="muted">No tools were exposed in this inspection.</p>{% endfor %}</section>
+<section class="evidence-panel panel"><h2>Visible tool schemas · {{ evidence.tools|length }}</h2>{% for tool in schema_views %}<details class="schema-details"><summary>{{ tool.name }}</summary><pre><code>{{ tool.text }}</code></pre></details>{% else %}<p class="muted">No tools were exposed in this inspection.</p>{% endfor %}</section>
 {% endif %}
 {% endblock %}

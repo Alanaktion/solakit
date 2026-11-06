@@ -1012,6 +1012,16 @@ class Store:
             if hashlib.sha256(payload).hexdigest() != record["tool_schema_sha256"]:
                 raise self._corruption(schemas, "tool_schema_hash_mismatch")
             record["tool_schemas"] = json.loads(payload)
+        record["tool_catalog"] = None
+        if record.get("tool_catalog_sha256"):
+            catalog = self._path("runs", run_id, ".tool-catalog.json")
+            try:
+                payload = catalog.read_bytes()
+            except FileNotFoundError as exc:
+                raise self._corruption(catalog, "missing_tool_catalog") from exc
+            if hashlib.sha256(payload).hexdigest() != record["tool_catalog_sha256"]:
+                raise self._corruption(catalog, "tool_catalog_hash_mismatch")
+            record["tool_catalog"] = json.loads(payload)
         record["messages"] = [
             m for m in self.all_messages(record["session"]) if m["run_id"] == run_id
         ]
@@ -1083,6 +1093,11 @@ class Store:
         payload = prompt.encode("utf-8")
         # Never redact prompt bytes: this is the exact model input for audit.
         return self._write_run_input(run_id, ".prompt.txt", payload)
+
+    def write_tool_catalog(self, run_id: str, catalog_json: str) -> str:
+        return self._write_run_input(
+            run_id, ".tool-catalog.json", catalog_json.encode()
+        )
 
     def write_tool_schemas(self, run_id: str, schemas: list[dict]) -> str:
         # Input evidence, not diagnostics: preserve schema property names/types.

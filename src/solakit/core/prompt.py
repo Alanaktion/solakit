@@ -23,6 +23,7 @@ class PromptInput:
     origin: str
     at: datetime
     timezone: str
+    tool_index: str = ""
 
 
 def build_prompt(parts: PromptInput) -> str:
@@ -34,6 +35,8 @@ def build_prompt(parts: PromptInput) -> str:
     if parts.recall:
         fragments.append(f"{parts.recall_header}\n<recall>\n{parts.recall}\n</recall>")
     fragments.append(parts.profile_fragment)
+    if parts.tool_index:
+        fragments.append(parts.tool_index)
     local = parts.at.astimezone(ZoneInfo(parts.timezone))
     fragments.append(
         f"<run>\ntime: {local.isoformat()}\ntimezone: {parts.timezone}\n"
@@ -51,6 +54,7 @@ def read_prompt(
     origin: str,
     at: datetime,
     recall: str | None = None,
+    tool_index: str = "",
 ) -> str:
     """Snapshot current files, preserving line endings and trailing whitespace."""
     if profile not in config.profiles:
@@ -62,6 +66,7 @@ def read_prompt(
     profile_path = root / "profiles" / f"{profile}.md"
     return build_prompt(
         PromptInput(
+            tool_index=tool_index,
             soul=config.paths.soul.read_bytes().decode("utf-8"),
             context=context.read_bytes().decode("utf-8") if context.exists() else None,
             recall=recall,

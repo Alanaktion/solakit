@@ -184,3 +184,9 @@ only derived tables and preserves `job_definitions`; do not delete `app.db` to
 repair an index. Pause/next-fire/active/last-run cursors retain their append-only
 `jobs/<id>.jsonl` evidence. Interrupted dispatches remain visible gaps and are not
 silently replayed. Keep referenced profiles and channels available across restarts.
+
+
+Jobs can override schema disclosure with `tool_disclosure` and `tool_resident`,
+without changing profile authority. Null residents inherit; an empty list starts
+with discovery only in deferred mode. See [tool disclosure](tool-disclosure.md)
+for validation, examples and run inspection.

@@ -9,7 +9,12 @@ from solakit.core.store import safe_id
 from solakit.tools import ToolContext, ToolError, ToolResult, tool
 
 
-@tool(name="sessions.search", profiles=["*"])
+@tool(
+    summary="Exact wording and attribution in past session transcripts",
+    keywords=("history", "transcript", "wording", "attribution"),
+    name="sessions.search",
+    profiles=["*"],
+)
 async def search(
     ctx: ToolContext,
     query: str,

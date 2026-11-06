@@ -414,6 +414,8 @@ def create_app(
         at: datetime | None = None,
         origin: str = "api",
         run_id: str | None = None,
+        job: str | None = None,
+        step: int | None = None,
     ) -> dict:
         if run_id is not None:
             try:
@@ -424,8 +426,19 @@ def create_app(
                 raise HTTPException(
                     409, "Prompt or tool schema snapshot was not recorded for this run"
                 )
+            schemas = record["tool_schemas"]
+            view = record.get("tool_view")
+            if step is not None:
+                snapshots = (view or {}).get("schema_steps", [])
+                snapshot = next((s for s in snapshots if s["step"] == step), None)
+                if snapshot is None:
+                    raise HTTPException(404, "Schema step not recorded")
+                schemas = [record["tool_catalog"][name] for name in snapshot["visible"]]
             return {
-                **inspection(record["prompt"], record["tool_schemas"]),
+                **inspection(record["prompt"], schemas),
+                "tool_view": view,
+                "schema_step": step,
+                "tool_catalog_sha256": record.get("tool_catalog_sha256"),
                 "run_id": run_id,
                 "profile": record["profile"],
                 "session": record["session"],
@@ -433,6 +446,15 @@ def create_app(
                 "tool_schema_sha256": record["tool_schema_sha256"],
             }
         try:
+            if job is not None:
+                try:
+                    definition = app.state.jobs.job(job)
+                except KeyError as exc:
+                    raise HTTPException(404, "Job not found") from exc
+                profile = definition.profile
+                view = app.state.jobs.tool_view(definition)
+            else:
+                view = app.state.registry.view(profile)
             result = await asyncio.to_thread(
                 read_prompt,
                 app.state.config,
@@ -441,8 +463,13 @@ def create_app(
                 origin=origin,
                 at=at or now(),
                 recall=recall,
+                tool_index=view.index_text,
             )
-            return inspection(result, app.state.registry.schemas(profile))
+            return {
+                **inspection(result, view.schemas()),
+                "tool_view": view.metadata(),
+                "effective_tools": list(view.effective),
+            }
         except (OSError, ValueError) as exc:
             raise HTTPException(422, "Prompt files or profile are invalid") from exc
 
@@ -478,7 +505,12 @@ def create_app(
 
     @api.get("/tools")
     async def tools() -> dict:
-        return app.state.redactor.redact(app.state.registry.catalog())
+        catalog = app.state.registry.catalog()
+        catalog["jobs"] = {
+            job.id: app.state.jobs.get(job.id)["tool_view"]
+            for job in app.state.jobs.jobs.values()
+        }
+        return app.state.redactor.redact(catalog)
 
     @api.get("/profiles")
     async def profiles() -> list[str]:

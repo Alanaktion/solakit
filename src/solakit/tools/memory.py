@@ -11,7 +11,12 @@ from solakit.tools import ToolContext, ToolError, ToolResult, tool
 PROFILES = ["*"]
 
 
-@tool(name="memory.search", profiles=PROFILES)
+@tool(
+    summary="Semantic recall: facts, decisions, preferences",
+    keywords=("recall", "semantic", "facts", "preferences"),
+    name="memory.search",
+    profiles=PROFILES,
+)
 async def search(
     ctx: ToolContext,
     query: Annotated[
@@ -35,7 +40,12 @@ async def search(
         raise ToolError(str(exc)) from exc
 
 
-@tool(name="memory.read", profiles=PROFILES)
+@tool(
+    summary="Read a memory resource by URI",
+    keywords=("memory", "resource", "uri"),
+    name="memory.read",
+    profiles=PROFILES,
+)
 async def read(
     ctx: ToolContext,
     uri: Annotated[
@@ -57,7 +67,12 @@ async def read(
         raise ToolError(str(exc)) from exc
 
 
-@tool(name="memory.remember", profiles=PROFILES)
+@tool(
+    summary="Stage an exact note for persistent memory",
+    keywords=("remember", "note", "save"),
+    name="memory.remember",
+    profiles=PROFILES,
+)
 async def remember(
     ctx: ToolContext,
     text: Annotated[

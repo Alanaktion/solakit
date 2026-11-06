@@ -4,6 +4,7 @@
 <section class="page-heading"><div><h1>Tools</h1><p class="intro">Loaded tools and the profiles that may use them.</p></div><span class="count-label">{{ catalog.tools|length }} loaded</span></section>
 <section class="tool-profiles panel" aria-label="Tools by profile">
   <h2>Profile access</h2>
+  {% if catalog.disclosure %}<details><summary>Disclosure diagnostics</summary>{% for profile, diagnostic in catalog.disclosure.items() %}<h3>{{ profile }}</h3><pre><code>{{ diagnostic|tojson(indent=2) }}</code></pre>{% endfor %}{% for job, diagnostic in catalog.jobs.items() %}<h3>Job {{ job }}</h3><pre><code>{{ diagnostic|tojson(indent=2) }}</code></pre>{% endfor %}</details>{% endif %}
   <p class="muted">Each conversation uses its session’s default profile. Loading a module alone does not grant its tools.</p>
   <dl>{% for profile, names in catalog.profiles.items() %}<div id="profile-{{ profile }}"><dt>{{ profile }}</dt><dd>{% for name in names %}<a href="#tool-{{ name }}"><code>{{ name }}</code></a>{% if not loop.last %}, {% endif %}{% else %}No tools granted{% endfor %}</dd></div>{% endfor %}</dl>
   <p class="muted">Enabled modules: {% if catalog.modules %}{{ catalog.modules|join(', ') }}{% else %}none{% endif %}</p>
@@ -11,7 +12,7 @@
 <div class="tool-catalog">
 {% for entry in catalog.tools %}
 <section class="tool-card panel" id="tool-{{ entry.name }}">
-  <h2><code>{{ entry.name }}</code></h2><p class="tool-description">{{ entry.description or 'No description provided.' }}</p>
+  <h2><code>{{ entry.name }}</code></h2><p>{{ entry.summary }}</p><p class="tool-description">{{ entry.description or 'No description provided.' }}</p>
   <dl><div><dt>Granted profiles</dt><dd>{{ entry.profiles|join(', ') or 'None' }}</dd></div><div><dt>Write requirements</dt><dd>{{ entry.writes|join(', ') or 'None declared' }}</dd></div></dl>
   <details><summary>Arguments</summary><pre><code>{{ entry.parameters|tojson(indent=2) }}</code></pre></details>
 </section>

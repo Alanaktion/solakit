@@ -3,6 +3,7 @@
 import argparse
 import json
 import os
+import sqlite3
 import sys
 
 import httpx
@@ -26,6 +27,9 @@ def main() -> None:
     prompt.add_argument("--profile", default="interactive")
     prompt.add_argument("--session", default="inspection")
     prompt.add_argument("--json", action="store_true")
+    prompt.add_argument("--job")
+    prompt.add_argument("--run-id")
+    prompt.add_argument("--step", type=int)
     search = commands.add_parser(
         "search", help="Search the local message index offline"
     )
@@ -133,6 +137,42 @@ def main() -> None:
 
         for provider in prepared.registry.distributions:
             print("Tool module " + description(provider))
+        from solakit.jobs.definitions import inspect_definitions
+
+        for name in prepared.config.profiles:
+            diagnostics = prepared.registry.view(name).diagnostics(
+                prepared.config.profiles[name].context_budget
+            )
+            print("Tool disclosure profile " + name + ": " + json.dumps(diagnostics))
+        try:
+            inspected_jobs = inspect_definitions(
+                prepared.config.paths.data / "app.db", prepared.config.jobs
+            )
+        except (OSError, ValueError, sqlite3.Error):
+            parser.exit(
+                1, "Configuration error: cannot inspect stored job definitions\n"
+            )
+        for job in inspected_jobs:
+            if job.profile not in prepared.config.profiles:
+                print("Tool disclosure job " + job.id + ": unknown profile")
+                continue
+            view = prepared.registry.view(
+                job.profile,
+                job.tools,
+                job.tool_disclosure,
+                job.tool_resident,
+                strict=False,
+            )
+            print(
+                "Tool disclosure job "
+                + job.id
+                + ": "
+                + json.dumps(
+                    view.diagnostics(
+                        prepared.config.profiles[job.profile].context_budget
+                    )
+                )
+            )
         print("Configuration valid.")
         return
     try:
@@ -159,7 +199,17 @@ def main() -> None:
             return
         response = httpx.get(
             f"{args.url.rstrip('/')}/api/prompt",
-            params={"profile": args.profile, "session": args.session},
+            params={
+                k: v
+                for k, v in {
+                    "profile": args.profile,
+                    "session": args.session,
+                    "job": args.job,
+                    "run_id": args.run_id,
+                    "step": args.step,
+                }.items()
+                if v is not None
+            },
             headers={"Authorization": f"Bearer {token}"},
             timeout=30,
             trust_env=args.trust_env,

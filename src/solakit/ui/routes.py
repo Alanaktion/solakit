@@ -1052,7 +1052,19 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
         if recorded_run is not None:
             try:
                 evidence = await api(
-                    request, "GET", "/api/prompt?" + urlencode({"run_id": recorded_run})
+                    request,
+                    "GET",
+                    "/api/prompt?"
+                    + urlencode(
+                        {
+                            k: v
+                            for k, v in {
+                                "run_id": recorded_run,
+                                "step": request.query_params.get("step"),
+                            }.items()
+                            if v is not None
+                        }
+                    ),
                 )
                 return render(
                     request,
@@ -1067,6 +1079,7 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
             except APIError as exc:
                 return render(request, "error.html", {"error": exc.detail}, exc.status)
         values = {
+            "job": request.query_params.get("job", ""),
             "profile": request.query_params.get("profile", "interactive"),
             "session": request.query_params.get("session", "inspection"),
             "origin": request.query_params.get("origin", "api"),
@@ -1215,6 +1228,10 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
                 **values,
                 "schedule_type": "once" if values.get("run_at") else "cron",
                 "run_at": job_local_time(values) if values.get("run_at") else "",
+                "resident_mode": "inherit"
+                if values.get("tool_resident") is None
+                else "selected",
+                "tool_resident": " ".join(values.get("tool_resident") or []),
                 "delivery_mode": delivery.get("mode", "automatic"),
                 "delivery_to": delivery.get("to", ""),
                 "tools_mode": "inherit"
@@ -1294,6 +1311,9 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
                 "polling",
                 "catch_up",
                 "tools_mode",
+                "tool_disclosure",
+                "resident_mode",
+                "tool_resident",
                 "tools",
             }
             if set(values) - allowed:
@@ -1302,6 +1322,16 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
                 key: values.get(key, "")
                 for key in ("timezone", "profile", "task", "bind_session")
             }
+            if "tool_disclosure" in values:
+                payload["tool_disclosure"] = values["tool_disclosure"]
+            if "resident_mode" in values:
+                if values["resident_mode"] not in {"inherit", "selected"}:
+                    raise APIError(422, "Invalid resident selection.")
+                payload["tool_resident"] = (
+                    None
+                    if values["resident_mode"] == "inherit"
+                    else values.get("tool_resident", "").split()
+                )
             tools_mode = values.get("tools_mode", "inherit")
             if tools_mode not in {"inherit", "selected", "none"}:
                 raise APIError(422, "Choose inherited, selected, or no job tools.")

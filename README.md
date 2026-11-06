@@ -19,6 +19,7 @@ in a private data directory. Integrations are opt-in.
 - [Runtime operations](docs/operations.md): API, prompts, storage and recovery, search, memory, channels, and tool grants.
 - [Recall direction and memory notes](docs/operations/memory-direction.md).
 - [Delegated sub-agents](docs/operations/delegation.md).
+- [Conditional tool disclosure](docs/operations/tool-disclosure.md): optional deferred schemas, with eager defaults.
 - [Scheduled jobs](docs/operations/jobs.md) and [shell tools](docs/operations/shell.md).
 - [Session archival](docs/operations/session-archive.md): reversible cleanup of imported history, activity filters and bulk restore.
 - [Optional tool packs](packs/README.md) and their resource configuration.

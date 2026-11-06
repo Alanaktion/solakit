@@ -185,11 +185,14 @@ class Jobs:
 
     async def _missed(self, job, state, at, reason):
         session = await self._session(job)
+        view = self.tool_view(job)
         run = Run(
             session=session.id,
             profile=job.profile,
             origin=Origin(channel="job", job=job.id),
             input_message=render_task(job, at),
+            tool_view=view.metadata(),
+            effective_tools=list(view.effective),
             status=RunStatus.missed,
             created_at=at,
             finished_at=self.clock(),
@@ -286,6 +289,7 @@ class Jobs:
                 run = Run(
                     session=session.id,
                     profile=job.profile,
+                    tool_view=self.tool_view(job).metadata(),
                     effective_tools=self.execution.registry.effective_tools(
                         job.profile, job.tools
                     ),
@@ -303,6 +307,8 @@ class Jobs:
                 render_task(job, at),
                 profile=job.profile,
                 tools=job.tools,
+                tool_disclosure=job.tool_disclosure,
+                tool_resident=job.tool_resident,
                 origin=Origin(channel="job", job=job.id),
             )
             admitted.set_result(pending.run.model_dump(mode="json"))
@@ -383,12 +389,23 @@ class Jobs:
             raise KeyError("Job not found")
         return self.jobs[job_id]
 
+    def tool_view(self, job):
+        return self.execution.registry.view(
+            job.profile, job.tools, job.tool_disclosure, job.tool_resident, strict=False
+        )
+
     def get(self, job_id):
         job = self.job(job_id)
         effective = self.execution.registry.effective_tools(job.profile, job.tools)
         return {
             **job.model_dump(mode="json"),
             **self.states[job_id].model_dump(mode="json"),
+            "tool_view": self.tool_view(job).diagnostics(
+                self.config.profiles[job.profile].context_budget
+            ),
+            "unavailable_resident": sorted(
+                set(job.tool_resident or []) - set(effective)
+            ),
             "effective_tools": effective,
             "unavailable_tools": sorted(set(job.tools or []) - set(effective)),
         }
@@ -413,6 +430,13 @@ class Jobs:
             safe_id(job.bind_session)
         if job.profile not in self.config.profiles:
             raise ValueError("Job references unknown profile")
+        if check_tools:
+            try:
+                self.execution.registry.view(
+                    job.profile, job.tools, job.tool_disclosure, job.tool_resident
+                )
+            except ValueError as exc:
+                raise JobToolsError(f"Job tools resident selection: {exc}") from exc
         if job.profile == "maintenance":
             raise ValueError("Maintenance cannot be scheduled")
         if check_tools and job.tools is not None:

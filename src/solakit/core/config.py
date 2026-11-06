@@ -121,6 +121,8 @@ class PathsConfig(StrictModel):
 
 
 class Profile(StrictModel):
+    tool_disclosure: Literal["eager", "deferred"] = "eager"
+    tool_resident: list[str] = Field(default_factory=list)
     tools: list[str] = Field(default_factory=list)
     read_scopes: list[str] = Field(default_factory=list)
     write_scopes: list[str] = Field(default_factory=list)
@@ -169,6 +171,8 @@ class Job(StrictModel):
     timezone: str = "America/Denver"
     profile: str
     tools: list[str] | None = Field(default=None, max_length=256)
+    tool_disclosure: Literal["inherit", "eager", "deferred"] = "inherit"
+    tool_resident: list[str] | None = None
     task: str
     bind_session: str
     sub_session: bool = False

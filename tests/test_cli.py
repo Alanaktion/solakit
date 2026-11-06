@@ -35,7 +35,9 @@ def test_offline_check_has_actionable_error_without_traceback(
 
     monkeypatch.setattr("httpx.AsyncClient", forbidden)
     main()
-    assert capsys.readouterr().out == "Configuration valid.\n"
+    output = capsys.readouterr().out
+    assert "Tool disclosure profile interactive:" in output
+    assert output.endswith("Configuration valid.\n")
     (config.paths.fragments / "profiles/interactive.md").unlink()
     with pytest.raises(SystemExit) as error:
         main()

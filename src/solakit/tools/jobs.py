@@ -70,7 +70,12 @@ async def operation(ctx, name, *args):
         ) from exc
 
 
-@tool(name="jobs.list", profiles=["*"])
+@tool(
+    summary="List scheduled tasks visible to this profile",
+    keywords=("schedule", "cron", "list"),
+    name="jobs.list",
+    profiles=["*"],
+)
 async def list_jobs(ctx: ToolContext) -> ToolResult:
     """List jobs for this chat/profile; jobs.manage.all allows every job."""
     jobs = manager(ctx)
@@ -79,7 +84,13 @@ async def list_jobs(ctx: ToolContext) -> ToolResult:
     )
 
 
-@tool(name="jobs.create", profiles=["*"], writes=["jobs.manage"])
+@tool(
+    summary="Schedule a recurring or one-time task",
+    keywords=("schedule", "cron", "reminder", "create"),
+    name="jobs.create",
+    profiles=["*"],
+    writes=["jobs.manage"],
+)
 async def create(
     ctx: ToolContext,
     id: str,
@@ -95,6 +106,8 @@ async def create(
     polling: bool = False,
     catch_up: bool = False,
     tools: list[str] | None = None,
+    tool_disclosure: str = "inherit",
+    tool_resident: list[str] | None = None,
 ) -> ToolResult:
     """Schedule a recurring (cron) or one-time (run_at) task in this conversation.
 
@@ -112,6 +125,8 @@ async def create(
     only configured final delivery reaches the channel. No parent history is copied.
     catch_up requires polling=true. Other profiles/sessions/delivery require
     jobs.manage.all. A stable ID prevents duplicate creation on retry.
+    tool_disclosure accepts inherit/eager/deferred; tool_resident=null inherits
+    profile residents, [] starts with discovery only in deferred mode.
     tools=null inherits profile tools; tools=[] exposes none; an explicit list
     must be a subset of profile grants and cannot add capabilities or scopes.
     """
@@ -130,6 +145,8 @@ async def create(
             polling=polling,
             catch_up=catch_up,
             tools=tools,
+            tool_disclosure=tool_disclosure,
+            tool_resident=tool_resident,
         )
     except ValueError as exc:
         raise ToolError("Invalid job definition") from exc
@@ -138,7 +155,13 @@ async def create(
     return await operation(ctx, "create", job)
 
 
-@tool(name="jobs.update", profiles=["*"], writes=["jobs.manage"])
+@tool(
+    summary="Update a scheduled task and its tool policy",
+    keywords=("schedule", "cron", "edit"),
+    name="jobs.update",
+    profiles=["*"],
+    writes=["jobs.manage"],
+)
 async def update(ctx: ToolContext, id: str, changes: dict[str, Any]) -> ToolResult:
     """Edit job fields (cron, run_at, timezone, profile, task, bind_session, deliver,
     enabled, sub_session, polling, catch_up, tools). ID is immutable;
@@ -161,7 +184,13 @@ async def update(ctx: ToolContext, id: str, changes: dict[str, Any]) -> ToolResu
     return await operation(ctx, "update", id, patch)
 
 
-@tool(name="jobs.run", profiles=["*"], writes=["jobs.run"])
+@tool(
+    summary="Queue a scheduled task immediately",
+    keywords=("schedule", "cron", "run"),
+    name="jobs.run",
+    profiles=["*"],
+    writes=["jobs.run"],
+)
 async def run(ctx: ToolContext, id: str) -> ToolResult:
     """Queue an enabled job once without waiting, including in this chat.
 

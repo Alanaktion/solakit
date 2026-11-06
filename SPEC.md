@@ -1221,3 +1221,50 @@ actions, with no connection or credential resolution. `email.search` supports
 `unseen_only`, returns seen state and total matches, and preserves unread state.
 Use a narrow report-only inbox profile and name aliases in scheduled tasks; see
 [email pack guidance](packs/email/README.md).
+
+
+## Conditional tool disclosure
+
+Profile `tool_disclosure` is `eager` (default) or `deferred`; `tool_resident` is an
+ordered list, empty by default. Jobs override mode with `inherit`/`eager`/`deferred`
+and residents with null (inherit), [] (none) or an ordered replacement. All views
+resolve effective tools from profile grants intersected with the job ceiling.
+Inherited residents intersect that ceiling; explicit residents must already belong
+to it. Save validation rejects duplicates, unavailable residents and reserved
+`tools.*` names. Persisted profile drift narrows runtime exposure without invalidating
+existing job definitions. Capabilities, scopes, budgets and fragments remain profile-owned.
+
+Each run freezes a generic ToolView containing granted metadata, schemas, effective
+and resident order, mode and deterministic index/hash. Eager schemas and prompt
+assembly retain their prior bytes/order. Deferred prompts insert the granted-only
+family/name-sorted index after the profile fragment. Initial schemas are runtime
+`tools.search`, `tools.load`, then residents; activated schemas append in activation
+order. Discovery tools are built into a separate runtime namespace, never wildcard
+grants or profile catalog tools. Search is deterministic lexical ranking with exact
+name/underscore-alias preference and a 1–5 result limit; matches activate. Load takes
+1–5 exact names and returns loaded/already-loaded/rejected partitions. An unmatched
+search succeeds with family/load guidance. A wholly rejected load is a nonrepairable
+error; invalid discovery arguments also do not consume repair attempts.
+
+Dispatch checks grants before intercepting an unloaded real tool. Interception
+loads the schema and returns a nonrepairable error without execution or argument
+validation. Normal capability/scope checks remain on actual execution. Activation
+from earlier calls applies to later calls in the same sequential group. Pure
+disclosure groups consume a separate eight-step cap; mixed/real groups consume
+max_steps. Cap exhaustion is tool_error with "tool loading did not converge".
+Total model steps and separate work/disclosure counters are recorded. Context byte
+checks and compaction rechecks always use currently visible schemas. Delegated
+workers use child-profile defaults; sub-session jobs carry job overrides; no
+activation state survives a run.
+
+Run.tool_view records mode, effective/resident names, index hash, activations and
+per-request visible names. Initial schema evidence remains immutable; deferred
+runs also write a full immutable, hash-verified tool catalog for historical step
+inspection. Prompt hashes cover the static index. Missing older metadata means
+historical eager behavior. /api/prompt accepts job for initial job inspection and
+run_id plus optional step for saved schema evidence, independent of current grants.
+/tools and sola check expose per-profile/job counts and byte diagnostics, warning
+above 25% context budget for deferred initial payload or 50% for eager schemas.
+Warnings neither switch modes nor impose hard limits. See
+[operator guidance](docs/operations/tool-disclosure.md) for the live pinned-model
+acceptance gate; interactive deferred mode remains opt-in and unevaluated live.

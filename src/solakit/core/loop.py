@@ -27,6 +27,7 @@ from solakit.core.schemas import (
 )
 from solakit.core.store import Store
 from solakit.tools import Registry, ToolContext
+from solakit.tools.disclosure import DISCLOSURE_STEPS, ToolView
 
 
 @dataclass
@@ -39,6 +40,7 @@ class Pending:
     stream: bool = False
     preview: dict | None = None
     parent_run: str | None = None
+    tool_view: ToolView | None = None
 
 
 class Execution:
@@ -79,6 +81,8 @@ class Execution:
         stream: bool = False,
         images: list[ImageRef] | None = None,
         tools: list[str] | None = None,
+        tool_disclosure: str = "inherit",
+        tool_resident: list[str] | None = None,
     ) -> Pending:
         # Admission (durable run + queue ownership) is indivisible even if an
         # asynchronous HTTP client disconnects while the run record is written.
@@ -91,6 +95,8 @@ class Execution:
                 stream=stream,
                 images=images,
                 tools=tools,
+                tool_disclosure=tool_disclosure,
+                tool_resident=tool_resident,
             )
         )
         try:
@@ -109,6 +115,8 @@ class Execution:
         stream: bool = False,
         images: list[ImageRef] | None = None,
         tools: list[str] | None = None,
+        tool_disclosure: str = "inherit",
+        tool_resident: list[str] | None = None,
         nested_parent: Pending | None = None,
         nested_task: asyncio.Task | None = None,
     ) -> Pending:
@@ -140,16 +148,21 @@ class Execution:
                     for p in self.pending.values()
                 ):
                     raise ValueError("Child session has queued or running work")
+            view = self.registry.view(
+                profile, tools, tool_disclosure, tool_resident, strict=False
+            )
             run = Run(
                 session=session_id,
                 profile=profile,
                 input_message=text,
                 input_images=images or [],
-                effective_tools=self.registry.effective_tools(profile, tools),
+                effective_tools=list(view.effective),
+                tool_view=view.metadata(),
                 origin=origin or Origin(),
             )
             await durable(self.store.save_run, run)
             pending = Pending(run, text, asyncio.get_running_loop().create_future())
+            pending.tool_view = view
             pending.stream = stream
             # Async API clients need not await the result; consume exceptions to
             # avoid orphan-future warnings without changing await semantics.
@@ -183,6 +196,8 @@ class Execution:
         stream: bool = False,
         images: list[ImageRef] | None = None,
         tools: list[str] | None = None,
+        tool_disclosure: str = "inherit",
+        tool_resident: list[str] | None = None,
     ) -> Run:
         pending = await self.enqueue(
             session_id,
@@ -192,6 +207,8 @@ class Execution:
             stream=stream,
             images=images,
             tools=tools,
+            tool_disclosure=tool_disclosure,
+            tool_resident=tool_resident,
         )
         # A client disconnect does not silently cancel an accepted run.
         return await asyncio.shield(pending.future)
@@ -393,6 +410,14 @@ class Execution:
             run.effective_tools = self.registry.effective_tools(
                 run.profile, run.effective_tools
             )
+            pending.tool_view = self.registry.view(
+                run.profile,
+                run.effective_tools,
+                pending.tool_view.mode,
+                list(pending.tool_view.resident),
+                strict=False,
+            )
+            run.tool_view = pending.tool_view.metadata()
             run.status = RunStatus.running
             await durable(self.store.save_run, run)
             await self.model.preflight()
@@ -422,10 +447,11 @@ class Execution:
                 origin=run.origin.job or run.origin.channel,
                 at=now(),
                 recall=recall,
+                tool_index=pending.tool_view.index_text,
             )
             if history is None:
                 history = await durable(self.store.transcript, session.id)
-            tools = self.registry.schemas(run.profile, run.effective_tools)
+            tools = pending.tool_view.schemas()
             preview = [
                 {"role": "system", "content": prompt},
                 *valid_history(history),
@@ -447,6 +473,12 @@ class Execution:
                 > self.config.profiles[run.profile].context_budget
             ):
                 await self._compact_run(run, session, "before_turn", 0)
+            if pending.tool_view.mode == "deferred":
+                run.tool_catalog_sha256 = await durable(
+                    self.store.write_tool_catalog,
+                    run.id,
+                    pending.tool_view.catalog_json,
+                )
             run.tool_schema_sha256 = await durable(
                 self.store.write_tool_schemas, run.id, tools
             )
@@ -533,6 +565,22 @@ class Execution:
             run_id=run.id,
         )
         messages.append(user.model_message())
+        view = self.pending[run.id].tool_view
+        loaded_tools = list(view.resident)
+        step = work_steps = disclosure_steps = 0
+
+        def activate(names):
+            added = [
+                n
+                for n in dict.fromkeys(names)
+                if n in view.effective and n not in loaded_tools
+            ]
+            if added:
+                loaded_tools.extend(added)
+                run.tool_view["activations"].append(
+                    {"step": step + 1, "activated": added}
+                )
+
         repairs = 0
         usage_complete = True
         ctx = ToolContext(
@@ -541,6 +589,10 @@ class Execution:
             self.config,
             self.store,
             run.id,
+            tool_view=view,
+            active_tools=loaded_tools,
+            activate_tools=activate,
+            configured_tool_names=frozenset(self.registry.tools),
             nested_submit=self.submit_nested,
             stage_memory=self.stage_memory_note,
             tool_allowlist=frozenset(run.effective_tools)
@@ -552,10 +604,10 @@ class Execution:
                 else None
             ),
         )
-        for step in range(cfg.max_steps):
+        while work_steps < cfg.max_steps:
             if self.pending[run.id].cancellation is not None:
                 raise asyncio.CancelledError
-            tools = self.registry.schemas(run.profile, run.effective_tools)
+            tools = view.schemas(loaded_tools)
             if (
                 request_bytes(
                     self.config.model.model_id,
@@ -591,6 +643,14 @@ class Execution:
                         "Compacted request still exceeds context byte budget"
                     )
             pending = self.pending[run.id]
+            if view.mode == "deferred":
+                run.tool_view["schema_steps"].append(
+                    {
+                        "step": step + 1,
+                        "visible": [s["function"]["name"] for s in tools],
+                    }
+                )
+                await durable(self.store.save_run, run)
 
             if pending.stream:
                 active = await durable(self.store.transcript, session.id)
@@ -653,11 +713,23 @@ class Execution:
                 return
             calls = assistant.tool_calls or []
             if not calls:
+                run.tool_view["work_steps"] = work_steps + 1
                 run.status = RunStatus.completed
                 return
             exhausted = False
+            disclosure_only = view.mode == "deferred"
             for call in calls:
                 function = call["function"]
+                name = function["name"]
+                discovery = view.mode == "deferred" and (
+                    name in ("tools.search", "tools.load")
+                    or (
+                        name in view.effective
+                        and name not in loaded_tools
+                        and self.registry.allowed(name, run.profile)
+                    )
+                )
+                disclosure_only = disclosure_only and discovery
                 if exhausted:
                     content = json.dumps(
                         {"error": True, "content": "Repair budget exhausted"}
@@ -685,7 +757,18 @@ class Execution:
                 )
                 await durable(self.store.append_message, session.id, tool_message)
                 messages.append(tool_message.model_message())
+            if disclosure_only:
+                disclosure_steps += 1
+            else:
+                work_steps += 1
+            run.tool_view["disclosure_steps"] = disclosure_steps
+            run.tool_view["work_steps"] = work_steps
+            step += 1
             await durable(self.store.save_run, run)
+            if disclosure_steps >= DISCLOSURE_STEPS:
+                run.status = RunStatus.tool_error
+                run.error = "tool loading did not converge"
+                return
             if exhausted:
                 run.status = RunStatus.tool_error
                 return

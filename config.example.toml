@@ -53,6 +53,9 @@ fragments = "fragments"
 # Optional values inherited by every profile. A value in a named profile replaces
 # its default; list values replace the whole list rather than being appended.
 [profile_defaults]
+# Disclosure stays eager by default. See docs/operations/tool-disclosure.md.
+# tool_disclosure = "eager" # Opt in per profile to "deferred" after evaluation.
+# tool_resident = [] # Ordered, loaded/granted names; deferred initial full schemas.
 context_budget = 32000
 mid_run_compaction = false
 tools = []
@@ -140,6 +143,9 @@ task = "Review the configured inbox on {date}."
 # Omit tools to inherit profile grants; an explicit list only narrows them.
 # tools = [] # No model-callable tools (for example, a pure announcement).
 # tools = ["runtime.status"] # Must already be granted by this profile.
+# tool_disclosure = "inherit" # Or "eager" / "deferred".
+# Omit tool_resident to inherit profile residents, intersected with job tools.
+# tool_resident = [] # Override: discovery only initially in deferred mode.
 bind_session = "discord-pilot"
 sub_session = false # Fresh child with inherited memory; only final delivery reaches channel.
 polling = true

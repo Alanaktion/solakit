@@ -75,3 +75,37 @@ Draft recovery depends on same-tab sessionStorage availability. Authentication
 continues to require login after restart. The default no-JavaScript send accepts
 and redirects to the run-in-progress conversation, with a manual reload link.
 No public deployment or live-data migration is part of this change.
+
+## Conditional tool disclosure — 2026-11-05
+
+Implemented opt-in deferred schemas with eager defaults. A frozen per-run ToolView
+keeps the static granted-only index, initial resident set and schema catalog;
+search/load activate only effective grants. Direct inactive calls load their
+schema and return without execution. Pure discovery has an eight-step cap,
+separate from profile work and repair budgets. Scope/capability enforcement stays
+on the existing dispatch path; activation does not grant authority.
+
+Profile and job modes/residents, API/chat/form editing, job/profile inspection,
+offline diagnostics, context checks and historical activation/step inspection are
+implemented. Initial schemas retain their existing immutable evidence; deferred
+runs additionally snapshot a hash-verified full catalog. Job inherited residents
+intersect the job ceiling; explicit replacement residents must belong to that
+ceiling. This resolves the plan's inherited-resident ambiguity without widening
+access. Stored profile drift safely shrinks exposure and remains visible. Workers
+use their own profile defaults; sub-session jobs carry their job overrides.
+
+Validation: **519 core/pack tests passed**, including **39 disclosure regressions**
+covering eager bytes/order, granted-only indexes, lexical search and exact aliases,
+partial loads, same-group activation, inactive-call interception, repair/work/
+discovery budgets, streaming, context/compaction rechecks, capability checks,
+job modes/validation/profile drift, sub-sessions, missed records, worker isolation,
+readonly offline diagnostics and immutable schema evidence. Ruff and formatting
+checks passed; core and all seven pack wheels/sdists built. Chromium form,
+validation, dry-run/recorded inspector and catalog checks passed at 320/390/768/1440
+pixels in both light and dark themes; screenshots were reviewed separately.
+
+No live pinned-model evaluation was run. **Interactive remains eager**; mechanism
+verification with mocks does not satisfy the live adoption gate. Before enabling
+interactive deferred mode, run the golden tool-use battery eager versus deferred:
+no eager-successful task may regress, median additional tool-task model steps must
+be at most one, and initial interactive request bytes must fall at least 50%.

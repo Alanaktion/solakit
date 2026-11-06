@@ -44,7 +44,13 @@ async def run_process(ctx, argv, directory, timeout_s):
     )
 
 
-@tool(name="shell.exec", profiles=["*"], writes=["filesystem", "shell.exec"])
+@tool(
+    summary="Execute literal argv without shell expansion within cwd scopes",
+    keywords=("shell", "command", "terminal"),
+    name="shell.exec",
+    profiles=["*"],
+    writes=["filesystem", "shell.exec"],
+)
 async def exec_command(
     ctx: ToolContext,
     argv: Annotated[
@@ -80,7 +86,13 @@ async def exec_command(
     return await run_process(ctx, argv, directory, timeout_s)
 
 
-@tool(name="shell.run", profiles=["*"], writes=["filesystem", "shell.exec"])
+@tool(
+    summary="Run a /bin/sh command with shell expansion within cwd scopes",
+    keywords=("shell", "command", "terminal"),
+    name="shell.run",
+    profiles=["*"],
+    writes=["filesystem", "shell.exec"],
+)
 async def run(
     ctx: ToolContext,
     command: Annotated[
