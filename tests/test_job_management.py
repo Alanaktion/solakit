@@ -223,7 +223,7 @@ def test_chat_tools_create_edit_trigger_same_session_and_scope_grants(config):
         "jobs.pause",
         "jobs.delete",
     ]
-    config.profiles["interactive"].capabilities = ["jobs.manage", "jobs.run"]
+    config.profiles["interactive"].effects = ["operate", "operate"]
     execution = setup(
         config,
         lambda request: (
@@ -259,11 +259,12 @@ def test_chat_tools_create_edit_trigger_same_session_and_scope_grants(config):
                     "update", id="chat-job", changes={"profile": "maintenance"}
                 )
             ).error
-            assert (
+            assert not (
                 await dispatch(
                     "update", id="chat-job", changes={"bind_session": "another"}
                 )
             ).error
+            await dispatch("update", id="chat-job", changes={"bind_session": "s"})
             await execution.semaphore.acquire()
             reply = await asyncio.wait_for(dispatch("run", id="chat-job"), timeout=2)
             assert not reply.error and jobs.states["chat-job"].active
@@ -272,9 +273,10 @@ def test_chat_tools_create_edit_trigger_same_session_and_scope_grants(config):
             assert execution.store.transcript("s")[-1]["content"] == "Job done"
             assert not (await dispatch("pause", id="chat-job")).error
             await jobs.create(Job(**{**definition(), "id": "outside"}))
-            assert "outside" not in (await dispatch("list")).content
+            assert "outside" in (await dispatch("list")).content
+            config.profiles["interactive"].effects.clear()
             assert (await dispatch("run", id="outside")).error
-            config.profiles["interactive"].capabilities.append("jobs.manage.all")
+            config.profiles["interactive"].effects.append("operate")
             assert "outside" in (await dispatch("list")).content
             assert not (await dispatch("delete", id="chat-job")).error
         finally:
@@ -335,7 +337,7 @@ def test_runner_can_create_edit_and_trigger_current_session_job_without_deadlock
     calls = []
     config.enabled_tools = ["jobs"]
     config.profiles["interactive"].tools = ["jobs.create", "jobs.update", "jobs.run"]
-    config.profiles["interactive"].capabilities = ["jobs.manage", "jobs.run"]
+    config.profiles["interactive"].effects = ["operate", "operate"]
 
     def model(request):
         if request.url.path.endswith("/models"):
@@ -399,7 +401,7 @@ def test_runner_can_create_edit_and_trigger_current_session_job_without_deadlock
 def test_scope_authorization_rechecked_under_mutation_lock(config):
     config.enabled_tools = ["jobs"]
     config.profiles["interactive"].tools = ["jobs.update"]
-    config.profiles["interactive"].capabilities = ["jobs.manage"]
+    config.profiles["interactive"].effects = ["operate"]
     execution = setup(config, lambda request: model_list(config))
     jobs = Jobs(config, execution, Channels(config, execution, {}))
     execution.registry.job_manager = jobs
@@ -424,6 +426,7 @@ def test_scope_authorization_rechecked_under_mutation_lock(config):
             )
             await asyncio.sleep(0)
             await asyncio.sleep(0)
+            config.profiles["interactive"].effects.clear()
             jobs.lock.release()
             await operator
             assert (await model).error

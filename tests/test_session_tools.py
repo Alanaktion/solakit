@@ -61,9 +61,9 @@ def test_current_default_and_explicit_cross_session_grant(setup):
         "current"
     }
     assert payload(invoke(setup, session_id="current"))["session_id"] == "current"
-    assert "sessions.search.all" in invoke(setup, session_id="other").content
-    assert "sessions.search.all" in invoke(setup, all_sessions=True).content
-    ctx.config.profiles[ctx.profile].capabilities = ["sessions.search.all"]
+    assert "operate" in invoke(setup, session_id="other").content
+    assert "operate" in invoke(setup, all_sessions=True).content
+    ctx.config.profiles[ctx.profile].effects = ["operate"]
     assert {
         hit["session_id"]
         for hit in payload(invoke(setup, all_sessions=True))["matches"]

@@ -4,7 +4,7 @@ Separate `solakit-packs-common` distribution. Runtime modules do not import
 pytest; `sola_packs.support.testing` is optional test support (`[test]` extra).
 
 Provides pack-owned resource loading from `SOLA_PACKS_CONFIG`, strict per-resource
-schemas, explicit capability checks, and env/mode-0600 secret references. Relative
+schemas, explicit resource and effect checks, and env/mode-0600 secret references. Relative
 secret-file paths resolve beside the sidecar. Resolved credentials register with
 the existing Store redactor before network access, so runtime logs and UI masking
 continue to cover credentials the core did not know at startup.

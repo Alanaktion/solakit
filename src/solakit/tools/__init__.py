@@ -1,9 +1,10 @@
-"""Configured tool discovery, typed arguments, and enforced capabilities."""
+"""Configured tool discovery, typed arguments, and access enforcement."""
 
 import asyncio
 import importlib
 import inspect
 import json
+import logging
 import re
 import time
 import traceback
@@ -14,7 +15,7 @@ from typing import Any, get_type_hints
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, create_model
 
-from solakit.core.config import Config, Profile
+from solakit.core.config import EFFECTS, Config, Profile
 from solakit.core.io import durable
 from solakit.core.schemas import Session
 from solakit.core.store import Store
@@ -106,12 +107,7 @@ class ToolContext:
         """Resolve symlinks and enforce the actual path against explicit roots."""
         candidate = Path(path).expanduser().resolve()
         profile = self.config.profiles[self.profile]
-        scopes = (
-            profile.write_scopes
-            if write
-            else (profile.read_scopes + profile.write_scopes)
-        )
-        roots = [scope_root(scope, self.config) for scope in scopes]
+        roots = tier_roots(profile, self.config, write=write)
         if not any(root and candidate.is_relative_to(root) for root in roots):
             raise ToolError("Path is outside profile filesystem scopes")
         return candidate
@@ -138,6 +134,36 @@ def scope_root(scope: str, config: Config) -> Path | None:
     raise ValueError(f"unknown filesystem scope: {scope}")
 
 
+def tier_roots(profile: Profile, config: Config, *, write: bool) -> list[Path]:
+    def roots(tier, entries, *, default_workspace=True):
+        if tier == "anywhere":
+            return [Path("/")]
+        if tier == "none":
+            return []
+        if entries is None:
+            entries = profile.workspace
+        if not entries and default_workspace:
+            return [
+                config.paths.data.expanduser().resolve(),
+                *(p.expanduser().resolve() for p in config.repositories.values()),
+            ]
+        result = []
+        for entry in entries or []:
+            root = scope_root(entry, config)
+            if root is None:
+                raise ValueError(f"Unknown workspace resource: {entry}")
+            result.append(root)
+        return result
+
+    writes = roots(
+        profile.write,
+        profile.write_workspace,
+        default_workspace=profile.write_workspace is None,
+    )
+    result = writes if write else roots(profile.read, profile.workspace) + writes
+    return [Path("/")] if Path("/") in result else list(dict.fromkeys(result))
+
+
 @dataclass(frozen=True)
 class Manifest:
     name: str
@@ -147,6 +173,7 @@ class Manifest:
     manages_timeout: bool = False
     summary: str | None = None
     keywords: tuple[str, ...] = ()
+    effect: str | None = None
 
 
 def tool(
@@ -155,6 +182,7 @@ def tool(
     profiles: list[str],
     writes: list[str] = (),
     timeout: float | None = None,
+    effect: str | None = None,
     manages_timeout: bool = False,
     summary: str | None = None,
     keywords: tuple[str, ...] = (),
@@ -168,6 +196,7 @@ def tool(
             manages_timeout,
             summary,
             tuple(keywords),
+            effect,
         )
         return function
 
@@ -226,6 +255,12 @@ class Registry:
 
     def register(self, function: Callable, manifest: Manifest | None = None) -> None:
         manifest = manifest or function.__sola_tool__
+        if manifest.effect is not None and manifest.effect not in EFFECTS:
+            raise ValueError(f"Unknown tool effect: {manifest.effect}")
+        if any(w != "filesystem" for w in manifest.writes):
+            raise ValueError(
+                "writes accepts only filesystem; use effect for outward actions"
+            )
         if manifest.name.startswith("tools."):
             raise ValueError("tools.* is reserved for runtime disclosure")
         if manifest.summary is not None and (
@@ -252,54 +287,135 @@ class Registry:
         )
         self.tools[manifest.name] = Registered(function, manifest, arguments)
 
-    def allowed(self, name: str, profile: str) -> bool:
-        registered = self.tools.get(name)
-        cfg = self.config.profiles[profile]
-        return (
-            registered is not None
-            and (name in cfg.tools or "*" in cfg.tools)
-            and (
-                profile in registered.manifest.profiles
-                or "*" in registered.manifest.profiles
-            )
+    def expand_grants(
+        self, entries: list[str], profile: str, *, strict: bool = True
+    ) -> list[str]:
+        available = sorted(
+            n
+            for n, t in self.tools.items()
+            if profile in t.manifest.profiles or "*" in t.manifest.profiles
         )
+        families = sorted({n.split(".")[0] for n in available})
+        result = []
+        for entry in entries:
+            if entry == "*":
+                matches = available
+            elif re.fullmatch(r"[A-Za-z_]\w*\.\*", entry):
+                family = entry[:-2]
+                matches = [n for n in available if n.split(".")[0] == family]
+                if not matches and strict:
+                    raise ValueError(
+                        f"Profile {profile}: unknown tool family: {family} "
+                        f"(known: {', '.join(families)})"
+                    )
+            elif "*" in entry:
+                raise ValueError(f"Invalid tool grant pattern: {entry}")
+            elif entry in available:
+                matches = [entry]
+            elif not strict:
+                matches = []
+            else:
+                raise ValueError(f"tool {entry} is not available to {profile}")
+            result.extend(matches)
+        return list(dict.fromkeys(result))
+
+    def allowed(self, name: str, profile: str) -> bool:
+        return name in self.tool_names(profile)
 
     def tool_names(self, profile: str) -> list[str]:
-        """Expand the all-tools grant without changing operator configuration."""
-        names = []
-        for name in self.config.profiles[profile].tools:
-            if name == "*":
-                names.extend(name for name in self.tools if self.allowed(name, profile))
-            else:
-                names.append(name)
-        return list(dict.fromkeys(names))
+        return self.expand_grants(self.config.profiles[profile].tools, profile)
 
-    def check_writes(self, registered: Registered, profile: Profile) -> None:
-        for scope in registered.manifest.writes:
-            if scope == "filesystem":
-                if not profile.write_scopes:
-                    raise ValueError("filesystem tool requires explicit write roots")
-            elif scope.startswith(("repo:", "path:", "collection:")):
-                if scope not in profile.write_scopes:
-                    raise ValueError(f"missing filesystem grant: {scope}")
-            elif scope not in profile.capabilities:
-                raise ValueError(f"missing capability: {scope}")
+    def check_access(self, registered: Registered, profile: Profile) -> None:
+        if registered.manifest.writes and profile.write == "none":
+            raise ToolError(
+                f"{registered.manifest.name} requires filesystem write tier"
+            )
+        effect = registered.manifest.effect
+        if effect and effect not in profile.effects:
+            raise ToolError(f"{registered.manifest.name} requires effect '{effect}'")
 
     def validate(self) -> None:
         for name, profile in self.config.profiles.items():
+            for entry in profile.workspace + (profile.write_workspace or []):
+                if scope_root(entry, self.config) is None:
+                    raise ValueError(
+                        f"Profile {name}: unknown workspace resource: {entry}"
+                    )
+            if "shell" in profile.effects and profile.write == "none":
+                logging.getLogger(__name__).warning(
+                    "Profile %s: shell effect with write=none cannot use shell tools",
+                    name,
+                )
             self.view(name)
-            for scope in profile.read_scopes + profile.write_scopes:
-                if scope_root(scope, self.config) is None:
-                    raise ValueError(f"unknown resource scope: {scope}")
-            for tool_name in profile.tools:
-                if tool_name != "*" and not self.allowed(tool_name, name):
-                    raise ValueError(f"tool {tool_name} is not available to {name}")
             for tool_name in self.tool_names(name):
-                self.check_writes(self.tools[tool_name], profile)
+                try:
+                    self.check_access(self.tools[tool_name], profile)
+                except ToolError as exc:
+                    raise ValueError(f"Profile '{name}' grants {exc}") from exc
+
+    def access_summary(self, profile: str) -> dict:
+        cfg = self.config.profiles[profile]
+        return {
+            "tools": self.tool_names(profile),
+            "read": cfg.read,
+            "write": cfg.write,
+            "read_roots": [str(p) for p in tier_roots(cfg, self.config, write=False)],
+            "write_roots": [str(p) for p in tier_roots(cfg, self.config, write=True)],
+            "effects": list(cfg.effects),
+            "resources": list(cfg.resources),
+        }
+
+    def summary_access(self, name: str) -> str:
+        access = self.access_summary(name)
+        return (
+            f"{name} — tools: {', '.join(self.config.profiles[name].tools) or 'none'} "
+            f"({len(access['tools'])}), "
+            f"read: {access['read']} ({', '.join(access['read_roots'])}), "
+            f"write: {access['write']} ({', '.join(access['write_roots'])}), "
+            f"effects: {', '.join(access['effects']) or '—'}; "
+            f"resources: {', '.join(access['resources']) or '—'}"
+        )
 
     def catalog(self) -> dict:
         """Loaded tools and effective grants, shared by diagnostics and API."""
         return {
+            "profile_toml": {
+                n: f"[profiles.{n}]\n"
+                + "\n".join(
+                    f"{key} = {json.dumps(value, ensure_ascii=False)}"
+                    for key, value in self.config.profiles[n]
+                    .model_dump(
+                        include={
+                            "tools",
+                            "read",
+                            "write",
+                            "workspace",
+                            "write_workspace",
+                            "effects",
+                            "resources",
+                        }
+                    )
+                    .items()
+                    if value is not None
+                )
+                for n in self.config.profiles
+            },
+            "profile_config": {
+                n: self.config.profiles[n].model_dump(
+                    include={
+                        "tools",
+                        "read",
+                        "write",
+                        "workspace",
+                        "write_workspace",
+                        "effects",
+                        "resources",
+                    }
+                )
+                for n in self.config.profiles
+            },
+            "summaries": {n: self.summary_access(n) for n in self.config.profiles},
+            "access": {n: self.access_summary(n) for n in self.config.profiles},
             "disclosure": {
                 name: self.view(name).diagnostics(
                     self.config.profiles[name].context_budget
@@ -326,6 +442,7 @@ class Registry:
                         if self.allowed(name, profile)
                     ],
                     "writes": list(registered.manifest.writes),
+                    "effect": registered.manifest.effect,
                 }
                 for name, registered in sorted(self.tools.items())
             ],
@@ -335,7 +452,11 @@ class Registry:
         self, profile: str, tools: list[str] | None = None
     ) -> list[str]:
         """A task may narrow profile grants, never replace or expand them."""
-        selected = None if tools is None else set(tools)
+        selected = (
+            None
+            if tools is None
+            else set(self.expand_grants(tools, profile, strict=False))
+        )
         return [
             name
             for name in self.tool_names(profile)
@@ -396,7 +517,7 @@ class Registry:
             ctx.runtime_provider = self.runtime_status
             ctx.job_manager = self.job_manager
             cfg = self.config.profiles[ctx.profile]
-            self.check_writes(registered, cfg)
+            self.check_access(registered, cfg)
             repairable = True
             parsed = json.loads(arguments)
             values = registered.arguments.model_validate(parsed).model_dump()
@@ -446,7 +567,7 @@ class Registry:
             elif isinstance(exc, json.JSONDecodeError):
                 message = "Invalid tool arguments: expected a JSON object"
             else:
-                message = "Invalid tool arguments or capability grant"
+                message = "Invalid tool arguments or access grant"
             result = ToolResult(content=message, error=True, repairable=repairable)
         except Exception:
             detail = traceback.format_exc()

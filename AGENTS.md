@@ -68,16 +68,16 @@ Read `SPEC.md` for behavioral contracts, `README.md` for an introduction,
   resources. `ctx.fs`, `ctx.git(alias)` and `ctx.collection(alias)` let packs
   compose operations privately. Generic tools are thin service wrappers.
 - `tools/`: registry/decorator/manifests, generated argument schemas, tool
-  implementations and per-profile capability enforcement. `enabled_tools` loads
+  implementations and per-profile access enforcement. `enabled_tools` loads
   modules by explicit dotted path (bare names are built-in shorthand); profile
-  `tools` grants exact tool names or `"*"` for every loaded, profile-permitted tool.
-  Wildcards do not grant capabilities or bypass write validation. Both module
+  `tools` grants exact names, first-family patterns (`files.*`), or `"*"`.
+  Wildcards do not grant effects/resources or bypass write-tier validation. Both module
   loading and profile grants are necessary. A manifest `profiles=["*"]`
   supports arbitrary configured profiles without granting calls automatically.
-  Filesystem
-  roots, writes and other capabilities are separate explicit grants.
+  Filesystem reach uses read/write tiers and workspace roots; effects and named
+  pack resources are separate explicit grants. Legacy keys translate for one release.
   `sessions.search` reads indexed active/archive evidence for the calling session;
-  cross-session or all-session search additionally requires `sessions.search.all`.
+  cross-session or all-session search additionally requires the `operate` effect.
   Return masked snippets as historical data and never rewrite the evidence.
 - `packs/`: independently packaged journal, letters and email
   extensions (`sola_packs.*`), plus `solakit-packs-common` support. Core distributions
@@ -99,7 +99,7 @@ Read `SPEC.md` for behavioral contracts, `README.md` for an introduction,
   Only a changed future run_at rearms it. Unattempted overdue jobs catch up once.
   Job tools=None inherits profile grants; an exact list (including []) narrows
   schemas and dispatch through the generic per-run ceiling. Never clone/replace
-  profile capabilities, scopes, budgets or fragments for a job. Validate saves;
+  profile effects, resources, filesystem tiers, budgets or fragments for a job. Validate saves;
   persisted profile drift shrinks exposure and remains visible in jobs inspection.
   Generic ToolView resolves eager/deferred schema visibility independently of authority.
   Deferred search/load and inactive-tool notices use a separate eight-step budget;
@@ -141,16 +141,16 @@ Read `SPEC.md` for behavioral contracts, `README.md` for an introduction,
   intents must not auto-replay, including cancellation and restart. Keep external
   mail/letter content explicitly marked as data. Sender-only email replies derive
   their envelope and threading from an existing stable mailbox message identity.
-- Shell is built in with explicit tool grants, `shell.exec` capability and cwd
-  scopes. Any profile may be granted access; do not hard-code profile names.
+- Shell is built in with explicit tool grants, the `shell` effect and cwd
+  write reach. Any profile may be granted access; do not hard-code profile names.
   Its cwd check is not a sandbox: commands have host-user privileges. Bound output
   and kill/drain process groups on timeout/cancellation; no per-command approval
   framework is part of this app.
 - Git writes check the actual named repository/files. Generic writes require
-  exact `repo:<alias>` write grants; collection services enforce directory limits.
-  Push additionally requires `git.push`, even inside packs. Do not stage whole
+  repository containment in write roots; collection services enforce directory limits.
+  Push additionally requires the `push` effect, even inside packs. Do not stage whole
   directories, force-push, rebase implicitly or retry uncertain publish/send work.
-- Tools must pass registry/schema/profile/capability checks. Append the assistant
+- Tools must pass registry/schema/profile/access checks. Append the assistant
   tool-call envelope before matching result messages. Forbidden/malformed calls
   have a bounded repair budget; tool output is explicitly and countably truncated.
 - Model preflight/first-response validation precede transcript mutation. Keep

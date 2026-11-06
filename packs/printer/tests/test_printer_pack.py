@@ -68,7 +68,11 @@ def test_reject_before_transport(fixture, text):
 
 @pytest.mark.parametrize("capability", ["printer.print", "printer:desk:print"])
 def test_explicit_grants(fixture, capability):
-    fixture[1].config.profiles["interactive"].capabilities.remove(capability)
+    profile = fixture[1].config.profiles["interactive"]
+    if capability == "printer.print":
+        profile.effects.remove("print")
+    else:
+        profile.resources.remove("printer:desk")
     assert call(fixture).error
     assert fixture[2] == []
 

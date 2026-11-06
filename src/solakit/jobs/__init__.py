@@ -433,23 +433,31 @@ class Jobs:
             safe_id(job.bind_session)
         if job.profile not in self.config.profiles:
             raise ValueError("Job references unknown profile")
+        if check_tools and job.tools is not None:
+            try:
+                expanded = self.execution.registry.expand_grants(job.tools, job.profile)
+                granted = set(self.execution.registry.effective_tools(job.profile))
+                unavailable = {
+                    entry for entry in job.tools if "*" not in entry
+                } - granted
+                if unavailable:
+                    raise ValueError(", ".join(sorted(unavailable)))
+                job.tools = [name for name in expanded if name in granted]
+            except ValueError as exc:
+                raise JobToolsError(
+                    f"Job tools not granted by profile {job.profile}: {exc}"
+                ) from exc
         if check_tools:
             try:
-                self.execution.registry.view(
+                view = self.execution.registry.view(
                     job.profile, job.tools, job.tool_disclosure, job.tool_resident
                 )
+                if job.tool_resident is not None:
+                    job.tool_resident = list(view.resident)
             except ValueError as exc:
                 raise JobToolsError(f"Job tools resident selection: {exc}") from exc
         if job.profile == "maintenance":
             raise ValueError("Maintenance cannot be scheduled")
-        if check_tools and job.tools is not None:
-            granted = set(self.execution.registry.effective_tools(job.profile))
-            unavailable = sorted(set(job.tools) - granted)
-            if unavailable:
-                names = ", ".join(name[:128] for name in unavailable[:8])
-                raise JobToolsError(
-                    f"Job tools not granted by profile {job.profile}: {names}"
-                )
         if (
             job.deliver
             and job.deliver.mode != "silent"

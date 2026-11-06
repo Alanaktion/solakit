@@ -21,13 +21,17 @@ async def log(ctx: ToolContext, repository: str, count: int = 10) -> ToolResult:
     return await ctx.git(repository).log(count)
 
 
-@tool(name="repo_git.pull", profiles=["*"], writes=["filesystem"])
+@tool(
+    name="repo_git.pull",
+    profiles=["*"],
+    writes=["filesystem"],
+)
 async def pull(ctx: ToolContext, repository: str) -> ToolResult:
     """Fast-forward a clean named repository; requires its exact repo write scope."""
     return await ctx.git(repository).pull()
 
 
-@tool(name="repo_git.commit_push", profiles=["*"], writes=["filesystem", "git.push"])
+@tool(name="repo_git.commit_push", profiles=["*"], writes=["filesystem"], effect="push")
 async def commit_push(
     ctx: ToolContext, repository: str, paths: list[str], message: str
 ) -> ToolResult:

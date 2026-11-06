@@ -67,3 +67,7 @@ containers, and other operators are rejected. Expression length, AST size,
 exponents and result magnitude are bounded. Decimal operations use 50 significant
 digits, so `0.1 + 0.2` returns `0.3`; division can round and no currency-specific
 rounding rule is implied.
+
+Tool grants accept family patterns such as `web.*` and `files.*`. Filesystem reads
+use profile read/write tiers and resolved workspace roots; external named pack
+resources use `resources`, independently of filesystem reach.

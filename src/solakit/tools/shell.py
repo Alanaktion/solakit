@@ -11,8 +11,8 @@ from solakit.tools import ToolContext, ToolError, ToolResult, tool
 
 
 async def run_process(ctx, argv, directory, timeout_s):
-    if "shell.exec" not in ctx.config.profiles[ctx.profile].capabilities:
-        raise ToolError("Missing capability: shell.exec")
+    if "shell" not in ctx.config.profiles[ctx.profile].effects:
+        raise ToolError("Missing effect: shell")
     if (
         not argv
         or len(argv) > 128
@@ -49,7 +49,8 @@ async def run_process(ctx, argv, directory, timeout_s):
     keywords=("shell", "command", "terminal"),
     name="shell.exec",
     profiles=["*"],
-    writes=["filesystem", "shell.exec"],
+    writes=["filesystem"],
+    effect="shell",
 )
 async def exec_command(
     ctx: ToolContext,
@@ -91,7 +92,8 @@ async def exec_command(
     keywords=("shell", "command", "terminal"),
     name="shell.run",
     profiles=["*"],
-    writes=["filesystem", "shell.exec"],
+    writes=["filesystem"],
+    effect="shell",
 )
 async def run(
     ctx: ToolContext,

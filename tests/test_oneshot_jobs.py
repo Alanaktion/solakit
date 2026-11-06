@@ -227,7 +227,7 @@ def test_api_one_time_switch_and_past_dates(config, mock_model, auth):
 def test_chat_request_can_schedule_tomorrow_morning_in_current_conversation(config):
     config.enabled_tools = ["jobs"]
     config.profiles["interactive"].tools = ["jobs.create"]
-    config.profiles["interactive"].capabilities = ["jobs.manage"]
+    config.profiles["interactive"].effects = ["operate"]
     tomorrow = datetime.now(ZoneInfo(config.timezone)).date() + timedelta(days=1)
     local = f"{tomorrow.isoformat()}T09:00:00"
     requests = []

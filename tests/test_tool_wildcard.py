@@ -25,7 +25,7 @@ def wildcard(config, monkeypatch):
     async def private(ctx: ToolContext) -> ToolResult:
         return ToolResult(content="maintenance only")
 
-    @tool(name="fixture.write", profiles=["*"], writes=["filesystem", "publish"])
+    @tool(name="fixture.write", profiles=["*"], writes=["filesystem"], effect="push")
     async def write(ctx: ToolContext) -> ToolResult:
         return ToolResult(content="written")
 
@@ -38,12 +38,12 @@ def wildcard(config, monkeypatch):
         "interactive": Profile(
             tools=["*"],
             write_scopes=[f"path:{config.paths.data}"],
-            capabilities=["publish"],
+            capabilities=["git.push"],
         ),
         "maintenance": Profile(
             tools=["*"],
             write_scopes=[f"path:{config.paths.data}"],
-            capabilities=["publish"],
+            capabilities=["git.push"],
         ),
         "plain": Profile(),
     }
@@ -76,7 +76,7 @@ def test_wildcard_expansion_schema_catalog_and_dispatch(wildcard):
         ctx.profile = "plain"
         assert (await registry.dispatch("fixture.any", "{}", ctx)).error
         ctx.profile = "interactive"
-        wildcard.profiles[ctx.profile].capabilities.clear()
+        wildcard.profiles[ctx.profile].effects.clear()
         assert (await registry.dispatch("fixture.write", "{}", ctx)).error
 
     asyncio.run(exercise())
@@ -91,10 +91,10 @@ def test_wildcard_expansion_schema_catalog_and_dispatch(wildcard):
     ]
 
 
-@pytest.mark.parametrize("grant", ["write_scopes", "capabilities"])
+@pytest.mark.parametrize("grant", ["write", "effects"])
 def test_wildcard_requires_existing_write_and_capability_grants(wildcard, grant):
-    setattr(wildcard.profiles["interactive"], grant, [])
-    with pytest.raises(ValueError, match="explicit write roots|missing capability"):
+    setattr(wildcard.profiles["interactive"], grant, "none" if grant == "write" else [])
+    with pytest.raises(ValueError, match="filesystem write tier|requires effect"):
         Registry(wildcard)
 
 
@@ -106,7 +106,7 @@ def test_mixed_wildcard_is_deduplicated_and_explicit_errors_are_not_hidden(wildc
         "fixture.write",
         "fixture.any",
     ]
-    for name in ("missing", "fixture.private", "fixture.*"):
+    for name in ("missing", "fixture.private"):
         profile.tools = ["*", name]
         with pytest.raises(ValueError, match="not available"):
             Registry(wildcard)

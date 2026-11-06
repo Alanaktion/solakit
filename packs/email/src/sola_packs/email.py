@@ -19,7 +19,6 @@ from sola_packs.support import (
     Settings,
     external,
     fingerprint,
-    grant,
     resource,
     secret,
 )
@@ -215,23 +214,17 @@ async def list_mailboxes(ctx: ToolContext) -> ToolResult:
     Use before email.search when a task names an address rather than an alias.
     Returns only resources this profile can access; no network or credential reads.
     """
-    capabilities = ctx.config.profiles[ctx.profile].capabilities
+    profile = ctx.config.profiles[ctx.profile]
     aliases = sorted(
         {
-            parts[1]
-            for cap in capabilities
-            if len(parts := cap.split(":")) == 3
-            and parts[0] == "mailbox"
-            and parts[2] in {"read", "reply"}
+            r.removeprefix("mailbox:")
+            for r in profile.resources
+            if r.startswith("mailbox:")
         }
     )
     rows = []
     for alias in aliases:
-        actions = [
-            action
-            for action in ("read", "reply")
-            if f"mailbox:{alias}:{action}" in capabilities
-        ]
+        actions = ["read"] + (["reply"] if "send" in profile.effects else [])
         cfg = resource(ctx, "mailboxes", alias, Mailbox, actions[0])
         rows.append(
             {
@@ -486,7 +479,7 @@ def send(ctx, cfg, mailbox, source, body, operation_id):
     keywords=("mail", "reply", "send"),
     name="email.reply",
     profiles=["*"],
-    writes=["email.reply"],
+    effect="send",
 )
 async def reply(
     ctx: ToolContext,
@@ -512,7 +505,8 @@ async def reply(
     ],
 ) -> ToolResult:
     """Reply to source sender/Reply-To; reuse operation_id to prevent duplicates."""
-    grant(ctx, "email.reply")
+    if "send" not in ctx.config.profiles[ctx.profile].effects:
+        raise ToolError("Missing effect: send")
     cfg = resource(ctx, "mailboxes", mailbox, Mailbox, "reply")
     if not cfg.smtp_host:
         raise ToolError("SMTP is not configured for this mailbox")

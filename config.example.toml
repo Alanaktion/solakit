@@ -5,15 +5,14 @@ enabled_tools = []
 # Workspace sync installs external pack distributions; load explicitly: "sola_packs.journal",
 # "sola_packs.letters", "sola_packs.email".
 # Shell is built in: "shell" or "solakit.tools.shell" (enabled by config).
-# Scheduling tools: "jobs"; mutations need jobs.manage, triggering jobs.run;
-# other profiles/sessions/delivery additionally need jobs.manage.all.
+# Scheduling mutations and cross-session runtime access require effect "operate".
 # Delegation is built in: load "delegate" and grant "delegate.run" to the parent.
 # Set delegation.allowed_profiles explicitly; worker profiles should not grant it.
 # Memory tools: load "memory" and explicitly grant memory.search/read/remember.
 # remember stages exact notes for the existing commit; it never claims extraction.
 # Session history search is built in: "sessions" or "solakit.tools.sessions".
 # Grant tools = ["sessions.search"] for current-session history; additionally
-# capabilities = ["sessions.search.all"] allows another session or all sessions.
+# effects = ["operate"] allows another session or all sessions.
 # See packs/README.md for their resource sidecar and explicit profile grants.
 # enabled_tools = ["solakit.tools.files", "solakit.tools.runtime", "sola_packs.journal"]
 # Read-only APIs and exact calculation: load "web", "feeds", "github", "wiki",
@@ -68,9 +67,10 @@ fragments = "fragments"
 context_budget = 32000
 mid_run_compaction = false
 tools = []
-read_scopes = []
-write_scopes = []
-capabilities = []
+read = "workspace"
+write = "none"
+effects = []
+resources = []
 
 [profiles.interactive]
 # With enabled_tools including "memory", a deliberate grant could be:
@@ -83,26 +83,32 @@ context_budget = 32000
 mid_run_compaction = false
 tools = []
 # tools = ["*"] grants every loaded tool available to this profile.
-# Still requires each tool's capabilities/write scopes; loads no extra modules.
-write_scopes = []
-capabilities = []
+# Family grants such as "files.*" expand in sorted order; load no extra modules.
+# Effects and write tiers are checked independently.
+write = "none"
+effects = []
+resources = []
 
 [profiles.maintenance]
 # Optional: tools = ["memory.search", "memory.read", "memory.remember"]
 max_steps = 60
 tools = []
-write_scopes = []
-capabilities = []
+write = "none"
+effects = []
+resources = []
 
 # Example worker (nothing here is enabled by default). Load "files"/"sessions"
 # in enabled_tools and create operator-owned fragments/profiles/research.md.
 # Add explicitly configured web/wiki read tools as needed. Grant no delegation,
 # publish/send/print/shell tools; avoid "*" so the worker cannot delegate again.
 # [profiles.research]
-# tools = ["files.read", "files.list", "sessions.search"]
-# read_scopes = ["path:/absolute/path/to/research-sources"]
-# write_scopes = []
-# capabilities = []
+# tools = ["files.*", "web.*", "sessions.search"]
+# workspace = ["path:/absolute/path/to/research-sources", "path:/absolute/path/to/research-out"]
+# write_workspace = ["path:/absolute/path/to/research-out"]
+# read = "workspace"
+# write = "workspace"
+# effects = []
+# resources = []
 # max_steps = 40
 # context_budget = 64000
 
@@ -172,5 +178,21 @@ enabled = false
 #
 # [profiles.dream]
 # tools = ["journal.create", "journal.list_recent", "journal.publish", "runtime.status"]
-# write_scopes = ["collection:dreams"]
-# capabilities = ["git.push"]
+# workspace = ["collection:dreams"]
+# write = "workspace"
+# effects = ["push"]
+
+# Additional profile shapes (enable modules and create prompt fragments first):
+# [profiles.operator]
+# tools = ["*"]
+# read = "anywhere"
+# write = "workspace"
+# effects = ["push", "send", "print", "shell", "operate"]
+# resources = ["mailbox:personal", "letters:dingus", "printer:desk"]
+#
+# [profiles.inbox]
+# tools = ["email.search", "email.read", "email.list_mailboxes"]
+# read = "workspace"
+# write = "none"
+# effects = []
+# resources = ["mailbox:personal"]

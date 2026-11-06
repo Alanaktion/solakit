@@ -34,13 +34,15 @@ letters = "/absolute/path/to/letters"
 
 [profiles.letters]
 tools = ["letters.pull_new", "letters.read", "letters.reply"]
-write_scopes = ["repo:letters"]
-capabilities = ["letters:correspondence:read", "letters:correspondence:reply", "letters.reply", "git.push"]
+workspace = ["repo:letters"]
+write = "workspace"
+effects = ["send", "push"]
+resources = ["letters:correspondence"]
 ```
 
 Pull needs repository write access because it changes the checkout. A read-only
-profile can grant only `letters.read`, `read_scopes=["repo:letters"]`, and the
-resource read capability. Do not grant generic file edit/write or shell tools to
+profile can grant only `letters.read`, `workspace=["repo:letters"]`, `read="workspace"`, `write="none"`, and the
+`letters:correspondence` resource. Do not grant generic file edit/write or shell tools to
 the letters profile if its never-edit rule is to hold. All actual writes still
 pass the shared filesystem/Git services, with the existing upstream and empty
 index requirements.

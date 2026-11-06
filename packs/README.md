@@ -31,7 +31,7 @@ distributions alongside core. Installed packs load only through `enabled_tools`.
 Set `SOLA_PACKS_CONFIG` to an operator-owned TOML file based on
 [config.example.toml](config.example.toml) for letters/email/printer/calendar/image. Nothing reads or sends
 mail, publishes letters, enables jobs or connects production resources simply because a pack is installed. It must also
-be explicitly loaded in core `enabled_tools`, and tools/capabilities granted to
+be explicitly loaded in core `enabled_tools`, and tools/effects/resources granted to
 profiles. These packs are trusted Python, not a sandbox for hostile package code.
 
 Operation receipts live in the private data tree under `pack-operations/`.
@@ -42,3 +42,11 @@ operator-reviewed reconciliation or deliberate new request.
 
 Shell has moved into core: enable `shell` or `solakit.tools.shell` without an
 optional package. See [built-in shell and migration](../docs/operations/shell.md).
+
+`effects` is a closed list: `push`, `send`, `print`, `shell`, `operate`.
+`operate` authorizes job mutations/triggers and cross-profile/cross-session runtime
+access. `resources` lists named pack aliases, for example `mailbox:personal`.
+Resource read needs the alias; reply also needs `send`, print needs `print`, and
+image generation needs a non-none write tier. Mixed read/reply authority across
+mailboxes requires separate profiles. Shell runs with host-user privileges; its
+cwd check is not OS containment.

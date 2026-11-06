@@ -8,7 +8,7 @@ from urllib.parse import urlsplit
 
 import httpx
 from pydantic import Field, field_validator
-from sola_packs.support import IDENTIFIER, Settings, external, grant, resource, secret
+from sola_packs.support import IDENTIFIER, Settings, external, resource, secret
 from sola_packs.support.evidence import Lease, Operation
 
 from solakit.core.config import SecretRef
@@ -112,12 +112,16 @@ def submit(ctx, cfg, auth, workflow, workflow_name, operation_id):
         return result
 
 
-@tool(name="image.generate", profiles=["*"], writes=["image.generate"])
+@tool(
+    name="image.generate",
+    profiles=["*"],
+)
 async def generate(
     ctx: ToolContext, workflow: str, prompt: str, seed: int, operation_id: str
 ) -> ToolResult:
     """Submit a named ComfyUI workflow with an explicit seed and stable operation ID."""
-    grant(ctx, "image.generate")
+    if ctx.config.profiles[ctx.profile].write == "none":
+        raise ToolError("Image generation requires filesystem write tier")
     cfg = resource(ctx, "images", workflow, Image, "generate")
     if not IDENTIFIER.fullmatch(operation_id):
         raise ToolError("A stable operation ID is required")

@@ -63,7 +63,7 @@ def test_read_only_memory_startup_diagnostics(
     assert f"Memory: {expected}" in caplog.text
     assert "read-only startup check" in caplog.text
     assert "Tools: modules=none; loaded=none" in caplog.text
-    assert "Profile interactive: tools=none" in caplog.text
+    assert "Profile interactive: interactive — tools: none (0)" in caplog.text
     assert "Model: ready" in caplog.text
     assert "Storage: ok" in caplog.text
     assert "memory-test-credential" not in caplog.text

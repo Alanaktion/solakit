@@ -15,7 +15,7 @@ def manager(ctx):
 
 
 def permitted(ctx, job):
-    if "jobs.manage.all" in ctx.config.profiles[ctx.profile].capabilities:
+    if "operate" in ctx.config.profiles[ctx.profile].effects:
         return True
     return (
         job.profile == ctx.profile
@@ -31,7 +31,9 @@ def existing(ctx, identity):
     except KeyError as exc:
         raise ToolError("Job not found or outside this chat's grants") from exc
     if not permitted(ctx, job):
-        raise ToolError("Other profiles, sessions or delivery require jobs.manage.all")
+        raise ToolError(
+            "Other profiles, sessions or delivery require the operate effect"
+        )
     return job
 
 
@@ -46,8 +48,9 @@ def result(ctx, data):
 
 
 def authorize(ctx, job):
-    if not permitted(ctx, job):
-        raise ToolError("Other profiles, sessions or delivery require jobs.manage.all")
+    # Mutation callbacks run under the scheduler lock, after any wait.
+    if "operate" not in ctx.config.profiles[ctx.profile].effects:
+        raise ToolError("Job mutation requires effect 'operate'")
 
 
 async def operation(ctx, name, *args):
@@ -77,7 +80,7 @@ async def operation(ctx, name, *args):
     profiles=["*"],
 )
 async def list_jobs(ctx: ToolContext) -> ToolResult:
-    """List jobs for this chat/profile; jobs.manage.all allows every job."""
+    """List jobs for this chat/profile; the operate effect allows every job."""
     jobs = manager(ctx)
     return result(
         ctx, [jobs.get(job.id) for job in jobs.jobs.values() if permitted(ctx, job)]
@@ -89,7 +92,7 @@ async def list_jobs(ctx: ToolContext) -> ToolResult:
     keywords=("schedule", "cron", "reminder", "create"),
     name="jobs.create",
     profiles=["*"],
-    writes=["jobs.manage"],
+    effect="operate",
 )
 async def create(
     ctx: ToolContext,
@@ -124,11 +127,12 @@ async def create(
     sub_session=true runs privately in a fresh child with the parent memory scope;
     only configured final delivery reaches the channel. No parent history is copied.
     catch_up requires polling=true. Other profiles/sessions/delivery require
-    jobs.manage.all. A stable ID prevents duplicate creation on retry.
+    the operate effect. A stable ID prevents duplicate creation on retry.
     tool_disclosure accepts inherit/eager/deferred; tool_resident=null inherits
     profile residents, [] starts with discovery only in deferred mode.
     tools=null inherits profile tools; tools=[] exposes none; an explicit list
-    must be a subset of profile grants and cannot add capabilities or scopes.
+    must narrow profile grants and cannot add effects, resources or
+    filesystem reach.
     """
     try:
         job = Job(
@@ -151,7 +155,9 @@ async def create(
     except ValueError as exc:
         raise ToolError("Invalid job definition") from exc
     if not permitted(ctx, job):
-        raise ToolError("Other profiles, sessions or delivery require jobs.manage.all")
+        raise ToolError(
+            "Other profiles, sessions or delivery require the operate effect"
+        )
     return await operation(ctx, "create", job)
 
 
@@ -160,7 +166,7 @@ async def create(
     keywords=("schedule", "cron", "edit"),
     name="jobs.update",
     profiles=["*"],
-    writes=["jobs.manage"],
+    effect="operate",
 )
 async def update(ctx: ToolContext, id: str, changes: dict[str, Any]) -> ToolResult:
     """Edit job fields (cron, run_at, timezone, profile, task, bind_session, deliver,
@@ -180,7 +186,9 @@ async def update(ctx: ToolContext, id: str, changes: dict[str, Any]) -> ToolResu
     except ValueError as exc:
         raise ToolError("Invalid job changes") from exc
     if not permitted(ctx, proposed):
-        raise ToolError("Other profiles, sessions or delivery require jobs.manage.all")
+        raise ToolError(
+            "Other profiles, sessions or delivery require the operate effect"
+        )
     return await operation(ctx, "update", id, patch)
 
 
@@ -189,7 +197,7 @@ async def update(ctx: ToolContext, id: str, changes: dict[str, Any]) -> ToolResu
     keywords=("schedule", "cron", "run"),
     name="jobs.run",
     profiles=["*"],
-    writes=["jobs.run"],
+    effect="operate",
 )
 async def run(ctx: ToolContext, id: str) -> ToolResult:
     """Queue an enabled job once without waiting, including in this chat.
@@ -202,7 +210,7 @@ async def run(ctx: ToolContext, id: str) -> ToolResult:
     return await operation(ctx, "trigger", id)
 
 
-@tool(name="jobs.pause", profiles=["*"], writes=["jobs.manage"])
+@tool(name="jobs.pause", profiles=["*"], effect="operate")
 async def pause(ctx: ToolContext, id: str, paused: bool = True) -> ToolResult:
     """Pause/resume future firings; does not cancel active work or enable a job."""
     existing(ctx, id)
@@ -210,7 +218,7 @@ async def pause(ctx: ToolContext, id: str, paused: bool = True) -> ToolResult:
     return result(ctx, manager(ctx).get(id))
 
 
-@tool(name="jobs.delete", profiles=["*"], writes=["jobs.manage"])
+@tool(name="jobs.delete", profiles=["*"], effect="operate")
 async def delete(ctx: ToolContext, id: str) -> ToolResult:
     """Delete an idle job; retain all prior run evidence."""
     existing(ctx, id)

@@ -141,7 +141,8 @@ def test_files_edit_append_list_and_failure_atomicity(config, tmp_path):
         )
         assert entries["more"]
         assert len(entries["entries"]) == 1
-        config.profiles["interactive"].write_scopes = []
+        config.profiles["interactive"].write = "none"
+        config.profiles["interactive"].write_workspace = []
         with pytest.raises(ToolError):
             await ctx.fs.edit(path, "word", "denied")
 
@@ -211,11 +212,19 @@ def test_git_named_files_capabilities_and_reads(config, repository):
         assert "Publish named file" in (await ctx.git("site").log()).content
         (root / "README").write_text("changed\n")
         assert "+changed" in (await ctx.git("site").diff()).content
-        config.profiles["interactive"].capabilities = []
-        with pytest.raises(ToolError, match="git.push"):
+        config.profiles["interactive"].effects = []
+        with pytest.raises(ToolError, match="push"):
             await ctx.git("site").commit_push(["README"], "denied")
-        config.profiles["interactive"].write_scopes = [f"path:{root}"]
-        with pytest.raises(ToolError, match="Repository write"):
+        config.profiles["interactive"].write = "workspace"
+        config.profiles["interactive"].write_workspace = [f"path:{root}"]
+        # A path root now authorizes this repository; the dirty worktree is
+        # the remaining pull guard.
+        with pytest.raises(ToolError, match="clean worktree"):
+            await ctx.git("site").pull()
+        config.profiles["interactive"].write_workspace = [
+            "path:" + str(root / "outside")
+        ]
+        with pytest.raises(ToolError, match="outside profile"):
             await ctx.git("site").pull()
 
     asyncio.run(exercise())
@@ -313,20 +322,23 @@ def test_separate_commit_push_rechecks_collection_and_publish_grants(
     async def exercise():
         commit = await ctx.git("site").commit(["_dreams/entry.md"], "Create dream")
         # Creation and publishing remain separate, even when packs compose them.
-        config.profiles["interactive"].write_scopes = ["collection:dreams"]
-        config.profiles["interactive"].capabilities = []
-        with pytest.raises(ToolError, match="git.push"):
+        config.profiles["interactive"].write = "workspace"
+        config.profiles["interactive"].write_workspace = ["collection:dreams"]
+        config.profiles["interactive"].effects = []
+        with pytest.raises(ToolError, match="push"):
             await ctx.collection("dreams").git().push(commit)
-        config.profiles["interactive"].capabilities = ["git.push"]
+        config.profiles["interactive"].effects = ["push"]
         assert (
             "Published commit"
             in (await ctx.collection("dreams").git().push(commit)).content
         )
         # An unrelated commit cannot be laundered through a narrower resource.
-        config.profiles["interactive"].write_scopes = ["repo:site"]
+        config.profiles["interactive"].write = "workspace"
+        config.profiles["interactive"].write_workspace = ["repo:site"]
         (root / "README").write_text("unrelated edit")
         unrelated = await ctx.git("site").commit(["README"], "Change unrelated path")
-        config.profiles["interactive"].write_scopes = ["collection:dreams"]
+        config.profiles["interactive"].write = "workspace"
+        config.profiles["interactive"].write_workspace = ["collection:dreams"]
         with pytest.raises(ToolError):
             await ctx.collection("dreams").git().push(unrelated)
 
@@ -336,7 +348,8 @@ def test_separate_commit_push_rechecks_collection_and_publish_grants(
 def test_exact_edit_rejects_overlapping_matches_and_preserves_other_bytes(
     config, tmp_path
 ):
-    config.profiles["interactive"].write_scopes = [f"path:{tmp_path}"]
+    config.profiles["interactive"].write = "workspace"
+    config.profiles["interactive"].write_workspace = [f"path:{tmp_path}"]
     ctx = context(config)
     path = tmp_path / "crlf.txt"
     source = b"aaa\r\nfirst typo\r\nlast\r\n"

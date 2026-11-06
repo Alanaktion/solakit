@@ -136,7 +136,7 @@ def test_grants_cwd_and_environment_hygiene(fixture, monkeypatch):
             ctx,
         )
         assert result.error and "outside profile" in result.content
-        ctx.config.profiles["maintenance"].capabilities = []
+        ctx.config.profiles["maintenance"].effects = []
         result = await registry.dispatch(
             "shell.run",
             json.dumps(
@@ -148,7 +148,7 @@ def test_grants_cwd_and_environment_hygiene(fixture, monkeypatch):
             ctx,
         )
         assert result.error
-        with pytest.raises(ToolError, match="Missing capability"):
+        with pytest.raises(ToolError, match="Missing effect"):
             await shell.run(ctx, "echo denied", str(directory))
 
     asyncio.run(exercise())

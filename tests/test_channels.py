@@ -120,7 +120,8 @@ def test_gating_parent_pinning_context_and_stored_delivery(config):
 
 def test_artifact_silent_and_duplicate_delivery(config, tmp_path):
     configured(config)
-    config.profiles["interactive"].read_scopes = [f"path:{tmp_path}"]
+    config.profiles["interactive"].read = "workspace"
+    config.profiles["interactive"].workspace = [f"path:{tmp_path}"]
     path = tmp_path / "post.md"
     path.write_text("# Draft")
 

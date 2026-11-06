@@ -156,6 +156,10 @@ class Execution:
                 profile=profile,
                 input_message=text,
                 input_images=images or [],
+                access={
+                    **self.registry.access_summary(profile),
+                    "tools": list(view.effective),
+                },
                 effective_tools=list(view.effective),
                 tool_view=view.metadata(),
                 origin=origin or Origin(),
@@ -406,7 +410,7 @@ class Execution:
         self.performing[task] = pending
         try:
             # Refresh against current grants after queueing, retaining the admission
-            # ceiling. Profile capabilities/scopes and budgets remain unchanged.
+            # ceiling. Profile effects/tiers/resources and budgets remain unchanged.
             run.effective_tools = self.registry.effective_tools(
                 run.profile, run.effective_tools
             )

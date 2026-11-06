@@ -8,7 +8,7 @@ lives in the generic `solakit.services.process` service.
 - `shell.run(command, directory, timeout_s=30)` executes `/bin/sh -c`, supporting
   pipelines, redirection and ordinary shell scripting.
 
-Access is controlled by profile tool/capability and working-directory grants.
+Access is controlled by profile tool/effect and working-directory grants.
 Any profile may receive these grants; no profile name is hard-coded:
 
 ```toml
@@ -16,8 +16,9 @@ enabled_tools = ["shell"]
 
 [profiles.interactive]
 tools = ["shell.exec", "shell.run"]
-write_scopes = ["path:/absolute/working/root"]
-capabilities = ["shell.exec"]
+workspace = ["path:/absolute/working/root"]
+write = "workspace"
+effects = ["shell"]
 tool_timeout_s = 120
 ```
 
@@ -45,6 +46,6 @@ nonzero exits, output bounds, timeouts/cancellation and profile/cwd denials.
 
 Replace `sola_packs.shell` with `shell` (or `solakit.tools.shell`) in enabled_tools,
 and remove `solakit-packs-shell` from deployment dependencies. Tool names,
-capability/write grants and arguments are unchanged. The former maintenance-only
+effect/write-tier grants and arguments are unchanged. The former maintenance-only
 restriction is removed; profile tool grants now determine access. The
 retired pack is no longer maintained; there is no core dependency on it.

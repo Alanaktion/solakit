@@ -1,5 +1,6 @@
 """Validated operator configuration; secrets are references, never TOML values."""
 
+import logging
 import os
 import re
 import stat
@@ -10,7 +11,8 @@ from string import Formatter
 from typing import Any, Literal, Self
 from zoneinfo import ZoneInfo
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
+from pydantic_core import PydanticCustomError
 
 
 class ConfigLoadError(ValueError):
@@ -120,13 +122,95 @@ class PathsConfig(StrictModel):
     fragments: Path = Path("fragments")
 
 
+EFFECTS = frozenset({"push", "send", "print", "shell", "operate"})
+LEGACY_EFFECTS = {
+    "git.push": "push",
+    "email.reply": "send",
+    "letters.reply": "send",
+    "printer.print": "print",
+    "shell.exec": "shell",
+    "jobs.manage": "operate",
+    "jobs.run": "operate",
+    "jobs.manage.all": "operate",
+    "sessions.search.all": "operate",
+    "image.generate": None,
+}
+
+
 class Profile(StrictModel):
+    read: Literal["none", "workspace", "anywhere"] = "workspace"
+    write: Literal["none", "workspace", "anywhere"] = "none"
+    workspace: list[str] = Field(default_factory=list)
+    write_workspace: list[str] | None = None
+    effects: list[Literal["push", "send", "print", "shell", "operate"]] = Field(
+        default_factory=list
+    )
+    resources: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def translate_access(cls, values):
+        if not isinstance(values, dict):
+            return values
+        old = {"read_scopes", "write_scopes", "capabilities"}
+        new = {"read", "write", "workspace", "write_workspace", "effects", "resources"}
+        if not old.intersection(values):
+            return values
+        if new.intersection(values):
+            raise ValueError(
+                "Do not mix legacy scopes/capabilities with tiers/effects/resources"
+            )
+        values = dict(values)
+        reads = TypeAdapter(list[str]).validate_python(values.get("read_scopes", []))
+        writes = TypeAdapter(list[str]).validate_python(values.get("write_scopes", []))
+        effects, resources, actions = [], [], {}
+        for cap in TypeAdapter(list[str]).validate_python(
+            values.get("capabilities", [])
+        ):
+            if cap in LEGACY_EFFECTS:
+                if LEGACY_EFFECTS[cap]:
+                    effects.append(LEGACY_EFFECTS[cap])
+                continue
+            parts = cap.split(":")
+            if (
+                len(parts) != 3
+                or parts[0]
+                not in {"mailbox", "letters", "printer", "calendar", "image"}
+                or parts[2] not in {"read", "reply", "print", "generate"}
+            ):
+                raise PydanticCustomError(
+                    "access_config",
+                    "Unmapped legacy capability: {capability}",
+                    {"capability": cap},
+                )
+            prefix, alias, action = parts
+            resources.append(f"{prefix}:{alias}")
+            actions.setdefault(prefix, {}).setdefault(alias, set()).add(action)
+            if action in {"reply", "print"}:
+                effects.append({"reply": "send", "print": "print"}[action])
+        for prefix, aliases in actions.items():
+            if len({tuple(sorted(a)) for a in aliases.values()}) > 1:
+                logging.getLogger(__name__).warning(
+                    "Legacy resource actions differ for %s aliases: %s; "
+                    "split profiles to retain action separation",
+                    prefix,
+                    ", ".join(aliases),
+                )
+        values.update(
+            workspace=list(dict.fromkeys(reads + writes)),
+            write_workspace=writes,
+            read="workspace" if reads or writes else "none",
+            write="workspace" if writes else "none",
+            effects=list(dict.fromkeys(effects)),
+            resources=list(dict.fromkeys(resources)),
+        )
+        for key in old:
+            values.pop(key, None)
+        return values
+
     tool_disclosure: Literal["eager", "deferred"] = "eager"
     tool_resident: list[str] = Field(default_factory=list)
     tools: list[str] = Field(default_factory=list)
-    read_scopes: list[str] = Field(default_factory=list)
-    write_scopes: list[str] = Field(default_factory=list)
-    capabilities: list[str] = Field(default_factory=list)
     max_steps: int = Field(default=40, ge=1)
     context_budget: int = Field(default=32000, ge=1)
     mid_run_compaction: bool = False
@@ -329,6 +413,21 @@ class Config(StrictModel):
                 )
                 for name, profile in values["profiles"].items()
             }
+        for name, profile in (
+            values.get("profiles", {}).items()
+            if isinstance(values.get("profiles", {}), dict)
+            else []
+        ):
+            if isinstance(profile, dict) and {
+                "read_scopes",
+                "write_scopes",
+                "capabilities",
+            }.intersection(profile):
+                logging.getLogger(__name__).warning(
+                    "Profile %s: translating deprecated access keys; "
+                    "inspect catalog summaries and profile_toml for replacement",
+                    name,
+                )
         if isinstance(channel_defaults, dict) and isinstance(
             values.get("channels"), list
         ):

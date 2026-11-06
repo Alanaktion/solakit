@@ -22,11 +22,6 @@ class Settings(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
 
-def grant(ctx, capability):
-    if capability not in ctx.config.profiles[ctx.profile].capabilities:
-        raise ToolError("Missing capability: " + capability)
-
-
 def resource(ctx, section, alias, model, action):
     if not IDENTIFIER.fullmatch(alias):
         raise ToolError("Invalid resource alias")
@@ -37,7 +32,14 @@ def resource(ctx, section, alias, model, action):
         "calendars": "calendar",
         "images": "image",
     }[section]
-    grant(ctx, f"{prefix}:{alias}:{action}")
+    profile = ctx.config.profiles[ctx.profile]
+    if f"{prefix}:{alias}" not in profile.resources:
+        raise ToolError(f"Missing resource: {prefix}:{alias}")
+    effect = {"read": None, "reply": "send", "print": "print", "generate": None}[action]
+    if effect and effect not in profile.effects:
+        raise ToolError(f"Missing effect: {effect}")
+    if action == "generate" and profile.write == "none":
+        raise ToolError("Image generation requires filesystem write tier")
     try:
         path = Path(os.environ["SOLA_PACKS_CONFIG"]).expanduser().resolve()
         if path.stat().st_size > 1_000_000:

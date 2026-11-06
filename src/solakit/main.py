@@ -224,7 +224,7 @@ def create_app(
                 )
             for profile, names in catalog["profiles"].items():
                 runtime_logger.info(
-                    "Profile %s: tools=%s", profile, ", ".join(names) or "none"
+                    "Profile %s: %s", profile, catalog["summaries"][profile]
                 )
             await app.state.channels.start()
             await app.state.jobs.start()

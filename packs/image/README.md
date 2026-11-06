@@ -20,9 +20,9 @@ timeout_s = 15
 max_response_bytes = 1000000
 ```
 
-Grant `image.generate`, `image.result`, capabilities `image.generate`,
-`image:studio:generate`, `image:studio:read`, and a filesystem read scope containing
-the graph. Result-only profiles need only the result tool and read capability.
+Grant tools `image.generate`, `image.result`, resource `image:studio`, a
+non-none write tier for generation, and read reach containing the graph.
+Result-only profiles need only the result tool and resource alias.
 The configured endpoint is operator-trusted; keep ComfyUI private and install
 trusted custom nodes. HTTP redirects and automatic retries are disabled.
 

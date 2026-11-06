@@ -121,12 +121,6 @@ class Git:
         )
 
     def _write_access(self):
-        profile = self.ctx.config.profiles[self.ctx.profile]
-        permitted = f"repo:{self.alias}" in profile.write_scopes
-        if self.collection is not None:
-            permitted |= f"collection:{self.collection}" in profile.write_scopes
-        if not permitted:
-            raise ToolError("Repository write scope is required")
         self.ctx.path(str(self.directory), write=True)
 
     def _write_paths(self, paths):
@@ -190,8 +184,8 @@ class Git:
 
     def _publish_access(self):
         self._write_access()
-        if "git.push" not in self.ctx.config.profiles[self.ctx.profile].capabilities:
-            raise ToolError("Missing git.push capability")
+        if "push" not in self.ctx.config.profiles[self.ctx.profile].effects:
+            raise ToolError("Missing effect: push")
 
     async def _upstream(self):
         branch = await self._text("branch", "--show-current")

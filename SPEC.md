@@ -552,8 +552,8 @@ Operations displays drift warnings rather than silently rewriting the list.
 
 The execution layer admits a per-run name ceiling and re-intersects it at start.
 Both model schema exposure and registry dispatch enforce that ceiling. Profile
-capability/scope checks still run at dispatch. Jobs cannot replace capabilities,
-read/write scopes, step/context/token/time limits, or the profile prompt fragment.
+effect/tier checks still run at dispatch. Jobs cannot replace effects, resources,
+filesystem tiers, step/context/token/time limits, or the profile prompt fragment.
 The same path applies to scheduled cron, one-time runs, and manual triggers;
 job edits do not change already admitted work or rearm consumed one-time jobs.
 
@@ -575,7 +575,7 @@ Append-only cursor and run/delivery evidence remain separate. Back up app.db as
 well as the evidence tree; job definitions cannot be recovered from transcripts.
 
 Built-in `jobs.list/create/update/run/pause/delete` tools compose the same service.
-Mutation tools require `jobs.manage`; `jobs.run` requires its namesake capability.
+Job mutations and triggering require the `operate` effect.
 Without `jobs.manage.all`, tools are limited to the calling profile/session with
 no external delivery. The broader grant permits other profiles/sessions/channels
 but never replaces tool or action grants. Authorization rechecks both existing
@@ -631,7 +631,7 @@ async def publish(
     message: str,
 ) -> ToolResult:
     """Publish named collection entries, returning the commit identity."""
-    ...  # Scoped Git service rechecks actual paths and publishing capability.
+    ...  # Scoped Git service rechecks actual paths and push effect.
 ```
 
 Registry rules:
@@ -642,7 +642,7 @@ Registry rules:
   independently installed trusted Python packages, not auto-discovered or
   sandboxed. Profile tool grants use exact names or `tools = ["*"]` for all loaded
   tools permitted by their manifests. Wildcard grants do not load modules or
-  bypass capability/filesystem validation. Mixed grants expand in configured order
+  bypass effect/filesystem validation. Mixed grants expand in configured order
   (registry order at each wildcard), deduplicate names and still reject unknown
   or profile-disallowed explicit names. Schemas, catalog and dispatch use the same
   effective grants. A manifest may use
@@ -651,13 +651,13 @@ Registry rules:
 - **Services:** `ctx.fs` and `ctx.git(repository_alias)` provide Python operations
   for packs to compose privately. Generic tools are thin wrappers. Git services
   expose status/diff/log/pull/commit/push/commit_push, bounded output and cancellation
-  cleanup. Generic writes require exact repo grants, publish also `git.push`.
+  cleanup. Git writes require root containment in write roots; publishing also requires `push`.
   Named literal files only; clean initial index and no existing unpublished
   commits for combined publish. No implicit force/rebase/retry. Failed push keeps
   the commit identity visible for operator reconciliation.
 - **Collections:** configured named repo subdirectories, filename pattern and
   optional layout data. `ctx.collection(alias)` confines filesystem and publishing
-  operations to that directory, using `collection:<alias>` read/write scopes.
+  operations to that directory, using `collection:<alias>` workspace roots.
   Filename fields are date/slug; layout fields date/slug/title/body, no attribute
   access/conversions/specifiers. Journal conventions/default front matter live in
   the external pack; blog/dreams/poems are configuration, not core tool modules.
@@ -665,11 +665,40 @@ Registry rules:
   store, memory_client, run_log, deliver}`. Tools never reach for
   globals; everything they may touch is in `ctx`, which is also how
   §13's memory scoping gets enforced later without rewriting tools.
-- **Manifest:** each tool declares `profiles` it may appear in and
-  `writes` scopes it needs. At startup the registry cross-checks tools
-  against profile definitions (§8.3): a profile granting a tool whose
-  `writes` exceed the profile's allowed scopes is a **startup error**,
-  not a runtime surprise.
+
+Profiles declare four independent access fields. `tools` accepts exact names,
+`"*"`, and first-family patterns such as `"files.*"`. Patterns expand in sorted
+registry order at their position, deduplicating names; `tools.*` is reserved for
+implicit disclosure. Job lists expand then intersect profile grants and cannot
+raise authority. Unknown names/families and partial globs are errors.
+
+`read` defaults to `"workspace"`; `write` defaults to `"none"`. Each accepts
+`"none"`, `"workspace"`, or `"anywhere"`. An empty `workspace` uses the data
+directory plus configured repositories; an explicit list replaces those roots.
+Entries use `repo:alias`, `collection:alias`, or `path:/absolute/path`.
+`write_workspace`, when set, replaces workspace roots for writes. Writes are also
+readable. Symlink resolution precedes containment checks. Anywhere means `/`.
+
+`effects` is a closed list: `push`, `send`, `print`, `shell`, `operate`.
+`operate` authorizes job mutations/triggers and cross-profile/cross-session runtime
+access. `resources` lists named pack aliases, for example `mailbox:personal`.
+Resource read needs the alias; reply also needs `send`, print needs `print`, and
+image generation needs a non-none write tier. Mixed read/reply authority across
+mailboxes requires separate profiles. Shell runs with host-user privileges; its
+cwd check is not OS containment.
+
+Manifests declare only `writes=["filesystem"]` and optional `effect="push"`
+(or another effect). `Registry.check_access()` validates startup grants and
+rechecks dispatch. Path checks bind actual operations. Run evidence records
+expanded tools, tiers, resolved roots, effects and resources; prompts do not
+include the access summary.
+
+For one release, legacy `read_scopes`, `write_scopes`, and `capabilities` translate
+after defaults merge. Read/write roots remain distinct through `write_workspace`.
+Unknown capabilities fail; mixed legacy/new keys fail. Catalog access summaries
+include translated profile values suitable for migration. Differing legacy actions
+across aliases log a warning; split profiles to preserve that distinction.
+
 - **Execution:** arguments validated against the generated schema before
   the function runs; timeout and output truncation applied by the
   registry; every call logged to the run record (name, args, ms, bytes,
@@ -686,7 +715,7 @@ The opt-in built-in `delegate.run(task, profile, session=None)` uses configured
 Fresh sessions set parent_session to the caller, ephemeral memory, no binding and
 a title from the brief's first line. The brief is retained verbatim. Continuation
 requires an idle, unarchived, unbound ephemeral child belonging to this parent.
-Worker authority comes from the selected profile's normal tool/capability/scope
+Worker authority comes from the selected profile's normal tool/effect/tier
 grants. Limit depth by withholding delegate.run from workers; no depth counter.
 
 `Execution.submit_nested` is available only within the current performing task.
@@ -765,14 +794,14 @@ acceptance is not proof of final delivery. Mail credentials register with the
 runtime redactor before connection; inbox requires no filesystem write grant.
 
 Built-in `shell` provides literal argv and `/bin/sh` execution for any profile
-with explicit tool grants, shell.exec capability and scoped cwd. Commands have host-user
+with explicit tool grants, shell effect and scoped cwd. Commands have host-user
 privileges, not a path sandbox. Output and duration are bounded; cancellation and
 timeout kill/drain process groups. This introduces no per-command approval flow.
 
 ### 8.3 Run profiles
 
 The following table describes suggested profile configurations. Enforcement uses
-actual config tool/capability/path grants, not hard-coded profile names in shell.
+actual config tool/effect/path grants, not hard-coded profile names in shell.
 Scope-checking against tool manifests remains required (§8.1).
 
 | Profile | Used by | Tools allowed | Write scope | Max steps |
@@ -1210,7 +1239,7 @@ The optional built-in `solakit.tools.sessions` module registers `sessions.search
 It must be loaded explicitly and granted by name or profile wildcard. Default search is
 restricted to the calling session, including its numbered archives and summaries.
 An explicit other `session_id` or `all_sessions=true` requires the profile
-capability `sessions.search.all`; specifying both is invalid. Scope checks precede
+effect `operate`; specifying both is invalid. Scope checks precede
 index access and session IDs use the existing record identifier validation. The
 query, role, kind and timezone-aware after/before filters reuse `Store.search`.
 The default result limit is 20, bounded to 1–200. Redacted snippets, rank and
@@ -1241,7 +1270,7 @@ resolve effective tools from profile grants intersected with the job ceiling.
 Inherited residents intersect that ceiling; explicit residents must already belong
 to it. Save validation rejects duplicates, unavailable residents and reserved
 `tools.*` names. Persisted profile drift narrows runtime exposure without invalidating
-existing job definitions. Capabilities, scopes, budgets and fragments remain profile-owned.
+existing job definitions. Effects, resources, filesystem tiers, budgets and fragments remain profile-owned.
 
 Each run freezes a generic ToolView containing granted metadata, schemas, effective
 and resident order, mode and deterministic index/hash. Eager schemas and prompt
@@ -1257,7 +1286,7 @@ error; invalid discovery arguments also do not consume repair attempts.
 
 Dispatch checks grants before intercepting an unloaded real tool. Interception
 loads the schema and returns a nonrepairable error without execution or argument
-validation. Normal capability/scope checks remain on actual execution. Activation
+validation. Normal effect/tier checks remain on actual execution. Activation
 from earlier calls applies to later calls in the same sequential group. Pure
 disclosure groups consume a separate eight-step cap; mixed/real groups consume
 max_steps. Cap exhaustion is tool_error with "tool loading did not converge".

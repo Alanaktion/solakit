@@ -14,7 +14,7 @@ Job definitions live in `app.db`'s authoritative `job_definitions` table. No
 `[[jobs]]` block or server restart is needed. Legacy TOML jobs import once per ID:
 later file edits do not replace managed definitions, and deleted IDs retain a
 tombstone so stale TOML cannot resurrect them. Remove imported TOML job blocks
-when convenient; keep profiles, channels and tool/capability grants in config.
+when convenient; keep profiles, channels and tool/effect grants in config.
 An explicit new creation may reuse a deleted ID. Its old run evidence stays intact.
 
 ## Tools for a job
@@ -36,7 +36,8 @@ The API field `tools` has three states:
 For example, `PATCH /api/jobs/{id}` with `{"tools": ["runtime.status"]}` narrows
 an already granted tool set. `{"tools": null}` restores inheritance. Names outside
 the profile's grants are rejected at save time; loading a module alone is not a
-grant, and `"*"` is not a job tool name. Capabilities, filesystem scopes, budgets,
+grant. Job lists also accept `"*"` and family patterns such as `"web.*"`,
+expanded and intersected with profile grants. Effects, resources, filesystem tiers, budgets,
 timeouts and prompt fragments remain profile-owned. A job list cannot grant
 shell, writing or other authority its profile lacks. Both advertised schemas and
 dispatch enforce the job restriction, including when a model guesses an excluded
@@ -150,8 +151,7 @@ cannot use this option. The default is false, preserving existing inline jobs.
 
 Load the built-in `jobs` module through `enabled_tools`. Grant the desired names
 (`jobs.list`, `jobs.create`, `jobs.update`, `jobs.run`, `jobs.pause`, `jobs.delete`)
-or use the profile wildcard. Write tools additionally need `jobs.manage` capability
-for create/update/pause/delete and `jobs.run` for manual triggering.
+or use `jobs.*`. Mutation and triggering tools require the `operate` effect.
 
 Creation defaults to the current chat/profile, configured timezone and disabled
 state. `jobs.create` accepts either `cron` or `run_at`. For a request such as
@@ -166,10 +166,9 @@ after the calling chat turn instead of deadlocking. Its acknowledgement is job
 state, not a newly completed run or a promised new run ID. Run evidence/status
 become available through normal operations once dispatch progresses.
 
-Without `jobs.manage.all`, chat tools list/manage/trigger only jobs for their own
-profile and session with no external delivery. This extra capability allows
-other profiles, sessions, channel bindings, ephemeral sessions and delivery
-destinations; it does not replace `jobs.manage`/`jobs.run` or tool grants. Scope is
+The `operate` effect also allows access across profiles, sessions, channel
+bindings, ephemeral sessions and delivery destinations. Listing without it is
+limited to the current profile/session with no external delivery. Scope is
 checked again under the scheduler's mutation lock. Result text is marked as
 external data and masks resolved credentials. `runtime.status` reports schedule
 state without exposing tasks from other conversations.

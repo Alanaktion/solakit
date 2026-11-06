@@ -70,20 +70,22 @@ def test_agenda_recurrence_exceptions_all_day_and_bounds(setup):
 
 def test_grants_and_scopes_before_read(setup, monkeypatch):
     _, ctx, _ = setup
-    ctx.config.profiles[ctx.profile].capabilities = []
+    ctx.config.profiles[ctx.profile].resources = []
 
     def forbidden(*args):
         raise AssertionError("must not read")
 
     monkeypatch.setattr(calendar, "query", forbidden)
-    assert "Missing capability" in invoke(setup).content
+    assert "Missing resource" in invoke(setup).content
 
 
 def test_filesystem_scope_and_invalid_export(setup):
     _, ctx, export = setup
-    ctx.config.profiles[ctx.profile].read_scopes = []
+    ctx.config.profiles[ctx.profile].read = "none"
+    ctx.config.profiles[ctx.profile].workspace = []
     assert "outside profile" in invoke(setup).content
-    ctx.config.profiles[ctx.profile].read_scopes = [f"path:{export}"]
+    ctx.config.profiles[ctx.profile].read = "workspace"
+    ctx.config.profiles[ctx.profile].workspace = [f"path:{export}"]
     original = export.read_bytes()
     export.write_text("invalid")
     assert invoke(setup).error
@@ -99,9 +101,11 @@ def test_symlink_escape_and_oversized_export(setup, tmp_path):
     allowed.mkdir()
     export.unlink()
     export.symlink_to(elsewhere)
-    ctx.config.profiles[ctx.profile].read_scopes = [f"path:{allowed}"]
+    ctx.config.profiles[ctx.profile].read = "workspace"
+    ctx.config.profiles[ctx.profile].workspace = [f"path:{allowed}"]
     assert "outside profile" in invoke(setup).content
-    ctx.config.profiles[ctx.profile].read_scopes = [f"path:{tmp_path}"]
+    ctx.config.profiles[ctx.profile].read = "workspace"
+    ctx.config.profiles[ctx.profile].workspace = [f"path:{tmp_path}"]
     elsewhere.write_text("x" * 1_000_001)
     assert "byte limit" in invoke(setup).content
 

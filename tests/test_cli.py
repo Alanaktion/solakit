@@ -60,7 +60,8 @@ def test_offline_check_reports_invalid_tool_grants(config, monkeypatch, capsys):
     assert error.value.code == 1
     stderr = capsys.readouterr().err
     assert (
-        "Configuration error: filesystem tool requires explicit write roots" in stderr
+        "Profile 'interactive' grants files.write requires filesystem write tier"
+        in stderr
     )
     assert "Traceback" not in stderr
 

@@ -140,6 +140,7 @@ def main() -> None:
         from solakit.jobs.definitions import inspect_definitions
 
         for name in prepared.config.profiles:
+            print(prepared.registry.summary_access(name))
             diagnostics = prepared.registry.view(name).diagnostics(
                 prepared.config.profiles[name].context_budget
             )

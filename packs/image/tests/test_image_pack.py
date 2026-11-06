@@ -30,6 +30,7 @@ def setup(tmp_path, monkeypatch, pack_context):
         ["sola_packs.image"],
         ["image.generate", "image.result"],
         read=[f"path:{tmp_path}"],
+        write=[f"path:{tmp_path / 'output'}"],
         capabilities=["image.generate", "image:studio:generate", "image:studio:read"],
     )
     calls = []
@@ -110,10 +111,11 @@ def test_uncertain_submission_never_replays(setup, monkeypatch):
 
 def test_grants_and_workflow_scope(setup):
     _, ctx, calls, _ = setup
-    ctx.config.profiles[ctx.profile].capabilities.remove("image:studio:generate")
-    assert "Missing capability" in invoke(setup).content and not calls
-    ctx.config.profiles[ctx.profile].capabilities.append("image:studio:generate")
-    ctx.config.profiles[ctx.profile].read_scopes = []
+    ctx.config.profiles[ctx.profile].resources.remove("image:studio")
+    assert "Missing resource" in invoke(setup).content and not calls
+    ctx.config.profiles[ctx.profile].resources.append("image:studio")
+    ctx.config.profiles[ctx.profile].read = "none"
+    ctx.config.profiles[ctx.profile].workspace = []
     assert "outside profile" in invoke(setup).content and not calls
 
 
@@ -232,9 +234,9 @@ def test_endpoint_change_and_read_capability_cannot_bypass_receipt(setup):
     _, ctx, calls, graph = setup
     assert invoke(setup, name="image.result").error and not calls
     assert not invoke(setup).error
-    ctx.config.profiles[ctx.profile].capabilities.remove("image:studio:read")
+    ctx.config.profiles[ctx.profile].resources.remove("image:studio")
     assert invoke(setup, name="image.result").error and len(calls) == 1
-    ctx.config.profiles[ctx.profile].capabilities.append("image:studio:read")
+    ctx.config.profiles[ctx.profile].resources.append("image:studio")
     sidecar = graph.parent / "packs.toml"
     sidecar.write_text(sidecar.read_text() + 'base_url = "http://localhost:8188"\n')
     assert "endpoint changed" in invoke(setup, name="image.result").content

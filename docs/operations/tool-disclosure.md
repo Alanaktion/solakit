@@ -27,7 +27,7 @@ consume the profile's normal `max_steps`. `Run.steps` still counts model request
 `tool_view.work_steps` and `tool_view.disclosure_steps` distinguish the budgets.
 
 Disclosure changes schema visibility, never authority. Profile grants, job tool
-ceilings, capabilities, scopes, timeouts and output limits still apply. The
+ceilings, effects, filesystem tiers, timeouts and output limits still apply. The
 `tools.*` namespace is reserved for runtime discovery; do not put it in profile
 or job tool/resident lists. Meta-tools never enter wildcard grants.
 
@@ -87,3 +87,6 @@ median extra model steps on tool-using tasks at most one, and at least 50% initi
 request-byte savings on the interactive profile. If discovery is unreliable,
 interactive stays eager; jobs and future models can still opt in. Do not claim
 live acceptance from configuration or mock tests alone.
+
+Authority is independently rechecked by `Registry.check_access()` on dispatch.
+Resident and job tool lists also accept family patterns such as `web.*`.

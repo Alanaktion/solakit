@@ -543,7 +543,7 @@ def test_activation_does_not_bypass_capability_check(config):
     )
     invoked = []
 
-    @tool(name="alpha.write", profiles=["*"], writes=["alpha.write"])
+    @tool(name="alpha.write", profiles=["*"], effect="send")
     async def write(ctx: ToolContext):
         invoked.append(True)
         return "written"
@@ -551,13 +551,13 @@ def test_activation_does_not_bypass_capability_check(config):
     execution.registry.register(write)
     cfg = config.profiles["interactive"]
     cfg.tools = ["alpha.write"]
-    cfg.capabilities = ["alpha.write"]
+    cfg.effects = ["send"]
     original = execution.model.complete
 
     async def revoke(messages, schemas, **kwargs):
         answer = await original(messages, schemas, **kwargs)
         if len(bodies) == 2:
-            cfg.capabilities = []
+            cfg.effects = []
         return answer
 
     execution.model.complete = revoke

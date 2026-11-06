@@ -130,6 +130,12 @@ def resolve(
     if mode not in ("eager", "deferred"):
         raise ValueError("Invalid tool disclosure mode")
     selected = cfg.tool_resident if resident is None else resident
+    try:
+        if strict and len(selected) != len(set(selected)):
+            raise ValueError("duplicate resident entries")
+        selected = registry.expand_grants(selected, profile, strict=strict)
+    except ValueError as exc:
+        raise ValueError(f"Profile {profile}: resident tools: {exc}") from exc
     # Profile residents must be valid against profile grants; inherited residents
     # may subsequently be narrowed by a job's ceiling.
     grants = registry.effective_tools(profile)
@@ -148,7 +154,9 @@ def resolve(
             registry.summary(n),
             registry.tools[n].manifest.keywords,
             inspect.getdoc(registry.tools[n].function) or "",
-            bool(registry.tools[n].manifest.writes),
+            bool(
+                registry.tools[n].manifest.writes or registry.tools[n].manifest.effect
+            ),
         )
         for n in effective
     )

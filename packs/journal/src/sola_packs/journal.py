@@ -17,7 +17,11 @@ def filename_pattern(resource):
     return resource.config.filename.format(date="????-??-??", slug="*")
 
 
-@tool(name="journal.create", profiles=["*"], writes=["filesystem"])
+@tool(
+    name="journal.create",
+    profiles=["*"],
+    writes=["filesystem"],
+)
 async def create(
     ctx: ToolContext,
     collection: str,
@@ -73,7 +77,7 @@ async def list_recent(ctx: ToolContext, collection: str, limit: int = 10) -> Too
     )
 
 
-@tool(name="journal.publish", profiles=["*"], writes=["filesystem", "git.push"])
+@tool(name="journal.publish", profiles=["*"], writes=["filesystem"], effect="push")
 async def publish(
     ctx: ToolContext,
     collection: str,

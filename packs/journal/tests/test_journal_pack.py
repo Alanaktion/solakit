@@ -104,7 +104,7 @@ def test_create_list_publish_and_scope_denials(fixture):
             == "_dreams/" + target.name
         )
         assert (root / "README").read_text() == "untouched"
-        config.profiles["writer"].capabilities = []
+        config.profiles["writer"].effects = []
         assert (
             await dispatch(
                 "journal.publish",
@@ -119,7 +119,8 @@ def test_create_list_publish_and_scope_denials(fixture):
 
 def test_second_collection_is_configuration_only(fixture):
     root, config, registry, ctx = fixture
-    config.profiles["writer"].write_scopes = ["collection:poems"]
+    config.profiles["writer"].write = "workspace"
+    config.profiles["writer"].write_workspace = ["collection:poems"]
 
     async def exercise():
         result = await registry.dispatch(

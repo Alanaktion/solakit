@@ -98,6 +98,7 @@ class Run(BaseModel):
     prompt_sha256: str | None = None
     tool_catalog_sha256: str | None = None
     tool_view: dict | None = None
+    access: dict | None = None
     effective_tools: list[str] | None = None
     tool_schema_sha256: str | None = None
     tokens: dict[str, int] | None = None

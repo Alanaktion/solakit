@@ -33,8 +33,9 @@ filename = "{date}-{slug}.md"
 
 [profiles.dream]
 tools = ["journal.create", "journal.list_recent", "journal.publish"]
-write_scopes = ["collection:dreams"]
-capabilities = ["git.push"]
+workspace = ["collection:dreams"]
+write = "workspace"
+effects = ["push"]
 ```
 
 Create accepts a lowercase hyphenated slug, title, body and optional `YYYY-MM-DD`

@@ -21,7 +21,7 @@ def test_drop_in_gating_validation_and_logs(config, monkeypatch):
     module = ModuleType("solakit.tools.fixture")
     calls = []
 
-    @tool(name="fixture.echo", profiles=["interactive"], writes=["network"])
+    @tool(name="fixture.echo", profiles=["interactive"], effect="send")
     async def echo(ctx: ToolContext, text: str, repeat: int = 1) -> ToolResult:
         """Repeat text."""
         calls.append(text)
@@ -31,10 +31,10 @@ def test_drop_in_gating_validation_and_logs(config, monkeypatch):
     monkeypatch.setitem(sys.modules, module.__name__, module)
     config.enabled_tools = ["fixture"]
     config.profiles["interactive"] = Profile(tools=["fixture.echo"])
-    with pytest.raises(ValueError, match="missing capability"):
+    with pytest.raises(ValueError, match="requires effect"):
         Registry(config)
     profile = config.profiles["interactive"]
-    profile.capabilities = ["network"]
+    profile.effects = ["send"]
     profile.tool_output_max_chars = 32
     registry = Registry(config)
     assert registry.schemas("interactive")[0]["function"]["parameters"]["required"] == [
@@ -73,10 +73,11 @@ def test_filesystem_scopes_and_symlinks(config, tmp_path):
     (root / "escape").symlink_to(outside)
     config.enabled_tools = ["files"]
     config.profiles["interactive"] = Profile(tools=["files.read", "files.write"])
-    with pytest.raises(ValueError, match="explicit write roots"):
+    with pytest.raises(ValueError, match="filesystem write tier"):
         Registry(config)
     profile = config.profiles["interactive"]
-    profile.write_scopes = [f"path:{root}"]
+    profile.write = "workspace"
+    profile.write_workspace = [f"path:{root}"]
     registry = Registry(config)
     ctx = context(config)
 
@@ -92,7 +93,8 @@ def test_filesystem_scopes_and_symlinks(config, tmp_path):
         assert not (await registry.dispatch("files.write", args, ctx)).error
         assert (await registry.dispatch("files.write", args, ctx)).error
         assert target.read_text() == "new"
-        profile.write_scopes = []
+        profile.write = "none"
+        profile.write_workspace = []
         assert (await registry.dispatch("files.write", args, ctx)).error
 
     asyncio.run(exercise())

@@ -22,7 +22,9 @@ tools = ["delegate.run"]
 
 [profiles.research]
 tools = ["files.read", "files.list", "sessions.search"]
-read_scopes = ["path:/absolute/path/to/research-sources"]
+workspace = ["path:/absolute/path/to/research-sources"]
+read = "workspace"
+write = "none"
 context_budget = 64000
 ```
 
@@ -32,7 +34,7 @@ its operator-owned `fragments/profiles/<name>.md`; this feature installs no pers
 or prompt text. Workers receive the normal SOUL/global fragments and their own
 profile fragment, task and history, with no parent conversation or memory recall.
 
-Grant worker tools/scopes deliberately. A worker is authorized to use its selected
+Grant worker tools, filesystem tiers, effects and resources deliberately. A worker is authorized to use its selected
 profile, which can differ from the parent's grants. A read-only research profile
 can use file/history reads and explicitly configured web/wiki reads. Avoid
 publish/send/print/shell grants for that example. Keep `delegate.run` out of worker

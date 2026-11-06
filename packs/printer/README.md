@@ -21,7 +21,8 @@ enabled_tools = ["sola_packs.printer"]
 
 [profiles.interactive]
 tools = ["printer.print_text"]
-capabilities = ["printer.print", "printer:desk:print"]
+effects = ["print"]
+resources = ["printer:desk"]
 ```
 
 In the pack-owned `SOLA_PACKS_CONFIG` TOML sidecar:

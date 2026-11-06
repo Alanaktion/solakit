@@ -41,7 +41,7 @@ Tool-free profiles send `tool_choice: "none"` and omit tool schemas. Empty
 `enabled_tools` loads no plugins; individual profiles still determine tool grants.
 Set `tools = ["*"]` in a profile to grant every tool loaded by `enabled_tools`
 whose manifest permits that profile. It does not load additional modules, bypass
-manifest profile restrictions, or grant capabilities/filesystem scopes. Missing
+manifest profile restrictions, or grant effects/filesystem tiers. Missing
 write grants still fail startup validation. You can mix `"*"` with explicit names;
 schemas are deduplicated, and unknown or disallowed explicit names remain errors.
 The tool catalog, prompts and runtime status show the expanded tool names.
@@ -222,8 +222,8 @@ conversation writes usable and search unavailable.
 To let the model search history, load `sessions` (or `solakit.tools.sessions`) in
 `enabled_tools` and grant `sessions.search` to the intended profile. By default it
 searches only the calling session, including numbered archives and compaction
-summaries. Grant capability `sessions.search.all` to allow an explicit `session_id`
-or `all_sessions=true`. Choosing both is rejected; without the capability, another
+summaries. Grant effect `operate` to allow an explicit `session_id`
+or `all_sessions=true`. Choosing both is rejected; without that effect, another
 session is refused before the index is read. Installation does not enable the tool.
 
 `sessions.search(query, session_id=None, all_sessions=false, role=None, kind=None,
@@ -345,9 +345,9 @@ by default. Enable only the channels and jobs you intend to use.
 ## Tool extensions
 
 Add a typed decorated function in `solakit.tools.<module>`, enable the module, and
-grant its full names in profiles. `read_scopes`/`write_scopes` use `repo:<name>` or
-`path:/absolute/root`; network/other rights use separate `capabilities`. No grants
-exist by default. Registry checks occur at startup and dispatch; arguments are
+grant its full names in profiles. `read` and `write` tiers select none, workspace or anywhere. Workspace roots use
+`repo:<name>`, `collection:<name>` or `path:/absolute/root`. Outward actions require
+`effects`; pack aliases require `resources`. Writes and effects default to none. Registry checks occur at startup and dispatch; arguments are
 strictly validated. `files.read` bounds regular-file reads using nonblocking,
 no-follow descriptor checks. `files.write` creates new files only; `repo_git.status`
 uses a configured repository name. Domain conventions now live in separate packs;
@@ -396,7 +396,7 @@ directory = "_dreams"
 filename = "{date}-{slug}.md"
 ```
 
-A profile can grant `collection:dreams` read/write scopes without granting the
+A profile can grant `collection:dreams` workspace roots without granting the
 entire repository. Layout strings are optional data; the journal pack owns default
 front matter. A blog is simply another collection.
 
@@ -409,14 +409,14 @@ are available as optional packs; see [pack setup](../packs/README.md).
 
 [Optional pack setup](../packs/README.md) covers independent installation and the
 [pack-owned resource sidecar](../packs/config.example.toml). Set `SOLA_PACKS_CONFIG`
-for letters/mailboxes; core config only loads modules and grants tools/scopes.
+for letters/mailboxes; core config only loads modules and grants tools, tiers, effects and resources.
 
 - [Letters](../packs/letters/README.md): pull/read numbered peer letters and create
   one immutable, sequential reply per peer letter; existing receipts prevent
   replay after uncertain creation/publication. No edits to past letters.
 - [Email](../packs/email/README.md): verified TLS search/read, stable UIDVALIDITY/UID
   identities, external-content markers, and receipted sender-only threaded replies.
-  The inbox profile needs no filesystem write scopes. SMTP acceptance is reported
+  The inbox profile needs no filesystem write reach. SMTP acceptance is reported
   separately from recipient delivery; uncertain sends are not auto-replayed.
 - [Shell](operations/shell.md): enabled by config literal argv and `/bin/sh` tools,
   explicit `shell.exec` grant, finite timeouts, bounded output and process-group
@@ -440,3 +440,9 @@ Use a narrow report-only inbox profile and name aliases in scheduled tasks; see
 For large granted tool sets, see [conditional disclosure](operations/tool-disclosure.md):
 profile/job eager or deferred modes, resident tools, discovery and audit evidence.
 Eager remains the default; interactive deferred use requires pinned-model evaluation.
+
+Profile access uses `tools`, filesystem tiers (`read`, `write`, `workspace`,
+`write_workspace`), `effects` and pack `resources`. The tools catalog includes
+resolved summaries and `profile_toml` replacements for deprecated access keys.
+Legacy translation keeps separate read and write roots; live integration
+acceptance is required before retiring old configuration keys.

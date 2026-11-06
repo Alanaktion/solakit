@@ -10,7 +10,7 @@ from string import Formatter
 from zoneinfo import ZoneInfo
 
 from pydantic import Field, model_validator
-from sola_packs.support import Settings, external, grant, resource
+from sola_packs.support import Settings, external, resource
 from sola_packs.support.evidence import Lease, Operation
 
 from solakit.core.io import durable
@@ -108,7 +108,11 @@ async def contents(ctx, directory, entry):
     return {**entry, "body": result.content, "complete": result.content_complete}
 
 
-@tool(name="letters.pull_new", profiles=["*"], writes=["filesystem"])
+@tool(
+    name="letters.pull_new",
+    profiles=["*"],
+    writes=["filesystem"],
+)
 async def pull_new(
     ctx: ToolContext, resource_name: str, after: int = -1, limit: int = 20
 ) -> ToolResult:
@@ -152,14 +156,17 @@ async def read(ctx: ToolContext, resource_name: str, number: int) -> ToolResult:
 @tool(
     name="letters.reply",
     profiles=["*"],
-    writes=["filesystem", "git.push", "letters.reply"],
+    writes=["filesystem"],
+    effect="push",
 )
 async def reply(
     ctx: ToolContext, resource_name: str, number: int, body: str
 ) -> ToolResult:
     """Create/publish one immutable reply per peer letter; retries use a receipt."""
-    grant(ctx, "letters.reply")
-    grant(ctx, "git.push")
+    if "send" not in ctx.config.profiles[ctx.profile].effects:
+        raise ToolError("Missing effect: send")
+    if "push" not in ctx.config.profiles[ctx.profile].effects:
+        raise ToolError("Missing effect: push")
     cfg, root, directory = settings(ctx, resource_name, "reply")
     if number < 0 or not body.strip() or len(body) > 64000:
         raise ToolError(

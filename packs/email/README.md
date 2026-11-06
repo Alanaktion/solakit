@@ -33,8 +33,9 @@ enabled_tools = ["sola_packs.email"]
 
 [profiles.inbox]
 tools = ["email.search", "email.read", "email.reply"]
-write_scopes = []
-capabilities = ["mailbox:personal:read", "mailbox:personal:reply", "email.reply"]
+write = "none"
+effects = ["send"]
+resources = ["mailbox:personal"]
 ```
 
 Use a stable operation ID for each intended reply. An ID reused with different
@@ -57,8 +58,9 @@ interactive profile:
 ```toml
 [profiles.inbox-check]
 tools = ["email.list_mailboxes", "email.search", "email.read"]
-capabilities = ["mailbox:personal:read"]
-write_scopes = []
+effects = []
+resources = ["mailbox:personal"]
+write = "none"
 max_steps = 25
 ```
 

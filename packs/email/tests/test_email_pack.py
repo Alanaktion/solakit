@@ -163,7 +163,7 @@ def test_search_read_external_markers_and_stable_ids(fixture):
         )
         assert result.error and "UIDVALIDITY changed" in result.content
         assert net.smtp_attempts == 0
-        assert ctx.config.profiles["inbox"].write_scopes == []
+        assert ctx.config.profiles["inbox"].write == "none"
 
     asyncio.run(exercise())
 
@@ -291,7 +291,7 @@ def test_sender_and_message_identity_validation_limits_and_grants(fixture):
             to="arbitrary@example.invalid",
         )
         assert result.error and net.smtp_attempts == 0
-        ctx.config.profiles["inbox"].capabilities.remove("mailbox:personal:reply")
+        ctx.config.profiles["inbox"].effects.remove("send")
         result = await dispatch(
             registry,
             ctx,
@@ -301,8 +301,8 @@ def test_sender_and_message_identity_validation_limits_and_grants(fixture):
             body="Reply",
             operation_id="denied",
         )
-        assert result.error and "Missing capability" in result.content
-        ctx.config.profiles["inbox"].capabilities.append("mailbox:personal:reply")
+        assert result.error and "requires effect" in result.content
+        ctx.config.profiles["inbox"].effects.append("send")
         net.messages["1"] = (
             b"From: peer@example.invalid\nSubject: Missing message id\n\nBody"
         )
@@ -529,7 +529,7 @@ def test_mailbox_discovery_is_grant_filtered_and_does_not_resolve_secrets(
     ]
     assert password not in result.content and "imap.example" not in result.content
     assert net.imap_connections == 0
-    ctx.config.profiles["inbox"].capabilities = []
+    ctx.config.profiles["inbox"].resources = []
     result = asyncio.run(dispatch(registry, ctx, "email.list_mailboxes"))
     assert json.loads(result.content.split("\n")[1]) == []
 

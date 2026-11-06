@@ -112,7 +112,6 @@ def test_save_rejects_outside_grants_and_revalidates_changed_profile(
         for selected in (
             ["shell.exec"],
             ["missing"],
-            ["*"],
             ["runtime.status", "files.write"],
         ):
             response = client.post("/api/jobs", json=job(tools=selected))
@@ -251,20 +250,20 @@ def test_profile_capabilities_and_scopes_still_apply_to_selected_tool(config):
             return model_list(config)
         counter += 1
         if counter == 1:
-            config.profiles["interactive"].capabilities.clear()
+            config.profiles["interactive"].effects.clear()
             return completion(config, calls=[call("write", "{}")])
         return completion(config, "Stopped")
 
     execution = setup(config, handler)
 
-    @tool(name="write", profiles=["interactive"], writes=["shell.exec"])
+    @tool(name="write", profiles=["interactive"], effect="shell")
     async def write(ctx: ToolContext):
         invoked.append(ctx.profile)
         return "Unexpected"
 
     execution.registry.register(write)
     config.profiles["interactive"].tools = ["write"]
-    config.profiles["interactive"].capabilities = ["shell.exec"]
+    config.profiles["interactive"].effects = ["shell"]
     execution.registry.validate()
 
     async def exercise():
@@ -382,7 +381,7 @@ def test_chat_job_tools_preserve_empty_and_null_and_report_invalid_names(
     from solakit.tools import jobs as chat_jobs
 
     grants(config)
-    config.profiles["interactive"].capabilities = ["jobs.manage"]
+    config.profiles["interactive"].effects = ["operate"]
     app = create_app(config=config, model=mock_model)
     with TestClient(app) as client:
         session = app.state.store.create_session(Session(id="chat"))
@@ -427,7 +426,8 @@ def test_selected_tool_keeps_profile_filesystem_scopes(config, tmp_path):
     allowed.mkdir()
     outside = tmp_path / "outside.txt"
     outside.write_text("MUST NOT BE RETURNED")
-    config.profiles["interactive"].read_scopes = [f"path:{allowed}"]
+    config.profiles["interactive"].read = "workspace"
+    config.profiles["interactive"].workspace = [f"path:{allowed}"]
     calls = 0
 
     def handler(request):
@@ -453,7 +453,7 @@ def test_selected_tool_keeps_profile_filesystem_scopes(config, tmp_path):
         result = client.post("/api/jobs/narrow/run").json()
         assert result["tools"][0]["result"]["error"]
         assert "MUST NOT BE RETURNED" not in result["tools"][0]["result"]["content"]
-        assert config.profiles["interactive"].read_scopes == [f"path:{allowed}"]
+        assert config.profiles["interactive"].workspace == [f"path:{allowed}"]
 
 
 def test_queued_run_can_only_shrink_its_admission_snapshot(config):
@@ -535,7 +535,8 @@ def test_job_tool_form_preserves_tri_state_and_rejects_invalid_selection(
         )
         assert invalid.status_code == 422
         assert (
-            "Job tools not granted by profile interactive: shell.exec" in invalid.text
+            "Job tools not granted by profile interactive: tool shell.exec"
+            in invalid.text
         )
         assert 'value="shell.exec" checked' in invalid.text
         restored = client.post(

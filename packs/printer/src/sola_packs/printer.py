@@ -7,7 +7,7 @@ from typing import Literal
 
 from escpos.printer import Serial, Usb
 from pydantic import Field, model_validator
-from sola_packs.support import IDENTIFIER, Settings, grant, resource
+from sola_packs.support import IDENTIFIER, Settings, resource
 from sola_packs.support.evidence import Lease, Operation
 
 from solakit.core.io import durable
@@ -146,12 +146,13 @@ def send(ctx, cfg, printer, text, operation_id):
         return result
 
 
-@tool(name="printer.print_text", profiles=["*"], writes=["printer.print"])
+@tool(name="printer.print_text", profiles=["*"], effect="print")
 async def print_text(
     ctx: ToolContext, printer: str, text: str, operation_id: str
 ) -> ToolResult:
     """Print thermal receipt text with a stable operation ID to prevent duplicates."""
-    grant(ctx, "printer.print")
+    if "print" not in ctx.config.profiles[ctx.profile].effects:
+        raise ToolError("Missing effect: print")
     cfg = resource(ctx, "printers", printer, Printer, "print")
     if not IDENTIFIER.fullmatch(operation_id):
         raise ToolError("A stable operation ID is required")

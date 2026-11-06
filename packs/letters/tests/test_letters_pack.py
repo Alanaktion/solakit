@@ -120,8 +120,8 @@ def test_duplicate_numbers_and_cross_resource_denials(fixture):
         result = await registry.dispatch(
             "letters.read", '{"resource_name":"other","number":1}', ctx
         )
-        assert result.error and "Missing capability" in result.content
-        ctx.config.profiles["letters"].capabilities.remove("git.push")
+        assert result.error and "Missing resource" in result.content
+        ctx.config.profiles["letters"].effects.remove("push")
         result = await registry.dispatch(
             "letters.reply",
             '{"resource_name":"correspondence","number":1,"body":"Denied"}',

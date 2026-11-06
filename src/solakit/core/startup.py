@@ -30,7 +30,8 @@ def prepare(config: Config | None = None) -> Prepared:
         raise ConfigurationError(str(exc)) from None
     except ValidationError as exc:
         fields = [
-            f"{'.'.join(str(part) for part in issue['loc'])}: {issue['type']}"
+            f"{'.'.join(str(part) for part in issue['loc'])}: "
+            + (issue["msg"] if issue["type"] == "access_config" else issue["type"])
             for issue in exc.errors(include_input=False, include_url=False)
         ]
         raise ConfigurationError(
