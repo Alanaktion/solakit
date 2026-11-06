@@ -5,15 +5,19 @@ and `solakit-packs-common`. See [pack setup](../README.md) and the sidecar examp
 
 Tools:
 
-- `letters.pull_new(resource_name, after=-1, limit=20)`: clean fast-forward pull,
+- `letters.pull_new(resource_name="default", after=-1, limit=20)`: clean fast-forward pull,
   then peer letters after the given global sequence number, earliest first.
   The default includes letter 000 if the repository starts at zero.
-- `letters.read(resource_name, number)`: read an existing letter with explicit
+- `letters.read(number, resource_name="default")`: read an existing letter with explicit
   external-content markers. Source files are not marked, edited or renamed.
-- `letters.reply(resource_name, number, body)`: pull current state, create the
+- `letters.reply(number, body, resource_name="default")`: pull current state, create the
   next `NNN-YYYY-MM-DD-author.md`, commit that file and push. One immutable reply
   per peer letter. Dates use the core configured timezone; numbering is global
   across authors, with a minimum width of three digits.
+
+Omitting `resource_name` selects the `letters.default` sidecar resource. The
+profile must still grant `letters:default`; other aliases require an explicit
+`resource_name` (including `correspondence` in the example below).
 
 Verify the actual repository uses these conventions before live wiring. Peer and
 local author identifiers are configurable lowercase tokens; layout is pack data

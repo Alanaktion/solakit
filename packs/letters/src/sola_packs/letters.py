@@ -120,8 +120,8 @@ async def pull_new(
     ctx: ToolContext,
     resource_name: Annotated[
         str,
-        Field(description="Configured letters resource alias granted to this profile."),
-    ],
+        Field(description="Configured letters resource alias; defaults to default."),
+    ] = "default",
     after: Annotated[
         int,
         Field(
@@ -165,10 +165,6 @@ async def pull_new(
 )
 async def read(
     ctx: ToolContext,
-    resource_name: Annotated[
-        str,
-        Field(description="Configured letters resource alias granted to this profile."),
-    ],
     number: Annotated[
         int,
         Field(
@@ -178,6 +174,10 @@ async def read(
             )
         ),
     ],
+    resource_name: Annotated[
+        str,
+        Field(description="Configured letters resource alias; defaults to default."),
+    ] = "default",
 ) -> ToolResult:
     """Read an existing numbered letter as external content; never alter it."""
     cfg, _, directory = settings(ctx, resource_name, "read")
@@ -202,10 +202,6 @@ async def read(
 )
 async def reply(
     ctx: ToolContext,
-    resource_name: Annotated[
-        str,
-        Field(description="Configured letters resource alias granted to this profile."),
-    ],
     number: Annotated[
         int,
         Field(
@@ -224,6 +220,10 @@ async def reply(
             )
         ),
     ],
+    resource_name: Annotated[
+        str,
+        Field(description="Configured letters resource alias; defaults to default."),
+    ] = "default",
 ) -> ToolResult:
     """Create/publish one immutable reply per peer letter; retries use a receipt."""
     if "send" not in ctx.config.profiles[ctx.profile].effects:

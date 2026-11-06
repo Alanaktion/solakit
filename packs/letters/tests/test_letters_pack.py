@@ -230,3 +230,37 @@ def test_zero_based_existing_protocol_is_discovered_without_skipping_first_lette
         assert list(root.glob("001-*-sola.md"))
 
     asyncio.run(exercise())
+
+
+def test_omitted_resource_uses_default_with_normal_grants(fixture, tmp_path):
+    _, _, _, registry, ctx = fixture
+    (tmp_path / "packs.toml").write_text('[letters.default]\nrepository = "letters"\n')
+    schemas = {
+        item["function"]["name"]: item["function"]["parameters"]
+        for item in registry.schemas("letters")
+    }
+    for schema in schemas.values():
+        assert "resource_name" not in schema.get("required", [])
+        assert schema["properties"]["resource_name"]["default"] == "default"
+
+    async def exercise():
+        requests = [
+            ("letters.pull_new", "{}"),
+            ("letters.read", '{"number":1}'),
+            ("letters.reply", '{"number":1,"body":"Default resource reply."}'),
+        ]
+        for name, arguments in requests:
+            denied = await registry.dispatch(name, arguments, ctx)
+            assert (
+                denied.error and "Missing resource: letters:default" in denied.content
+            )
+        ctx.config.profiles["letters"].resources.append("letters:default")
+        for name, arguments in requests:
+            result = await registry.dispatch(name, arguments, ctx)
+            assert not result.error, result.content
+            if name == "letters.reply":
+                assert json.loads(result.content)["resource"] == "default"
+            else:
+                assert 'source="letters:default"' in result.content
+
+    asyncio.run(exercise())

@@ -786,7 +786,8 @@ execution-loop branches were added. Pack-owned named resources live in the
 `SOLA_PACKS_CONFIG` TOML sidecar; core config selects modules/profile grants only.
 
 Letters use a named repository, configurable directory/authors/layout, global
-sequential numbering and create-only replies. Resource locks and durable request
+sequential numbering and create-only replies. All letters tools default omitted
+`resource_name` to `"default"`, subject to the same explicit resource grants. Resource locks and durable request
 receipts prevent duplicate allocations/replies and refuse ambiguous replays.
 Actual repository conventions must be checked before production wiring.
 
