@@ -95,7 +95,14 @@ def test_mid_run_compaction_preserves_groups_goal_budgets_and_full_commit(
                 "assistant",
                 "user",
             ]
-            assert captured[1]["messages"][-1]["content"] == "original task"
+            assert captured[1]["messages"][1]["content"] == summary
+            reminder = captured[1]["messages"][-1]["content"]
+            assert "Continue the current turn" in reminder
+            assert "do not restart the task" in reminder
+            assert reminder.endswith(
+                "Original user task (already in progress):\noriginal task"
+            )
+            assert execution.store.transcript("s")[0]["content"] == summary
             evidence = execution.store.run(run.id)
             assert [m["role"] for m in evidence["messages"]] == [
                 "user",
@@ -103,6 +110,8 @@ def test_mid_run_compaction_preserves_groups_goal_budgets_and_full_commit(
                 "tool",
                 "assistant",
             ]
+            assert evidence["messages"][0]["content"] == "original task"
+            assert "Continue the current turn" not in json.dumps(evidence["messages"])
             batches = [
                 body
                 for method, path, body in seen

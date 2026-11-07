@@ -977,7 +977,10 @@ bindings and original archived bytes; it differs from archival's empty restart.
 Profile `mid_run_compaction` defaults false. When enabled, the between-step context
 check may summarize the active transcript after a complete tool-call/result group.
 The request resumes with the unchanged system prompt, summary context and original
-user task as an unstored reminder. No tool replay or duplicate user record is
+user task as an unstored continuation reminder. The reminder identifies the
+preceding summary as completed progress, directs the model to finish remaining
+work without restarting or repeating completed actions, and treats the summary
+as historical data rather than new authorization. No tool replay or duplicate user record is
 introduced. All counters continue, and the compacted request must pass the same
 byte guard. Without the option, or if irreducible context still exceeds the budget,
 the run ends context_limit. Full original run messages across archives are used

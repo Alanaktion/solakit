@@ -261,7 +261,9 @@ Compaction is automatic before a turn when its request exceeds the profile's
 serialized-byte `context_budget`. Set `[profiles.<name>].mid_run_compaction = true`
 to also compact **between model steps**, after all matching tool results are
 stored. Default is false. The original task is carried forward as a request-only
-reminder; step/repair/token accounting continues. Requests that still do not fit
+continuation reminder that identifies the preceding summary as progress already
+made and directs the model to finish remaining work without repeating completed
+actions; step/repair/token accounting continues. Requests that still do not fit
 end as `context_limit`, without an oversized model call.
 
 Compaction waits up to `[memory].compaction_timeout_s` (default 300 seconds)
