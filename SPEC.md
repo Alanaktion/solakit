@@ -971,7 +971,11 @@ The P1 operator UI is a thin server-rendered API client. Shared app contracts:
   returns the preceding window (`before` cursor, optional `archive`) to prepend
   without replacing existing nodes. Initial/window requests still read full API
   transcript data to group turns; the observer uses backward active-turn reads.
-  Open tool cards retain their DOM nodes. Live preview withholds incomplete trailing
+  Chat tool cards use compact expandable rows, with a loading indicator for
+  unresolved calls in running runs. Model activity and streaming previews show
+  a typing indicator; settled runs stop all progress indicators. Animations
+  respect reduced motion. Open tool cards retain their DOM nodes.
+  Live preview withholds incomplete trailing
   blocks; completion renders the exact saved assistant content once.
   GET observation is resumable by reloading; it never resubmits or cancels work.
   Browser/API disconnects do not cancel accepted runs. Explicit cancellation

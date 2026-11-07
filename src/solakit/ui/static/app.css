@@ -168,11 +168,12 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 #elapsed { margin-left: auto; font-variant-numeric: tabular-nums; }
 .thinking-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: thinking 1.5s ease-in-out infinite; }
 @keyframes thinking { 50% { opacity: .25; } }
-.tool-call { margin: 0 0 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-soft); }
-.tool-call summary { min-height: 44px; padding: 8px 12px; font-size: 11px; cursor: pointer; overflow-wrap: anywhere; }
-.tool-summary { min-height: 28px; display: inline-flex; align-items: center; justify-content: space-between; gap: 12px; width: calc(100% - 16px); vertical-align: middle; }
+.tool-call { margin: 0 0 3px; border: 0; border-radius: 4px; color: var(--muted); background: transparent; }
+.tool-call[open] { background: var(--surface-soft); }
+.tool-call summary { min-height: 30px; padding: 3px 8px; font-size: 11px; cursor: pointer; overflow-wrap: anywhere; }
+.tool-summary { min-height: 24px; display: inline-flex; align-items: center; justify-content: space-between; gap: 12px; width: calc(100% - 16px); vertical-align: middle; }
 .tool-summary > span:first-child { min-width: 0; }
-.tool-state { flex: none; color: var(--good); }
+.tool-state { flex: none; display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 10px; }
 .tool-error { color: var(--warning); }
 .tool-details { padding: 3px 14px 14px; }
 .tool-details h3 { color: var(--muted); font-size: 10px; font-weight: 500; margin: 10px 0; }
@@ -489,3 +490,16 @@ pre { overflow-x: auto; font-size: 11px; line-height: 1.55; color: var(--ink); }
   .operation-last-run { margin-top: 8px; }
   .operations-table .operations-empty { padding: 16px 0 !important; }
 }
+
+/* Progress is presentation only and disappears when the run settles. */
+.tool-spinner { width: 10px; height: 10px; border: 1.5px solid var(--line); border-top-color: currentColor; border-radius: 50%; animation: tool-spin 0.9s linear infinite; }
+.tool-waiting { font-size: 12px; }
+.typing-indicator { display: flex; align-items: center; gap: 9px; margin: 10px 0; color: var(--muted); font-size: 11px; }
+.typing-dots { display: inline-flex; gap: 4px; align-items: center; height: 16px; }
+.typing-dots i { width: 4px; height: 4px; border-radius: 50%; background: currentColor; animation: typing-pulse 1.2s ease-in-out infinite; }
+.typing-dots i:nth-child(2) { animation-delay: 0.15s; }
+.typing-dots i:nth-child(3) { animation-delay: 0.3s; }
+@keyframes tool-spin { to { transform: rotate(360deg); } }
+@keyframes typing-pulse { 0%, 70%, 100% { opacity: 0.35; } 35% { opacity: 1; } }
+@media (pointer: coarse) { .tool-call summary { min-height: 44px; } }
+@media (prefers-reduced-motion: reduce) { .tool-spinner, .typing-dots i { animation: none; } }

@@ -86,6 +86,11 @@ def turns(
         )
         logs = iter(evidence.get(identity, {}).get("tools", []))
         items = []
+        completed_calls = {
+            message.get("tool_call_id")
+            for message in messages
+            if message["role"] == "tool"
+        }
         for message in messages:
             if message["role"] != "tool" and (
                 message.get("content") is not None or message.get("images")
@@ -121,7 +126,12 @@ def turns(
                         {
                             "role": "tool",
                             "name": call["function"]["name"],
-                            "state": "not recorded",
+                            "state": (
+                                "running"
+                                if run["status"] == "running"
+                                and call["id"] not in completed_calls
+                                else "not recorded"
+                            ),
                             "args": "Not recorded",
                             "content": "No recorded result is available.",
                             "node_id": f"tool-{len(items)}-" + call["id"],
@@ -135,6 +145,9 @@ def turns(
                 "items": items,
                 "status_label": LABELS.get(status, "Run record unavailable"),
                 "pending": status in {"queued", "running"},
+                "waiting_for_tool": any(
+                    item.get("state") == "running" for item in items
+                ),
                 "failed": status not in {"queued", "running", "completed"},
                 "at": (
                     timestamp(messages[0]["ts"])

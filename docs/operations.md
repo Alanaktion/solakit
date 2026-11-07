@@ -12,6 +12,10 @@ revokes the current session; changing the operator token invalidates all session
 With the server stopped, removing this file signs out every browser. Login returns
 to the requested local page, including its query parameters.
 
+Chat tool calls use compact expandable rows, with a spinner while a call is
+running. Animated dots indicate model activity and typing during streaming
+previews; indicators stop when the run settles and respect reduced motion.
+
 ## API and execution
 
 Create `POST /api/sessions` with `{"id":"web-main","default_profile":"interactive"}`.

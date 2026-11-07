@@ -451,6 +451,7 @@ async function send(page, text) {
 async function settled(page) {
   await page.waitForFunction(() => document.querySelector('#composer')?.getAttribute('aria-busy') !== 'true');
   assert.equal(await page.locator('.live-preview').count(), 0);
+  assert.equal(await page.locator('.typing-indicator, .tool-spinner').count(), 0);
 }
 
 async function streaming(page) {
@@ -461,6 +462,7 @@ async function streaming(page) {
   await page.locator('.live-preview').waitFor();
   await page.locator('.live-preview strong').waitFor();
   assert.equal(await page.locator('.live-preview strong').innerText(), 'partial');
+  assert.equal(await page.locator('.typing-indicator').innerText(), 'Sola is typing');
   assert(await page.locator('.tool-call').evaluate(el => el.open));
   const live = await (await page.request.get(`${base}/api/sessions/${id}`)).json();
   assert(!live.messages.some(m => m.content?.includes('Stream finished.')));
@@ -551,7 +553,7 @@ async function streaming(page) {
     await send(page, 'stream-browser auth');
     await page.locator('.live-preview').waitFor();
     await page.request.post(base + (mode === 'logout' ? '/logout' : '/qa/expire'));
-    await page.waitForURL('**/login');
+    await page.waitForURL(url => url.pathname === '/login');
     assert.equal((await page.request.get(`${base}/api/sessions/${authId}`)).status(), 401);
     await signIn(page);
     await page.goto(`${base}/sessions/${authId}`);
@@ -641,7 +643,7 @@ async function auditUX(page) {
   assert.notEqual(await page.locator('#elapsed').innerText(), '0:00');
   await page.locator('#message').fill('Survive signing back in');
   await page.request.post(base + '/qa/expire');
-  await page.waitForURL('**/login');
+  await page.waitForURL(url => url.pathname === '/login');
   await signIn(page);
   await page.goto(`${base}/sessions/${id}`);
   assert.equal(await page.locator('#message').inputValue(), 'Survive signing back in');
