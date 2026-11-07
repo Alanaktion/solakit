@@ -546,7 +546,11 @@ class Registry:
             )
         except (ToolError, ValidationError, ValueError, TimeoutError) as exc:
             if isinstance(exc, TimeoutError):
-                message = "Tool timed out"
+                message = (
+                    "Tool timed out. Completion is unknown; inspect the current "
+                    "state or operation receipt before retrying an action with "
+                    "side effects."
+                )
             elif isinstance(exc, ToolError):
                 message = str(exc)
             elif isinstance(exc, ValidationError):

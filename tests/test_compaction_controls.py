@@ -9,11 +9,117 @@ from test_execution import call, completion, model_list, setup
 from test_memory import memory_config
 from test_ui import send_and_observe, sign_in
 
+from solakit.core.compaction import request_bytes, retain_recent_tools
 from solakit.core.memory import MemoryClient
 from solakit.core.schemas import Message, Origin, Session
 from solakit.core.store import Store
 from solakit.main import create_app
 from solakit.tools import ToolContext, ToolResult, tool
+
+
+def test_mid_run_compaction_retains_latest_results_without_replaying(config):
+    captured, dispatched, seen = [], [], []
+    config.memory = memory_config()
+    (config.paths.fragments / "recall-header.md").write_text("Recall:")
+    profile = config.profiles["interactive"]
+    profile.mid_run_compaction = True
+    profile.context_budget = 20000
+
+    def backend(request):
+        if request.url.path.endswith("/models"):
+            return model_list(config)
+        captured.append(json.loads(request.content))
+        return completion(
+            config,
+            calls=[call(arguments=json.dumps({"text": str(len(captured))}))]
+            if len(captured) < 3
+            else None,
+            content="finished" if len(captured) == 3 else None,
+        )
+
+    execution = setup(config, backend)
+    execution.memory = MemoryClient(
+        config.memory,
+        transport=httpx.MockTransport(
+            memory_handler(seen, overview="First step done.")
+        ),
+    )
+
+    @tool(name="echo", profiles=["interactive"])
+    async def echo(ctx: ToolContext, text: str) -> ToolResult:
+        dispatched.append(text)
+        if text == "2":
+            previous = captured[-1]
+            profile.context_budget = request_bytes(
+                config.model.model_id,
+                previous["messages"],
+                previous["tools"],
+                config.model.max_tokens,
+            )
+        return ToolResult(
+            content="x" * 6000 if text == "1" else "receipt: operation-42 completed"
+        )
+
+    execution.registry.register(echo)
+    profile.tools = ["echo"]
+    execution.registry.validate()
+
+    async def exercise():
+        try:
+            run = await execution.submit("s", "perform both steps")
+            assert run.status == "completed"
+            assert run.compaction["step"] == 2
+            assert dispatched == ["1", "2"]
+            resumed = captured[2]["messages"]
+            assert [m["role"] for m in resumed] == [
+                "system",
+                "assistant",
+                "user",
+                "assistant",
+                "tool",
+            ]
+            assert resumed[1]["content"] == "First step done."
+            assert (
+                json.loads(resumed[-1]["content"])["content"]
+                == "receipt: operation-42 completed"
+            )
+            assert resumed[-2]["tool_calls"][0]["id"] == resumed[-1]["tool_call_id"]
+            assert (
+                request_bytes(
+                    config.model.model_id,
+                    resumed,
+                    captured[2]["tools"],
+                    config.model.max_tokens,
+                )
+                <= profile.context_budget
+            )
+            assert len(execution.store.run(run.id)["messages"]) == 6
+        finally:
+            await execution.close()
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("incomplete", [False, True])
+def test_recent_tools_keeps_parallel_group_whole_with_exact_byte_guard(incomplete):
+    base = [{"role": "system", "content": "Summary context"}]
+    previous = [
+        {"role": "assistant", "tool_calls": [call(), {**call(), "id": "call2"}]},
+        {"role": "tool", "tool_call_id": "call1", "content": "résultat 🌙"},
+        {"role": "tool", "tool_call_id": "call2", "content": "receipt"},
+    ]
+    if incomplete:
+        previous.pop()
+    size = request_bytes("model", base + previous, [], 100)
+
+    def retain(budget):
+        return retain_recent_tools(
+            base, previous, model="model", tools=[], max_tokens=100, budget=budget
+        )
+
+    assert retain(size - 1) == base
+    assert retain(size) == (base if incomplete else base + previous)
+    assert base == [{"role": "system", "content": "Summary context"}]
 
 
 @pytest.mark.parametrize(

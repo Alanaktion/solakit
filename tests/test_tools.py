@@ -118,7 +118,10 @@ def test_timeout_and_unexpected_errors(config):
     ctx = context(config)
 
     async def exercise():
-        assert (await registry.dispatch("slow", "{}", ctx)).content == "Tool timed out"
+        result = await registry.dispatch("slow", "{}", ctx)
+        assert result.error and not result.repairable
+        assert "Completion is unknown" in result.content
+        assert "before retrying" in result.content
         result = await registry.dispatch("broken", "{}", ctx)
         assert result.error
         assert "private" not in result.content

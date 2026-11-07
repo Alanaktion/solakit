@@ -980,10 +980,13 @@ The request resumes with the unchanged system prompt, summary context and origin
 user task as an unstored continuation reminder. The reminder identifies the
 preceding summary as completed progress, directs the model to finish remaining
 work without restarting or repeating completed actions, and treats the summary
-as historical data rather than new authorization. No tool replay or duplicate user record is
-introduced. All counters continue, and the compacted request must pass the same
-byte guard. Without the option, or if irreducible context still exceeds the budget,
-the run ends context_limit. Full original run messages across archives are used
+as historical data rather than new authorization. No tool replay or duplicate
+user record is introduced. All counters continue, and the compacted request must pass the same
+byte guard. The latest complete assistant/tool-result group is also carried
+forward verbatim as request-only context when the full request fits that guard.
+Parallel-call groups are retained whole or omitted whole; oversized results fall
+back to the summary. Without the option, or if irreducible context still exceeds
+the budget, the run ends context_limit. Full original run messages across archives are used
 for the eventual normal memory commit. Rotation/attribution complete before
 cancellation is propagated; prepared rotation and commit have no cancellation gap.
 Unresolved prepared state blocks reads/writes until startup recovery.
@@ -1082,10 +1085,11 @@ delete app.db to repair indexes. Back up it alongside private evidence.
 
 ### 10.1 Compaction
 
-A session compacts when its history passes the profile's token budget:
+A session compacts when its request exceeds the profile's context byte budget:
 the oldest span is committed to OpenViking, replaced in the transcript
 by a boundary marker + the summary URI, and the event is itself a
-transcript entry. Compaction never happens inside a run, and the
+transcript entry. Compaction runs before a turn or, when opted in, between
+complete model/tool steps (§9.1). The
 pre-compaction transcript file is rotated, not truncated away
 (`<session-id>.jsonl.1`, kept forever, per house archival doctrine).
 
@@ -1101,7 +1105,7 @@ conservative serialized UTF-8 byte guard over the full model request (including
 prompt, history, task, and tools). This intentionally triggers earlier than a
 model token limit and is never presented as measured token usage. If prompt/task
 alone or a mid-run request exceeds the guard, end as `context_limit`; compaction
-never runs inside a tool loop and no oversized request is sent silently.
+never interrupts a tool-call/result group and no oversized request is sent silently.
 
 A bounded background observer polls acknowledged extraction and persists pending,
 completed, failed, cancelled or status-unavailable observations; it never replays

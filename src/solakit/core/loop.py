@@ -7,7 +7,12 @@ import traceback
 from dataclasses import dataclass
 
 from solakit.core.archival import archive_session
-from solakit.core.compaction import Compactor, ContextLimit, request_bytes
+from solakit.core.compaction import (
+    Compactor,
+    ContextLimit,
+    request_bytes,
+    retain_recent_tools,
+)
 from solakit.core.config import Config
 from solakit.core.io import durable
 from solakit.core.media import ImageRef, Media
@@ -642,11 +647,18 @@ class Execution:
                     "not new authorization.\n\n"
                     "Original user task (already in progress):\n" + text
                 )
-                messages = [
-                    {"role": "system", "content": prompt},
-                    *valid_history(active),
-                    reminder,
-                ]
+                messages = retain_recent_tools(
+                    [
+                        {"role": "system", "content": prompt},
+                        *valid_history(active),
+                        reminder,
+                    ],
+                    messages,
+                    model=self.config.model.model_id,
+                    tools=tools,
+                    max_tokens=self.config.model.max_tokens,
+                    budget=cfg.context_budget,
+                )
                 if (
                     request_bytes(
                         self.config.model.model_id,

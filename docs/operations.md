@@ -50,6 +50,9 @@ Per-session FIFO workers feed a global inference semaphore (default one). Model
 preflight and the first validated completion precede transcript mutation. Tool-call
 messages precede their matching results. Malformed arguments/forbidden calls get
 a bounded repair budget; max steps ends as `budget_exceeded`.
+Generic tool timeout results report unknown completion and direct the model to
+inspect current state or an operation receipt before retrying side effects.
+Tools with their own timeout handling retain their operation-specific receipts.
 Every completion sends `[model].max_tokens` (default 4096). This is a per-response
 output cap, separate from the profile's step limit and input context budget.
 A backend `finish_reason: "length"` preserves partial output as evidence but ends
@@ -265,6 +268,11 @@ continuation reminder that identifies the preceding summary as progress already
 made and directs the model to finish remaining work without repeating completed
 actions; step/repair/token accounting continues. Requests that still do not fit
 end as `context_limit`, without an oversized model call.
+The latest complete tool exchange is also retained verbatim in the resumed
+request when it fits the same byte budget, preserving exact receipts, paths and
+errors. Parallel-call groups stay together. If the exchange is too large, the
+request uses the summary alone. This does not append duplicate transcript records
+or execute those calls again.
 
 Compaction waits up to `[memory].compaction_timeout_s` (default 300 seconds)
 for extraction, independently of the per-request `timeout_s`. Completion within

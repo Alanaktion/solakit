@@ -52,6 +52,37 @@ def manifest_path(store: Store, session_id: str, kind: str = "compaction") -> Pa
     return store.root / "sessions" / f"{safe_id(session_id)}.{kind}.json"
 
 
+def retain_recent_tools(
+    messages: list[dict],
+    previous: list[dict],
+    *,
+    model: str,
+    tools: list[dict],
+    max_tokens: int,
+    budget: int,
+) -> list[dict]:
+    """Carry the latest complete tool group verbatim when the request can fit.
+
+    This is request context only; rotation and immutable evidence are unchanged.
+    Keep the whole parallel-call group or none of it, never orphaned results.
+    """
+    index = len(previous) - 1
+    while index >= 0 and previous[index].get("role") == "tool":
+        index -= 1
+    if index < 0 or previous[index].get("role") != "assistant":
+        return messages
+    calls = previous[index].get("tool_calls") or []
+    results = previous[index + 1 :]
+    if not calls or [call["id"] for call in calls] != [
+        result.get("tool_call_id") for result in results
+    ]:
+        return messages
+    candidate = messages + previous[index:]
+    if request_bytes(model, candidate, tools, max_tokens) <= budget:
+        return candidate
+    return messages
+
+
 def finish_rotation(store: Store, session_id: str, manifest: dict) -> None:
     """Idempotent recovery under the store lock, before any new append is allowed."""
     with store.lock:
