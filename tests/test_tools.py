@@ -44,7 +44,9 @@ def test_drop_in_gating_validation_and_logs(config, monkeypatch):
 
     async def exercise():
         assert (
-            await registry.dispatch("fixture.echo", '{"text": "x", "repeat": "3"}', ctx)
+            await registry.dispatch(
+                "fixture.echo", '{"text": "x", "repeat": "3.5"}', ctx
+            )
         ).error
         assert calls == []
         result = await registry.dispatch(

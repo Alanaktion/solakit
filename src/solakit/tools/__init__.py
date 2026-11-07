@@ -19,6 +19,7 @@ from solakit.core.config import EFFECTS, Config, Profile
 from solakit.core.io import durable
 from solakit.core.schemas import Session
 from solakit.core.store import Store
+from solakit.tools.arguments import argument_error, validate_arguments
 from solakit.tools.distributions import SYNC_HINT, identity, installed
 
 
@@ -489,6 +490,8 @@ class Registry:
         parsed = None
         detail = None
         repairable = False
+        execution_started = False
+        values = None
         try:
             if (
                 ctx.tool_view is not None
@@ -501,10 +504,18 @@ class Registry:
                 return result
             if ctx.tool_allowlist is not None and name not in ctx.tool_allowlist:
                 repairable = True
-                raise ToolError("Tool is not permitted for this run")
+                raise ToolError(
+                    "Tool is not permitted for this run. Choose a tool from "
+                    "this run's granted schemas; changing arguments cannot "
+                    "grant access."
+                )
             if not self.allowed(name, ctx.profile):
                 repairable = True
-                raise ToolError("Tool is not permitted in this profile")
+                raise ToolError(
+                    "Tool is not permitted in this profile. Choose a tool from "
+                    "this run's granted schemas; changing arguments cannot "
+                    "grant access."
+                )
             registered = self.tools[name]
             if (
                 ctx.tool_view is not None
@@ -523,7 +534,7 @@ class Registry:
             self.check_access(registered, cfg)
             repairable = True
             parsed = json.loads(arguments)
-            values = registered.arguments.model_validate(parsed).model_dump()
+            values = validate_arguments(registered.arguments, parsed).model_dump()
             repairable = False
             timeout = min(
                 registered.manifest.timeout or cfg.tool_timeout_s, cfg.tool_timeout_s
@@ -533,6 +544,7 @@ class Registry:
             async with asyncio.timeout(
                 None if registered.manifest.manages_timeout else timeout
             ):
+                execution_started = True
                 if inspect.iscoroutinefunction(registered.function):
                     returned = await registered.function(ctx=ctx, **values)
                 else:
@@ -553,28 +565,16 @@ class Registry:
                 )
             elif isinstance(exc, ToolError):
                 message = str(exc)
-            elif isinstance(exc, ValidationError):
-                # Locations can contain attacker-supplied extra keys. Only expose
-                # declared field names and numeric array positions, never values,
-                # custom validator messages or arbitrary extra-key text.
-                fields = registered.arguments.model_fields
-                issues = []
-                for issue in exc.errors(include_input=False, include_url=False)[:8]:
-                    location = (
-                        ".".join(
-                            str(part)
-                            if isinstance(part, int) or part in fields
-                            else "<argument>"
-                            for part in issue["loc"]
-                        )
-                        or "arguments"
-                    )
-                    issues.append(f"{location}: {issue['type']}")
-                message = "Invalid tool arguments: " + "; ".join(issues)
-            elif isinstance(exc, json.JSONDecodeError):
-                message = "Invalid tool arguments: expected a JSON object"
+                if not execution_started:
+                    message += " The tool was not executed."
+            elif not execution_started and repairable:
+                message = argument_error(registered.arguments, exc)
             else:
-                message = "Invalid tool arguments or access grant"
+                detail = traceback.format_exc()
+                message = (
+                    "Tool failed. Inspect current state or operation receipts "
+                    "before retrying side effects."
+                )
             result = ToolResult(content=message, error=True, repairable=repairable)
         except Exception:
             detail = traceback.format_exc()
@@ -592,6 +592,7 @@ class Registry:
                 {
                     "name": name,
                     "args": parsed if parsed is not None else arguments,
+                    "validated_args": values,
                     "ms": round((time.monotonic() - start) * 1000),
                     "output_chars": observed_chars if source_complete else None,
                     "output_observed_chars": observed_chars,

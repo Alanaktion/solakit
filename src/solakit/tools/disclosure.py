@@ -217,17 +217,14 @@ def resolve(
 
 def disclose(name, arguments, ctx):
     from solakit.tools import ToolResult
+    from solakit.tools.arguments import argument_error, validate_arguments
 
+    model = Search if name == "tools.search" else Load
     try:
-        args = (Search if name == "tools.search" else Load).model_validate_json(
-            arguments
-        )
-    except (ValidationError, ValueError):
+        args = validate_arguments(model, json.loads(arguments))
+    except (ValidationError, ValueError) as exc:
         return ToolResult(
-            content=(
-                "Invalid discovery arguments; search requires query and limit "
-                "1..5; load requires 1..5 exact names."
-            ),
+            content=argument_error(model, exc),
             error=True,
         )
     view = ctx.tool_view

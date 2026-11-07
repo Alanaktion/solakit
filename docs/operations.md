@@ -50,6 +50,20 @@ Per-session FIFO workers feed a global inference semaphore (default one). Model
 preflight and the first validated completion precede transcript mutation. Tool-call
 messages precede their matching results. Malformed arguments/forbidden calls get
 a bounded repair budget; max steps ends as `budget_exceeded`.
+Invalid-call responses explain the expected type, bounds or choices, identify
+required/accepted arguments, and confirm that execution did not start. Correct the
+arguments and retry; permission denials require a granted tool or authorized
+resource rather than a different spelling of the same call. Error guidance does
+not echo submitted values or arbitrary unknown argument names.
+
+The registry tolerates unambiguous scalar formatting mistakes: `"3"` for an
+integer, `"0.5"` for a number, and `"false"` for a boolean. These conversions also
+apply to nested fields, arrays and optional scalars. Bounds and access checks
+still apply. Text stays exact, unknown fields are rejected, and ambiguous unions,
+yes/no booleans, fractional integers and singleton-to-array guesses stay strict.
+Ordinary tool logs show redacted original `args` and the `validated_args` actually
+passed to the tool, including defaults; transcript evidence remains verbatim.
+
 Generic tool timeout results report unknown completion and direct the model to
 inspect current state or an operation receipt before retrying side effects.
 Tools with their own timeout handling retain their operation-specific receipts.

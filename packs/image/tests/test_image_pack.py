@@ -418,7 +418,8 @@ def test_download_refuses_redirect_invalid_large_and_slow_images(monkeypatch, mo
     assert len(requests) == 1
 
 
-def test_dimensions_default_custom_and_receipt_binding(setup):
+@pytest.mark.parametrize("dimension", [768, "768"])
+def test_dimensions_default_custom_and_receipt_binding(setup, dimension):
     _, _, calls, graph = setup
     original = graph.read_bytes()
     assert not invoke(setup).error
@@ -427,7 +428,7 @@ def test_dimensions_default_custom_and_receipt_binding(setup):
         "height": 768,
         "batch_size": 1,
     }
-    assert not invoke(setup, width=768, height=768).error
+    assert not invoke(setup, width=dimension, height=dimension).error
     assert len(calls) == 1
     assert invoke(setup, width=1024, height=576).error
     assert len(calls) == 1
@@ -451,7 +452,7 @@ def test_dimensions_default_custom_and_receipt_binding(setup):
         {"width": 4097},
         {"height": 770},
         {"width": True},
-        {"height": "768"},
+        {"height": "768.5"},
         {"width": 768.0},
     ],
 )

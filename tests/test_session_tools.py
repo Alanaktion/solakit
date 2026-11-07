@@ -138,7 +138,7 @@ def test_profile_schema_and_denial_before_index_access(setup, monkeypatch):
         {"query": '"unclosed'},
         {"limit": 201},
         {"limit": 0},
-        {"limit": "20"},
+        {"limit": "20.5"},
         {"role": "invalid"},
         {"before": "2026-11-05"},
         {"query": ""},
@@ -146,6 +146,11 @@ def test_profile_schema_and_denial_before_index_access(setup, monkeypatch):
 )
 def test_invalid_arguments(setup, kwargs):
     assert invoke(setup, **kwargs).error
+
+
+def test_numeric_strings_are_accepted_without_widening_search_scope(setup):
+    assert payload(invoke(setup, limit="20"))["session_id"] == "current"
+    assert "operate" in invoke(setup, all_sessions="true").content
 
 
 def test_unavailable_index_tool_error_and_tool_log(setup):

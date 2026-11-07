@@ -721,6 +721,25 @@ across aliases log a warning; split profiles to preserve that distinction.
   the function runs; timeout and output truncation applied by the
   registry; every call logged to the run record (name, args, ms, bytes,
   error). Blocking implementations are run in the thread pool (§4.1).
+- **Argument tolerance:** schema-guided normalization accepts decimal integer
+  strings for integer fields, finite numeric strings for number fields, and
+  case-insensitive `true`/`false` strings for boolean fields (surrounding whitespace
+  is ignored only for these scalar conversions). Nested objects, arrays and
+  unambiguous optional fields use the same rules. Strict validation and all bounds,
+  custom validators, extra-field rejection and access checks still apply. Text is
+  never trimmed/coerced; fractions are not rounded to integers, numeric booleans
+  and yes/no are not accepted, arrays are not guessed, and multi-type unions are
+  not normalized. Numeric overflow or nonzero-to-zero underflow is not normalized.
+  Transcript arguments remain verbatim; ordinary tool logs retain original `args`
+  plus redacted `validated_args` (including defaults) after successful validation.
+- **Invalid calls:** bounded schema-derived guidance gives field locations,
+  corrective instructions, declared constraints/choices and accepted argument
+  names. It confirms the tool was not executed and asks for corrected arguments.
+  Submitted values, arbitrary map keys, custom validator messages/contexts and
+  custom error codes are never echoed. Discovery uses the same guidance and scalar
+  tolerance, retaining its separate disclosure budget. Permission failures direct
+  the model to granted schemas; argument changes cannot grant access. Runtime
+  validation/value failures are not misreported as pre-execution argument errors.
 - **Errors are data:** a tool raises `ToolError("…")` → the model gets
   a tool-error message with that text. Unexpected exceptions are caught,
   logged with traceback to the run record, and surfaced to the model as
