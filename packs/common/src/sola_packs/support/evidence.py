@@ -72,8 +72,9 @@ class Lease:
 
 
 class Operation(Lease):
-    def __init__(self, ctx, namespace, identity, request):
+    def __init__(self, ctx, namespace, identity, request, *, conflict_message=None):
         super().__init__(ctx, namespace, identity)
+        self.conflict_message = conflict_message
         self.request_hash = fingerprint(request)
         self.current = None
 
@@ -83,7 +84,8 @@ class Operation(Lease):
             for event in self.events():
                 if event["request_hash"] != self.request_hash:
                     raise ToolError(
-                        "Operation identity already used for a different request"
+                        self.conflict_message
+                        or "Operation identity already used for a different request"
                     )
                 self.current = event
         except BaseException as exc:

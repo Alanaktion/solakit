@@ -14,7 +14,7 @@ def fixture(pack_context, git_repo, tmp_path, monkeypatch):
     monkeypatch.setenv("SOLA_PACKS_CONFIG", str(settings))
     registry, ctx = pack_context(
         ["sola_packs.letters"],
-        ["letters.pull_new", "letters.read", "letters.reply"],
+        ["letters.pull_new", "letters.read", "letters.reply", "letters.send"],
         profile="letters",
         write=["repo:letters"],
         repositories={"letters": root},
@@ -71,7 +71,11 @@ def test_peer_content_numbering_and_idempotent_immutable_reply(fixture):
             ),
             ctx,
         )
-        assert changed.error and "different request" in changed.content
+        assert (
+            changed.error
+            and "Letter 1 already has a different reply" in changed.content
+        )
+        assert "letters.send" in changed.content
         assert len(list(root.glob("*-sola.md"))) == 1
         assert (
             await registry.dispatch(
@@ -248,6 +252,7 @@ def test_omitted_resource_uses_default_with_normal_grants(fixture, tmp_path):
             ("letters.pull_new", "{}"),
             ("letters.read", '{"number":1}'),
             ("letters.reply", '{"number":1,"body":"Default resource reply."}'),
+            ("letters.send", '{"body":"A new default resource letter."}'),
         ]
         for name, arguments in requests:
             denied = await registry.dispatch(name, arguments, ctx)
@@ -258,9 +263,141 @@ def test_omitted_resource_uses_default_with_normal_grants(fixture, tmp_path):
         for name, arguments in requests:
             result = await registry.dispatch(name, arguments, ctx)
             assert not result.error, result.content
-            if name == "letters.reply":
+            if name in {"letters.reply", "letters.send"}:
                 assert json.loads(result.content)["resource"] == "default"
             else:
                 assert 'source="letters:default"' in result.content
+
+    asyncio.run(exercise())
+
+
+def test_send_without_peer_auto_numbers_and_deduplicates(fixture, tmp_path):
+    git, root, _, registry, ctx = fixture
+    git(root, "rm", "001-2026-11-01-dingus.md")
+    git(root, "commit", "-m", "empty correspondence")
+    git(root, "push")
+    (tmp_path / "packs.toml").write_text(
+        '[letters.correspondence]\nrepository = "letters"\n'
+        'layout = "reply_to={reply_to}\\n{body}\\n"\n'
+    )
+
+    async def exercise():
+        request = json.dumps(
+            {"resource_name": "correspondence", "body": "An unsolicited letter."}
+        )
+        result = await registry.dispatch("letters.send", request, ctx)
+        assert not result.error, result.content
+        first = json.loads(result.content)
+        assert first["number"] == 1 and first["reply_to"] is None
+        target = root / first["filename"]
+        assert target.read_text() == "reply_to=\nAn unsolicited letter.\n"
+        head = git(root, "rev-parse", "HEAD")
+        again = await registry.dispatch("letters.send", request, ctx)
+        assert not again.error and json.loads(again.content) == first
+        assert git(root, "rev-parse", "HEAD") == head
+        result = await registry.dispatch(
+            "letters.send",
+            '{"resource_name":"correspondence","body":"Another new letter."}',
+            ctx,
+        )
+        assert not result.error, result.content
+        assert json.loads(result.content)["number"] == 2
+        assert len(list(root.glob("*-sola.md"))) == 2
+        # Even after a later send, retrying the first request returns its receipt.
+        again = await registry.dispatch("letters.send", request, ctx)
+        assert not again.error and json.loads(again.content) == first
+        missing = await registry.dispatch(
+            "letters.reply", '{"resource_name":"correspondence","body":"Reply"}', ctx
+        )
+        assert missing.error
+
+    asyncio.run(exercise())
+
+
+def test_failed_send_preserves_evidence_and_blocks_retry(fixture):
+    git, root, _, registry, ctx = fixture
+    git(root, "remote", "set-url", "--push", "origin", str(root / "missing.git"))
+
+    async def exercise():
+        request = '{"resource_name":"correspondence","body":"Keep this letter."}'
+        result = await registry.dispatch("letters.send", request, ctx)
+        assert result.error and "uncertain" in result.content
+        target = next(root.glob("*-sola.md"))
+        data = target.read_bytes()
+        head = git(root, "rev-parse", "HEAD")
+        again = await registry.dispatch("letters.send", request, ctx)
+        assert again.error and "already started" in again.content
+        assert target.read_bytes() == data
+        assert git(root, "rev-parse", "HEAD") == head
+        assert len(list(root.glob("*-sola.md"))) == 1
+
+    asyncio.run(exercise())
+
+
+def test_send_and_reply_share_numbering_lock(fixture):
+    _, root, _, registry, ctx = fixture
+
+    async def exercise():
+        requests = [
+            ("letters.send", '{"resource_name":"correspondence","body":"New letter"}'),
+            (
+                "letters.reply",
+                '{"resource_name":"correspondence","number":1,"body":"Reply"}',
+            ),
+        ]
+        results = await asyncio.gather(
+            *(registry.dispatch(name, args, ctx) for name, args in requests)
+        )
+        assert sum(not result.error for result in results) == 1
+        index = next(i for i, result in enumerate(results) if result.error)
+        assert "already in progress" in results[index].content
+        name, args = requests[index]
+        result = await registry.dispatch(name, args, ctx)
+        assert not result.error, result.content
+        assert sorted(p.name[:3] for p in root.glob("*-sola.md")) == ["002", "003"]
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("effect", ["send", "push"])
+def test_send_requires_effects(fixture, effect):
+    _, root, _, registry, ctx = fixture
+    ctx.config.profiles[ctx.profile].effects.remove(effect)
+    result = asyncio.run(
+        registry.dispatch(
+            "letters.send", '{"resource_name":"correspondence","body":"Denied"}', ctx
+        )
+    )
+    assert result.error and effect in result.content
+    assert not list(root.glob("*-sola.md"))
+
+
+def test_cancelled_send_retains_receipt_and_blocks_retry(fixture, monkeypatch):
+    from solakit.services.git import Git
+
+    _, root, _, registry, ctx = fixture
+
+    async def cancel(*args, **kwargs):
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(Git, "commit_push", cancel)
+
+    async def exercise():
+        request = '{"resource_name":"correspondence","body":"A cancelled send."}'
+        with pytest.raises(asyncio.CancelledError):
+            await registry.dispatch("letters.send", request, ctx)
+        target = next(root.glob("*-sola.md"))
+        data = target.read_bytes()
+        again = await registry.dispatch("letters.send", request, ctx)
+        assert again.error and "already started" in again.content
+        assert target.read_bytes() == data
+        assert len(list(root.glob("*-sola.md"))) == 1
+        receipts = list(
+            (ctx.store.root / "pack-operations/letters-send").glob("*.jsonl")
+        )
+        assert len(receipts) == 1
+        last = json.loads(receipts[0].read_text().splitlines()[-1])
+        assert last["stage"] == "uncertain"
+        assert last["detail"] == "CancelledError"
 
     asyncio.run(exercise())

@@ -455,6 +455,9 @@ for letters/mailboxes; core config only loads modules and grants tools, tiers, e
 - [Letters](../packs/letters/README.md): pull/read numbered peer letters and create
   one immutable, sequential reply per peer letter; existing receipts prevent
   replay after uncertain creation/publication. No edits to past letters.
+  `letters.reply` requires the peer letter number; `letters.send` publishes a new
+  letter without a reply target. Both assign the next outgoing number automatically.
+  Grant `letters.send` explicitly (or through `letters.*`) to enable new letters.
 - [Email](../packs/email/README.md): verified TLS search/read, stable UIDVALIDITY/UID
   identities, external-content markers, and receipted sender-only threaded replies.
   The inbox profile needs no filesystem write reach. SMTP acceptance is reported

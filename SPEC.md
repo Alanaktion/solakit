@@ -760,7 +760,7 @@ gets a **semantic tool** whose implementation hides the mechanics:
 | Domain tool set | Wraps | Model sees |
 |-----------------|-------|-----------|
 | `journal.create / journal.publish / journal.list_recent` | configured collection layout, pack-owned front matter, scoped Python filesystem/Git services | "publish these entries", returns commit identity. Never a shell command line. |
-| `letters.pull_new / letters.reply` | clone/pull of the letters repo, next-number computation, filename convention from the letters protocol | "reply to letter 003" — the `NNN-YYYY-MM-DD-sola.md` rule lives in code, not in a prompt hoping she remembers it |
+| `letters.pull_new / letters.reply / letters.send` | clone/pull of the letters repo, next-number computation, filename convention from the letters protocol | "reply to letter 003" — the `NNN-YYYY-MM-DD-sola.md` rule lives in code, not in a prompt hoping she remembers it |
 | `repo_git.status / commit_push` | git in a *named, configured* repo only | scoped fallback for repos without a domain toolset yet |
 | `email.search / read / reply` | IMAP/SMTP, thread-aware reply | reply-by-ID, not raw SMTP |
 | `memory.search / memory.read` | OpenViking REST/SDK | scoped by `ctx.session.memory_scope` (§13) |
@@ -786,9 +786,14 @@ execution-loop branches were added. Pack-owned named resources live in the
 `SOLA_PACKS_CONFIG` TOML sidecar; core config selects modules/profile grants only.
 
 Letters use a named repository, configurable directory/authors/layout, global
-sequential numbering and create-only replies. All letters tools default omitted
-`resource_name` to `"default"`, subject to the same explicit resource grants. Resource locks and durable request
-receipts prevent duplicate allocations/replies and refuse ambiguous replays.
+sequential numbering and create-only letters. `letters.reply` requires the existing
+peer letter number and permits one immutable reply per peer letter. `letters.send`
+creates a new letter without a reply target or number argument; both tools allocate
+the next global outgoing number. Identical sends reuse content-bound private
+receipts, while existing reply receipt identities remain valid. All letters tools
+default omitted `resource_name` to `"default"`, subject to the same explicit resource
+grants. Resource locks and durable request receipts prevent duplicate allocations
+and refuse ambiguous replays.
 Actual repository conventions must be checked before production wiring.
 
 Email uses verified TLS IMAP and TLS/STARTTLS SMTP, stable UIDVALIDITY:UID IDs,

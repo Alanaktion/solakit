@@ -11,7 +11,7 @@ from typing import Annotated
 from zoneinfo import ZoneInfo
 
 from pydantic import Field, model_validator
-from sola_packs.support import Settings, external, resource
+from sola_packs.support import Settings, external, fingerprint, resource
 from sola_packs.support.evidence import Lease, Operation
 
 from solakit.core.io import durable
@@ -206,8 +206,9 @@ async def reply(
         int,
         Field(
             description=(
-                "Existing nonnegative peer letter number; use a number returned "
-                "by letters.read or pull_new."
+                "Required peer letter number being replied to, "
+                "not the outgoing number. "
+                "One reply per peer letter; use letters.send for a new letter."
             )
         ),
     ],
@@ -226,14 +227,44 @@ async def reply(
     ] = "default",
 ) -> ToolResult:
     """Create/publish one immutable reply per peer letter; retries use a receipt."""
+    return await publish(ctx, resource_name, body, number)
+
+
+@tool(
+    summary="Send a new letter without replying; automatically choose the next number",
+    keywords=("letters", "correspondence", "new", "send"),
+    name="letters.send",
+    profiles=["*"],
+    writes=["filesystem"],
+    effect="push",
+)
+async def send(
+    ctx: ToolContext,
+    body: Annotated[
+        str,
+        Field(
+            description="Exact UTF-8 letter content. Identical sends reuse a receipt."
+        ),
+    ],
+    resource_name: Annotated[
+        str,
+        Field(description="Configured letters resource alias; defaults to default."),
+    ] = "default",
+) -> ToolResult:
+    """Publish a new letter; identical requests never send a second copy."""
+    return await publish(ctx, resource_name, body, None)
+
+
+async def publish(ctx, resource_name, body, number):
     if "send" not in ctx.config.profiles[ctx.profile].effects:
         raise ToolError("Missing effect: send")
     if "push" not in ctx.config.profiles[ctx.profile].effects:
         raise ToolError("Missing effect: push")
     cfg, root, directory = settings(ctx, resource_name, "reply")
-    if number < 0 or not body.strip() or len(body) > 64000:
+    if (number is not None and number < 0) or not body.strip() or len(body) > 64000:
         raise ToolError(
-            "Reply needs a nonnegative letter number and 1–64000 body characters"
+            "Letter needs 1–64000 body characters and replies need "
+            "a nonnegative peer number"
         )
     request = {
         "number": number,
@@ -247,9 +278,13 @@ async def reply(
         Lease(ctx, "letters-locks", str(directory)),
         Operation(
             ctx,
-            "letters",
-            [str(directory), number],
+            "letters" if number is not None else "letters-send",
+            [str(directory), number if number is not None else fingerprint(request)],
             request,
+            conflict_message=(
+                f"Letter {number} already has a different reply. "
+                "Use letters.send for a new letter, or reply to another peer letter."
+            ),
         ) as operation,
     ):
         if operation.current:
@@ -257,14 +292,14 @@ async def reply(
                 return ToolResult(content=json.dumps(operation.current["result"]))
             filename = operation.current.get("filename", "unknown")
             raise ToolError(
-                f"Reply already started: {filename}. "
+                f"Letter publication already started: {filename}. "
                 f"{operation.current.get('detail', '')} "
                 "Inspect receipt and Git state before retrying"
             )
         await ctx.git(cfg.repository).pull()
         entries = await durable(scan, ctx, cfg, directory)
         source = next((entry for entry in entries if entry["number"] == number), None)
-        if source is None or source["author"] != cfg.peer:
+        if number is not None and (source is None or source["author"] != cfg.peer):
             raise ToolError("Reply must reference an existing peer letter")
         next_number = max((entry["number"] for entry in entries), default=0) + 1
         day = datetime.now(ZoneInfo(ctx.config.timezone)).date().isoformat()
@@ -275,7 +310,7 @@ async def reply(
             number=f"{next_number:03d}",
             date=day,
             author=cfg.author,
-            reply_to=f"{number:03d}",
+            reply_to=f"{number:03d}" if number is not None else "",
             body=body,
         )
         await durable(operation.record, "prepared", filename=filename, reply_to=number)
@@ -286,7 +321,11 @@ async def reply(
             )
             published = await ctx.git(cfg.repository).commit_push(
                 [str(target.relative_to(root))],
-                f"Reply to letter {number:03d} as {cfg.author}",
+                (
+                    f"Reply to letter {number:03d} as {cfg.author}"
+                    if number is not None
+                    else f"Send letter {next_number:03d} as {cfg.author}"
+                ),
             )
             result = {
                 "resource": resource_name,
@@ -312,7 +351,7 @@ async def reply(
             if not isinstance(exc, Exception):
                 raise
             raise ToolError(
-                f"Reply creation/publication failed or is uncertain; file {filename}. "
+                f"Letter creation/publication failed or is uncertain; file {filename}. "
                 f"{detail} Inspect local letter and receipt. No automatic retry."
             ) from exc
     return ToolResult(content=json.dumps(result), artifacts=[str(target)])
