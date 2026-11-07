@@ -40,7 +40,8 @@ override the new defaults; update an old model URL explicitly to port 8000.
 
 `sola check` validates TOML, secret references, prompt files, tools, cron and rollout
 settings offline. Errors name files and safe TOML locations without echoing their
-contents. Startup performs the same checks. Model unavailability leaves the app
+contents. Startup performs the same readability checks; the curated front-page size cap
+is enforced only by `sola check`. Model unavailability leaves the app
 up with degraded health; runs use the exact pinned model or fail without fallback.
 Run uvicorn with one worker; a data ownership lock prevents concurrent recovery.
 Startup logs summarize model readiness, authenticated read-only access to every
@@ -124,3 +125,9 @@ directory. When omitted, paths use the server process working directory as befor
 This setting does not change the process working directory or grant filesystem
 access: profile read/write scopes and symlink checks still apply. Absolute tool
 paths are unaffected.
+
+An optional operator-owned `fragments/memory.md` holds curated facts and pointers,
+read verbatim on every run before context and recall. It needs no installation
+and is included even when `[memory].enabled = false`. Set
+`[memory].front_page_max_chars` (default 8192, minimum 256) for offline curation
+checks: 75–100% warns, above 100% errors. Runtime preserves the entire file.

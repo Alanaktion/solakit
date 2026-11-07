@@ -238,10 +238,12 @@ The system prompt is the concatenation, in this fixed order, of:
 | # | Fragment | Source | Present when |
 |---|----------|--------|--------------|
 | 1 | Persona | `SOUL.md` (verbatim) | always |
-| 2 | Standing context | `fragments/context.md` (verbatim, optional) | file exists |
-| 3 | Recall | OpenViking results, wrapped in `<recall>…</recall>` with a one-line header from `fragments/recall-header.md` | recall non-empty |
-| 4 | Profile fragment | `fragments/profiles/<profile>.md` | always (may be empty) |
-| 5 | Run facts | Generated: date/time + timezone, profile name, session ID, origin channel/job — one short block, format fixed in code, golden-tested | always |
+| 2 | Curated memory | `fragments/memory.md` (verbatim, optional) | file exists |
+| 3 | Standing context | `fragments/context.md` (verbatim, optional) | file exists |
+| 4 | Recall | OpenViking results, wrapped in `<recall>…</recall>` with a one-line header from `fragments/recall-header.md` | recall non-empty |
+| 5 | Profile fragment | `fragments/profiles/<profile>.md` | always (may be empty) |
+| 6 | Tool index | Generated deferred tool index | deferred disclosure enabled |
+| 7 | Run facts | Generated: date/time + timezone, profile name, session ID, origin channel/job — one short block, format fixed in code, golden-tested | always |
 
 Nothing else. No tool instructions (tools are out-of-band, §2.2), no
 framework identity, no behavioural boilerplate, and — new in v2 — **no
@@ -251,12 +253,22 @@ prompt. If a behaviour is wanted, it is written into `SOUL.md` or a
 fragment, in Sola's / Alan's words.
 
 Fragments are joined with `\n\n---\n\n`. Assembled prompt, SHA-256, and
-token count are recorded per run.
+token count are recorded per run. JSON prompt inspection includes ordered
+`fragments: [{name, chars, sha256}]` from assembly, with names `soul`, `memory`,
+`context`, `recall`, `profile`, `tool_index`, `run` as applicable. New runs retain
+this breakdown in immutable `runs/*.prompt-fragments.json`; older runs report
+`fragments: null` rather than reconstructing boundaries or reading current files.
+Plain-text `sola prompt` remains the exact prompt text.
 
 Required SOUL and profile fragment files must exist and be readable UTF-8 at
 startup; an empty profile file is valid, an absent one is a configuration error.
 The recall header is also required when memory is enabled. Files are still read
-live for every run. An empty-but-present context file remains a fragment. The
+live for every run. Empty-but-present memory and context files remain fragments. Curated memory is
+included independently of `[memory].enabled`; `[memory].front_page_max_chars`
+(default 8192, minimum 256) only bounds its size for offline checks.
+`sola check` errors above the cap and warns at 75–100%; runtime neither truncates
+nor rejects an oversized front page. `runtime.status.front_page` reports
+`{chars, cap, over}` from the live file. Existing context budgets still apply. The
 recall header is preserved verbatim, including its trailing newline, before the
 builder adds a newline and the `<recall>` block. These rules deliberately preserve
 literal whitespace; no fragment is stripped or silently replaced with empty text.

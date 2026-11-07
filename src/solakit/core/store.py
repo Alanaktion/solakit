@@ -1008,6 +1008,10 @@ class Store:
             prompt.read_bytes().decode("utf-8") if prompt.exists() else None
         )
         schemas = self._path("runs", run_id, ".tool-schemas.json")
+        fragments = self._path("runs", run_id, ".prompt-fragments.json")
+        record["prompt_fragments"] = (
+            json.loads(fragments.read_bytes()) if fragments.exists() else None
+        )
         record["tool_schemas"] = None
         if record.get("tool_schema_sha256"):
             try:
@@ -1097,6 +1101,11 @@ class Store:
     def write_prompt(self, run_id: str, prompt: str) -> str:
         payload = prompt.encode("utf-8")
         # Never redact prompt bytes: this is the exact model input for audit.
+        fragments = getattr(prompt, "fragments", None)
+        if fragments is not None:
+            self._write_run_input(
+                run_id, ".prompt-fragments.json", json.dumps(fragments).encode()
+            )
         return self._write_run_input(run_id, ".prompt.txt", payload)
 
     def write_tool_catalog(self, run_id: str, catalog_json: str) -> str:

@@ -1,3 +1,38 @@
+# Curated memory front page implementation status
+
+2026-11-07 — CURATED-MEMORY-PLAN harness implemented.
+
+Validation: `uv sync --frozen --all-packages` succeeded; 694 core/pack tests
+passed (one existing Starlette/httpx deprecation warning); Ruff lint and format
+passed; all nine distributions (core and eight packs) built as sdists and wheels.
+`uv run --env-file .env sola check` reported Configuration valid. The strengthened
+oversized-file run regression also passed in the targeted seven-test prompt suite.
+
+Optional operator-owned `fragments/memory.md` is read live and verbatim between
+SOUL and context, across profiles and independently of OpenViking enablement.
+Absent input leaves the original golden unchanged; a separate synthetic golden
+covers presence. Automated checks cover empty input, literal CRLF/trailing space,
+live edits, invalid UTF-8, disabled memory, fragment ordering/hashes/counts,
+offline cap errors/warnings and runtime reporting without truncation. New runs
+retain immutable fragment breakdowns; historical inspection survives file deletion
+and embedded separator text without consulting current files. Legacy runs have
+no breakdown and return null.
+
+Operator work remains: author/install the real front page and perform the plan's
+fresh-session trivial-turn/vague-follow-up search and cold correction acceptance
+checks. No real front page, template, new tool, automatic writer or widened
+filesystem grant was installed. Mock tests establish assembly, not model uptake.
+No browser visual QA was needed or performed; this change adds no UI layout.
+
+Authoring guidance for the operator: keep facts flat and factual, with dated
+entries and a last-reviewed header. Prefer one line per entry and pointers to
+archive detail; paragraphs belong in the archive. Replace a corrected line in
+the same edit rather than appending a contradiction. Prune dated history on each
+review, using the operator's own review cadence. This is living content whose
+revision is permitted, unlike published writing; optional fragments git history
+can retain its revisions. In v1 Sola proposes changes in conversation and the
+operator lands them with a text editor. Live outcomes remain unverified here.
+
 # Tool layer implementation status
 
 2026-11-06 — TOOL-FIXES-PLAN implementation

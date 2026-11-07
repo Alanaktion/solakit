@@ -13,7 +13,8 @@ Discord image attachments also pass through to a vision-capable model; see
 [vision input](docs/operations/vision.md) for setup, limits and live verification.
 
 Solakit runs on localhost or a tailnet with Python 3.12+ and uv. Prompts and
-configuration stay under operator control; portable session and run evidence stays
+configuration stay under operator control; optional `fragments/memory.md` supplies
+a curated front page on every run, even with OpenViking disabled; portable session and run evidence stays
 in a private data directory. Integrations are opt-in. Set `[server].cwd` to choose
 the base directory for relative tool paths such as `files.list(".")`; profile
 filesystem grants still apply.

@@ -129,9 +129,14 @@ def main() -> None:
         )
         return
     if args.command == "check":
+        from solakit.core.prompt import check_front_page
+
         try:
             prepared = prepare()
-        except ConfigurationError as exc:
+            warning = check_front_page(prepared.config)
+            if warning:
+                print(warning)
+        except (ConfigurationError, OSError, ValueError) as exc:
             parser.exit(1, f"Configuration error: {exc}\n")
         from solakit.tools.distributions import description
 

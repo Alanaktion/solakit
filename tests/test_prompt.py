@@ -85,3 +85,161 @@ def test_empty_context_and_header_newline_remain_literal(config):
     (config.paths.fragments / "recall-header.md").write_bytes(b"Header\n")
     recalled = read_prompt(config, recall="record", **kwargs)
     assert "Header\n\n<recall>\nrecord\n</recall>" in recalled
+
+
+def test_front_page_live_literal_and_breakdown(config):
+    from solakit.core.prompt import SEPARATOR, inspection, validate_prompt_files
+
+    kwargs = dict(
+        profile="interactive",
+        session="s",
+        origin="api",
+        at=datetime.fromisoformat("2026-11-04T19:00:00+00:00"),
+    )
+    config.memory.enabled = False
+    path = config.paths.fragments / "memory.md"
+    absent = read_prompt(config, **kwargs)
+    path.write_bytes(b"")
+    empty = read_prompt(config, **kwargs)
+    assert len(empty) == len(absent) + len(SEPARATOR)
+    path.write_bytes(b"Synthetic current fact\r\n  \n")
+    (config.paths.fragments / "context.md").write_text("Synthetic rule")
+    (config.paths.fragments / "recall-header.md").write_text("Header")
+    first = read_prompt(config, recall="Synthetic recall", **kwargs)
+    sections = first.split(SEPARATOR)
+    assert sections[:4] == [
+        config.paths.soul.read_bytes().decode(),
+        "Synthetic current fact\r\n  \n",
+        "Synthetic rule",
+        "Header\n<recall>\nSynthetic recall\n</recall>",
+    ]
+    info = inspection(first, [])
+    assert [f["name"] for f in info["fragments"]] == [
+        "soul",
+        "memory",
+        "context",
+        "recall",
+        "profile",
+        "run",
+    ]
+    for fragment, text in zip(info["fragments"], sections, strict=True):
+        assert fragment["chars"] == len(text)
+        assert fragment["sha256"] == hashlib.sha256(text.encode()).hexdigest()
+    assert sum(f["chars"] for f in info["fragments"]) + (len(sections) - 1) * len(
+        SEPARATOR
+    ) == len(first)
+    path.write_text("Changed synthetic fact")
+    second = read_prompt(config, **kwargs)
+    assert "Changed synthetic fact" in second
+    assert "<recall>" not in second
+    validate_prompt_files(config)
+    path.write_bytes(b"\xff")
+    import pytest
+
+    with pytest.raises(ValueError, match="memory.md"):
+        validate_prompt_files(config)
+    path.unlink()
+    validate_prompt_files(config)
+
+
+def test_front_page_cap_check_and_runtime(
+    config, auth, monkeypatch, capsys, mock_model
+):
+    import pytest
+
+    from solakit import cli
+    from solakit.core.prompt import check_front_page, read_prompt
+    from solakit.core.startup import prepare
+
+    config.memory.front_page_max_chars = 256
+    path = config.paths.fragments / "memory.md"
+    path.write_text("x" * 205)
+    monkeypatch.setattr(cli, "prepare", lambda: prepare(config))
+    monkeypatch.setattr("sys.argv", ["sola", "check"])
+    cli.main()
+    assert "Warning:" in capsys.readouterr().out
+    path.write_text("x" * 257)
+    with pytest.raises(ValueError, match=r"memory.md: 257 characters, cap 256"):
+        check_front_page(config)
+    with pytest.raises(SystemExit) as error:
+        cli.main()
+    assert error.value.code == 1
+    assert "memory.md: 257 characters, cap 256" in capsys.readouterr().err
+    with TestClient(create_app(config=config, model=mock_model)) as client:
+        status = client.app.state.registry.runtime_status("interactive")
+        assert status["front_page"] == {"chars": 257, "cap": 256, "over": True}
+        response = client.get("/api/prompt", headers=auth)
+        assert response.status_code == 200
+        assert "x" * 257 in response.json()["prompt"]
+        assert response.json()["fragments"][1]["name"] == "memory"
+        assert (
+            client.post(
+                "/api/sessions", headers=auth, json={"id": "oversized"}
+            ).status_code
+            == 201
+        )
+        served = client.post(
+            "/api/sessions/oversized/messages", headers=auth, json={"message": "Hello"}
+        )
+        assert served.status_code == 200
+        assert served.json()["status"] == "completed"
+        assert "x" * 257 in served.json()["prompt"]
+        # Assembly does not cut an oversized operator file.
+        assert "x" * 257 in read_prompt(
+            config,
+            profile="interactive",
+            session="s",
+            origin="api",
+            at=datetime.now().astimezone(),
+        )
+
+
+def test_memory_present_golden(config, tmp_path):
+    import shutil
+
+    shutil.copytree(FIXTURES, tmp_path / "prompt")
+    config.paths.fragments = tmp_path / "prompt"
+    config.paths.soul = config.paths.fragments / "SOUL.md"
+    (config.paths.fragments / "memory.md").write_bytes(b"Synthetic front page.\r\n  \n")
+    result = read_prompt(
+        config,
+        profile="interactive",
+        session="golden",
+        origin="api",
+        at=datetime.fromisoformat("2026-11-04T19:00:00+00:00"),
+        recall="A remembered fact.",
+    )
+    assert result.encode() == (FIXTURES / "memory-present.txt").read_bytes()
+
+
+def test_historical_fragment_evidence(config, auth, mock_model):
+    import pytest
+
+    path = config.paths.fragments / "memory.md"
+    path.write_text("Synthetic fact with a separator\n\n---\n\ninside")
+    with TestClient(create_app(config=config, model=mock_model)) as client:
+        assert (
+            client.post(
+                "/api/sessions", headers=auth, json={"id": "front-page"}
+            ).status_code
+            == 201
+        )
+        response = client.post(
+            "/api/sessions/front-page/messages", headers=auth, json={"message": "Hello"}
+        )
+        assert response.status_code == 200
+        record = response.json()
+        assert record["status"] == "completed"
+        params = {"run_id": record["id"]}
+        before = client.get("/api/prompt", headers=auth, params=params).json()
+        assert [f["name"] for f in before["fragments"]] == [
+            "soul",
+            "memory",
+            "profile",
+            "run",
+        ]
+        assert before["fragments"][1]["chars"] == len(path.read_text())
+        path.unlink()
+        assert client.get("/api/prompt", headers=auth, params=params).json() == before
+        with pytest.raises(FileExistsError):
+            client.app.state.store.write_prompt(record["id"], "replacement")

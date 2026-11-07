@@ -19,7 +19,7 @@ from solakit.core.media import Media, MediaError
 from solakit.core.memory import MemoryClient, MemoryUnavailable
 from solakit.core.memory_ops import probe, refresh_run, watch_memory
 from solakit.core.model import ModelClient, ModelUnavailable, safe_url
-from solakit.core.prompt import inspection, read_prompt
+from solakit.core.prompt import front_page_status, inspection, read_prompt
 from solakit.core.routing import SessionRouter
 from solakit.core.schemas import Origin, Session, SessionArchived, now
 from solakit.core.search import SearchUnavailable
@@ -132,6 +132,7 @@ def create_app(
                     },
                     "channels": app.state.channels.status(),
                     "jobs": app.state.jobs.status(),
+                    "front_page": front_page_status(cfg),
                     "profile": profile,
                     "tool_distributions": app.state.registry.distributions,
                     "granted_tools": [
@@ -453,7 +454,7 @@ def create_app(
                     raise HTTPException(404, "Schema step not recorded")
                 schemas = [record["tool_catalog"][name] for name in snapshot["visible"]]
             return {
-                **inspection(record["prompt"], schemas),
+                **inspection(record["prompt"], schemas, record.get("prompt_fragments")),
                 "tool_view": view,
                 "schema_step": step,
                 "tool_catalog_sha256": record.get("tool_catalog_sha256"),

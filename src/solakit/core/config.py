@@ -75,6 +75,7 @@ class ServerConfig(StrictModel):
 
 
 class MemoryConfig(StrictModel):
+    front_page_max_chars: int = Field(default=8192, ge=256)
     enabled: bool = False
     base_url: str | None = None
     api_key: SecretRef | None = None

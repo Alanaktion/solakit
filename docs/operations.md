@@ -498,3 +498,20 @@ directory. When omitted, paths use the server process working directory as befor
 This setting does not change the process working directory or grant filesystem
 access: profile read/write scopes and symlink checks still apply. Absolute tool
 paths are unaffected.
+
+## Curated memory front page
+
+An optional `fragments/memory.md` is read live after SOUL and before standing
+context, recall, profile, deferred tool index and run facts. Empty files remain
+fragments; UTF-8, line endings and trailing whitespace are preserved. Inclusion
+is independent of OpenViking enablement. It is operator-owned: discuss proposed
+changes in chat and land them with a text editor. No tool or automatic writer is
+installed and no filesystem grants need widening.
+
+`sola check` enforces `[memory].front_page_max_chars` (8192 by default), warning
+from 75% and erroring above the cap. Prune rather than copying archive detail.
+Runtime never truncates or refuses the file for this cap; existing profile context
+budgets still apply. `runtime.status.front_page` exposes live `chars`, `cap` and
+`over`. `/api/prompt` and `sola prompt --json` include ordered fragment names,
+character counts and SHA-256 hashes. Plain-text output is unchanged. New runs
+save the breakdown beside their prompt; older runs return `fragments: null`.

@@ -119,6 +119,9 @@ resources = []
 # Opt-in OpenViking integration. Set the existing server's URL and canonical
 # shared-memory roots; confirm its API version before enabling.
 [memory]
+# Optional fragments/memory.md is always included, even with memory disabled.
+# Offline curation cap; runtime preserves the full file.
+front_page_max_chars = 8192
 enabled = false
 compaction_timeout_s = 300 # Extraction wait budget, separate from HTTP timeout_s.
 trust_env = false
