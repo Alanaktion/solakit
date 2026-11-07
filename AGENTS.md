@@ -24,8 +24,9 @@ Read `SPEC.md` for behavioral contracts, `README.md` for an introduction,
   orderly shutdown. User-facing failures are run statuses, not invented replies.
   Delegation reuses the current inference slot via submit_nested and per-session
   locks; never queue-and-wait while holding the semaphore. Inject nested_submit
-  through ToolContext, restrict workers with delegation.allowed_profiles, retain
-  private ephemeral child evidence and return only final reports. Propagate parent
+  through ToolContext, allow the current run profile by default and restrict other
+  workers with delegation.allowed_profiles. Retain private ephemeral child evidence
+  and return only final reports. Propagate parent
   cancellation through children; manifests that own timeouts must bound them and
   retain operation receipts. Worker grants control further delegation.
 - `core/model.py`, `core/model_stream.py`: one exact pinned model, preflight and

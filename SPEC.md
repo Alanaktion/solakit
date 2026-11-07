@@ -728,8 +728,10 @@ across aliases log a warning; split profiles to preserve that distinction.
 
 ### 8.1.1 Delegated child sessions
 
-The opt-in built-in `delegate.run(task, profile, session=None)` uses configured
+The opt-in built-in `delegate.run(task, profile=None, session=None)` defaults to
+the active run profile, which is always allowed. Other profiles require configured
 `delegation.allowed_profiles` (default empty; unknown profiles fail validation).
+Omitting profile on continuation also selects the active parent run profile.
 Fresh sessions set parent_session to the caller, ephemeral memory, no binding and
 a title from the brief's first line. The brief is retained verbatim. Continuation
 requires an idle, unarchived, unbound ephemeral child belonging to this parent.

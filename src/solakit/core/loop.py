@@ -141,7 +141,10 @@ class Execution:
                     raise ValueError(
                         "Only own unbound ephemeral child sessions can be delegated"
                     )
-                if profile not in self.config.delegation.allowed_profiles:
+                if (
+                    profile != nested_parent.run.profile
+                    and profile not in self.config.delegation.allowed_profiles
+                ):
                     raise ValueError("Profile is not allowed for delegation")
                 if any(
                     p.run.session == session_id and not p.future.done()

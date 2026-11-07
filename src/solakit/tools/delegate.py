@@ -55,13 +55,14 @@ async def run(
         ),
     ],
     profile: Annotated[
-        str,
+        str | None,
         Field(
             description=(
-                "Worker profile explicitly listed in delegation.allowed_profiles."
+                "Worker profile; omit to use the current profile. Other profiles "
+                "must be listed in delegation.allowed_profiles."
             )
         ),
-    ],
+    ] = None,
     session: Annotated[
         str | None,
         Field(
@@ -75,14 +76,16 @@ async def run(
     """Run a self-contained brief in a fresh ephemeral child session.
 
     Complete simple operations directly in one or two calls rather than delegating.
-    Only delegation.allowed_profiles may be used. Supply session to continue an
+    Defaults to the current profile; other profiles require
+    delegation.allowed_profiles. Supply session to continue an
     idle, unarchived child of this conversation. The child sees its own history,
     not this conversation; return includes child session/run IDs, status and only
     its final report on success. Full child work remains in its own transcript.
     """
     if not task.strip():
         raise ToolError("Delegation requires a nonempty task")
-    if profile not in ctx.config.delegation.allowed_profiles:
+    profile = ctx.profile if profile is None else profile
+    if profile != ctx.profile and profile not in ctx.config.delegation.allowed_profiles:
         raise ToolError("Profile is not allowed for delegation")
     if ctx.nested_submit is None:
         raise ToolError("Nested execution is unavailable in this context")

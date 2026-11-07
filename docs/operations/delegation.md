@@ -8,7 +8,8 @@ web UI and full-text search. This is serial delegation within one process.
 ## Enable it
 
 Load the `delegate` built-in module alongside the worker's tool modules and grant
-`delegate.run` only to parent profiles. Choose permitted worker profiles:
+`delegate.run` to profiles that may delegate. The active run profile is always
+allowed and is used by default. Optionally permit additional worker profiles:
 
 ```toml
 enabled_tools = ["delegate", "files", "sessions"]
@@ -29,8 +30,8 @@ context_budget = 64000
 ```
 
 Merge these grants into your existing configuration. The default allowlist is
-empty. Unknown worker profiles fail configuration validation. Each profile needs
-its operator-owned `fragments/profiles/<name>.md`; this feature installs no persona
+empty, allowing delegation with the current profile. Unknown worker profiles fail
+configuration validation. Each profile needs its operator-owned `fragments/profiles/<name>.md`; this feature installs no persona
 or prompt text. Workers receive the normal SOUL/global fragments and their own
 profile fragment, task and history, with no parent conversation or memory recall.
 
@@ -46,8 +47,13 @@ in the self-contained brief. Irreversible actions need the operator's authorizat
 ## Tool contract
 
 ```json
-{"task":"Investigate these sources and return a short report.","profile":"research"}
+{"task":"Investigate these sources and return a short report."}
 ```
+
+Omit `profile` (or pass null) to use the active parent run profile, including on
+continuation. Explicitly selecting that same profile is always allowed. Selecting
+a different profile, such as `"profile":"research"`, requires an entry in
+`delegation.allowed_profiles`. The session default does not override this choice.
 
 `task` is a nonblank string of up to 32,000 characters and is retained verbatim as
 the child's input. New children have `parent_session` pointing to the caller, no

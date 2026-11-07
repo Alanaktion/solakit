@@ -122,8 +122,9 @@ The CLI's equivalent is `sola --trust-env ...`. Process environment is untouched
 
 ## Delegated sub-agents
 
-Load `delegate`, grant `delegate.run` to the parent and configure
-`delegation.allowed_profiles`. Delegation runs an ephemeral child inside the
+Load `delegate` and grant `delegate.run` to the parent. The current run profile
+is always allowed and is the default; configure `delegation.allowed_profiles`
+to permit other worker profiles. Delegation runs an ephemeral child inside the
 parent's existing inference slot, returning only its final report and evidence
 IDs. It works at concurrency one. See [configuration, continuation and
 cancellation](operations/delegation.md). Worker tool grants control authority and

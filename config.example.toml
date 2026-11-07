@@ -7,7 +7,7 @@ enabled_tools = []
 # Shell is built in: "shell" or "solakit.tools.shell" (enabled by config).
 # Scheduling mutations and cross-session runtime access require effect "operate".
 # Delegation is built in: load "delegate" and grant "delegate.run" to the parent.
-# Set delegation.allowed_profiles explicitly; worker profiles should not grant it.
+# The current profile is always allowed; list additional worker profiles explicitly.
 # Memory tools: load "memory" and explicitly grant memory.search/read/remember.
 # remember stages exact notes for the existing commit; it never claims extraction.
 # Session history search is built in: "sessions" or "solakit.tools.sessions".
@@ -51,7 +51,7 @@ max_tokens = 4096
 # Opt in only if this service needs proxy/CA environment settings.
 trust_env = false
 
-# Empty by default: loading/granting delegate.run alone enables no worker profile.
+# Empty by default: delegate.run uses the current profile unless another is selected.
 [delegation]
 allowed_profiles = []
 # allowed_profiles = ["research"] # Also configure the worker and its prompt fragment.

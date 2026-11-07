@@ -38,7 +38,7 @@ def answer(config, content=None, *, name=None, arguments=None):
     )
 
 
-def setup(config, worker=None, *, memory=None):
+def setup(config, worker=None, *, memory=None, default_profile="interactive"):
     config.enabled_tools = ["delegate"]
     config.model.concurrency = 1
     config.profiles["interactive"].tools = ["delegate.run"]
@@ -48,7 +48,7 @@ def setup(config, worker=None, *, memory=None):
     (config.paths.fragments / "profiles/research.md").write_text("Research worker.")
     (config.paths.fragments / "recall-header.md").write_text("Scoped recall:")
     store = Store(config.paths.data)
-    store.create_session(Session(id="parent"))
+    store.create_session(Session(id="parent", default_profile=default_profile))
     registry = Registry(config)
     args = {"task": "Find the answer\nKeep this brief verbatim.", "profile": "research"}
     captured = []
@@ -58,7 +58,13 @@ def setup(config, worker=None, *, memory=None):
             return httpx.Response(200, json={"data": [{"id": config.model.model_id}]})
         data = json.loads(request.content)
         captured.append(data)
-        if "profile: research\n" in data["messages"][0]["content"]:
+        if (
+            any(
+                m["role"] == "user" and m["content"] == args["task"]
+                for m in data["messages"]
+            )
+            or "profile: research\n" in data["messages"][0]["content"]
+        ):
             if worker:
                 return await worker(data)
             return answer(config, "A concise worker report")
@@ -192,7 +198,8 @@ def test_one_slot_isolation_ephemeral_memory_and_continuation(config):
 def test_refusals_create_no_child_runs_and_are_recorded(config, refusal):
     execution, args, _ = setup(config)
     if refusal == "profile":
-        args["profile"] = "interactive"
+        config.profiles["forbidden"] = Profile()
+        args["profile"] = "forbidden"
     elif refusal == "blank":
         args["task"] = "  "
     else:
@@ -507,6 +514,50 @@ def test_grants_allow_nested_depth_and_parent_cancellation_propagates(config):
                 records = execution.store.list_records("runs")
                 assert len(records) == 3
                 assert all(record["status"] == "cancelled" for record in records)
+        finally:
+            await execution.close()
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("explicit", [False, True])
+def test_current_run_profile_is_allowed_without_allowlist(config, explicit):
+    execution, args, _ = setup(config, default_profile="research")
+    config.delegation.allowed_profiles = []
+    # The active run profile, rather than the session default, must be used.
+    config.profiles["research"].tools = ["delegate.run"]
+    if explicit:
+        args["profile"] = "interactive"
+    else:
+        args.pop("profile")
+    schema = next(
+        s
+        for s in execution.registry.schemas("interactive")
+        if s["function"]["name"] == "delegate.run"
+    )
+    assert "profile" not in schema["function"]["parameters"].get("required", [])
+
+    async def exercise():
+        try:
+            async with asyncio.timeout(5):
+                parent = await execution.submit(
+                    "parent", "Delegate", profile="interactive"
+                )
+                result, data = receipt(execution, parent)
+                assert not result["error"]
+                assert data["report"] == "A concise worker report"
+                assert (
+                    execution.store.session(data["session_id"]).default_profile
+                    == "interactive"
+                )
+                assert execution.store.run(data["run_id"])["profile"] == "interactive"
+                args["session"] = data["session_id"]
+                again = await execution.submit(
+                    "parent", "Continue", profile="interactive"
+                )
+                result, continued = receipt(execution, again)
+                assert not result["error"]
+                assert continued["session_id"] == data["session_id"]
         finally:
             await execution.close()
 
