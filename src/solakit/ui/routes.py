@@ -231,6 +231,7 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
         }
         parameters = {key: value for key, value in filters.items() if value}
         parameters["page"] = "true"
+        parameters["roots_only"] = "true"
         catalog, profiles, state = await asyncio.gather(
             api(request, "GET", "/api/sessions?" + urlencode(parameters)),
             api(request, "GET", "/api/profiles"),
@@ -357,12 +358,26 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
         ]
 
     async def chat_context(request, data, history, error=None):
-        all_sessions, state, catalog = await asyncio.gather(
-            api(request, "GET", "/api/sessions"),
+        all_sessions, state, catalog, children = await asyncio.gather(
+            api(request, "GET", "/api/sessions?roots_only=true&exclude_source=cron"),
             health(request),
             api(request, "GET", "/api/tools"),
+            api(
+                request,
+                "GET",
+                "/api/sessions?"
+                + urlencode(
+                    {
+                        "parent_session": data["id"],
+                        "status": "all",
+                        "page": "true",
+                        "offset": request.query_params.get("child_offset", "0"),
+                    }
+                ),
+            ),
         )
         return {
+            "children": children,
             "session": data,
             "turns": history,
             "sessions": all_sessions,

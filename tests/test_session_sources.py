@@ -98,3 +98,70 @@ def test_channel_and_job_creators_preserve_existing_source(config):
         await execution.model.close()
 
     asyncio.run(exercise())
+
+
+def test_job_creates_channel_binding_with_cron_source(config):
+    config.channels = [
+        Channel(id="room", type="discord", channel_id="1", session="room")
+    ]
+
+    async def exercise():
+        execution = setup(config, lambda r: model_list(config))
+        jobs = Jobs(
+            config, execution, Channels(config, execution, {"discord": FakeAdapter()})
+        )
+        job = Job(
+            id="job",
+            cron="0 * * * *",
+            profile="interactive",
+            task="test",
+            bind_session="room",
+        )
+        session = await jobs._session(job)
+        assert session.source == "cron"
+        assert session.bound_channel == "room"
+        assert jobs.channels.router.channel("discord", "1").source == "cron"
+        await execution.model.close()
+
+    asyncio.run(exercise())
+
+
+def test_children_live_with_parent_in_ui(config, mock_model):
+    app = create_app(config=config, model=mock_model)
+    with TestClient(app) as client:
+        store = app.state.store
+        store.create_session(Session(id="parent", source="web"))
+        for i in range(51):
+            store.create_session(
+                Session(
+                    id=f"child-{i:02}",
+                    parent_session="parent",
+                    source="cron" if i == 0 else "api",
+                )
+            )
+        store.create_session(
+            Session(
+                id="archived-child",
+                parent_session="parent",
+                archived_at="2020-01-01T00:00:00Z",
+            )
+        )
+        sign_in(client)
+        assert 'href="/sessions/child-' not in client.get("/?exclude_source=").text
+        page = client.get("/sessions/parent").text
+        assert "Sub-sessions (52)" in page
+        assert "Next sub-sessions" in page
+        assert (
+            "Previous sub-sessions"
+            in client.get("/sessions/parent?child_offset=50").text
+        )
+        child = client.get("/sessions/child-00").text
+        assert 'href="/sessions/parent">← Parent session' in child
+        assert 'href="/sessions/child-00"' not in child.split("</aside>")[0]
+        assert (
+            client.get(
+                "/api/sessions?parent_session=parent&page=true&status=all"
+            ).json()["total"]
+            == 52
+        )
+        assert len(client.get("/api/sessions?roots_only=true").json()) == 1

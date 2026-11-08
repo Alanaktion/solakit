@@ -668,6 +668,8 @@ class Store:
         before=None,
         profile=None,
         exclude_source=None,
+        roots_only=False,
+        parent_session=None,
         limit=50,
         offset=0,
         ids=None,
@@ -686,6 +688,11 @@ class Store:
         at = "coalesce(a.last_activity, json_extract(s.payload, '$.created_at'))"
         source = "sessions s LEFT JOIN session_activity a ON a.id=s.id"
         clauses, args = [], []
+        if roots_only:
+            clauses.append("json_extract(s.payload, '$.parent_session') IS NULL")
+        if parent_session is not None:
+            clauses.append("json_extract(s.payload, '$.parent_session') = ?")
+            args.append(parent_session)
         if ids is not None:
             if not ids or len(ids) > 500:
                 raise ValueError("Select 1–500 session IDs")

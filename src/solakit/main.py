@@ -542,6 +542,8 @@ def create_app(
         before: str | None = None,
         profile: str | None = None,
         exclude_source: str | None = None,
+        roots_only: bool = False,
+        parent_session: str | None = None,
         limit: int = 50,
         offset: int = 0,
         page: bool = False,
@@ -553,6 +555,8 @@ def create_app(
                 before=before,
                 profile=profile,
                 exclude_source=exclude_source,
+                roots_only=roots_only,
+                parent_session=parent_session,
                 limit=limit,
                 offset=offset,
             )

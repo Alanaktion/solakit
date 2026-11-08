@@ -1469,3 +1469,10 @@ directory. When omitted, paths use the server process working directory as befor
 This setting does not change the process working directory or grant filesystem
 access: profile read/write scopes and symlink checks still apply. Absolute tool
 paths are unaffected.
+
+New sessions created by scheduled jobs use source `cron`, including channel-bound
+sessions; existing bindings retain their original source. The web session catalog
+and chat sidebar list parent sessions. Open a parent to browse its paginated
+sub-sessions, including archived children and scheduled children; each child links
+back to its parent. API listings remain flat by default; `roots_only=true` selects
+parents and `parent_session=<id>` selects direct children before pagination.

@@ -503,3 +503,12 @@ pre { overflow-x: auto; font-size: 11px; line-height: 1.55; color: var(--ink); }
 @keyframes typing-pulse { 0%, 70%, 100% { opacity: 0.35; } 35% { opacity: 1; } }
 @media (pointer: coarse) { .tool-call summary { min-height: 44px; } }
 @media (prefers-reduced-motion: reduce) { .tool-spinner, .typing-dots i { animation: none; } }
+
+.subsession-navigation {
+  margin: .5rem 1rem;
+  padding: .75rem;
+}
+.subsession-navigation ul {
+  margin: .5rem 0;
+  padding-left: 1.5rem;
+}

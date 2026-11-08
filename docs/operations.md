@@ -544,3 +544,10 @@ budgets still apply. `runtime.status.front_page` exposes live `chars`, `cap` and
 `over`. `/api/prompt` and `sola prompt --json` include ordered fragment names,
 character counts and SHA-256 hashes. Plain-text output is unchanged. New runs
 save the breakdown beside their prompt; older runs return `fragments: null`.
+
+New sessions created by scheduled jobs use source `cron`, including channel-bound
+sessions; existing bindings retain their original source. The web session catalog
+and chat sidebar list parent sessions. Open a parent to browse its paginated
+sub-sessions, including archived children and scheduled children; each child links
+back to its parent. API listings remain flat by default; `roots_only=true` selects
+parents and `parent_session=<id>` selects direct children before pagination.

@@ -172,7 +172,10 @@ class Jobs:
         )
         if channel:
             return await durable(
-                self.channels.router.channel, channel.type, channel.channel_id
+                self.channels.router.channel,
+                channel.type,
+                channel.channel_id,
+                source="cron",
             )
         if job.bind_session == "ephemeral":
             return await durable(

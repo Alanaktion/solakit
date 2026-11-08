@@ -74,8 +74,8 @@ created for failed or incomplete work.
 
 Children perform no memory recall/commit or automatic channel delivery. Only the
 parent's usual memory commit contains its own brief, returned report and reply.
-Children stay visible in normal session listings and can later be archived with
-the existing cleanup workflow; this feature does not auto-archive or delete them.
+Children appear within their parent session in the web UI and remain in flat API
+listings by default. They can later be archived with the existing cleanup workflow; this feature does not auto-archive or delete them.
 
 ## Execution, timeout and cancellation
 
