@@ -64,6 +64,15 @@ async def complete_stream(client, request, on_text):
     total, done = 0, False
     async with client.stream("POST", "chat/completions", json=request) as response:
         response.raise_for_status()
+        # Some compatible endpoints return a complete JSON response even when
+        # streaming is requested. Keep the same completion validation upstream.
+        if response.headers.get("content-type", "").split(";")[0] == "application/json":
+            body = bytearray()
+            async for chunk in response.aiter_bytes():
+                body.extend(chunk)
+                if len(body) > MAX_STREAM_BYTES:
+                    raise ModelUnavailable("Model response exceeds size limit")
+            return json.loads(body)
         async for event in events(response):
             total += len(event.encode("utf-8"))
             if total > MAX_STREAM_BYTES:
@@ -92,7 +101,8 @@ async def complete_stream(client, request, on_text):
                 if not isinstance(text, str):
                     raise ModelUnavailable("Invalid streamed content")
                 content += text
-                await on_text(content)
+                if on_text is not None:
+                    await on_text(content)
             for fragment in delta.get("tool_calls") or []:
                 index = fragment["index"]
                 if type(index) is not int or not 0 <= index < 64:

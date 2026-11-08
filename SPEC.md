@@ -960,7 +960,8 @@ The P1 operator UI is a thin server-rendered API client. Shared app contracts:
 
 - **Streaming:** `POST …/messages` returns the completed run by default.
   `?wait=false` accepts once and returns HTTP 202 with the queued run ID;
-  `?stream=true` requests OpenAI SSE from the model. The existing runner assembles
+  `?stream=true` enables live previews. Model requests always use OpenAI SSE
+  so cancellation closes the active generation transport immediately. The existing runner assembles
   and validates complete content/tool envelopes before persistence/dispatch.
   `GET /api/runs/{id}?live=true` adds a transient credential-masked preview.
   The authenticated UI `GET /sessions/{id}/events` emits coalesced `snapshot`
@@ -982,7 +983,9 @@ The P1 operator UI is a thin server-rendered API client. Shared app contracts:
   blocks; completion renders the exact saved assistant content once.
   GET observation is resumable by reloading; it never resubmits or cancels work.
   Browser/API disconnects do not cancel accepted runs. Explicit cancellation
-  remains `POST /api/runs/{id}/cancel`. Streaming requests have a 2 MiB wire bound
+  remains `POST /api/runs/{id}/cancel`. Previously persisted assistant output, tool
+  call envelopes and completed tool results stay in session history; the unfinished
+  generation preview is discarded. Model requests have a 2 MiB wire bound
   and a total model.timeout_s deadline per completion. Incomplete/wrong-model
   streams fail honestly; `length` keeps validated partial evidence without dispatch.
 - **Markdown:** assistant chat messages use CommonMark plus tables with raw HTML

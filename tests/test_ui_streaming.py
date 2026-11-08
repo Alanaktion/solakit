@@ -396,7 +396,10 @@ def test_disconnect_during_durable_admission_still_queues_run(
     asyncio.run(exercise())
 
 
-def test_cancelling_live_generation_closes_transport_without_saving_preview(config):
+@pytest.mark.parametrize("live", [False, True])
+def test_cancelling_live_generation_closes_transport_without_saving_preview(
+    config, live
+):
     async def exercise():
         entered = asyncio.Event()
         stream = Stream(
@@ -416,7 +419,7 @@ def test_cancelling_live_generation_closes_transport_without_saving_preview(conf
         app = create_app(config=config, model=model)
         async with app.router.lifespan_context(app):
             app.state.store.create_session(Session(id="s"))
-            pending = await app.state.execution.enqueue("s", "hello", stream=True)
+            pending = await app.state.execution.enqueue("s", "hello", stream=live)
             await asyncio.wait_for(entered.wait(), 2)
             assert await app.state.execution.cancel(pending.run.id)
             assert (await pending.future).status == "cancelled"
@@ -543,5 +546,81 @@ def test_keepalive_with_payload_still_fails_pinned_validation(config, mutation):
                 await model.complete([], [], on_text=preview)
         finally:
             await model.close()
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("live", [False, True])
+def test_stop_retains_output_through_last_tool_call(config, live):
+    async def exercise():
+        entered = asyncio.Event()
+        interrupted = Stream(
+            [frame(config, {"content": "unfinished next response"})],
+            release=asyncio.Event(),
+            entered=entered,
+        )
+        requests = 0
+
+        def handle(request):
+            nonlocal requests
+            if request.url.path.endswith("/models"):
+                return httpx.Response(
+                    200, json={"data": [{"id": config.model.model_id}]}
+                )
+            assert json.loads(request.content)["stream"] is True
+            requests += 1
+            if requests == 1:
+                return httpx.Response(
+                    200,
+                    stream=Stream(
+                        [
+                            frame(
+                                config,
+                                {
+                                    "content": "Checking now",
+                                    "tool_calls": [
+                                        {
+                                            "index": 0,
+                                            "id": "last-call",
+                                            "type": "function",
+                                            "function": {
+                                                "name": "echo",
+                                                "arguments": "{}",
+                                            },
+                                        }
+                                    ],
+                                },
+                                "tool_calls",
+                            ),
+                            b"data: [DONE]\n\n",
+                        ]
+                    ),
+                )
+            return httpx.Response(200, stream=interrupted)
+
+        model = ModelClient(config.model, transport=httpx.MockTransport(handle))
+        app = create_app(config=config, model=model)
+        async with app.router.lifespan_context(app):
+
+            @tool(name="echo", profiles=["interactive"])
+            async def echo(ctx: ToolContext) -> ToolResult:
+                return ToolResult(content="retained tool output")
+
+            app.state.registry.register(echo)
+            config.profiles["interactive"].tools = ["echo"]
+            app.state.registry.validate()
+            app.state.store.create_session(Session(id="s"))
+            pending = await app.state.execution.enqueue("s", "hello", stream=live)
+            await asyncio.wait_for(entered.wait(), 2)
+            before = app.state.store.transcript("s")
+            assert [m["role"] for m in before] == ["user", "assistant", "tool"]
+            assert before[1]["content"] == "Checking now"
+            assert before[1]["tool_calls"][0]["id"] == "last-call"
+            assert "retained tool output" in before[2]["content"]
+            assert await asyncio.wait_for(app.state.execution.cancel(pending.run.id), 2)
+            assert interrupted.closed
+            assert (await pending.future).status == "cancelled"
+            assert app.state.store.transcript("s") == before
+            assert requests == 2
 
     asyncio.run(exercise())

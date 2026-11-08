@@ -98,7 +98,10 @@ only when every response supplies counts; otherwise it remains null.
 `POST /api/runs/{id}/cancel` shares one durable operation across concurrent callers.
 On the session page, **Stop** beside **Waiting for Sola** cancels a queued or
 running turn, including a scheduled job run, and returns to the conversation.
-It does not pause future job firings.
+Stopping closes the active model stream immediately. Saved assistant output,
+tool calls and completed tool results remain in session history; an unfinished
+streaming preview is discarded. Backend generation stops when the backend handles
+the disconnected stream. Stop does not pause future job firings.
 Disconnecting a cancellation request does not interrupt finalization. Shutdown
 stops job admission, finalizes accepted work, drains dispatches, and closes clients.
 Interrupted tool groups remain in evidence and are explicitly counted when excluded

@@ -147,22 +147,18 @@ class ModelClient:
             request = {
                 "model": self.config.model_id,
                 "messages": messages,
-                "stream": False,
                 "max_tokens": self.config.max_tokens,
             }
             if tools:
                 request["tools"] = tools
             else:
                 request["tool_choice"] = "none"
-            if on_text is not None:
-                from solakit.core.model_stream import complete_stream
+            from solakit.core.model_stream import complete_stream
 
-                async with asyncio.timeout(self.config.timeout_s):
-                    data = await complete_stream(self.client, request, on_text)
-            else:
-                response = await self.client.post("chat/completions", json=request)
-                response.raise_for_status()
-                data = response.json()
+            # Always stream the transport so closing it on cancellation signals
+            # disconnect to the generator, even when no UI preview is requested.
+            async with asyncio.timeout(self.config.timeout_s):
+                data = await complete_stream(self.client, request, on_text)
             if data.get("model") != self.config.model_id:
                 raise ModelUnavailable("Completion model does not match pinned ID")
             message = data["choices"][0]["message"]
