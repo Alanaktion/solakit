@@ -46,10 +46,13 @@ and archiving makes no new memory/model requests. Empty transcripts are a no-op.
 Queued/running turns return HTTP 409: wait for them to finish first.
 In chat, choose **Archive conversation**, review the explanation and confirm.
 The conversation shows one continuous timeline: numbered archives from oldest to
-newest, followed by the active context. The latest 20 turns appear first; load
-earlier messages to continue across archive boundaries. Compaction summaries stay
-collapsed as **Context compacted · summary** dividers, with an inline summary and
-a link to the full read-only archive. The history picker also opens individual
+newest, followed by the active context. The active context's latest 20 turns appear first; load
+earlier messages to fill a 20-turn window across archive boundaries. Compaction
+summaries stay collapsed as **Context compacted** dividers, with a date, exact
+summary, archive link and reminder that Sola no longer holds the original turns
+verbatim. Manual rotations have distinct **Archived** dividers with a date and
+record count. An empty active context shows its latest archive seam and explains
+that earlier messages live in the archives; use Load earlier to read them. The history picker also opens individual
 archives. Nothing is deleted or editable.
 On narrow screens the rename/compact/archive actions sit under **Actions**.
 Menus close on Escape or an outside click. Settled code and evidence blocks have

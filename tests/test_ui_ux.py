@@ -460,24 +460,30 @@ def test_continuous_timeline_across_compactions(config, mock_model):
                 ),
             )
         page = client.get("/sessions/timeline")
-        assert len(run_ids(page.text)) == TURN_WINDOW
-        assert run_ids(page.text) == [f"turn-{n:04}" for n in range(7, 25)] + [
+        assert run_ids(page.text) == ["after-2"]
+        assert "Load earlier messages" in page.text
+        older_page = client.get(
+            "/sessions/timeline/earlier",
+            params={"before": "boundary-" + at.isoformat().replace("+00:00", "Z")},
+        ).json()
+        page_text = older_page["html"] + page.text
+        assert run_ids(page_text) == [f"turn-{n:04}" for n in range(6, 25)] + [
             "after-1",
             "after-2",
         ]
         assert (
-            page.text.index("Answer 0024")
-            < page.text.index("Summary 1")
-            < page.text.index("After 1")
-            < page.text.index("Summary 2")
-            < page.text.index("After 2")
+            page_text.index("Answer 0024")
+            < page_text.index("Summary 1")
+            < page_text.index("After 1")
+            < page_text.index("Summary 2")
+            < page_text.index("After 2")
         )
-        assert page.text.count("Context compacted · summary") == 2
-        assert '<details class="context-boundary"><summary>' in page.text
-        assert 'href="/sessions/timeline/archives/1">View full archive' in page.text
-        assert 'href="/sessions/timeline/archives/2">View full archive' in page.text
-        assert 'id="message-archive-1-50"' in page.text
-        assert 'id="message-2"' in page.text
+        assert page_text.count("Context compacted ·") == 2
+        assert '<details class="context-boundary"><summary>' in page_text
+        assert 'href="/sessions/timeline/archives/1">View full archive' in page_text
+        assert 'href="/sessions/timeline/archives/2">View full archive' in page_text
+        assert 'id="message-archive-1-50"' in page_text
+        assert 'id="message-2"' in page_text
         older = client.get(
             "/sessions/timeline/earlier?before=turn-0007-archive-1"
         ).json()
@@ -527,3 +533,217 @@ def test_mid_run_segments_keep_tool_results_and_live_target_separate():
     assert [turn["pending"] for turn in history] == [False, True]
     assert history[0]["items"][1]["content"] == "Archived result"
     assert history[1]["items"][1]["content"] == "Current result"
+
+
+def test_segment_loading_and_manual_seam(config, mock_model):
+    app = create_app(config=config, model=mock_model)
+    reads = []
+
+    @app.middleware("http")
+    async def track(request, call_next):
+        if request.url.path.startswith("/api/sessions/mixed/archives/"):
+            reads.append(request.url.path)
+        return await call_next(request)
+
+    with TestClient(app) as client:
+        sign_in(client)
+        store = app.state.store
+        seed(store, "mixed", 25)
+        for number in (1, 2, 3):
+            assert client.post("/api/sessions/mixed/archive").status_code == 200
+            at = datetime(2020, 1, 1, tzinfo=UTC) + timedelta(seconds=30 + number)
+            if number < 3:
+                store.append_message(
+                    "mixed",
+                    Message(
+                        role="assistant",
+                        kind="compaction",
+                        content=f"Summary {number}",
+                        archive=f"mixed.jsonl.{number}",
+                        run_id=f"compact-{number}",
+                        origin=Origin(),
+                        ts=at,
+                    ),
+                )
+            run = Run(
+                id=f"mixed-{number}",
+                session="mixed",
+                profile="interactive",
+                origin=Origin(),
+                status=RunStatus.completed,
+                created_at=at,
+            )
+            store.save_run(run)
+            store.append_message(
+                "mixed",
+                Message(
+                    role="user",
+                    content=f"Later {number}",
+                    run_id=run.id,
+                    origin=Origin(),
+                    ts=at,
+                ),
+            )
+        page = client.get("/sessions/mixed")
+        assert reads == []
+        assert run_ids(page.text) == ["mixed-3"]
+        batch = client.get("/sessions/mixed/earlier?before=mixed-3").json()
+        assert [path.rsplit("/", 1)[1] for path in reads] == ["3", "2", "1"]
+        html = batch["html"]
+        assert run_ids(html) == [f"turn-{n:04}" for n in range(7, 25)] + [
+            "mixed-1",
+            "mixed-2",
+        ]
+        assert html.count("Context compacted ·") == 2
+        assert html.count("Sola no longer holds the original turns verbatim") == 2
+        assert html.count("Archived ·") == 1
+        assert 'archives/3">View full archive' in html
+        assert "2 messages" in html
+        assert (
+            html.index("Summary 1")
+            < html.index("Later 1")
+            < html.index("Summary 2")
+            < html.index("Later 2")
+            < html.index("Archived ·")
+        )
+        older = client.get(
+            "/sessions/mixed/earlier", params={"before": batch["before"]}
+        ).json()
+        assert run_ids(older["html"]) == [f"turn-{n:04}" for n in range(7)]
+        assert older["before"] is None
+        reads.clear()
+        # A window wholly within archive 1 does not read any older segment.
+        page = client.get("/sessions/mixed?turn=turn-0003-archive-1")
+        assert "Answer 0003" in page.text
+
+
+def test_lazy_window_stops_at_first_sufficient_archive(config, mock_model):
+    app = create_app(config=config, model=mock_model)
+    reads = []
+
+    @app.middleware("http")
+    async def track(request, call_next):
+        if request.url.path.startswith("/api/sessions/bounded/archives/"):
+            reads.append(request.url.path.rsplit("/", 1)[1])
+        return await call_next(request)
+
+    with TestClient(app) as client:
+        sign_in(client)
+        store = app.state.store
+        seed(store, "bounded", 25)
+        assert client.post("/api/sessions/bounded/archive").status_code == 200
+        # A second large segment, with distinct stable run identities.
+        for index in range(25):
+            at = datetime(2020, 1, 2, tzinfo=UTC) + timedelta(seconds=index)
+            run = Run(
+                id=f"second-{index}",
+                session="bounded",
+                profile="interactive",
+                origin=Origin(),
+                status=RunStatus.completed,
+                created_at=at,
+            )
+            store.save_run(run)
+            store.append_message(
+                "bounded",
+                Message(
+                    role="user",
+                    content=f"Second {index}",
+                    run_id=run.id,
+                    origin=Origin(),
+                    ts=at,
+                ),
+            )
+        assert client.post("/api/sessions/bounded/archive").status_code == 200
+        page = client.get("/sessions/bounded")
+        assert reads == ["2"]
+        assert run_ids(page.text) == []
+        assert "Archived ·" in page.text
+        assert "Current conversation is empty" in page.text
+        assert "A new conversation." not in page.text
+        reads.clear()
+        batch = client.get("/sessions/bounded/earlier?before=seam-archive-2").json()
+        assert reads == ["2"]
+        assert run_ids(batch["html"]) == [f"second-{index}" for index in range(5, 25)]
+        assert batch["before"] == "second-5-archive-2"
+        older = client.get(
+            "/sessions/bounded/earlier", params={"before": batch["before"]}
+        ).json()
+        assert "Archived ·" in older["html"]
+        assert run_ids(older["html"]) == [
+            f"turn-{index:04}" for index in range(10, 25)
+        ] + [f"second-{index}" for index in range(5)]
+        pending = Run(
+            id="pending-empty",
+            session="bounded",
+            profile="interactive",
+            origin=Origin(),
+            status=RunStatus.queued,
+        )
+        store.save_run(pending)
+        waiting = client.get("/sessions/bounded")
+        assert run_ids(waiting.text) == [pending.id]
+        assert "Archived ·" in waiting.text
+
+
+def test_active_tool_hydration_skips_unloaded_mid_run_calls(config, mock_model):
+    app = create_app(config=config, model=mock_model)
+    with TestClient(app) as client:
+        sign_in(client)
+        store = app.state.store
+        store.create_session(Session(id="split", memory_scope="ephemeral"))
+        at = datetime(2020, 1, 1, tzinfo=UTC)
+        run = Run(
+            id="split-run",
+            session="split",
+            profile="interactive",
+            origin=Origin(),
+            status=RunStatus.completed,
+            created_at=at,
+        )
+        store.save_run(run)
+        for index in (0, 1):
+            if index:
+                assert client.post("/api/sessions/split/archive").status_code == 200
+            store.append_message(
+                "split",
+                Message(
+                    role="assistant",
+                    content=None,
+                    tool_calls=[
+                        {
+                            "id": f"call-{index}",
+                            "type": "function",
+                            "function": {"name": "runtime.status", "arguments": "{}"},
+                        }
+                    ],
+                    run_id=run.id,
+                    origin=Origin(),
+                    ts=at + timedelta(seconds=index),
+                ),
+            )
+            store.log_tool(
+                run.id,
+                {
+                    "name": "runtime.status",
+                    "args": {},
+                    "result": {"content": f"Result {index}"},
+                },
+            )
+            store.append_message(
+                "split",
+                Message(
+                    role="tool",
+                    content=f"Result {index}",
+                    tool_call_id=f"call-{index}",
+                    run_id=run.id,
+                    origin=Origin(),
+                    ts=at + timedelta(seconds=index),
+                ),
+            )
+        page = client.get("/sessions/split")
+        assert "Result 1" in page.text
+        assert "Result 0" not in page.text
+        earlier = client.get("/sessions/split/earlier?before=split-run").json()
+        assert "Result 0" in earlier["html"]
+        assert "Result 1" not in earlier["html"]

@@ -1,10 +1,10 @@
 {% if error %}<div class="notice notice-error" role="alert">{{ error }}</div>{% endif %}
 {% for turn in turns %}
   {% if turn.boundary %}
-    <details class="context-boundary"><summary>Context compacted · summary</summary><pre><code>{{ turn.content }}</code></pre>{% if turn.archive_number %}<a class="text-link" href="/sessions/{{ session.id|urlencode }}/archives/{{ turn.archive_number|urlencode }}">View full archive →</a>{% endif %}</details>
+    <details class="context-boundary"><summary>{% if turn.manual %}Archived · {{ turn.date }} · {{ turn.count }} messages{% else %}Context compacted · {{ turn.date }} · earlier context is a summary; Sola no longer holds the original turns verbatim{% endif %}</summary>{% if not turn.manual %}<pre><code>{{ turn.content }}</code></pre>{% endif %}{% if turn.archive_number %}<a class="text-link" href="/sessions/{{ session.id|urlencode }}/archives/{{ turn.archive_number|urlencode }}">View full archive →</a>{% endif %}</details>
   {% else %}
   <section class="turn" data-run-id="{{ turn.run.id }}" {% if turn.segment %}data-archive-segment="{{ turn.segment }}"{% endif %} data-run-status="{{ 'archived' if turn.segment else turn.run.status }}" data-created-at="{{ turn.run.created_at }}" id="turn-{{ turn.timeline_id }}">
-    {% for boundary in turn.context_boundaries|default([]) %}<details class="context-boundary" data-key="{{ boundary.node_id }}"><summary>Context compacted · summary</summary><pre><code>{{ boundary.content }}</code></pre>{% if boundary.archive_number %}<a class="text-link" href="/sessions/{{ session.id|urlencode }}/archives/{{ boundary.archive_number|urlencode }}">View full archive →</a>{% endif %}</details>{% endfor %}
+    {% for boundary in turn.context_boundaries|default([]) %}<details class="context-boundary" data-key="{{ boundary.node_id }}"><summary>Context compacted · {{ boundary.date }} · earlier context is a summary; Sola no longer holds the original turns verbatim</summary><pre><code>{{ boundary.content }}</code></pre>{% if boundary.archive_number %}<a class="text-link" href="/sessions/{{ session.id|urlencode }}/archives/{{ boundary.archive_number|urlencode }}">View full archive →</a>{% endif %}</details>{% endfor %}
     {% if turn.pending and not turn["items"] and turn.run.input_message %}<article class="message message-user" data-key="message-0"><div class="message-content">{{ turn.run.input_message }}</div></article>{% endif %}
     {% for message in turn["items"] %}
       {% if message.role == 'tool' %}
@@ -22,3 +22,5 @@
 {% else %}
   {% if not error %}<div class="conversation-empty"><span aria-hidden="true">✧</span><h2>A new conversation.</h2><p>Start wherever you are.</p></div>{% endif %}
 {% endfor %}
+
+{% if session is defined and session.active_empty_archived %}<p class="conversation-empty">Current conversation is empty — everything so far lives in the archives above.</p>{% endif %}

@@ -435,7 +435,9 @@ def test_ui_archive_confirmation_browsing_and_secret_masking(config, mock_model)
         result = client.post("/sessions/evening/archive", follow_redirects=False)
         assert result.status_code == 303
         current = client.get("/sessions/evening")
-        assert "Archived &lt;script&gt;text&lt;/script&gt;" in current.text
+        assert "Current conversation is empty" in current.text
+        assert "Archived ·" in current.text
+        assert "A new conversation." not in current.text
         assert "Earlier failed attempt" not in current.text
         assert 'id="composer"' in current.text
         assert "/sessions/evening/archives/1" in current.text

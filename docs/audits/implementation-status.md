@@ -62,3 +62,29 @@ The probes used this checkout directly, not the running instance. No service
 restart/deployment or deferred-mode pinned-model evaluation was performed.
 Interactive disclosure remains eager. Mock transports and deterministic ranking
 tests do not establish model acceptance.
+
+## Session timeline aggregation — 2026-11-08
+
+Completed the UI session aggregation plan using the existing session and numbered
+archive read APIs. Normal initial pages read active context only; earlier windows
+load segments backwards until 20 turns are available. The empty-active exception
+reads just the latest archive to derive its divider and shows an explicit notice.
+Compaction dividers retain exact summaries, dates and archive links, with the
+reminder that Sola no longer holds the original turns verbatim. Manual dividers
+use segment record counts and final timestamps, without inventing a summary.
+Segment order governs seams even when timestamps tie. Mid-run tool hydration
+accounts for unloaded earlier calls; queued empty-context turns remain visible.
+Archive pages remain read only, and streaming snapshots contain the active turn
+with no aggregate-history reads. Storage, schemas and manifests are unchanged.
+
+Regression coverage seeds two compactions followed by a manual rotation, checks
+chronology, complete pagination, seam links and labels, bounded archive reads,
+empty context and queued work, per-archive views, split-run tool hydration, and
+existing streaming behavior. SPEC and operator guidance describe the behavior.
+
+Validation: 766 core/pack tests passed, plus 23 targeted UI regressions after the
+final queued-turn adjustment; Ruff lint/format, frozen workspace sync, all workspace
+distribution builds, and operator configuration check passed. The latter
+reports its existing curated memory-fragment size warning and Configuration valid.
+Browser visual QA and live acceptance on Sola's machine were not performed; HTTP
+and streaming tests use isolated synthetic evidence and mocked backends.

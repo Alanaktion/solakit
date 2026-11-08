@@ -50,7 +50,9 @@ def turns(
             boundaries.append(
                 {
                     "boundary": True,
+                    "segment": message.get("timeline_segment"),
                     "content": message.get("content") or "",
+                    "date": message["ts"],
                     "archive_number": (message.get("archive") or "").rsplit(".", 1)[-1],
                     "at": timestamp(message["ts"]),
                     "node_id": "boundary-" + message["ts"],
@@ -91,7 +93,9 @@ def turns(
             },
         )
         recorded = evidence.get(identity, {}).get("tools", [])
-        offset = tool_offsets.get(identity, 0)
+        offset = tool_offsets.get(
+            identity, evidence.get(identity, {}).get("tool_offset", 0)
+        )
         logs = iter(recorded[offset:])
         tool_offsets[identity] = offset + sum(
             len(m.get("tool_calls") or []) for m in messages

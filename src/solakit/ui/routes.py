@@ -280,100 +280,164 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
             + urlencode({"session_id": identity, "include_archived": "true"}),
         )
         data = await api(request, "GET", f"/api/sessions/{quote(identity, safe='')}")
-        segments = []
-        if number is None:
-            names = sorted(
-                data["archives"], key=lambda name: int(name.rsplit(".", 1)[1])
-            )
-            archived = await asyncio.gather(
-                *(
-                    api(
-                        request,
-                        "GET",
-                        f"/api/sessions/{quote(identity, safe='')}/archives/"
-                        + name.rsplit(".", 1)[1],
-                    )
-                    for name in names
-                )
-            )
-            segments.extend(
-                zip((name.rsplit(".", 1)[1] for name in names), archived, strict=True)
-            )
-            segments.append((None, data["messages"]))
-        else:
+        names = sorted(data["archives"], key=lambda name: int(name.rsplit(".", 1)[1]))
+        active_empty = not data["messages"] and bool(names) and number is None
+        data["active_empty_archived"] = active_empty
+        segments = [(None, data["messages"])]
+        if number is not None:
             archived = await api(
                 request,
                 "GET",
                 f"/api/sessions/{quote(identity, safe='')}/archives/{number}",
             )
-            segments.append((None, archived))
+            segments = [(None, archived)]
             data["context_started_at"] = None
-        messages = []
-        for segment, entries in segments:
-            for line, message in enumerate(entries, 1):
-                message["anchor"] = (
-                    f"message-archive-{segment}-{line}"
-                    if segment
-                    else f"message-{line}"
-                )
-                message["timeline_segment"] = segment
-                messages.append(message)
-        data = {**data, "messages": messages}
-        grouped = turns(data, records, {}, include_empty_runs=number is None)
+            names = []
         before = request.query_params.get("before")
         around = request.query_params.get("turn")
         anchor = request.query_params.get("anchor", "")
         if anchor.startswith("turn-"):
             around = anchor.removeprefix("turn-")
-        elif anchor.startswith("message-"):
-            around = next(
-                (
-                    m["run_id"]
-                    + (
-                        "-archive-" + m["timeline_segment"]
-                        if m.get("timeline_segment")
-                        else ""
-                    )
-                    for m in data["messages"]
-                    if m["anchor"] == anchor
-                ),
-                around,
-            )
 
         def turn_key(turn):
             return turn["node_id"] if turn.get("boundary") else turn["timeline_id"]
 
-        end = len(grouped)
-        if before:
-            end = next(
-                (i for i, t in enumerate(grouped) if turn_key(t) == before),
-                end,
+        # Initial history is active-only. Pagination resolves its cursor by walking
+        # backwards, stopping as soon as the requested window is available.
+        while True:
+            messages = []
+            for segment, entries in segments:
+                for line, message in enumerate(entries, 1):
+                    message["anchor"] = (
+                        f"message-archive-{segment}-{line}"
+                        if segment
+                        else f"message-{line}"
+                    )
+                    message["timeline_segment"] = segment
+                    messages.append(message)
+            data = {**data, "messages": messages}
+            grouped = turns(data, records, {}, include_empty_runs=number is None)
+            for index, (segment, entries) in enumerate(segments[:-1]):
+                newer = segments[index + 1][1]
+                if not any(
+                    m.get("kind") == "compaction"
+                    and (m.get("archive") or "").endswith("." + segment)
+                    for m in newer
+                ):
+                    grouped.append(
+                        {
+                            "boundary": True,
+                            "manual": True,
+                            "segment": segment,
+                            "content": "",
+                            "date": entries[-1]["ts"]
+                            if entries
+                            else "Date unavailable",
+                            "count": len(entries),
+                            "archive_number": segment,
+                            "at": timestamp(entries[-1]["ts"]) if entries else 0,
+                            "node_id": "seam-archive-" + segment,
+                        }
+                    )
+            segment_order = {segment: i for i, (segment, _) in enumerate(segments)}
+            grouped.sort(
+                key=lambda turn: (
+                    segment_order[turn.get("segment")],
+                    bool(turn.get("manual")),
+                    turn["at"],
+                )
             )
-        if around:
-            at = next(
-                (
-                    i
-                    for i, t in enumerate(grouped)
-                    if not t.get("boundary")
-                    and (t["timeline_id"] == around or t["run"]["id"] == around)
-                ),
-                None,
+            if anchor.startswith("message-"):
+                around = next(
+                    (
+                        m["run_id"]
+                        + (
+                            "-archive-" + m["timeline_segment"]
+                            if m.get("timeline_segment")
+                            else ""
+                        )
+                        for m in messages
+                        if m["anchor"] == anchor
+                    ),
+                    around,
+                )
+            end = len(grouped)
+            if before:
+                end = next(
+                    (i for i, t in enumerate(grouped) if turn_key(t) == before),
+                    end,
+                )
+            if around:
+                at = next(
+                    (
+                        i
+                        for i, t in enumerate(grouped)
+                        if not t.get("boundary")
+                        and (t["timeline_id"] == around or t["run"]["id"] == around)
+                    ),
+                    None,
+                )
+                if at is not None:
+                    positions = [
+                        i
+                        for i in range(at, len(grouped))
+                        if not grouped[i].get("boundary")
+                    ]
+                    end = positions[min(TURN_WINDOW, len(positions)) - 1] + 1
+            start, remaining = end, TURN_WINDOW
+            while start and remaining:
+                start -= 1
+                if not grouped[start].get("boundary"):
+                    remaining -= 1
+            while start and grouped[start - 1].get("boundary"):
+                start -= 1
+            selected = grouped[start:end]
+            found = (
+                (not before or any(turn_key(t) == before for t in grouped))
+                and (
+                    not around
+                    or any(
+                        not t.get("boundary")
+                        and (t["timeline_id"] == around or t["run"]["id"] == around)
+                        for t in grouped
+                    )
+                )
+                and (
+                    not anchor.startswith("message-")
+                    or any(m["anchor"] == anchor for m in messages)
+                )
             )
-            if at is not None:
-                positions = [
-                    i for i in range(at, len(grouped)) if not grouped[i].get("boundary")
+            initial = not before and not around and not anchor
+            if initial and active_empty and len(segments) > 1:
+                # Only the newest seam is needed to explain an empty active file.
+                selected = [
+                    t
+                    for t in grouped
+                    if (
+                        t.get("boundary") and t.get("archive_number") == segments[-2][0]
+                    )
+                    or (not t.get("boundary") and t.get("segment") is None)
                 ]
-                end = positions[min(TURN_WINDOW, len(positions)) - 1] + 1
-        start, remaining = end, TURN_WINDOW
-        while start and remaining:
-            start -= 1
-            if not grouped[start].get("boundary"):
-                remaining -= 1
-        while start and grouped[start - 1].get("boundary"):
-            start -= 1
-        selected = grouped[start:end]
+                start = len(grouped) - len(selected)
+                break
+            if (
+                not names
+                or (initial and not active_empty)
+                or (not initial and found and remaining == 0)
+            ):
+                break
+            name = names.pop()
+            segment = name.rsplit(".", 1)[1]
+            entries = await api(
+                request,
+                "GET",
+                f"/api/sessions/{quote(identity, safe='')}/archives/{segment}",
+            )
+            segments.insert(0, (segment, entries))
         ids = {t["run"]["id"] for t in selected if not t.get("boundary")}
-        data["earlier"] = turn_key(selected[0]) if start and selected else None
+        data["earlier"] = (
+            turn_key(selected[0]) if (start or names) and selected else None
+        )
         data["later"] = end < len(grouped)
         data["pending_run"] = min(
             (r for r in records if r["status"] in {"queued", "running"}),
@@ -395,10 +459,19 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
                 for run_id in sorted(with_tools)
             )
         )
+        evidence = dict(zip(sorted(with_tools), logs, strict=True))
+        if number is None:
+            # Loaded segments form a suffix. Mid-run rotation can leave earlier
+            # calls in an unloaded archive; tool logs still cover the entire run.
+            for run_id, log in evidence.items():
+                completed = sum(
+                    m["role"] == "tool" for m in messages if m["run_id"] == run_id
+                )
+                log["tool_offset"] = max(0, len(log.get("tools", [])) - completed)
         hydrated = turns(
             {**data, "messages": [m for m in data["messages"] if m["run_id"] in ids]},
             [r for r in records if r["id"] in ids],
-            dict(zip(sorted(with_tools), logs, strict=True)),
+            evidence,
             include_empty_runs=number is None,
         )
         indexed = {t["timeline_id"]: t for t in hydrated if not t.get("boundary")}
@@ -799,7 +872,11 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
             data, history = await conversation(
                 request, identity, int(number) if number else None
             )
-            page = render(request, "fragments/message_tail.html", {"turns": history})
+            page = render(
+                request,
+                "fragments/message_tail.html",
+                {"turns": history, "session": {**data, "active_empty_archived": False}},
+            )
             return JSONResponse(
                 {
                     "html": page.body.decode(),
@@ -1101,7 +1178,9 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
                     if history and pending and preview and saved <= preview["baseline"]:
                         history[-1]["preview"] = preview_text(preview["content"])
                     page = render(
-                        request, "fragments/message_tail.html", {"turns": history}
+                        request,
+                        "fragments/message_tail.html",
+                        {"turns": history, "session": data},
                     )
                     snapshot = json.dumps(
                         {

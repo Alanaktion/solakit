@@ -975,10 +975,20 @@ The P1 operator UI is a thin server-rendered API client. Shared app contracts:
   is not included. Identical deltas are suppressed. `GET /api/runs/{id}?view=true`
   projects current-context run messages and redacted tool logs without prompts or
   archived evidence; `&messages=false` omits transcript reads for tool-only hydration.
-  Initial chat and numbered archives render 20 turns; `/sessions/{id}/earlier`
-  returns the preceding window (`before` cursor, optional `archive`) to prepend
-  without replacing existing nodes. Initial/window requests still read full API
-  transcript data to group turns; the observer uses backward active-turn reads.
+  Initial chat renders up to 20 active-context turns without archive reads.
+  `/sessions/{id}/earlier` walks numbered segments newest to oldest until its
+  preceding 20-turn window is filled, using stable segment-qualified turn IDs
+  when one run spans rotations. Boundaries do not consume turn slots. Numbered
+  archive pages remain read only and windowed within that file. Initial/window
+  requests read each required segment through the existing session/archive API;
+  the observer uses backward active-turn reads and never includes older segments.
+  Compaction dividers show the boundary timestamp, exact summary and archive link,
+  and explain that Sola no longer holds the original turns verbatim. Manual
+  rotation seams are derived from adjacent segments, labelled Archived with the
+  archived record count and last record timestamp, and contain no summary.
+  If active context is empty after rotation, the initial page reads only the
+  newest archive to show its seam and an explicit empty-current-context notice;
+  older turns remain behind Load earlier. Prepending preserves existing nodes.
   Chat tool cards use compact expandable rows, with a loading indicator for
   unresolved calls in running runs. Model activity and streaming previews show
   a typing indicator; settled runs stop all progress indicators. Animations
