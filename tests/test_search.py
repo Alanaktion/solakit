@@ -394,3 +394,23 @@ def test_web_search_names_ids_archived_text_links_and_errors(config, mock_model)
             client.get("/search", params={"mode": "text", "q": "Moonstone"}).status_code
             == 503
         )
+
+
+def test_append_line_cache_invalidates_on_rotation(config):
+    from solakit.core.schemas import Message, Session
+    from solakit.core.store import Store, atomic_write
+
+    store = Store(config.paths.data)
+    store.create_session(Session(id="cached"))
+    for text in ("first", "second"):
+        store.append_message(
+            "cached", Message(role="user", content=text, origin={}, run_id="r")
+        )
+    assert store._line_counts["cached"][1] == 2
+    path = store.root / "sessions/cached.jsonl"
+    path.rename(path.with_suffix(".jsonl.1"))
+    atomic_write(path, b"")
+    store.append_message(
+        "cached", Message(role="user", content="after", origin={}, run_id="r")
+    )
+    assert store._line_counts["cached"][1] == 1

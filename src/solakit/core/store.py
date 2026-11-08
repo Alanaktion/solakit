@@ -90,6 +90,7 @@ class Store:
         self.root = root.expanduser().resolve()
         self.redactor = redactor or Redactor()
         self.lock = threading.RLock()
+        self._line_counts: dict[str, tuple[tuple, int]] = {}
         self._issues: dict[tuple[str, int | None], dict] = {}
         for directory in (
             self.root,
@@ -820,11 +821,24 @@ class Store:
             self.check_compaction(session_id)
             path = self._path("sessions", session_id, ".jsonl")
             record = message.model_dump(mode="json")
+            before = path.stat() if path.exists() else None
+            fingerprint = (
+                (before.st_ino, before.st_size, before.st_mtime_ns) if before else None
+            )
+            cached = self._line_counts.get(session_id)
             self._append(path, record)
             self._touch_session(session_id, message.ts)
             try:
-                with path.open("rb") as stream:
-                    line_no = sum(1 for _ in stream)
+                if cached and cached[0] == fingerprint:
+                    line_no = cached[1] + 1
+                else:
+                    with path.open("rb") as stream:
+                        line_no = sum(1 for _ in stream)
+                after = path.stat()
+                self._line_counts[session_id] = (
+                    (after.st_ino, after.st_size, after.st_mtime_ns),
+                    line_no,
+                )
                 with sqlite3.connect(self.root / "app.db") as db:
                     db.execute(
                         FTS_INSERT,
