@@ -3,6 +3,7 @@
 import asyncio
 import os
 import stat
+import weakref
 from dataclasses import replace
 
 from solakit.channels.base import Adapter, Inbound, Outbound, route
@@ -53,7 +54,10 @@ class Channels:
         self.config, self.execution, self.adapters = config, execution, adapters
         self.router = SessionRouter(config, execution.store)
         self.last_message: dict[str, str] = {}
-        self.delivery_locks: dict[str, asyncio.Lock] = {}
+        # Per-run locks disappear once no delivery holds or awaits them.
+        self.delivery_locks: weakref.WeakValueDictionary[str, asyncio.Lock] = (
+            weakref.WeakValueDictionary()
+        )
         self.media = Media(execution.store.root)
         self.media_slots = asyncio.Semaphore(2)
 
@@ -112,7 +116,8 @@ class Channels:
         return run
 
     async def deliver(self, run: Run, delivery: Delivery):
-        async with self.delivery_locks.setdefault(run.id, asyncio.Lock()):
+        lock = self.delivery_locks.setdefault(run.id, asyncio.Lock())
+        async with lock:
             await self._deliver(run, delivery)
 
     async def _deliver(self, run: Run, delivery: Delivery):

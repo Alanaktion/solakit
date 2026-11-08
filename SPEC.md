@@ -841,7 +841,9 @@ runtime redactor before connection; inbox requires no filesystem write grant.
 Built-in `shell` provides literal argv and `/bin/sh` execution for any profile
 with explicit tool grants, shell effect and scoped cwd. Commands have host-user
 privileges, not a path sandbox. Output and duration are bounded; cancellation and
-timeout kill/drain process groups. This introduces no per-command approval flow.
+timeout kill/drain process groups; a descendant that escaped the group and holds
+the pipes open gets a five-second drain grace, after which output is reported
+incomplete. This introduces no per-command approval flow.
 
 ### 8.3 Run profiles
 
@@ -930,6 +932,8 @@ The P1 operator UI is a thin server-rendered API client. Shared app contracts:
   `POST /logout` revokes it; sessions survive restart and expire after five days
   without activity.
   Cookie use renews the expiry; changing the operator token invalidates sessions.
+  Renewals are persisted at most once a minute, so a restart forfeits at most
+  one minute of sliding renewal; login, logout and expiry are written at once.
   Hashed session IDs and expiry times live in private `ui-sessions.json` in the
   data directory.
   Login returns to the requested local page via a validated `next` parameter.
@@ -988,6 +992,10 @@ The P1 operator UI is a thin server-rendered API client. Shared app contracts:
   generation preview is discarded. Model requests have a 2 MiB wire bound
   and a total model.timeout_s deadline per completion. Incomplete/wrong-model
   streams fail honestly; `length` keeps validated partial evidence without dispatch.
+  A reply with no tool calls and only empty/whitespace text is `model_unavailable`
+  (Empty completion), never a completed answer, unless it ended on `length`.
+  A tool that finishes despite a cancellation request still has its result
+  appended before the run is finalized as cancelled; later calls are not dispatched.
 - **Markdown:** assistant chat messages use CommonMark plus tables with raw HTML
   and images disabled, then an HTML/attribute/scheme allowlist sanitizer. Credential
   masking precedes rendering; live suffixes matching unfinished credentials are
@@ -1138,7 +1146,8 @@ never interrupts a tool-call/result group and no oversized request is sent silen
 
 A bounded background observer polls acknowledged extraction and persists pending,
 completed, failed, cancelled or status-unavailable observations; it never replays
-writes. `POST /api/runs/{id}/memory/refresh` also polls explicitly. Observation
+writes. Each pass stops at the first unavailable status and visits previously
+unavailable runs last, so one unobservable task cannot starve the others. `POST /api/runs/{id}/memory/refresh` also polls explicitly. Observation
 updates patch only their own fields so delivery and extraction cannot overwrite
 one another's state. `POST /api/memory/probe` / `sola memory-test --fact ... --query ...
 --expected ...` deliberately create a shared scratch session, wait for extraction,

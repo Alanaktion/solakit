@@ -11,6 +11,9 @@ from solakit.core.store import atomic_write
 
 COOKIE = "solakit_session"
 LIFETIME = 5 * 24 * 60 * 60
+# Sliding renewal is persisted at most this often. Every authenticated request
+# renews the session; an fsync per request would block the event loop.
+RENEWAL_PERSIST_S = 60
 
 
 class UISessions:
@@ -20,6 +23,7 @@ class UISessions:
         self.clock = clock
         self.sessions: dict[str, float] = {}
         self.failures: dict[str, tuple[int, float, float]] = {}
+        self.saved_at: float | None = None
 
     def load(self, path: Path, token: str):
         self.path = path
@@ -36,6 +40,7 @@ class UISessions:
         self.save()
 
     def save(self):
+        self.saved_at = self.clock()
         if self.path is not None:
             atomic_write(
                 self.path,
@@ -66,7 +71,8 @@ class UISessions:
             self.save()
             return False
         self.sessions[self.key(identity)] = self.clock() + LIFETIME
-        self.save()
+        if self.saved_at is None or self.clock() - self.saved_at >= RENEWAL_PERSIST_S:
+            self.save()
         return True
 
     def authorized(

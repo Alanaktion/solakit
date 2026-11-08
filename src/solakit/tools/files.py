@@ -33,8 +33,8 @@ async def read(
 
 
 @tool(
-    summary="Replace a local file within write scopes",
-    keywords=("file", "overwrite", "save"),
+    summary="Create a new local file within write scopes",
+    keywords=("file", "create", "new", "save"),
     name="files.write",
     profiles=["*"],
     writes=["filesystem"],

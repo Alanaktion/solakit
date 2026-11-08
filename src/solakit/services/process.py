@@ -4,6 +4,8 @@ import asyncio
 import os
 import signal
 
+DRAIN_GRACE_S = 5
+
 
 async def execute(argv, directory, timeout, limit):
     # Deliberately avoid inheriting backend/API credentials. This is hygiene,
@@ -24,15 +26,32 @@ async def execute(argv, directory, timeout, limit):
         stderr=asyncio.subprocess.PIPE,
     )
 
-    async def drain(stream):
-        kept, size = bytearray(), 0
+    captured = {"stdout": bytearray(), "stderr": bytearray()}
+
+    async def drain(name, stream):
+        kept, size = captured[name], 0
         while chunk := await stream.read(65536):
             size += len(chunk)
             kept.extend(chunk[: max(0, limit - len(kept))])
         return kept.decode("utf-8", errors="replace"), size <= limit
 
-    stdout = asyncio.create_task(drain(process.stdout))
-    stderr = asyncio.create_task(drain(process.stderr))
+    async def settle():
+        # A descendant that left the killed process group can keep the pipes
+        # open indefinitely. Bound the final drain and report what was kept.
+        try:
+            async with asyncio.timeout(DRAIN_GRACE_S):
+                return await asyncio.gather(stdout, stderr)
+        except TimeoutError:
+            for task in (stdout, stderr):
+                task.cancel()
+            await asyncio.gather(stdout, stderr, return_exceptions=True)
+            return [
+                (captured[name].decode("utf-8", errors="replace"), False)
+                for name in ("stdout", "stderr")
+            ]
+
+    stdout = asyncio.create_task(drain("stdout", process.stdout))
+    stderr = asyncio.create_task(drain("stderr", process.stderr))
     timed_out = False
     try:
         async with asyncio.timeout(timeout):
@@ -45,11 +64,11 @@ async def execute(argv, directory, timeout, limit):
             pass
         await process.wait()
         if not isinstance(exc, TimeoutError):
-            await asyncio.gather(stdout, stderr, return_exceptions=True)
+            await settle()
             raise
         timed_out = True
     if timed_out:
-        out, err = await asyncio.gather(stdout, stderr)
+        out, err = await settle()
     return {
         "exit_code": process.returncode,
         "timed_out": timed_out,

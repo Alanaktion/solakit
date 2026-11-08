@@ -185,7 +185,15 @@ class ModelClient:
                     ):
                         raise ModelUnavailable("Invalid tool call envelope")
                     ids.add(call["id"])
-            if not calls and message.get("content") is None:
+            # A stream with neither text nor calls assembles to "". Only a
+            # token-limited response may be empty; it is kept as partial evidence.
+            if not calls and (
+                message.get("content") is None
+                or (
+                    not message["content"].strip()
+                    and data["choices"][0].get("finish_reason") != "length"
+                )
+            ):
                 raise ModelUnavailable("Empty completion")
             self.available = True
             LOGGER.debug(

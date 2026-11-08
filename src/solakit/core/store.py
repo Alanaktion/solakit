@@ -987,7 +987,11 @@ class Store:
                 "json_extract(payload, '$.memory_status') IN "
                 "('accepted','pending','running','cancelling','status_unavailable') "
                 "AND json_extract(payload, '$.status') NOT IN ('queued','running') "
-                "ORDER BY rowid LIMIT 100"
+                # Polling stops at the first unavailable status. Visit previously
+                # unavailable runs last so one dead task cannot starve the rest.
+                "ORDER BY "
+                "json_extract(payload, '$.memory_status')='status_unavailable', "
+                "rowid LIMIT 100"
             ).fetchall()
         return [json.loads(row[0]) for row in rows]
 

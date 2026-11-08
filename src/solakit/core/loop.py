@@ -767,8 +767,6 @@ class Execution:
                     result = await self.registry.dispatch(
                         function["name"], function["arguments"], ctx
                     )
-                    if pending.cancellation is not None:
-                        raise asyncio.CancelledError
                     for artifact in result.artifacts:
                         verified = ctx.path(artifact)
                         if str(verified) not in run.artifacts:
@@ -786,6 +784,10 @@ class Execution:
                 )
                 await durable(self.store.append_message, session.id, tool_message)
                 messages.append(tool_message.model_message())
+                # A tool that finished despite a cancellation request keeps its
+                # completed result in history; no further calls are dispatched.
+                if pending.cancellation is not None:
+                    raise asyncio.CancelledError
             if disclosure_only:
                 disclosure_steps += 1
             else:
