@@ -189,7 +189,7 @@ def test_artifact_silent_and_duplicate_delivery(config, tmp_path):
         broken = await execution.submit("s", "broken")
         broken.status = RunStatus.tool_error
         await channels.deliver(broken, Delivery(to="one"))
-        assert "tool failed" in adapter.sent[-1][1].text
+        assert "[Solakit status: tool_error]" in adapter.sent[-1][1].text
         await execution.close()
 
     asyncio.run(exercise())
@@ -309,3 +309,34 @@ def test_delivery_intent_recovery_never_replays_remote_send(config, acknowledged
     if acknowledged:
         assert record["delivery"]["external_id"] == "known-id"
     asyncio.run(execution.close())
+
+
+@pytest.mark.parametrize(
+    "status",
+    [
+        RunStatus.model_unavailable,
+        RunStatus.context_limit,
+        RunStatus.budget_exceeded,
+        RunStatus.cancelled,
+    ],
+)
+def test_failed_runs_deliver_labelled_status_once(config, status):
+    from solakit.core.schemas import Origin, Run, Session
+
+    configured(config)
+    execution = setup(config, lambda request: model_list(config))
+    execution.store.create_session(Session(id="one"))
+    adapter = FakeAdapter()
+    channels = Channels(config, execution, {"discord": adapter})
+    run = Run(session="one", profile="interactive", origin=Origin(), status=status)
+    execution.store.save_run(run)
+
+    async def exercise():
+        await channels.deliver(run, Delivery(to="one"))
+        await channels.deliver(run, Delivery(to="one"))
+        assert len(adapter.sent) == 1
+        assert adapter.sent[0][1].text.startswith(f"[Solakit status: {status.value}]")
+        assert execution.store.transcript("one") == []
+        await execution.close()
+
+    asyncio.run(exercise())

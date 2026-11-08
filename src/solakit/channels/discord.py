@@ -2,6 +2,7 @@
 
 import asyncio
 import io
+import logging
 import re
 from urllib.parse import urlsplit
 
@@ -105,6 +106,13 @@ class DiscordAdapter:
                     except MediaError as exc:
                         await message.channel.send(
                             str(exc), allowed_mentions=discord.AllowedMentions.none()
+                        )
+                    except Exception:
+                        logging.getLogger(__name__).exception("Discord inbound failed")
+                        await message.channel.send(
+                            "[Solakit status: request failed] Unable to complete this request. "
+                            "Inspect the operator console before retrying.",
+                            allowed_mentions=discord.AllowedMentions.none(),
                         )
 
         self.state = "connecting"

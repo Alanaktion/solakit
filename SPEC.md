@@ -1494,3 +1494,7 @@ and chat sidebar list parent sessions. Open a parent to browse its paginated
 sub-sessions, including archived children and scheduled children; each child links
 back to its parent. API listings remain flat by default; `roots_only=true` selects
 parents and `parent_session=<id>` selects direct children before pagination.
+
+Discord delivers clearly labelled Solakit status notices for terminal unsuccessful
+runs, without adding assistant transcript messages. Inbound admission errors also
+produce a generic console-directed status notice. Delivery intents prevent replay.

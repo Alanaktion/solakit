@@ -129,7 +129,7 @@ class Channels:
                 {"delivery_status": run.delivery_status},
             )
             return
-        if run.status not in {RunStatus.completed, RunStatus.tool_error}:
+        if run.status in {RunStatus.queued, RunStatus.running}:
             return
         store = self.execution.store
         # An intent without acknowledgment is not automatically replayed.
@@ -141,8 +141,10 @@ class Channels:
             )
             adapter = self.adapters[channel.type]
             session = await durable(store.session, run.session)
-            if run.status == RunStatus.tool_error:
-                outbound = Outbound("I couldn't complete this because a tool failed.")
+            if run.status != RunStatus.completed:
+                outbound = Outbound(
+                    f"[Solakit status: {run.status.value}] Run {run.id} did not complete."
+                )
             else:
                 history = await durable(store.all_messages, run.session)
                 finals = [
