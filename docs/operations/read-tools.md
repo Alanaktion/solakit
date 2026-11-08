@@ -107,3 +107,8 @@ Datetime failures retain their exact guidance: ambiguous local times ask for
 `fold=0` or `fold=1`, DST gaps say the time does not exist, naive timestamps ask
 for `from_zone`, and unknown IANA zones are named. Invalid proxy URLs and malformed
 remote payloads are expected tool errors rather than generic execution failures.
+
+Feed connections pin a validated public IP on every redirect, preserving the Host
+header and TLS server name; environment proxies are disabled. Page conversion is
+performed by Cloudflare: local URL checks cannot pin Cloudflare’s DNS resolution
+or validate its subsequent redirects.

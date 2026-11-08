@@ -67,9 +67,22 @@ class RemoteTools:
             raise ToolError("Redirect following supports GET only")
         headers = {"User-Agent": "Solakit/0.1", **kwargs.pop("headers", {})}
         for hop in range(6):
+            request_url = url
+            extensions = {}
+            if redirects:
+                address = await asyncio.to_thread(self.public_url, url)
+                original = httpx.URL(url)
+                request_url = original.copy_with(host=address)
+                headers = {
+                    **headers,
+                    "Host": original.netloc.decode(),
+                    "Connection": "close",
+                }
+                extensions["sni_hostname"] = original.host
             async with self.client.stream(
                 method,
-                url,
+                request_url,
+                extensions=extensions,
                 timeout=30,
                 follow_redirects=False,
                 headers=headers,
@@ -82,8 +95,7 @@ class RemoteTools:
                     if not location:
                         raise ToolError("Feed redirect is missing Location")
                     try:
-                        target = urljoin(str(response.url), location)
-                        await asyncio.to_thread(self.public_url, target)
+                        target = urljoin(url, location)
                     except (ValueError, OSError, httpx.InvalidURL):
                         raise ToolError(
                             "Feed redirect target is not a public URL"
@@ -111,7 +123,7 @@ class RemoteTools:
                     response.status_code,
                     response.headers,
                     bytes(content),
-                    str(response.url),
+                    url,
                 )
         raise ToolError("Feed URL redirects too many times")
 
@@ -144,6 +156,7 @@ class RemoteTools:
             not ipaddress.ip_address(a[4][0]).is_global for a in addresses
         ):
             raise ValueError("URL must resolve only to public addresses")
+        return addresses[0][4][0]
 
     async def search(self, query: str, count: int = 5) -> dict:
         if not query.strip() or not 1 <= count <= 20:
@@ -235,7 +248,6 @@ class RemoteTools:
     ) -> dict:
         if not 1 <= limit <= 100:
             raise ToolError("limit must be between 1 and 100")
-        await asyncio.to_thread(self.public_url, url)
         headers = {}
         if if_none_match is not None:
             headers["If-None-Match"] = if_none_match

@@ -118,7 +118,9 @@ def test_brave_and_cloudflare(config, monkeypatch):
     monkeypatch.setenv("BRAVE_API_KEY", "test-brave")
     monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "account")
     monkeypatch.setenv("CLOUDFLARE_API_TOKEN", "test-cloudflare")
-    monkeypatch.setattr(RemoteTools, "public_url", staticmethod(lambda url: None))
+    monkeypatch.setattr(
+        RemoteTools, "public_url", staticmethod(lambda url: "93.184.216.34")
+    )
 
     def handler(request):
         if request.url.host == "api.search.brave.com":
@@ -165,7 +167,9 @@ def test_brave_and_cloudflare(config, monkeypatch):
     ],
 )
 def test_feeds(config, monkeypatch, xml):
-    monkeypatch.setattr(RemoteTools, "public_url", staticmethod(lambda url: None))
+    monkeypatch.setattr(
+        RemoteTools, "public_url", staticmethod(lambda url: "93.184.216.34")
+    )
 
     async def operation(registry):
         data = await registry.call("feeds.check", url="https://example.com/feed")
@@ -293,7 +297,9 @@ def test_response_size_limit(config, monkeypatch):
 
 
 def test_xml_entities_rejected(config, monkeypatch):
-    monkeypatch.setattr(RemoteTools, "public_url", staticmethod(lambda url: None))
+    monkeypatch.setattr(
+        RemoteTools, "public_url", staticmethod(lambda url: "93.184.216.34")
+    )
     xml = '<!DOCTYPE rss [<!ENTITY x "expanded">]><rss><channel>&x;</channel></rss>'
 
     async def operation(registry):
@@ -306,7 +312,9 @@ def test_xml_entities_rejected(config, monkeypatch):
 def test_cloudflare_failure(config, monkeypatch):
     monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "account")
     monkeypatch.setenv("CLOUDFLARE_API_TOKEN", "test")
-    monkeypatch.setattr(RemoteTools, "public_url", staticmethod(lambda url: None))
+    monkeypatch.setattr(
+        RemoteTools, "public_url", staticmethod(lambda url: "93.184.216.34")
+    )
 
     async def operation(registry):
         with pytest.raises(ValueError, match="conversion failed"):
@@ -348,3 +356,31 @@ def test_secret_reference_registration(config, monkeypatch):
             assert ctx.store.redactor.redact("private-brave-token") == "[redacted]"
 
     asyncio.run(exercise())
+
+
+def test_feed_connection_pins_address_and_preserves_host(config, monkeypatch):
+    resolutions = []
+
+    def resolve(url):
+        resolutions.append(url)
+        return "93.184.216.34"
+
+    monkeypatch.setattr(RemoteTools, "public_url", staticmethod(resolve))
+
+    def handler(request):
+        assert request.url.host == "93.184.216.34"
+        assert request.headers["host"] == "example.com"
+        assert request.extensions["sni_hostname"] == "example.com"
+        assert request.headers["connection"] == "close"
+        if request.url.path == "/start":
+            return httpx.Response(302, headers={"Location": "/feed"})
+        return httpx.Response(
+            200, text="<rss><channel><title>News</title></channel></rss>"
+        )
+
+    async def operation(registry):
+        result = await registry.call("feeds.check", url="https://example.com/start")
+        assert result["final_url"] == "https://example.com/feed"
+
+    run_with(config, monkeypatch, handler, operation)
+    assert resolutions == ["https://example.com/start", "https://example.com/feed"]

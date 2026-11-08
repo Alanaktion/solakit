@@ -9,7 +9,7 @@ from solakit.tools._remote import RemoteTools
 
 
 def client() -> httpx.AsyncClient:
-    return httpx.AsyncClient()
+    return httpx.AsyncClient(trust_env=False)
 
 
 def encode_result(result: dict, cap: int) -> str:
