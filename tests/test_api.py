@@ -73,3 +73,19 @@ def test_misplaced_session_profile_and_unknown_message_fields_rejected(
             ).status_code
             == 422
         )
+
+
+def test_session_creation_is_idempotent_and_rejects_conflicts(config, auth):
+    with TestClient(create_app(config=config)) as client:
+        payload = {"id": "same", "title": "Original"}
+        first = client.post("/api/sessions", json=payload, headers=auth)
+        second = client.post("/api/sessions", json=payload, headers=auth)
+        assert first.status_code == 201
+        assert second.status_code == 200
+        assert first.json() == second.json()
+        assert (
+            client.post(
+                "/api/sessions", json={**payload, "title": "Other"}, headers=auth
+            ).status_code
+            == 409
+        )

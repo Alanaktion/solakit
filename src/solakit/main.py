@@ -590,7 +590,7 @@ def create_app(
             raise HTTPException(409, str(exc)) from exc
 
     @api.post("/sessions", status_code=201)
-    def create_session(session: CreateSessionRequest) -> dict:
+    def create_session(session: CreateSessionRequest, response: Response) -> dict:
         try:
             safe_id(session.id)
             if session.archived_at is not None:
@@ -603,7 +603,25 @@ def create_app(
                 raise ValueError("Isolated memory is not implemented")
             if session.bound_channel is not None:
                 raise ValueError("Channel bindings are controlled by configuration")
-            return app.state.store.create_session(session).model_dump(mode="json")
+            store = app.state.store
+            with store.lock:
+                try:
+                    existing = store.session(session.id)
+                except FileNotFoundError:
+                    return store.create_session(session).model_dump(mode="json")
+                exclude = (
+                    set()
+                    if "created_at" in session.model_fields_set
+                    else {"created_at"}
+                )
+                if existing.model_dump(exclude=exclude) != session.model_dump(
+                    exclude=exclude
+                ):
+                    raise HTTPException(
+                        409, "Session ID already exists with different fields"
+                    )
+                response.status_code = 200
+                return existing.model_dump(mode="json")
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
 
