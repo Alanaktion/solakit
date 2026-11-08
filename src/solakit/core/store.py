@@ -651,8 +651,8 @@ class Store:
     def set_session_archived(self, session_id, archived):
         with self.lock:
             path = self._path("sessions", session_id, ".meta.json")
-            metadata = json.loads(path.read_bytes())
             session = self.session(session_id)
+            metadata = json.loads(path.read_bytes())
             if bool(session.archived_at) == archived:
                 return session
             # Retain any importer-owned metadata fields as well as known fields.

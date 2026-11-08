@@ -240,3 +240,21 @@ def test_store_closes_connections_on_success_and_error(config, monkeypatch):
     except sqlite3.Error:
         pass
     assert all(db.closed for db in opened)
+
+
+def test_archival_reports_corrupt_metadata_as_storage_damage(config):
+    import pytest
+
+    from solakit.core.schemas import Session
+    from solakit.core.store import StorageCorruption, Store
+
+    store = Store(config.paths.data)
+    store.create_session(Session(id="damaged"))
+    path = store.root / "sessions/damaged.meta.json"
+    path.write_bytes(b"{broken")
+    with pytest.raises(StorageCorruption):
+        store.set_session_archived("damaged", True)
+    assert path.read_bytes() == b"{broken"
+    assert any(
+        issue["kind"] == "invalid_metadata" for issue in store.storage_health()["issues"]
+    )
