@@ -281,3 +281,21 @@ def test_generic_schema_routing_and_parameter_guidance(config):
     for name in ("files.read", "files.list", "shell.exec", "shell.run"):
         assert "domain" in schemas[name]["description"]
     assert "sessions.search" in schemas["memory.search"]["description"]
+
+
+def test_invalid_artifact_is_tool_error(config, monkeypatch):
+    module = ModuleType("solakit.tools.artifact_fixture")
+
+    @tool(name="fixture.artifact", profiles=["*"])
+    async def artifact(ctx):
+        return ToolResult(content="done", artifacts=["/outside/private.txt"])
+
+    module.artifact = artifact
+    monkeypatch.setitem(sys.modules, module.__name__, module)
+    config.enabled_tools = [module.__name__]
+    config.profiles["interactive"] = Profile(tools=["fixture.artifact"], read="none")
+    result = asyncio.run(
+        Registry(config).dispatch("fixture.artifact", "{}", context(config))
+    )
+    assert result.error
+    assert result.artifacts == []

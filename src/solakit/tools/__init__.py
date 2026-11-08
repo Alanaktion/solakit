@@ -556,6 +556,7 @@ class Registry:
                 if isinstance(returned, ToolResult)
                 else ToolResult(content=str(returned))
             )
+            result.artifacts = [str(ctx.path(path)) for path in result.artifacts]
         except (ToolError, ValidationError, ValueError, TimeoutError) as exc:
             if isinstance(exc, TimeoutError):
                 message = (
