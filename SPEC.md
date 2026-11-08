@@ -1496,7 +1496,8 @@ back to its parent. API listings remain flat by default; `roots_only=true` selec
 parents and `parent_session=<id>` selects direct children before pagination.
 
 Discord delivers clearly labelled Solakit status notices for terminal unsuccessful
-runs, without adding assistant transcript messages. Inbound admission errors also
+interactive runs, without adding assistant transcript messages. Scheduled failures
+remain gaps. Inbound admission errors also
 produce a generic console-directed status notice. Delivery intents prevent replay.
 
 Session creation returns 201 for a new ID, 200 for an identical existing session,

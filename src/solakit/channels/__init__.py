@@ -131,6 +131,11 @@ class Channels:
             return
         if run.status in {RunStatus.queued, RunStatus.running}:
             return
+        if run.origin.job and run.status not in {
+            RunStatus.completed,
+            RunStatus.tool_error,
+        }:
+            return  # Scheduled failures remain gaps, as required by the jobs contract.
         store = self.execution.store
         # An intent without acknowledgment is not automatically replayed.
         if await durable(store.delivery_events, run.id):
