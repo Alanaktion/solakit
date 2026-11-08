@@ -73,3 +73,7 @@ For a job with channel delivery, add “Your final response is the announcement;
 the runtime delivers it.” Do not grant reply, shell or filesystem tools to this
 report-only profile. Reads preserve unread state, so subsequent checks can report
 the same unread messages until an external mail client marks them seen.
+
+SMTP sender, recipient, and DATA refusals are recorded as `rejected`; after
+correcting the cause, the same operation ID can be retried. Transport loss during
+sending remains uncertain and is never automatically replayed.

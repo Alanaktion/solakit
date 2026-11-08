@@ -446,7 +446,12 @@ def send(ctx, cfg, mailbox, source, body, operation_id):
                 raise smtplib.SMTPRecipientsRefused(refused)
         except Exception as exc:
             known_rejection = isinstance(
-                exc, (smtplib.SMTPRecipientsRefused, smtplib.SMTPDataError)
+                exc,
+                (
+                    smtplib.SMTPSenderRefused,
+                    smtplib.SMTPRecipientsRefused,
+                    smtplib.SMTPDataError,
+                ),
             )
             stage = (
                 "failed_before_send"

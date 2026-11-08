@@ -118,6 +118,8 @@ password = { env = "PACK_MAIL_PASSWORD" }
             if net.gate:
                 net.entered.set()
                 assert net.release.wait(3)
+            if net.fail == "sender_rejected":
+                raise smtplib.SMTPSenderRefused(550, b"no", from_addr)
             if net.fail == "rejected":
                 raise smtplib.SMTPRecipientsRefused({to_addrs[0]: (550, b"no")})
             net.sent.append((message, from_addr, to_addrs))
@@ -212,7 +214,9 @@ def test_reply_threads_sender_only_idempotency_and_credential_redaction(fixture)
     asyncio.run(exercise())
 
 
-@pytest.mark.parametrize("failure", ["authentication", "rejected", "uncertain"])
+@pytest.mark.parametrize(
+    "failure", ["authentication", "rejected", "sender_rejected", "uncertain"]
+)
 def test_send_failure_states_and_uncertain_replay_block(fixture, failure):
     registry, ctx, net, _, password = fixture
     arguments = {
@@ -229,7 +233,11 @@ def test_send_failure_states_and_uncertain_replay_block(fixture, failure):
         assert (
             "uncertain"
             if failure == "uncertain"
-            else ("rejected" if failure == "rejected" else "failed_before_send")
+            else (
+                "rejected"
+                if failure in {"rejected", "sender_rejected"}
+                else "failed_before_send"
+            )
         ) in first.content
         attempts = net.smtp_attempts
         net.fail = None
