@@ -1150,7 +1150,8 @@ writes. Each pass stops at the first unavailable status and visits previously
 unavailable runs last, so one unobservable task cannot starve the others. Failed
 observations back off from 5 seconds to 5 minutes; after eight consecutive failures,
 `status_lost` stops automatic polling. Explicit manual refresh remains available and
-a successful observation resets the failure count. `POST /api/runs/{id}/memory/refresh` also polls explicitly. Observation
+a successful observation resets the failure count. The run page offers an explicit
+refresh action for `status_lost`, using `POST /api/runs/{id}/memory/refresh`. Observation
 updates patch only their own fields so delivery and extraction cannot overwrite
 one another's state. `POST /api/memory/probe` / `sola memory-test --fact ... --query ...
 --expected ...` deliberately create a shared scratch session, wait for extraction,
@@ -1497,8 +1498,8 @@ parents and `parent_session=<id>` selects direct children before pagination.
 
 Discord delivers clearly labelled Solakit status notices for terminal unsuccessful
 interactive runs, without adding assistant transcript messages. Scheduled failures
-remain gaps. Inbound admission errors also
-produce a generic console-directed status notice. Delivery intents prevent replay.
+remain gaps. Inbound admission errors also produce a generic console-directed
+status notice. Delivery intents prevent replay.
 
 Session creation returns 201 for a new ID, 200 for an identical existing session,
 and 409 for conflicting fields. An omitted creation timestamp is ignored when

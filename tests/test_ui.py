@@ -634,3 +634,33 @@ def test_ui_displays_plain_text_api_failure(config):
         response = client.get("/")
         assert response.status_code == 503
         assert "Storage &lt;unavailable&gt;" in response.text
+
+
+def test_lost_memory_has_explicit_refresh_action(config, mock_model, monkeypatch):
+    from solakit.core.schemas import Session
+
+    app = create_app(config=config, model=mock_model)
+    calls = []
+
+    async def refresh(execution, identity, **kwargs):
+        calls.append(identity)
+        return execution.store.update_run(identity, {"memory_status": "completed"})
+
+    monkeypatch.setattr("solakit.main.refresh_run", refresh)
+    with TestClient(app) as client:
+        app.state.store.create_session(Session(id="lost"))
+        run = Run(
+            session="lost",
+            profile="interactive",
+            origin=Origin(),
+            status="completed",
+            memory_status="status_lost",
+        )
+        app.state.store.save_run(run)
+        sign_in(client)
+        page = client.get(f"/runs/{run.id}")
+        assert "Refresh memory status" in page.text
+        assert calls == []
+        result = client.post(f"/runs/{run.id}/memory/refresh", follow_redirects=False)
+        assert result.status_code == 303
+        assert calls == [run.id]

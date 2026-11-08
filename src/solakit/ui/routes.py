@@ -1295,6 +1295,20 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
         except APIError as exc:
             return render(request, "error.html", {"error": exc.detail}, exc.status)
 
+    @router.post("/runs/{identity}/memory/refresh")
+    async def refresh_memory(request: Request, identity: str):
+        if not logged_in(request):
+            return login_redirect(request)
+        try:
+            await api(
+                request, "POST", f"/api/runs/{quote(identity, safe='')}/memory/refresh"
+            )
+            return RedirectResponse(
+                f"/runs/{quote(identity, safe='')}", 303, headers=HEADERS
+            )
+        except APIError as exc:
+            return render(request, "error.html", {"error": exc.detail}, exc.status)
+
     @router.post("/runs/{identity}/cancel")
     async def cancel_run(request: Request, identity: str):
         if not logged_in(request):
