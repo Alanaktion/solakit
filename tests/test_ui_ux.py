@@ -417,3 +417,113 @@ def test_compaction_boundary_is_part_of_active_turn_delta(config, mock_model):
         )
         assert "Earlier summary" in snapshot["html"]
         assert "New answer" in snapshot["html"]
+
+
+def test_continuous_timeline_across_compactions(config, mock_model):
+    app = create_app(config=config, model=mock_model)
+    with TestClient(app) as client:
+        sign_in(client)
+        store = app.state.store
+        seed(store, "timeline", 25)
+        for number in (1, 2):
+            assert client.post("/api/sessions/timeline/archive").status_code == 200
+            at = datetime(2020, 1, 1, tzinfo=UTC) + timedelta(seconds=25 + number)
+            store.append_message(
+                "timeline",
+                Message(
+                    role="assistant",
+                    kind="compaction",
+                    content=f"Summary {number}",
+                    archive=f"timeline.jsonl.{number}",
+                    run_id=f"compact-{number}",
+                    origin=Origin(),
+                    ts=at,
+                ),
+            )
+            run = Run(
+                id=f"after-{number}",
+                session="timeline",
+                profile="interactive",
+                origin=Origin(),
+                status=RunStatus.completed,
+                created_at=at,
+            )
+            store.save_run(run)
+            store.append_message(
+                "timeline",
+                Message(
+                    role="user",
+                    content=f"After {number}",
+                    run_id=run.id,
+                    origin=Origin(),
+                    ts=at,
+                ),
+            )
+        page = client.get("/sessions/timeline")
+        assert len(run_ids(page.text)) == TURN_WINDOW
+        assert run_ids(page.text) == [f"turn-{n:04}" for n in range(7, 25)] + [
+            "after-1",
+            "after-2",
+        ]
+        assert (
+            page.text.index("Answer 0024")
+            < page.text.index("Summary 1")
+            < page.text.index("After 1")
+            < page.text.index("Summary 2")
+            < page.text.index("After 2")
+        )
+        assert page.text.count("Context compacted · summary") == 2
+        assert '<details class="context-boundary"><summary>' in page.text
+        assert 'href="/sessions/timeline/archives/1">View full archive' in page.text
+        assert 'href="/sessions/timeline/archives/2">View full archive' in page.text
+        assert 'id="message-archive-1-50"' in page.text
+        assert 'id="message-2"' in page.text
+        older = client.get(
+            "/sessions/timeline/earlier?before=turn-0007-archive-1"
+        ).json()
+        assert run_ids(older["html"]) == [f"turn-{n:04}" for n in range(7)]
+        assert older["before"] is None
+        anchored = client.get("/sessions/timeline?anchor=message-archive-1-2")
+        assert "Answer 0000" in anchored.text
+        archive = client.get("/sessions/timeline/archives/2")
+        assert "After 1" in archive.text and "Answer 0024" not in archive.text
+        assert 'id="composer"' not in archive.text
+
+
+def test_mid_run_segments_keep_tool_results_and_live_target_separate():
+    from solakit.ui.view import turns
+
+    messages = [
+        {
+            "run_id": "r",
+            "ts": f"2026-11-05T00:00:0{index}+00:00",
+            "role": "assistant",
+            "content": f"Step {index}",
+            "timeline_segment": segment,
+            "tool_calls": [{"id": str(index), "function": {"name": "runtime.status"}}],
+        }
+        for index, segment in enumerate(("1", None))
+    ]
+    history = turns(
+        {"id": "s", "default_profile": "interactive", "messages": messages},
+        [
+            {
+                "id": "r",
+                "session": "s",
+                "status": "running",
+                "created_at": messages[0]["ts"],
+            }
+        ],
+        {
+            "r": {
+                "tools": [
+                    {"name": "runtime.status", "args": {}, "result": {"content": value}}
+                    for value in ("Archived result", "Current result")
+                ]
+            }
+        },
+    )
+    assert [turn["timeline_id"] for turn in history] == ["r-archive-1", "r"]
+    assert [turn["pending"] for turn in history] == [False, True]
+    assert history[0]["items"][1]["content"] == "Archived result"
+    assert history[1]["items"][1]["content"] == "Current result"

@@ -397,7 +397,10 @@ async function compaction(page) {
   await page.waitForURL(`**/sessions/${id}`);
   await page.request.post(`${base}/api/sessions/${id}/messages`, {data: {message: 'After compaction'}});
   await page.reload();
-  await page.getByText('Earlier context was summarized', {exact: true}).click();
+  assert.equal(await page.locator('.context-boundary[open]').count(), 0);
+  assert(await page.getByText('Before compaction', {exact: true}).isVisible());
+  assert.equal(await page.locator('.context-boundary a').getAttribute('href'), `/sessions/${id}/archives/1`);
+  await page.getByText('Context compacted · summary', {exact: true}).click();
   const history = await page.locator('#conversation').innerText();
   assert(history.indexOf('Browser scratch conversation summary.') < history.indexOf('After compaction'));
   assert(await page.locator('.context-boundary pre').isVisible());

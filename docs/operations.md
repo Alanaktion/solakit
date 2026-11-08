@@ -45,8 +45,12 @@ the normal prompt/recall, without the old transcript; existing memory is retaine
 and archiving makes no new memory/model requests. Empty transcripts are a no-op.
 Queued/running turns return HTTP 409: wait for them to finish first.
 In chat, choose **Archive conversation**, review the explanation and confirm.
-The history picker switches between the current conversation and read-only
-archives, including compaction archives. Nothing is deleted or editable.
+The conversation shows one continuous timeline: numbered archives from oldest to
+newest, followed by the active context. The latest 20 turns appear first; load
+earlier messages to continue across archive boundaries. Compaction summaries stay
+collapsed as **Context compacted · summary** dividers, with an inline summary and
+a link to the full read-only archive. The history picker also opens individual
+archives. Nothing is deleted or editable.
 On narrow screens the rename/compact/archive actions sit under **Actions**.
 Menus close on Escape or an outside click. Settled code and evidence blocks have
 a **Copy** button for the displayed (credential-masked) text, and **Latest

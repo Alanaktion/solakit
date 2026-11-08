@@ -51,12 +51,15 @@ def turns(
                 {
                     "boundary": True,
                     "content": message.get("content") or "",
+                    "archive_number": (message.get("archive") or "").rsplit(".", 1)[-1],
                     "at": timestamp(message["ts"]),
                     "node_id": "boundary-" + message["ts"],
                 }
             )
             continue
-        grouped.setdefault(message["run_id"], []).append(message)
+        grouped.setdefault(
+            (message["run_id"], message.get("timeline_segment")), []
+        ).append(message)
     for identity, run in metadata.items():
         if (
             include_empty_runs
@@ -72,9 +75,12 @@ def turns(
                 >= cutoff
             )
         ):
-            grouped.setdefault(identity, [])
+            grouped.setdefault((identity, None), [])
     result = boundaries
-    for identity, messages in grouped.items():
+    # Mid-run compaction can split one run across multiple transcript segments.
+    # Its immutable tool log still covers the whole run in execution order.
+    tool_offsets = {}
+    for (identity, segment), messages in grouped.items():
         run = metadata.get(
             identity,
             {
@@ -84,7 +90,12 @@ def turns(
                 "profile": session["default_profile"],
             },
         )
-        logs = iter(evidence.get(identity, {}).get("tools", []))
+        recorded = evidence.get(identity, {}).get("tools", [])
+        offset = tool_offsets.get(identity, 0)
+        logs = iter(recorded[offset:])
+        tool_offsets[identity] = offset + sum(
+            len(m.get("tool_calls") or []) for m in messages
+        )
         items = []
         completed_calls = {
             message.get("tool_call_id")
@@ -141,10 +152,12 @@ def turns(
         result.append(
             {
                 "boundary": False,
+                "timeline_id": identity + ("-archive-" + segment if segment else ""),
+                "segment": segment,
                 "run": run,
                 "items": items,
                 "status_label": LABELS.get(status, "Run record unavailable"),
-                "pending": status in {"queued", "running"},
+                "pending": not segment and status in {"queued", "running"},
                 "waiting_for_tool": any(
                     item.get("state") == "running" for item in items
                 ),

@@ -179,7 +179,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 .tool-details { padding: 3px 14px 14px; }
 .tool-details h3 { color: var(--muted); font-size: 10px; font-weight: 500; margin: 10px 0; }
 pre { overflow-x: auto; font-size: 11px; line-height: 1.55; color: var(--ink); }
-.context-boundary { color: var(--muted); font-size: 11px; padding: 10px 0; }
+.context-boundary { border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); color: var(--muted); font-size: 11px; padding: 10px 0; }
 .context-boundary summary { cursor: pointer; color: var(--secondary); }
 .error-page { padding: 35px; }
 .error-page .back-link { margin: 24px 0 0; }

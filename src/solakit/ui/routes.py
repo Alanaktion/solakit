@@ -272,15 +272,45 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
             + urlencode({"session_id": identity, "include_archived": "true"}),
         )
         data = await api(request, "GET", f"/api/sessions/{quote(identity, safe='')}")
-        if number is not None:
+        segments = []
+        if number is None:
+            names = sorted(
+                data["archives"], key=lambda name: int(name.rsplit(".", 1)[1])
+            )
+            archived = await asyncio.gather(
+                *(
+                    api(
+                        request,
+                        "GET",
+                        f"/api/sessions/{quote(identity, safe='')}/archives/"
+                        + name.rsplit(".", 1)[1],
+                    )
+                    for name in names
+                )
+            )
+            segments.extend(
+                zip((name.rsplit(".", 1)[1] for name in names), archived, strict=True)
+            )
+            segments.append((None, data["messages"]))
+        else:
             archived = await api(
                 request,
                 "GET",
                 f"/api/sessions/{quote(identity, safe='')}/archives/{number}",
             )
-            data = {**data, "messages": archived, "context_started_at": None}
-        for line, message in enumerate(data["messages"], 1):
-            message["anchor"] = f"message-{line}"
+            segments.append((None, archived))
+            data["context_started_at"] = None
+        messages = []
+        for segment, entries in segments:
+            for line, message in enumerate(entries, 1):
+                message["anchor"] = (
+                    f"message-archive-{segment}-{line}"
+                    if segment
+                    else f"message-{line}"
+                )
+                message["timeline_segment"] = segment
+                messages.append(message)
+        data = {**data, "messages": messages}
         grouped = turns(data, records, {}, include_empty_runs=number is None)
         before = request.query_params.get("before")
         around = request.query_params.get("turn")
@@ -289,11 +319,21 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
             around = anchor.removeprefix("turn-")
         elif anchor.startswith("message-"):
             around = next(
-                (m["run_id"] for m in data["messages"] if m["anchor"] == anchor), around
+                (
+                    m["run_id"]
+                    + (
+                        "-archive-" + m["timeline_segment"]
+                        if m.get("timeline_segment")
+                        else ""
+                    )
+                    for m in data["messages"]
+                    if m["anchor"] == anchor
+                ),
+                around,
             )
 
         def turn_key(turn):
-            return turn["node_id"] if turn.get("boundary") else turn["run"]["id"]
+            return turn["node_id"] if turn.get("boundary") else turn["timeline_id"]
 
         end = len(grouped)
         if before:
@@ -306,7 +346,8 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
                 (
                     i
                     for i, t in enumerate(grouped)
-                    if not t.get("boundary") and t["run"]["id"] == around
+                    if not t.get("boundary")
+                    and (t["timeline_id"] == around or t["run"]["id"] == around)
                 ),
                 None,
             )
@@ -352,9 +393,9 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
             dict(zip(sorted(with_tools), logs, strict=True)),
             include_empty_runs=number is None,
         )
-        indexed = {t["run"]["id"]: t for t in hydrated if not t.get("boundary")}
+        indexed = {t["timeline_id"]: t for t in hydrated if not t.get("boundary")}
         return data, [
-            t if t.get("boundary") else indexed[t["run"]["id"]] for t in selected
+            t if t.get("boundary") else indexed[t["timeline_id"]] for t in selected
         ]
 
     async def chat_context(request, data, history, error=None):

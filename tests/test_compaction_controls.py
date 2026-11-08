@@ -317,9 +317,9 @@ def test_pre_turn_summary_is_rendered_before_new_message_and_excludes_it(
             headers={"HX-Request": "true"},
         )
         assert response.status_code == 200
-        assert response.text.index(
-            "Earlier context was summarized"
-        ) < response.text.index("NEW MESSAGE AFTER SUMMARY")
+        assert response.text.index("Context compacted · summary") < response.text.index(
+            "NEW MESSAGE AFTER SUMMARY"
+        )
         assert "Hello back" in response.text
         summary_batches = [
             body
@@ -493,7 +493,7 @@ def test_pre_turn_compaction_failure_banner_remains_after_summary(memory_app, co
         )
         assert result.status_code == 200
         assert "Model unavailable" in result.text
-        assert result.text.index("Earlier context was summarized") < result.text.index(
+        assert result.text.index("Context compacted · summary") < result.text.index(
             "Model unavailable"
         )
         assert "hx-trigger" not in result.headers

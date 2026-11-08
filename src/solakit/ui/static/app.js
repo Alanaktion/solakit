@@ -225,7 +225,7 @@
       const template = document.createElement("template");
       template.innerHTML = snapshot.html; // Authenticated, escaped server templates.
       const incoming = template.content.querySelector("[data-run-id]");
-      const current = [...conversation.querySelectorAll("[data-run-id]")].find(node => node.dataset.runId === snapshot.run_id);
+      const current = [...conversation.querySelectorAll("[data-run-id]")].find(node => node.dataset.runId === snapshot.run_id && !node.dataset.archiveSegment);
       if (incoming) {
         if (current) reconcile(current, incoming);
         else { conversation.querySelector(".conversation-empty")?.remove(); conversation.append(incoming); }
