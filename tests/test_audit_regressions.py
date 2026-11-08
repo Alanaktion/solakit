@@ -137,7 +137,10 @@ def test_completed_tool_result_survives_cancellation_request(config):
     asyncio.run(exercise())
 
 
-def test_escaped_descendant_cannot_hold_shell_output_open(tmp_path, monkeypatch):
+@pytest.mark.parametrize("parent_alive", [False, True])
+def test_escaped_descendant_cannot_hold_shell_output_open(
+    tmp_path, monkeypatch, parent_alive
+):
     monkeypatch.setattr(process, "DRAIN_GRACE_S", 0.5)
     script = (
         "import subprocess, sys\n"
@@ -145,6 +148,9 @@ def test_escaped_descendant_cannot_hold_shell_output_open(tmp_path, monkeypatch)
         "time.sleep(60)'], start_new_session=True)\n"
         "print(child.pid, flush=True)\n"
     )
+
+    if parent_alive:
+        script += "import time; time.sleep(60)\n"
 
     async def exercise():
         async with asyncio.timeout(20):

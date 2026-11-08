@@ -45,7 +45,8 @@ async def execute(argv, directory, timeout, limit, *, environment=None):
         # open indefinitely. Bound the final drain and report what was kept.
         try:
             async with asyncio.timeout(DRAIN_GRACE_S):
-                return await asyncio.gather(stdout, stderr)
+                out, err, _ = await asyncio.gather(stdout, stderr, process.wait())
+                return out, err
         except TimeoutError:
             for task in (stdout, stderr):
                 task.cancel()
@@ -67,7 +68,6 @@ async def execute(argv, directory, timeout, limit, *, environment=None):
             os.killpg(process.pid, signal.SIGKILL)
         except ProcessLookupError:
             pass
-        await process.wait()
         if not isinstance(exc, TimeoutError):
             await settle()
             raise
