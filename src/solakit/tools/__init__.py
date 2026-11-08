@@ -557,12 +557,13 @@ class Registry:
                     returned = await asyncio.to_thread(
                         registered.function, ctx=ctx, **values
                     )
-            result = (
+            candidate = (
                 returned
                 if isinstance(returned, ToolResult)
                 else ToolResult(content=str(returned))
             )
-            result.artifacts = [str(ctx.path(path)) for path in result.artifacts]
+            candidate.artifacts = [str(ctx.path(path)) for path in candidate.artifacts]
+            result = candidate
         except (ToolError, ValidationError, ValueError, TimeoutError) as exc:
             if isinstance(exc, TimeoutError):
                 message = (

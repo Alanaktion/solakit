@@ -70,7 +70,14 @@ class RemoteTools:
             request_url = url
             extensions = {}
             if redirects:
-                address = await asyncio.to_thread(self.public_url, url)
+                try:
+                    address = await asyncio.to_thread(self.public_url, url)
+                except (ValueError, OSError, httpx.InvalidURL):
+                    if hop:
+                        raise ToolError(
+                            "Feed redirect target is not a public URL"
+                        ) from None
+                    raise
                 original = httpx.URL(url)
                 request_url = original.copy_with(host=address)
                 headers = {

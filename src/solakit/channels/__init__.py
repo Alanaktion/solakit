@@ -148,7 +148,8 @@ class Channels:
             session = await durable(store.session, run.session)
             if run.status != RunStatus.completed:
                 outbound = Outbound(
-                    f"[Solakit status: {run.status.value}] Run {run.id} did not complete."
+                    f"[Solakit status: {run.status.value}] "
+                    f"Run {run.id} did not complete."
                 )
             else:
                 history = await durable(store.all_messages, run.session)

@@ -256,5 +256,6 @@ def test_archival_reports_corrupt_metadata_as_storage_damage(config):
         store.set_session_archived("damaged", True)
     assert path.read_bytes() == b"{broken"
     assert any(
-        issue["kind"] == "invalid_metadata" for issue in store.storage_health()["issues"]
+        issue["kind"] == "invalid_metadata"
+        for issue in store.storage_health()["issues"]
     )

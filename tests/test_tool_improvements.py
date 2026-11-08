@@ -289,7 +289,9 @@ def test_structured_outputs_do_not_break_at_small_caps(dispatch, monkeypatch, ca
 @pytest.mark.parametrize("markdown", ["x" * 40000, '\n"\\' * 13000])
 def test_page_offsets_reassemble_source(dispatch, monkeypatch, markdown):
     call, _, _ = dispatch
-    monkeypatch.setattr(RemoteTools, "public_url", staticmethod(lambda url: None))
+    monkeypatch.setattr(
+        RemoteTools, "public_url", staticmethod(lambda url: "93.184.216.34")
+    )
     transport(
         monkeypatch,
         lambda r: httpx.Response(200, json={"success": True, "result": markdown}),
@@ -331,7 +333,9 @@ def test_cloudflare_errors_and_malformed_results(
     dispatch, monkeypatch, payload, message
 ):
     call, ctx, _ = dispatch
-    monkeypatch.setattr(RemoteTools, "public_url", staticmethod(lambda url: None))
+    monkeypatch.setattr(
+        RemoteTools, "public_url", staticmethod(lambda url: "93.184.216.34")
+    )
     transport(monkeypatch, lambda r: httpx.Response(200, json=payload))
     result = asyncio.run(call("web.get_page", url="https://example.com"))
     assert result.error and message in result.content
@@ -414,7 +418,12 @@ def test_schema_metadata_contract_and_snapshot():
 def test_feed_redirects_and_conditional_metadata(dispatch, monkeypatch):
     call, _, _ = dispatch
     validated = []
-    monkeypatch.setattr(RemoteTools, "public_url", staticmethod(validated.append))
+
+    def resolve(url):
+        validated.append(url)
+        return "93.184.216.34"
+
+    monkeypatch.setattr(RemoteTools, "public_url", staticmethod(resolve))
     requests = []
     xml = (
         '<feed xmlns="http://www.w3.org/2005/Atom"><title>News</title>'
@@ -453,7 +462,12 @@ def test_feed_redirects_and_conditional_metadata(dispatch, monkeypatch):
     assert not data["not_modified"]
     assert data["items"][0]["published"] == "original-date"
     assert data["items"][0]["updated"] == "revised-date"
-    assert validated == [str(r.url) for r in requests]
+    assert validated == [
+        "http://example.com/start",
+        "https://feeds.example.com/middle",
+        "https://feeds.example.com/canonical",
+    ]
+    assert all(r.url.host == "93.184.216.34" for r in requests)
     transport(monkeypatch, lambda r: httpx.Response(304, headers={"ETag": '"current"'}))
     result = asyncio.run(
         call("feeds.check", url=data["final_url"], if_none_match=data["etag"])
@@ -510,12 +524,14 @@ def test_redirect_rejects_private_or_disallowed_hop_before_request(
     transport(monkeypatch, handler)
     result = asyncio.run(call("feeds.check", url="https://example.com/feed"))
     assert result.error and result.content == "Feed redirect target is not a public URL"
-    assert requests == ["https://example.com/feed"]
+    assert requests == ["https://93.184.216.34/feed"]
 
 
 def test_redirect_limit_and_cross_host_auth_strip(dispatch, monkeypatch):
     call, ctx, _ = dispatch
-    monkeypatch.setattr(RemoteTools, "public_url", staticmethod(lambda url: None))
+    monkeypatch.setattr(
+        RemoteTools, "public_url", staticmethod(lambda url: "93.184.216.34")
+    )
     requests = []
 
     def loop(request):

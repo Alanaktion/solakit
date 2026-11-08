@@ -354,6 +354,7 @@ def test_observer_backoff_and_manual_recovery(config, monkeypatch):
         attempts.append(1)
         raise MemoryUnavailable("unknown task")
 
+    original_refresh = memory_ops.refresh_run
     monkeypatch.setattr(memory_ops, "refresh_run", unavailable)
 
     async def exercise():
@@ -368,6 +369,23 @@ def test_observer_backoff_and_manual_recovery(config, monkeypatch):
         assert record["memory_observation_failures"] == 8
         await memory_ops.refresh_pending(execution)
         assert len(attempts) == 8
+        execution.store.log_memory(
+            run.id,
+            {"stage": "accepted", "result": {"status": "accepted", "task_id": "t1"}},
+        )
+        execution.memory = MemoryClient(
+            memory_config(),
+            transport=httpx.MockTransport(
+                lambda request: httpx.Response(
+                    200, json={"status": "ok", "result": {"status": "completed"}}
+                )
+            ),
+        )
+        monkeypatch.setattr(memory_ops, "refresh_run", original_refresh)
+        recovered = await memory_ops.refresh_run(execution, run.id)
+        assert recovered.memory_status == "completed"
+        assert recovered.memory_observation_failures == 0
+        assert recovered.memory_next_observation is None
         await execution.close()
 
     asyncio.run(exercise())
