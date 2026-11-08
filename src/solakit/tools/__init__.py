@@ -214,11 +214,17 @@ class Registered:
     arguments: type[BaseModel]
 
     def schema(self) -> dict:
+        description = inspect.getdoc(self.function) or ""
+        if not inspect.iscoroutinefunction(self.function):
+            description += (
+                "\nRuns in a worker thread. Timeout does not stop execution; "
+                "effects may continue. Inspect state or receipts before retrying."
+            )
         return {
             "type": "function",
             "function": {
                 "name": self.manifest.name,
-                "description": inspect.getdoc(self.function) or "",
+                "description": description,
                 "parameters": self.arguments.model_json_schema(),
             },
         }

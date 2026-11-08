@@ -132,3 +132,6 @@ read verbatim on every run before context and recall. It needs no installation
 and is included even when `[memory].enabled = false`. Set
 `[memory].front_page_max_chars` (default 8192, minimum 256) for offline curation
 checks: 75–100% warns, above 100% errors. Runtime preserves the entire file.
+
+Synchronous tool schemas disclose that worker threads can continue after timeout.
+Prefer async tools for effects; inspect state or receipts before retrying.

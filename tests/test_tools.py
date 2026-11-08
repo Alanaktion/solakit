@@ -299,3 +299,19 @@ def test_invalid_artifact_is_tool_error(config, monkeypatch):
     )
     assert result.error
     assert result.artifacts == []
+
+
+def test_sync_tool_schema_discloses_timeout_limit():
+    from pydantic import BaseModel
+
+    from solakit.tools import Registered
+
+    @tool(name="fixture.sync", profiles=["*"])
+    def sync(ctx):
+        """A blocking integration."""
+
+    class Arguments(BaseModel):
+        pass
+
+    schema = Registered(sync, sync.__sola_tool__, Arguments).schema()
+    assert "Timeout does not stop execution" in schema["function"]["description"]
