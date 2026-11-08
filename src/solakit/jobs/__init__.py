@@ -28,7 +28,7 @@ def render_task(job: Job, at: datetime) -> str:
     local = at.astimezone(ZoneInfo(job.timezone))
     values = {
         "date": local.date().isoformat(),
-        "time": local.time().isoformat(),
+        "time": local.time().isoformat(timespec="seconds"),
         "timezone": job.timezone,
         "job_id": job.id,
     }
@@ -254,7 +254,7 @@ class Jobs:
                             f"Missed firing range through {at.isoformat()}; "
                             "catch up once",
                         )
-                    await self._launch(job, state, at)
+                    await self._launch(job, state, due)
 
     async def _launch(self, job, state, at):
         if state.active:

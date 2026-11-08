@@ -189,3 +189,7 @@ Jobs can override schema disclosure with `tool_disclosure` and `tool_resident`,
 without changing profile authority. Null residents inherit; an empty list starts
 with discovery only in deferred mode. See [tool disclosure](tool-disclosure.md)
 for validation, examples and run inspection.
+
+Task `{date}` and `{time}` use the scheduled due instant for scheduled and catch-up
+runs, and the current tick instant for manual runs, in the job timezone. `{time}`
+is rendered at second precision.

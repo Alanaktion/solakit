@@ -343,3 +343,29 @@ def test_sub_session_requires_parent():
             bind_session="ephemeral",
             sub_session=True,
         )
+
+
+def test_scheduled_task_uses_due_time_instead_of_tick(config, monkeypatch):
+    configured(config)
+    config.jobs[0].task = "At {time}"
+    at = datetime.fromisoformat("2026-11-04T19:01:00+00:00")
+    execution = setup(config, lambda request: model_list(config))
+    jobs = Jobs(config, execution, Channels(config, execution, {}), lambda: at)
+    captured = []
+
+    async def launch(job, state, due):
+        captured.append(render_task(job, due))
+
+    monkeypatch.setattr(jobs, "_launch", launch)
+
+    async def exercise():
+        await jobs.initialize()
+        due = jobs.states["scheduled"].next_fire
+        jobs.clock = lambda: due + timedelta(seconds=12, microseconds=345)
+        await jobs.tick()
+        assert captured == [render_task(config.jobs[0], due)]
+        assert captured[0].endswith(":00")
+        await jobs.stop_admission()
+        await execution.close()
+
+    asyncio.run(exercise())
