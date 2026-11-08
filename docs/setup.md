@@ -135,3 +135,6 @@ checks: 75–100% warns, above 100% errors. Runtime preserves the entire file.
 
 Synchronous tool schemas disclose that worker threads can continue after timeout.
 Prefer async tools for effects; inspect state or receipts before retrying.
+
+`GET /health` remains public. The active `GET /health/model` probe requires the
+operator Bearer token or a logged-in UI cookie.

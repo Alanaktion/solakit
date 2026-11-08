@@ -89,3 +89,9 @@ def test_session_creation_is_idempotent_and_rejects_conflicts(config, auth):
             ).status_code
             == 409
         )
+
+
+def test_model_health_requires_operator_auth(config, auth, mock_model):
+    with TestClient(create_app(config=config, model=mock_model)) as client:
+        assert client.get("/health/model").status_code == 401
+        assert client.get("/health/model", headers=auth).status_code == 200

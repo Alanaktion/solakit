@@ -327,7 +327,7 @@ def create_app(
             "memory_checked_at": app.state.memory_health["checked_at"],
         }
 
-    @app.get("/health/model")
+    @app.get("/health/model", dependencies=[Depends(authorize)])
     async def model_health() -> dict:
         app.state.model_health = await probe_model(app.state.model)
         return app.state.model_health

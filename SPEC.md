@@ -949,7 +949,7 @@ The P1 operator UI is a thin server-rendered API client. Shared app contracts:
 
 | Route | Purpose |
 |-------|---------|
-| `GET /health` · `GET /health/model` | app status; pinned-model reachability/ID |
+| `GET /health` · `GET /health/model` | public app status; authenticated pinned-model reachability/ID |
 | `GET /api/tools` | loaded tool catalog, argument schemas, and effective profile grants |
 | `GET /api/profiles` | configured profile names for session creation |
 | `GET /api/sessions` · `GET /api/sessions/{id}` | session list; metadata + transcript |
