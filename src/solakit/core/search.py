@@ -2,6 +2,7 @@
 
 import re
 import sqlite3
+from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -127,7 +128,7 @@ def search_index(
     try:
         # Offline callers never create a database or recover/finalize runs.
         uri = (root.expanduser().resolve() / "app.db").as_uri() + "?mode=ro"
-        with sqlite3.connect(uri, uri=True) as db:
+        with closing(sqlite3.connect(uri, uri=True)) as db, db:
             db.row_factory = sqlite3.Row
             rows = db.execute(sql, parameters).fetchall()
     except sqlite3.Error:

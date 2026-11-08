@@ -207,3 +207,36 @@ def test_torn_tail_recovery_is_explicit_and_bound_to_exact_bytes(config):
     marker.write_text(json.dumps(record))
     with pytest.raises(StorageCorruption):
         restarted.transcript("s")
+
+
+def test_store_closes_connections_on_success_and_error(config, monkeypatch):
+    import sqlite3
+
+    from solakit.core.schemas import Session
+    from solakit.core.store import Store
+
+    opened = []
+
+    class Connection(sqlite3.Connection):
+        closed = False
+
+        def close(self):
+            self.closed = True
+            super().close()
+
+    connect = sqlite3.connect
+
+    def tracked(*args, **kwargs):
+        db = connect(*args, **kwargs, factory=Connection)
+        opened.append(db)
+        return db
+
+    monkeypatch.setattr(sqlite3, "connect", tracked)
+    store = Store(config.paths.data)
+    store.create_session(Session(id="closed"))
+    assert opened and all(db.closed for db in opened)
+    try:
+        store._index("invalid_table", "x", {})
+    except sqlite3.Error:
+        pass
+    assert all(db.closed for db in opened)

@@ -1,6 +1,7 @@
 """Authoritative job definitions in app.db, separate from rebuildable indexes."""
 
 import sqlite3
+from contextlib import closing
 
 from solakit.core.config import Job
 
@@ -13,7 +14,7 @@ class Definitions:
         return sqlite3.connect(self.store.root / "app.db")
 
     def load(self, seeds, *, validate=None):
-        with self.store.lock, self.connect() as db:
+        with self.store.lock, closing(self.connect()) as db, db:
             db.execute(
                 "CREATE TABLE IF NOT EXISTS job_definitions "
                 "(id TEXT PRIMARY KEY, payload TEXT NOT NULL, deleted INTEGER NOT NULL)"
@@ -38,7 +39,7 @@ class Definitions:
             ]
 
     def save(self, job, *, deleted=False):
-        with self.store.lock, self.connect() as db:
+        with self.store.lock, closing(self.connect()) as db, db:
             db.execute(
                 "INSERT OR REPLACE INTO job_definitions VALUES (?, ?, ?)",
                 (job.id, job.model_dump_json(), int(deleted)),
@@ -50,7 +51,10 @@ def inspect_definitions(path, seeds):
     jobs = {job.id: job for job in seeds}
     if not path.exists():
         return list(jobs.values())
-    with sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True) as db:
+    with (
+        closing(sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)) as db,
+        db,
+    ):
         if db.execute(
             "SELECT 1 FROM sqlite_master WHERE name='job_definitions'"
         ).fetchone():

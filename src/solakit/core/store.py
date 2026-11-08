@@ -19,6 +19,7 @@ import sqlite3
 import tempfile
 import threading
 import time
+from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -250,7 +251,7 @@ class Store:
             return records
 
     def _index(self, kind: str, record_id: str, payload: dict) -> None:
-        with self.lock, sqlite3.connect(self.root / "app.db") as db:
+        with self.lock, closing(sqlite3.connect(self.root / "app.db")) as db, db:
             db.execute(
                 f"INSERT OR REPLACE INTO {kind} VALUES (?, ?)",
                 (record_id, json.dumps(payload)),
@@ -312,7 +313,7 @@ class Store:
         failure therefore forces changed evidence to be re-read on restart.
         """
         started = time.perf_counter()
-        with self.lock, sqlite3.connect(self.root / "app.db") as db:
+        with self.lock, closing(sqlite3.connect(self.root / "app.db")) as db, db:
             sources, recovery = self._inventory()
             required = {
                 "sessions",
@@ -550,7 +551,7 @@ class Store:
 
     def recover(self) -> None:
         # Completed historical runs without delivery evidence need no recovery.
-        with sqlite3.connect(self.root / "app.db") as db:
+        with closing(sqlite3.connect(self.root / "app.db")) as db, db:
             candidates = db.execute(
                 "SELECT payload FROM runs WHERE "
                 "json_extract(payload, '$.status') IN ('queued', 'running') OR "
@@ -629,7 +630,7 @@ class Store:
 
     def _touch_session(self, session_id, at):
         try:
-            with self.lock, sqlite3.connect(self.root / "app.db") as db:
+            with self.lock, closing(sqlite3.connect(self.root / "app.db")) as db, db:
                 self._activity(db, session_id, self._activity_timestamp(at))
         except sqlite3.Error:
             self._issue(self.root / "app.db", "session_activity_index_unavailable")
@@ -721,7 +722,7 @@ class Store:
             clauses.append("json_extract(s.payload, '$.default_profile')=?")
             args.append(profile)
         where = " WHERE " + " AND ".join(clauses) if clauses else ""
-        with self.lock, sqlite3.connect(self.root / "app.db") as db:
+        with self.lock, closing(sqlite3.connect(self.root / "app.db")) as db, db:
             total = db.execute(
                 f"SELECT count(*) FROM {source}" + where, args
             ).fetchone()[0]
@@ -738,7 +739,7 @@ class Store:
                     "FROM sessions GROUP BY 1"
                 ).fetchall()
             )
-        with self.lock, sqlite3.connect(self.root / "app.db") as db:
+        with self.lock, closing(sqlite3.connect(self.root / "app.db")) as db, db:
             profiles = [
                 row[0]
                 for row in db.execute(
@@ -776,7 +777,7 @@ class Store:
         if not include_archived:
             clauses.append("json_extract(s.payload, '$.archived_at') IS NULL")
         where = " WHERE " + " AND ".join(clauses) if clauses else ""
-        with self.lock, sqlite3.connect(self.root / "app.db") as db:
+        with self.lock, closing(sqlite3.connect(self.root / "app.db")) as db, db:
             rows = db.execute(
                 "SELECT r.payload FROM runs r LEFT JOIN sessions s ON "
                 "s.id=json_extract(r.payload, '$.session')"
@@ -839,7 +840,7 @@ class Store:
                     (after.st_ino, after.st_size, after.st_mtime_ns),
                     line_no,
                 )
-                with sqlite3.connect(self.root / "app.db") as db:
+                with closing(sqlite3.connect(self.root / "app.db")) as db, db:
                     db.execute(
                         FTS_INSERT,
                         self._message_search_row(session_id, "active", line_no, record),
@@ -932,7 +933,7 @@ class Store:
                 dates = [row[7] for row in rows if row[7] is not None]
                 if dates:
                     self._touch_session(session_id, datetime.fromisoformat(max(dates)))
-                with sqlite3.connect(self.root / "app.db") as db:
+                with closing(sqlite3.connect(self.root / "app.db")) as db, db:
                     db.execute(
                         "DELETE FROM messages_fts WHERE session_id = ?", (session_id,)
                     )
@@ -995,7 +996,7 @@ class Store:
             return run
 
     def pending_memory(self) -> list[dict]:
-        with self.lock, sqlite3.connect(self.root / "app.db") as db:
+        with self.lock, closing(sqlite3.connect(self.root / "app.db")) as db, db:
             rows = db.execute(
                 "SELECT payload FROM runs WHERE "
                 "json_extract(payload, '$.memory_status') IN "
@@ -1211,6 +1212,6 @@ class Store:
     def list_records(self, kind: str) -> list[dict]:
         if kind not in {"sessions", "runs", "jobs"}:
             raise ValueError("unknown index")
-        with self.lock, sqlite3.connect(self.root / "app.db") as db:
+        with self.lock, closing(sqlite3.connect(self.root / "app.db")) as db, db:
             rows = db.execute(f"SELECT payload FROM {kind} ORDER BY rowid").fetchall()
         return [json.loads(row[0]) for row in rows]
