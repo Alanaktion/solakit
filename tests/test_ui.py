@@ -616,3 +616,21 @@ def test_login_return_url(config, mock_model):
             )
             assert good.headers["location"] == "/"
             client.post("/logout")
+
+
+def test_ui_displays_plain_text_api_failure(config):
+    from starlette.responses import PlainTextResponse
+
+    app = create_app(config=config)
+
+    @app.middleware("http")
+    async def failure(request, call_next):
+        if request.url.path == "/api/sessions":
+            return PlainTextResponse("Storage <unavailable>", status_code=503)
+        return await call_next(request)
+
+    with TestClient(app) as client:
+        sign_in(client)
+        response = client.get("/")
+        assert response.status_code == 503
+        assert "Storage &lt;unavailable&gt;" in response.text

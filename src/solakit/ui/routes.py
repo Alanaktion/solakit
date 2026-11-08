@@ -186,10 +186,18 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
             cookies={COOKIE: identity} if identity else {},
         ) as client:
             response = await client.request(method, path, json=payload)
-        data = response.json()
+        try:
+            data = response.json()
+        except ValueError:
+            if response.is_error:
+                raise APIError(
+                    response.status_code, response.text or "API request failed."
+                ) from None
+            raise APIError(502, "API returned an invalid JSON response.") from None
         if response.is_error:
+            detail = data.get("detail") if isinstance(data, dict) else None
             raise APIError(
-                response.status_code, data.get("detail", "API request failed.")
+                response.status_code, detail or response.text or "API request failed."
             )
         return data
 
