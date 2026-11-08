@@ -7,6 +7,13 @@ const base = 'http://127.0.0.1:18382';
 const output = process.env.SOLA_BROWSER_ARTIFACTS || '/private/tmp/solakit-browser-artifacts';
 const phase = process.argv[2] || '12';
 
+// Narrow chats collect session actions in an Actions menu; wide chats show them inline.
+async function sessionAction(page, name) {
+  const menu = page.locator('.session-menu');
+  if (await menu.isVisible()) await menu.locator('summary').click();
+  await page.getByRole('link', {name, exact: true}).click();
+}
+
 async function noOverflow(page) {
   assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1),
     `Page overflows: ${page.url()}`);
@@ -204,7 +211,7 @@ async function sessionRename(page) {
   const id = fixture.ids[0];
   await page.request.post(`${base}/api/sessions/${id}/lifecycle`, {data: {archived: true}});
   await page.goto(`${base}/sessions/${id}`);
-  await page.getByRole('link', {name: 'Rename session', exact: true}).click();
+  await sessionAction(page, 'Rename session');
   await page.getByLabel('Session name', {exact: true}).fill('<Moonlight & notes>');
   await noOverflow(page);
   await page.screenshot({path: path.join(output, `rename-form-${page.qaLabel}.png`), fullPage: true});
@@ -381,7 +388,7 @@ async function compaction(page) {
   const id = await createSession(page, 'compact', 'shared');
   await page.request.post(`${base}/api/sessions/${id}/messages`, {data: {message: 'Before compaction'}});
   await page.reload();
-  await page.getByRole('link', {name: 'Compact conversation', exact: true}).click();
+  await sessionAction(page, 'Compact conversation');
   await page.getByRole('heading', {name: 'Compact this conversation?'}).waitFor();
   assert.match(await page.locator('main').innerText(), /long-term extraction disabled/);
   await noOverflow(page);
@@ -411,7 +418,7 @@ async function archival(page) {
   assert.equal(response.status(), 200);
   assert.equal((await response.json()).status, 'completed');
   await page.reload();
-  await page.getByRole('link', {name: 'Archive conversation'}).click();
+  await sessionAction(page, 'Archive conversation');
   await page.getByRole('heading', {name: 'Archive this conversation?'}).waitFor();
   assert.match(await page.locator('main').innerText(), /Nothing is deleted/);
   await noOverflow(page);

@@ -4,5 +4,5 @@
 <section class="page-heading"><h1>Delete job {{ job.id }}?</h1></section>
 <section class="panel evidence-panel"><p>This stops future scheduled firings. Existing conversations, runs and delivery evidence are kept.</p><p>{{ ('One time: ' ~ job.run_at) if job.run_at else job.cron }} · {{ job.timezone }}</p>
 {% if job.active %}<div class="notice notice-error" role="alert">This job is queued or running. Wait for it to finish before deleting it.</div>{% endif %}
-<form method="post" action="/operations/jobs/{{ job.id|urlencode }}/delete" class="action-group"><button class="primary-button" type="submit" {% if job.active %}disabled{% endif %}>Delete job</button><a href="/operations" class="secondary-button">Keep job</a></form></section>
+<form method="post" action="/operations/jobs/{{ job.id|urlencode }}/delete" class="action-group"><button class="danger-button" type="submit" {% if job.active %}disabled{% endif %}>Delete job</button><a href="/operations" class="secondary-button">Keep job</a></form></section>
 {% endblock %}

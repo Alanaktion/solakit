@@ -1,0 +1,1 @@
+{% set tone = 'good' if run.status == 'completed' else ('active' if run.status in ['queued', 'running'] else ('neutral' if run.status in ['cancelled', 'missed'] else 'bad')) %}<span class="run-status run-status-{{ tone }}">{{ run.status }}</span>

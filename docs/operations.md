@@ -47,6 +47,10 @@ Queued/running turns return HTTP 409: wait for them to finish first.
 In chat, choose **Archive conversation**, review the explanation and confirm.
 The history picker switches between the current conversation and read-only
 archives, including compaction archives. Nothing is deleted or editable.
+On narrow screens the rename/compact/archive actions sit under **Actions**.
+Menus close on Escape or an outside click. Settled code and evidence blocks have
+a **Copy** button for the displayed (credential-masked) text, and **Latest
+messages** returns to the end of a long conversation.
 A failed prepared rotation blocks further transcript writes; restart after fixing
 storage to finish recovery.
 

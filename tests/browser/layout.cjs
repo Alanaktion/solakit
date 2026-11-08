@@ -21,7 +21,9 @@ async function verify(page, name) {
     for (const control of controls) {
       const box = rect(control);
       const label = control.id || control.textContent.trim().slice(0, 45) || control.type;
-      if (!['checkbox', 'radio'].includes(control.type) && box.height < 43.5) issues.push(`${label}: height ${box.height}`);
+      // Compact tool-call rows are 30px for fine pointers and 44px under (pointer: coarse).
+      const compact = control.matches('.tool-call > summary') && !matchMedia('(pointer: coarse)').matches;
+      if (!['checkbox', 'radio'].includes(control.type) && !compact && box.height < 43.5) issues.push(`${label}: height ${box.height}`);
       if (!control.closest('.table-scroll, .archive-toolbar, .conversation-list') && (box.left < -1 || box.right > innerWidth + 1)) issues.push(`${label}: outside viewport`);
       if (control.matches('.primary-button, .secondary-button, .quiet-button, summary')) {
         const range = document.createRange(); range.selectNodeContents(control);

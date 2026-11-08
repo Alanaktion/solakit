@@ -899,6 +899,9 @@ The P1 operator UI is a thin server-rendered API client. Shared app contracts:
   `/static`, API routes under `/api`, and `/health` at root. Vendored HTMX and
   small vanilla JS enhance forms; no build step or remote assets. The UI has no
   direct storage/execution access, and never changes prompt/history bytes.
+  Presentation-only enhancements (copy buttons on settled code/evidence blocks,
+  a jump-to-latest control, dismissible menus and a busy tab-title marker) copy
+  or reveal displayed, credential-masked text only and never touch evidence.
   A read-only `/tools` page lists loaded tools and effective profile grants.
   `/prompt` displays API-assembled prompt text, original hash and schemas; `/runs`
   and `/runs/{id}` show evidence with POST cancellation. `/operations` displays

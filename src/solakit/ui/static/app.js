@@ -4,6 +4,60 @@
   let timer;
   let events;
   const form = () => document.getElementById("composer");
+  const baseTitle = document.title;
+  const menus = ".archive-menu, .session-menu, .chat-health";
+  // Popup disclosures close on outside clicks and Escape, like native menus.
+  document.addEventListener("click", event => {
+    document.querySelectorAll(menus).forEach(menu => {
+      if (menu.open && !menu.contains(event.target)) menu.open = false;
+    });
+  });
+  document.addEventListener("keydown", event => {
+    if (event.key !== "Escape") return;
+    const menu = event.target.closest?.(menus) || [...document.querySelectorAll(menus)].find(node => node.open);
+    if (!menu?.open) return;
+    menu.open = false;
+    menu.querySelector("summary")?.focus();
+  });
+  // Copy controls are added only to settled content so streaming reconciliation never sees them.
+  function copyButtons(root = document) {
+    root.querySelectorAll(".markdown-content pre, .evidence-text, .tool-details pre").forEach(pre => {
+      if (pre.parentElement.classList.contains("code-block")) return;
+      if (pre.closest('[data-run-status="queued"], [data-run-status="running"], .live-preview')) return;
+      const wrap = document.createElement("div");
+      wrap.className = "code-block";
+      pre.replaceWith(wrap);
+      wrap.append(pre);
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "copy-button";
+      button.textContent = "Copy";
+      button.setAttribute("aria-label", "Copy text");
+      wrap.append(button);
+    });
+  }
+  document.addEventListener("click", async event => {
+    const button = event.target.closest?.(".copy-button");
+    if (!button) return;
+    try {
+      await navigator.clipboard.writeText(button.parentElement.querySelector("pre").textContent);
+      button.textContent = "Copied";
+      button.dataset.copied = "";
+    } catch { button.textContent = "Select to copy"; }
+    setTimeout(() => { button.textContent = "Copy"; delete button.dataset.copied; }, 1600);
+  });
+  function jumpVisibility() {
+    const conversation = document.getElementById("conversation");
+    const jump = document.getElementById("jump-latest");
+    if (!conversation || !jump) return;
+    jump.hidden = conversation.scrollHeight - conversation.scrollTop - conversation.clientHeight < 240;
+  }
+  document.addEventListener("scroll", event => {
+    if (event.target.id === "conversation") jumpVisibility();
+  }, true);
+  document.addEventListener("click", event => {
+    if (event.target.closest?.("#jump-latest")) { scrollConversation(); jumpVisibility(); }
+  });
   function jobSchedule() {
     const kind = document.getElementById("job-schedule-kind");
     if (!kind) return;
@@ -56,6 +110,7 @@
   function scrollConversation() {
     const conversation = document.getElementById("conversation");
     if (conversation) conversation.scrollTop = conversation.scrollHeight;
+    jumpVisibility();
   }
   function waiting(active, createdAt, runId) {
     const pending = document.getElementById("pending");
@@ -65,6 +120,7 @@
     composer.setAttribute("aria-busy", String(active));
     composer.querySelectorAll('button[type="submit"]').forEach((node) => { node.disabled = active; });
     pending.hidden = !active;
+    document.title = (active ? "… " : "") + baseTitle;
     const stop = document.getElementById("stop-run");
     if (stop) {
       if (runId) stop.action = "/runs/" + encodeURIComponent(runId) + "/cancel?return_to_session=true";
@@ -143,6 +199,7 @@
       template.innerHTML = result.html;
       button.after(template.content);
       dates(conversation);
+      copyButtons(conversation);
       if (anchor) conversation.scrollTop += anchor.getBoundingClientRect().top - top;
       if (result.before) {
         button.dataset.before = result.before;
@@ -179,11 +236,12 @@
         conversation.dataset.activeCreatedAt = snapshot.created_at;
         waiting(true, snapshot.created_at, snapshot.run_id);
       }
-      if (nearBottom) scrollConversation();
+      if (nearBottom) scrollConversation(); else jumpVisibility();
       if (!snapshot.pending) {
         source.close();
         events = null;
         waiting(false);
+        copyButtons(conversation);
         delete conversation.dataset.activeRun;
         delete conversation.dataset.activeCreatedAt;
         if (document.activeElement === document.body || document.activeElement === form()?.querySelector('button[type="submit"]')) form()?.querySelector("textarea")?.focus();
@@ -282,6 +340,7 @@
           conversation.append(latest);
         }
         dates(conversation);
+        copyButtons(conversation);
       } catch { return; }
     }
     positionAnchor();
@@ -312,6 +371,7 @@
     }
   });
   dates();
+  copyButtons();
   jobSchedule();
   jobTools();
   if (!globalThis.location?.hash) scrollConversation();
