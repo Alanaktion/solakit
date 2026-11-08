@@ -7,14 +7,19 @@ import signal
 DRAIN_GRACE_S = 5
 
 
-async def execute(argv, directory, timeout, limit):
+async def execute(argv, directory, timeout, limit, *, environment=None):
     # Deliberately avoid inheriting backend/API credentials. This is hygiene,
     # not isolation: host-user shell commands can still access host files.
-    environment = {
-        name: value
-        for name, value in os.environ.items()
-        if name in {"PATH", "HOME", "LANG", "TMPDIR", "TERM"} or name.startswith("LC_")
-    }
+    environment = (
+        environment
+        if environment is not None
+        else {
+            name: value
+            for name, value in os.environ.items()
+            if name in {"PATH", "HOME", "LANG", "TMPDIR", "TERM"}
+            or name.startswith("LC_")
+        }
+    )
     environment.setdefault("PATH", "/usr/bin:/bin")
     process = await asyncio.create_subprocess_exec(
         *argv,

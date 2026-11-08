@@ -2,11 +2,11 @@
 
 import asyncio
 import os
-import signal
 import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+from solakit.services.process import execute
 from solakit.tools import ToolError, ToolResult
 
 _LOCKS = {}
@@ -50,55 +50,55 @@ class Git:
             65536, self.ctx.config.profiles[self.ctx.profile].tool_output_max_chars * 4
         )
         environment = {
-            **os.environ,
+            **{
+                name: value
+                for name, value in os.environ.items()
+                if name
+                in {
+                    "PATH",
+                    "HOME",
+                    "LANG",
+                    "TMPDIR",
+                    "SSH_AUTH_SOCK",
+                    "GIT_SSH_COMMAND",
+                    "HTTP_PROXY",
+                    "HTTPS_PROXY",
+                    "ALL_PROXY",
+                    "NO_PROXY",
+                    "http_proxy",
+                    "https_proxy",
+                    "all_proxy",
+                    "no_proxy",
+                }
+                or name.startswith("LC_")
+            },
             "GIT_TERMINAL_PROMPT": "0",
             "GIT_PAGER": "cat",
             "GIT_OPTIONAL_LOCKS": "0",
         }
-        process = await asyncio.create_subprocess_exec(
-            "git",
-            "--literal-pathspecs",
-            "-c",
-            "core.hooksPath=/dev/null",
-            "-c",
-            "commit.gpgsign=false",
-            "-C",
-            str(self.root),
-            *arguments,
-            env=environment,
-            start_new_session=True,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+        result = await execute(
+            [
+                "git",
+                "--literal-pathspecs",
+                "-c",
+                "core.hooksPath=/dev/null",
+                "-c",
+                "commit.gpgsign=false",
+                "-C",
+                str(self.root),
+                *arguments,
+            ],
+            self.root,
+            self.ctx.config.profiles[self.ctx.profile].tool_timeout_s,
+            limit,
+            environment=environment,
         )
-
-        async def drain(stream, capture):
-            output, size = bytearray(), 0
-            while chunk := await stream.read(65536):
-                size += len(chunk)
-                if capture:
-                    output.extend(chunk[: max(0, limit - len(output))])
-            return bytes(output), size <= limit
-
-        stdout = asyncio.create_task(drain(process.stdout, True))
-        stderr = asyncio.create_task(drain(process.stderr, False))
-        try:
-            async with asyncio.timeout(
-                self.ctx.config.profiles[self.ctx.profile].tool_timeout_s
-            ):
-                await process.wait()
-                (output, complete), _ = await asyncio.gather(stdout, stderr)
-        except BaseException:
-            try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-            await process.wait()
-            await asyncio.gather(stdout, stderr, return_exceptions=True)
-            raise
-        if process.returncode:
-            raise ToolError(f"Git {arguments[0]} failed (exit {process.returncode})")
+        if result["timed_out"]:
+            raise TimeoutError("Git command timed out")
+        if result["exit_code"]:
+            raise ToolError(f"Git {arguments[0]} failed (exit {result['exit_code']})")
         return ToolResult(
-            content=output.decode("utf-8", errors="replace"), content_complete=complete
+            content=result["stdout"], content_complete=result["stdout_complete"]
         )
 
     async def _text(self, *arguments) -> str:

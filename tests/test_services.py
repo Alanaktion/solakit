@@ -427,3 +427,26 @@ def test_unset_server_cwd_preserves_process_directory(config, tmp_path, monkeypa
     monkeypatch.chdir(tmp_path)
     config.profiles["interactive"] = Profile(workspace=[f"path:{tmp_path}"])
     assert context(config).path(".") == tmp_path
+
+
+def test_git_environment_excludes_backend_secrets(config, repository, monkeypatch):
+    from solakit.services import git as service
+
+    monkeypatch.setenv("SOLA_MODEL_SECRET", "private")
+    monkeypatch.setenv("SSH_AUTH_SOCK", "/fixture/agent")
+    captured = {}
+
+    async def execute(*args, **kwargs):
+        captured.update(kwargs["environment"])
+        return {
+            "timed_out": False,
+            "exit_code": 0,
+            "stdout": "ok",
+            "stdout_complete": True,
+        }
+
+    monkeypatch.setattr(service, "execute", execute)
+    asyncio.run(context(config).git("site")._run("status"))
+    assert "SOLA_MODEL_SECRET" not in captured
+    assert captured["SSH_AUTH_SOCK"] == "/fixture/agent"
+    assert captured["GIT_TERMINAL_PROMPT"] == "0"
