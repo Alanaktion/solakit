@@ -593,21 +593,23 @@ def create_app(
     def create_session(session: CreateSessionRequest, response: Response) -> dict:
         try:
             safe_id(session.id)
-            if session.archived_at is not None:
-                raise ValueError(
-                    "Use the session lifecycle endpoint to archive a session"
-                )
-            if session.default_profile not in app.state.config.profiles:
-                raise ValueError("Unknown profile")
-            if session.memory_scope == "isolated":
-                raise ValueError("Isolated memory is not implemented")
-            if session.bound_channel is not None:
-                raise ValueError("Channel bindings are controlled by configuration")
             store = app.state.store
             with store.lock:
                 try:
                     existing = store.session(session.id)
                 except FileNotFoundError:
+                    if session.archived_at is not None:
+                        raise ValueError(
+                            "Use the session lifecycle endpoint to archive a session"
+                        )
+                    if session.default_profile not in app.state.config.profiles:
+                        raise ValueError("Unknown profile")
+                    if session.memory_scope == "isolated":
+                        raise ValueError("Isolated memory is not implemented")
+                    if session.bound_channel is not None:
+                        raise ValueError(
+                            "Channel bindings are controlled by configuration"
+                        )
                     return store.create_session(session).model_dump(mode="json")
                 exclude = (
                     set()

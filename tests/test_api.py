@@ -95,3 +95,25 @@ def test_model_health_requires_operator_auth(config, auth, mock_model):
     with TestClient(create_app(config=config, model=mock_model)) as client:
         assert client.get("/health/model").status_code == 401
         assert client.get("/health/model", headers=auth).status_code == 200
+
+
+def test_existing_session_conflict_precedes_new_session_validation(config, auth):
+    with TestClient(create_app(config=config)) as client:
+        assert (
+            client.post(
+                "/api/sessions", json={"id": "existing"}, headers=auth
+            ).status_code
+            == 201
+        )
+        response = client.post(
+            "/api/sessions",
+            json={"id": "existing", "default_profile": "missing"},
+            headers=auth,
+        )
+        assert response.status_code == 409
+        response = client.post(
+            "/api/sessions",
+            json={"id": "new", "default_profile": "missing"},
+            headers=auth,
+        )
+        assert response.status_code == 422
