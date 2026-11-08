@@ -96,3 +96,30 @@ media normalization limits.
 
 Not performed: live backend probes, browser visual QA, pack-by-pack review of
 letters/blog/image/printer/calendar/journal beyond the shared support module.
+
+## Implementation follow-up — 2026-11-08
+
+The recommendations above are retained as the original audit record. Implementation
+commits, with focused regression coverage:
+
+| Item | Result | Primary commit |
+| --- | --- | --- |
+| 1 | Persisted observation failure counts and exponential backoff (5–300 s); eight consecutive failures stop polling as `status_lost`. Successful manual refresh resets retry state; the run page offers an explicit recovery action. | `e11367c`, `03bee67` |
+| 2 | Git uses an environment allowlist and the shared bounded process runner. Cleanup also bounds process waiting when an escaped child retains pipes. | `6cc1bbe`, `0e02f4e` |
+| 3 | Every feed hop connects to a vetted public IP, preserving Host and TLS SNI. Connections close between hosts and environment proxies are disabled. Cloudflare page conversion remains provider-controlled: local checks cannot pin Cloudflare DNS or its redirects. | `bcec46f` |
+| 4 | Artifact scope validation occurs inside dispatch and becomes a tool error. | `4cb5259` |
+| 5 | Per-session line counts reuse inode/size/mtime fingerprints; rotation or other file changes invalidate the cache. | `dcb027a` |
+| 6 | Every synchronous tool schema states that timeout cannot stop its worker thread and effects may continue. | `c411854` |
+| 7 | Interactive terminal failures produce labelled status notices; admission exceptions produce a generic notice. No assistant evidence is invented. Scheduled failures retain their existing gap contract. | `dac74aa`, `7fd19ea` |
+| 8 | New sessions return 201; identical existing sessions return 200; conflicting fields return 409. Omitted creation timestamps are ignored on retries. | `4d4e787` |
+| 9 | UI API errors fall back to response text, preserving status and escaped presentation. | `ea6b894` |
+| 10 | Active model probes require shared operator authentication; basic health remains public. | `eb39751` |
+| 11 | SMTP sender refusal is `rejected`, allowing an explicit retry with the same operation ID. | `cfd5cc0` |
+| 12 | Scheduled/catch-up tasks use the due instant; manual tasks use the current instant. Time placeholders use seconds. | `5e91a49` |
+| 13 | Core storage, search, and job definitions close SQLite connections deterministically while preserving transaction contexts. | `4604362` |
+| 14 | Archival validates session metadata before parsing importer fields, preserving storage corruption reporting. | `ed3e8a1` |
+
+Validation: full core/pack pytest suite, focused regressions, Ruff lint/format,
+all-package source/wheel builds, and packaged recovery-template checks. Offline
+`sola check` passes with operator environment loaded; the existing front-page
+size warning remains. No live integration probes or browser visual QA performed.
