@@ -105,6 +105,8 @@ class Run(BaseModel):
     steps: int = 0
     context_skipped_messages: int = 0
     memory_status: str = "disabled"
+    memory_observation_failures: int = 0
+    memory_next_observation: datetime | None = None
     recall: str | None = None
     recall_status: str = "not_recorded"
     memory_commit: dict[str, Any] | None = None

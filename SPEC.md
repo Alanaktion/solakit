@@ -1147,7 +1147,10 @@ never interrupts a tool-call/result group and no oversized request is sent silen
 A bounded background observer polls acknowledged extraction and persists pending,
 completed, failed, cancelled or status-unavailable observations; it never replays
 writes. Each pass stops at the first unavailable status and visits previously
-unavailable runs last, so one unobservable task cannot starve the others. `POST /api/runs/{id}/memory/refresh` also polls explicitly. Observation
+unavailable runs last, so one unobservable task cannot starve the others. Failed
+observations back off from 5 seconds to 5 minutes; after eight consecutive failures,
+`status_lost` stops automatic polling. Explicit manual refresh remains available and
+a successful observation resets the failure count. `POST /api/runs/{id}/memory/refresh` also polls explicitly. Observation
 updates patch only their own fields so delivery and extraction cannot overwrite
 one another's state. `POST /api/memory/probe` / `sola memory-test --fact ... --query ...
 --expected ...` deliberately create a shared scratch session, wait for extraction,

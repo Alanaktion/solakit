@@ -333,3 +333,41 @@ def test_memory_tool_arguments_preserve_nested_values_and_invalid_evidence(
     assert part["tool_input"] == expected
     assert part["tool_output"] == "complete output"
     assert json.dumps(messages, ensure_ascii=False) == before
+
+
+def test_observer_backoff_and_manual_recovery(config, monkeypatch):
+    from solakit.core import memory_ops
+    from solakit.core.schemas import Origin, Run
+
+    execution = setup(config, lambda request: None)
+    run = Run(
+        session="s",
+        profile="interactive",
+        origin=Origin(),
+        status="completed",
+        memory_status="accepted",
+    )
+    execution.store.save_run(run)
+    attempts = []
+
+    async def unavailable(*args, **kwargs):
+        attempts.append(1)
+        raise MemoryUnavailable("unknown task")
+
+    monkeypatch.setattr(memory_ops, "refresh_run", unavailable)
+
+    async def exercise():
+        await memory_ops.refresh_pending(execution)
+        await memory_ops.refresh_pending(execution)
+        assert len(attempts) == 1
+        for _ in range(7):
+            execution.store.update_run(run.id, {"memory_next_observation": None})
+            await memory_ops.refresh_pending(execution)
+        record = execution.store.run(run.id)
+        assert record["memory_status"] == "status_lost"
+        assert record["memory_observation_failures"] == 8
+        await memory_ops.refresh_pending(execution)
+        assert len(attempts) == 8
+        await execution.close()
+
+    asyncio.run(exercise())

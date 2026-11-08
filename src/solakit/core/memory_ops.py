@@ -1,6 +1,7 @@
 """Explicit operator operations: extraction inspection and scratch live verification."""
 
 import asyncio
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 from solakit.core.io import durable
@@ -24,14 +25,21 @@ async def refresh_run(execution: Execution, run_id: str, *, wait_s: float = 0) -
     run.memory_status = result["status"]
     run.memory_commit = result
     if (
-        record["memory_status"] == run.memory_status
+        not record.get("memory_observation_failures")
+        and not record.get("memory_next_observation")
+        and record["memory_status"] == run.memory_status
         and record.get("memory_commit") == result
     ):
         return run
     return await durable(
         execution.store.update_run,
         run_id,
-        {"memory_status": run.memory_status, "memory_commit": result},
+        {
+            "memory_status": run.memory_status,
+            "memory_commit": result,
+            "memory_observation_failures": 0,
+            "memory_next_observation": None,
+        },
     )
 
 
@@ -72,17 +80,29 @@ async def probe(execution: Execution, fact: str, query: str, expected: str) -> d
 async def refresh_pending(execution: Execution):
     """Bounded read-only polling; never retries message appends or commits."""
     for record in await durable(execution.store.pending_memory):
+        due = record.get("memory_next_observation")
+        if due and datetime.fromisoformat(due) > datetime.now(UTC):
+            continue
         try:
             await refresh_run(execution, record["id"])
         except StorageCorruption:
             continue  # Storage health reports the damaged evidence; never rewrite it.
         except MemoryUnavailable:
-            if record["memory_status"] != "status_unavailable":
-                await durable(
-                    execution.store.update_run,
-                    record["id"],
-                    {"memory_status": "status_unavailable"},
-                )
+            failures = record.get("memory_observation_failures", 0) + 1
+            await durable(
+                execution.store.update_run,
+                record["id"],
+                {
+                    "memory_status": "status_lost"
+                    if failures >= 8
+                    else "status_unavailable",
+                    "memory_observation_failures": failures,
+                    "memory_next_observation": None
+                    if failures >= 8
+                    else datetime.now(UTC)
+                    + timedelta(seconds=min(300, 5 * 2 ** (failures - 1))),
+                },
+            )
             break  # One unavailable endpoint should not create a retry storm.
 
 
