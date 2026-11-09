@@ -201,3 +201,22 @@ for validation, examples and run inspection.
 Task `{date}` and `{time}` use the scheduled due instant for scheduled and catch-up
 runs, and the current tick instant for manual runs, in the job timezone. `{time}`
 is rendered at second precision.
+
+## Structured outputs and chaining
+
+A job may set `output_schema` (a JSON Schema subset: `type`, `properties`,
+`required`, `items`, `enum`, `additionalProperties: false`; at most 8 KB). Its final
+answer must then be only that JSON (a single fenced json block is accepted). An
+invalid answer gets up to two request-only runtime notices naming the problems;
+after that the run ends `failed` ("Structured output did not match the job
+schema …"), never with an invented reply. The validated value is stored as the
+run's `structured_output`.
+
+An optional `render` template (sandboxed Jinja, schema fields as variables plus
+`data`) turns the value into `rendered_output`, which delivery sends instead of
+the model's text: the model fills facts, code owns layout.
+
+`then = "<job id>"` queues another job after a successful run (poll → summarize →
+notify). Chains may not form a cycle; a missing, disabled or busy follow-up is
+logged and skipped. `sola doctor` reports whether the server also honours
+`response_format`, but jobs do not depend on it.

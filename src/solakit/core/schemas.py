@@ -115,6 +115,10 @@ class Run(BaseModel):
     completed_via_wrapup: bool = False
     aging: list[dict[str, Any]] = Field(default_factory=list)
     hint: str | None = None
+    output_schema: dict[str, Any] | None = None
+    output_render: str | None = None
+    structured_output: Any = None
+    rendered_output: str | None = None
     retries: list[dict[str, Any]] = Field(default_factory=list)
     reasoning_steps: int = 0
     tool_catalog_sha256: str | None = None

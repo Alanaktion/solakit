@@ -274,6 +274,47 @@ class Doctor:
             "accepted (servers rarely echo values; acceptance is not proof of use)",
         )
 
+    async def structured_output(self) -> Probe:
+        schema = {
+            "type": "object",
+            "properties": {"city": {"type": "string"}, "count": {"type": "integer"}},
+            "required": ["city", "count"],
+        }
+        request = self.base_request(
+            [{"role": "user", "content": "Give city=Paris and count=3 as JSON."}],
+            max_tokens=256,
+            response_format={
+                "type": "json_schema",
+                "json_schema": {"name": "probe", "schema": schema},
+            },
+        )
+        try:
+            data, _ = await self.post(request)
+        except httpx.HTTPStatusError as exc:
+            return Probe(
+                "structured output",
+                WARN,
+                f"response_format rejected (HTTP {exc.response.status_code})",
+                "jobs use validate-and-retry for output_schema; no action needed",
+            )
+        except httpx.HTTPError as exc:
+            return Probe("structured output", FAIL, type(exc).__name__)
+        from solakit.core.structured import errors, extract
+
+        try:
+            value = extract(data["choices"][0]["message"].get("content") or "")
+            problems = errors(schema, value)
+        except ValueError:
+            problems = ["not JSON"]
+        if problems:
+            return Probe(
+                "structured output",
+                WARN,
+                "response_format accepted but reply invalid: " + "; ".join(problems),
+                "jobs use validate-and-retry for output_schema",
+            )
+        return Probe("structured output", PASS, "response_format json_schema honored")
+
     async def thinking(self) -> Probe:
         results = {}
         for enabled in (True, False):
@@ -538,6 +579,7 @@ async def run_doctor(
             return probes
         for name in ("streaming", "tool_round_trip", "argument_fidelity", "sampling"):
             probes.append(await getattr(doctor, name)())
+        probes.append(await doctor.structured_output())
         probes.append(await doctor.thinking())
         probes.append(await doctor.context_window())
         if not quick:

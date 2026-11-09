@@ -133,3 +133,12 @@ profiles can use them.
 true (atomic replace, mode preserved). `files.edit` prefers an exact unique match;
 otherwise it matches whole lines ignoring trailing whitespace and CRLF/LF
 differences, keeps the file's line endings, and reports the replaced line range.
+
+## Web passages
+
+`web.get_page(url, query=...)` returns the top passages for the question, ranked
+locally and deterministically (BM25 over ~800-character paragraph chunks), with
+their character offsets, instead of the first 16k characters; omit `query` for
+ordinary paging. `web.search(query, count, fetch_top=0..3)` attaches up to two
+short extracts to each of the top results in one call, using the same SSRF and
+redirect guards; a failed page fetch is reported per result.

@@ -317,6 +317,8 @@ class Jobs:
                 tool_resident=job.tool_resident,
                 origin=Origin(channel="job", job=job.id),
                 playbook=job.playbook,
+                output_schema=job.output_schema,
+                output_render=job.render,
             )
             admitted.set_result(pending.run.model_dump(mode="json"))
             run = await asyncio.shield(pending.future)
@@ -332,6 +334,8 @@ class Jobs:
                 delivery = Delivery(to=job.bind_session)
             if delivery is not None:
                 await self.channels.deliver(run, delivery)
+            if run.status == RunStatus.completed and job.then:
+                await self._chain(job)
             return run
         finally:
             if not admitted.done():
@@ -343,6 +347,15 @@ class Jobs:
                 else:
                     state.last_status = "failed"
                 await self._save(state)
+
+    async def _chain(self, job):
+        """Queue the follow-up job once; a missing/disabled/busy target is logged."""
+        try:
+            await self.trigger(job.then)
+        except (KeyError, ValueError, RuntimeError) as exc:
+            logging.getLogger(__name__).warning(
+                "Job %s: follow-up %s not started: %s", job.id, job.then, exc
+            )
 
     async def _accept(self, job_id, authorize=None):
         async with self.lock:
@@ -464,6 +477,14 @@ class Jobs:
                 raise JobToolsError(f"Job tools resident selection: {exc}") from exc
         if job.profile == "maintenance":
             raise ValueError("Maintenance cannot be scheduled")
+        if job.then is not None:
+            seen, current = {job.id}, job.then
+            while current is not None:
+                if current in seen:
+                    raise ValueError("Job then-chain forms a cycle")
+                seen.add(current)
+                following = self.jobs.get(current)
+                current = following.then if following else None
         if job.playbook is not None:
             from solakit.core import playbooks
 

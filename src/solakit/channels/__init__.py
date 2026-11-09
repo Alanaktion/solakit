@@ -234,7 +234,13 @@ class Channels:
                 ]
                 if not finals:
                     raise ValueError("No stored final message to deliver")
-                outbound = Outbound(finals[-1].get("content") or "")
+                # A job's rendered structured output replaces free text: the
+                # model filled validated facts, code owns the layout.
+                outbound = Outbound(
+                    run.rendered_output
+                    if run.rendered_output is not None
+                    else finals[-1].get("content") or ""
+                )
                 if outbound.text.strip() == "[SILENT]":
                     run.delivery_status = "silent"
                     await durable(

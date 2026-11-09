@@ -616,3 +616,12 @@ effects, resources and filesystem roots per profile for access review before a
 restart. Unknown configuration keys, tool names and profile names suggest the
 closest valid spelling.
 
+## Session notes
+
+Load `notes` and grant `notes.*` to let the model keep small facts for one
+conversation ("the repo path is X", "prefers UTC"): `notes.set(key, value)`
+(`null` deletes) and `notes.list()`. Notes are append-only evidence in
+`sessions/<id>.notes.jsonl` (latest value per key, at most 50), appear in each
+turn block (newest first, 2,000-character cap), survive compaction and archival,
+and are never promoted to OpenViking. `GET /api/sessions/{id}/notes` shows them.
+

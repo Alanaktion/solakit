@@ -385,6 +385,12 @@ class Job(StrictModel):
     tool_resident: list[str] | None = None
     task: str
     playbook: str | None = Field(default=None, pattern=r"^[a-z0-9][a-z0-9_-]{0,63}$")
+    # Structured final answer: JSON validated against this schema (2 retries),
+    # optionally rendered by a sandboxed Jinja template for delivery.
+    output_schema: dict[str, Any] | None = None
+    render: str | None = None
+    # Trigger this job after a successful run (no cycles).
+    then: str | None = Field(default=None, pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")
     bind_session: str
     sub_session: bool = False
     deliver: Delivery | None = None
@@ -428,6 +434,17 @@ class Job(StrictModel):
             self.run_at = instant.astimezone(UTC).isoformat()
             if self.catch_up:
                 raise ValueError("One-time jobs catch up automatically; omit catch_up")
+        if self.output_schema is not None or self.render is not None:
+            from solakit.core.structured import check_render, check_schema
+
+            if self.output_schema is not None:
+                check_schema(self.output_schema)
+            if self.render is not None:
+                if self.output_schema is None:
+                    raise ValueError("render requires output_schema")
+                check_render(self.render)
+        if self.then is not None and self.then == self.id:
+            raise ValueError("then must name another job")
         if self.sub_session and self.bind_session == "ephemeral":
             raise ValueError("Sub-sessions require a parent session or channel")
         if self.catch_up and not self.polling:

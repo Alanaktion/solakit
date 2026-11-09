@@ -111,3 +111,14 @@ cancellation during durable child admission and serialization with normal turns.
 These are automated runtime checks, not verification against a live model or
 external worker services. No live operator profiles or prompt fragments were
 changed by implementation.
+
+## Map over items
+
+`delegate.map(task_template, items, profile=None)` runs one private child per item
+(at most 8), serially in the current inference slot, with `{item}` replaced in the
+brief, and returns `{"results": [{item, status, report, session_id}]}` in order.
+The whole map shares `delegation.timeout_s`; items past the deadline report
+`not_started`. Use it to read several documents or search results without loading
+them into the parent conversation. A dedicated read-only `worker` profile with
+`thinking = "off"` and a small `max_steps` suits this (see the
+`qwen3-35b-a3b-omlx` preset).

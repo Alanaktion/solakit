@@ -92,6 +92,8 @@ class Execution:
         tool_disclosure: str = "inherit",
         tool_resident: list[str] | None = None,
         playbook: str | None = None,
+        output_schema: dict | None = None,
+        output_render: str | None = None,
     ) -> Pending:
         # Admission (durable run + queue ownership) is indivisible even if an
         # asynchronous HTTP client disconnects while the run record is written.
@@ -107,6 +109,8 @@ class Execution:
                 tool_disclosure=tool_disclosure,
                 tool_resident=tool_resident,
                 playbook=playbook,
+                output_schema=output_schema,
+                output_render=output_render,
             )
         )
         try:
@@ -128,6 +132,8 @@ class Execution:
         tool_disclosure: str = "inherit",
         tool_resident: list[str] | None = None,
         playbook: str | None = None,
+        output_schema: dict | None = None,
+        output_render: str | None = None,
         nested_parent: Pending | None = None,
         nested_task: asyncio.Task | None = None,
     ) -> Pending:
@@ -178,6 +184,8 @@ class Execution:
                 tool_view=view.metadata(),
                 origin=origin or Origin(),
                 playbook=playbook,
+                output_schema=output_schema,
+                output_render=output_render,
             )
             await durable(self.store.save_run, run)
             pending = Pending(run, text, asyncio.get_running_loop().create_future())
@@ -628,6 +636,7 @@ class Execution:
         outcomes: set = set()
         no_progress = 0
         reminded = False
+        structured_retries = 0
 
         async def inject(kind: str, text: str, *, as_message: bool = False) -> None:
             """Request-only runtime notice; recorded as run evidence, never as a
@@ -860,6 +869,46 @@ class Execution:
                     )
                 return
             calls = assistant.tool_calls or []
+            if not calls and run.output_schema is not None:
+                from solakit.core import structured
+
+                try:
+                    value = structured.extract(assistant.content or "")
+                    problems = structured.errors(run.output_schema, value)
+                except ValueError:
+                    value, problems = None, ["reply is not valid JSON"]
+                if not problems:
+                    run.structured_output = value
+                    if run.output_render:
+                        try:
+                            run.rendered_output = structured.render(
+                                run.output_render, value
+                            )
+                        except Exception:
+                            run.status = RunStatus.failed
+                            run.error = "Structured output could not be rendered"
+                            return
+                elif structured_retries < 2 and work_steps + 1 < cfg.max_steps:
+                    structured_retries += 1
+                    await inject(
+                        "structured_output",
+                        "Reply with only a JSON value matching this schema: "
+                        + json.dumps(run.output_schema)
+                        + "\nProblems: "
+                        + "; ".join(problems[:5]),
+                        as_message=True,
+                    )
+                    work_steps += 1
+                    step += 1
+                    run.tool_view["work_steps"] = work_steps
+                    continue
+                else:
+                    run.status = RunStatus.failed
+                    run.error = (
+                        "Structured output did not match the job schema: "
+                        + "; ".join(problems[:3])
+                    )[:300]
+                    return
             if not calls:
                 if cfg.plan_reminder and not reminded:
                     open_items = [
