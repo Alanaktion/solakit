@@ -316,6 +316,7 @@ class Jobs:
                 tool_disclosure=job.tool_disclosure,
                 tool_resident=job.tool_resident,
                 origin=Origin(channel="job", job=job.id),
+                playbook=job.playbook,
             )
             admitted.set_result(pending.run.model_dump(mode="json"))
             run = await asyncio.shield(pending.future)
@@ -441,7 +442,9 @@ class Jobs:
                 expanded = self.execution.registry.expand_grants(job.tools, job.profile)
                 granted = set(self.execution.registry.effective_tools(job.profile))
                 unavailable = {
-                    entry for entry in job.tools if "*" not in entry
+                    entry
+                    for entry in job.tools
+                    if "*" not in entry and not entry.startswith("@")
                 } - granted
                 if unavailable:
                     raise ValueError(", ".join(sorted(unavailable)))
@@ -461,6 +464,13 @@ class Jobs:
                 raise JobToolsError(f"Job tools resident selection: {exc}") from exc
         if job.profile == "maintenance":
             raise ValueError("Maintenance cannot be scheduled")
+        if job.playbook is not None:
+            from solakit.core import playbooks
+
+            try:
+                playbooks.load(self.config, job.playbook)
+            except playbooks.PlaybookError as exc:
+                raise ValueError(f"Job playbook: {exc}") from exc
         if (
             job.deliver
             and job.deliver.mode != "silent"

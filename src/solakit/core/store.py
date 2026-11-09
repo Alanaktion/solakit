@@ -1068,6 +1068,8 @@ class Store:
         record["memory_notes"] = self.memory_notes(run_id)
         record["tools"] = self._read(self._path("runs", run_id, ".tools.jsonl"))
         record["reasoning"] = self.reasoning(run_id)
+        record["plan"] = plan_state(self.plan_events(run_id))
+        record["injection_texts"] = self.injections(run_id)
         record["deliveries"] = self.delivery_events(run_id)
         record["diagnostics"] = self._read(
             self._path("runs", run_id, ".diagnostics.jsonl")
@@ -1223,6 +1225,20 @@ class Store:
             self._path("channel-posts", key, ".jsonl"), self.redactor.redact(record)
         )
 
+    def log_plan(self, run_id: str, record: dict) -> None:
+        # Append-only, model-authored checklist events for one run.
+        self._append(self._path("runs", run_id, ".plan.jsonl"), record)
+
+    def plan_events(self, run_id: str) -> list[dict]:
+        return self._read(self._path("runs", run_id, ".plan.jsonl"))
+
+    def log_injection(self, run_id: str, record: dict) -> None:
+        # Request-time runtime notices: exact text, never transcript messages.
+        self._append(self._path("runs", run_id, ".injections.jsonl"), record)
+
+    def injections(self, run_id: str) -> list[dict]:
+        return self._read(self._path("runs", run_id, ".injections.jsonl"))
+
     def log_reasoning(self, run_id: str, record: dict) -> None:
         # Model reasoning is run evidence only: never transcript, never resent.
         self._append(
@@ -1285,3 +1301,20 @@ class Store:
         with self.lock, closing(sqlite3.connect(self.root / "app.db")) as db, db:
             rows = db.execute(f"SELECT payload FROM {kind} ORDER BY rowid").fetchall()
         return [json.loads(row[0]) for row in rows]
+
+
+def plan_state(events: list[dict]) -> list[dict]:
+    """Fold append-only plan events into the current checklist."""
+    items: list[dict] = []
+    for event in events:
+        if event.get("op") == "set":
+            items = [
+                {"id": index + 1, "text": text, "status": "todo", "reason": None}
+                for index, text in enumerate(event.get("items", []))
+            ]
+        elif event.get("op") == "update":
+            for item in items:
+                if item["id"] == event.get("id"):
+                    item["status"] = event.get("status", item["status"])
+                    item["reason"] = event.get("reason")
+    return items

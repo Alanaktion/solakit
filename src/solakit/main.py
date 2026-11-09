@@ -537,6 +537,31 @@ def create_app(
         }
         return app.state.redactor.redact(catalog)
 
+    @api.get("/playbooks")
+    async def list_playbooks() -> list[dict]:
+        from solakit.core import playbooks
+
+        cfg = app.state.config
+        jobs = [j for j in app.state.jobs.jobs.values()]
+        result = []
+        for name in playbooks.available(cfg):
+            try:
+                item = playbooks.load(cfg, name)
+                entry = {
+                    "name": name,
+                    "summary": item.summary,
+                    "tools": list(item.tools),
+                    "error": None,
+                }
+            except playbooks.PlaybookError as exc:
+                entry = {"name": name, "summary": "", "tools": [], "error": str(exc)}
+            entry["profiles"] = sorted(
+                p for p, c in cfg.profiles.items() if name in c.playbooks
+            )
+            entry["jobs"] = sorted(j.id for j in jobs if j.playbook == name)
+            result.append(entry)
+        return result
+
     @api.get("/profiles")
     async def profiles() -> list[str]:
         return sorted(app.state.config.profiles)

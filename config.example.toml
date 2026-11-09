@@ -108,6 +108,13 @@ write = "none"
 effects = []
 resources = []
 
+# Workflow guidance (SPEC §5.3–5.4); load "plan"/"playbook" modules to grant tools.
+# [profiles.interactive] could also set:
+# playbooks = ["triage-inbox"]  # fragments/playbooks/triage-inbox.md
+# step_notice_at = 3            # "k steps left" notice near max_steps
+# wrapup = "status"             # one answer-only completion after max_steps
+# plan_reminder = true          # nudge once when plan items remain open
+
 [profiles.interactive.model]
 # thinking = "auto" # "off" | "on" | "auto"
 # max_tokens = 8192

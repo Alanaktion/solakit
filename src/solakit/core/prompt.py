@@ -26,6 +26,8 @@ class PromptInput:
     timezone: str
     tool_index: str = ""
     layout: str = "stable"
+    playbook_index: str = ""
+    playbook: str = ""
 
 
 class AssembledPrompt(str):
@@ -62,6 +64,10 @@ def build_prompt(parts: PromptInput) -> str:
     fragments.append(("profile", parts.profile_fragment))
     if parts.tool_index:
         fragments.append(("tool_index", parts.tool_index))
+    if parts.playbook_index:
+        fragments.append(("playbooks", parts.playbook_index))
+    if parts.playbook and parts.layout == "legacy":
+        fragments.append(("playbook", parts.playbook))
     if parts.layout == "legacy":
         local = parts.at.astimezone(ZoneInfo(parts.timezone))
         run = (
@@ -98,6 +104,8 @@ def build_turn(parts: PromptInput) -> str | None:
             "",
             f"{parts.recall_header}\n<recall>\n{parts.recall}\n</recall>",
         ]
+    if parts.playbook:
+        lines += ["", parts.playbook]
     lines.append("</turn>")
     return "\n".join(lines)
 
@@ -111,8 +119,11 @@ def prompt_input(
     at: datetime,
     recall: str | None = None,
     tool_index: str = "",
+    playbook: str | None = None,
 ) -> PromptInput:
     """Snapshot current files, preserving line endings and trailing whitespace."""
+    from solakit.core import playbooks
+
     if profile not in config.profiles:
         raise ValueError("unknown profile")
     safe_id(profile)
@@ -135,6 +146,8 @@ def prompt_input(
         at=at,
         timezone=config.timezone,
         layout=config.profiles[profile].prompt_layout,
+        playbook_index=playbooks.index_text(config, config.profiles[profile].playbooks),
+        playbook=playbooks.load(config, playbook).text() if playbook else "",
     )
 
 
@@ -185,6 +198,14 @@ def inspection(
 
 def validate_prompt_files(config: Config) -> None:
     """Fail startup on absent/unreadable required UTF-8 inputs; never invent text."""
+    from solakit.core import playbooks
+
+    for profile in config.profiles.values():
+        for name in profile.playbooks:
+            try:
+                playbooks.load(config, name)
+            except playbooks.PlaybookError as exc:
+                raise ValueError(str(exc)) from exc
     required = [config.paths.soul]
     for profile in config.profiles:
         safe_id(profile)

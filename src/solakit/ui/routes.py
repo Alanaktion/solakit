@@ -1213,10 +1213,11 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
         )
 
     async def operations_page(request, error=None, status=200):
-        jobs, channels, state = await asyncio.gather(
+        jobs, channels, state, playbooks = await asyncio.gather(
             api(request, "GET", "/api/jobs"),
             api(request, "GET", "/api/channels"),
             health(request),
+            api(request, "GET", "/api/playbooks"),
         )
         return render(
             request,
@@ -1225,6 +1226,7 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
                 "jobs": jobs,
                 "channels": channels,
                 "health": state,
+                "playbooks": playbooks,
                 "error": error,
             },
             status,

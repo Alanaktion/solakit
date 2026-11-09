@@ -48,5 +48,15 @@
   </tr>{% else %}<tr><td colspan="4" class="operations-empty"><h3>No channels configured</h3><p>Channels are optional. Configure an adapter to connect an external conversation.</p></td></tr>{% endfor %}
   </tbody></table></div>
 </section>
+<section class="operations-panel panel" aria-labelledby="playbooks-heading">
+  <header class="operations-section-heading"><div><h2 id="playbooks-heading">Playbooks <span class="count-label">{{ playbooks|length }}</span></h2><p class="muted">Operator procedures in <code>fragments/playbooks/</code>. Profiles index them; the model loads full text on demand. Edit them as files.</p></div></header>
+  <div class="table-scroll"><table class="data-table operations-table"><thead><tr><th scope="col">Playbook</th><th scope="col">Suggested tools</th><th scope="col">Used by</th></tr></thead><tbody>
+  {% for book in playbooks %}<tr>
+    <td data-label="Playbook"><strong class="operation-name">{{ book.name }}</strong><div class="operation-meta">{{ book.error or book.summary }}</div></td>
+    <td data-label="Suggested tools"><div class="operation-tags">{% for name in book.tools %}<span class="subtle-tag">{{ name }}</span>{% endfor %}</div></td>
+    <td data-label="Used by"><div class="operation-tags">{% for name in book.profiles %}<span class="profile-tag">{{ name }}</span>{% endfor %}{% for name in book.jobs %}<span class="subtle-tag">job {{ name }}</span>{% endfor %}{% if not book.profiles and not book.jobs %}<span class="operation-meta">Unused</span>{% endif %}</div></td>
+  </tr>{% else %}<tr><td colspan="3" class="operations-empty"><h3>No playbooks</h3><p>Add Markdown files with front matter under fragments/playbooks and list them in a profile's playbooks.</p></td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
 </div>
 {% endblock %}

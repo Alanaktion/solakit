@@ -315,11 +315,49 @@ cron runs and deliveries already interleaved by the session router
 the only place the server ever summarises her, and it happens at a
 recorded boundary in the transcript, never silently mid-run.
 
-### 5.3 Skills (deferred, format reserved)
+### 5.3 Playbooks (the reserved "skills", on demand)
 
-A profile fragment may name skill files (`skills/<name>.md`); the builder
-inlines named files after the profile fragment. No skill catalogue in the
-prompt, no discovery mechanism in the MVP — naming is explicit, in a file.
+A playbook is an operator-owned Markdown file `fragments/playbooks/<name>.md` with
+front matter `name` (matching the file), a one-line `summary` (≤ 100 chars) and an
+optional advisory `tools` list, followed by a short procedure (≤ 8000 chars).
+A profile's `playbooks = [...]` adds a stable `playbooks` fragment after the tool
+index: one `- name — summary` line each. The full text enters context only through
+the built-in `playbook.load(name)` tool (module `playbook`; profile-listed names
+only), so it is ordinary tool-result evidence. A job's `playbook` field injects the
+text up front in the run's turn block (legacy layout: a `playbook` system
+fragment). Playbooks are data, not authority: `tools` never widens grants and
+`sola check` warns when a playbook names ungranted tools; missing or invalid
+playbooks are startup errors. The Operations page lists playbooks and which
+profiles/jobs use them; editing stays a file edit.
+
+### 5.4 Workflow guidance (opt-in per profile)
+
+- **Plan tool** (module `plan`): `plan.set(items)`, `plan.update(id, status,
+  reason)`, `plan.show()`; statuses `todo|doing|done|skipped` (skips need a reason).
+  Events are append-only in `runs/<id>.plan.jsonl`; each call returns the whole
+  current list. Child runs have their own plan. `plan_reminder = true` sends one
+  request-only reminder when the model answers with open items.
+- **Step awareness**: `step_notice_at = N` appends `[Runtime: k step(s) left …]` to
+  the latest tool result in the request when `k ≤ N`, and a no-progress notice after
+  two steps whose results were all seen before.
+- **Wrap-up**: `wrapup = "status"|"answer"` allows one extra completion with
+  `tool_choice: "none"` (tools still sent, so the cached prefix holds) after
+  `max_steps`. A non-empty answer is appended and `completed_via_wrapup` is set;
+  status stays `budget_exceeded` unless `wrapup = "answer"`.
+- **Repeat detection** (always): the third identical call (same tool, canonical
+  arguments and outcome) gets `Note: this exact call has run N times …` and counts
+  in `repeated_calls`; with `repair_ceiling` it is also a repair-class event.
+
+Runtime notices are request-only: they are never stored as transcript messages
+attributed to the user, assistant or a tool. Each is recorded in run
+`injections: [{step, kind, text_sha256}]` with the text in
+`runs/<id>.injections.jsonl`. Message-style notices use a user-role
+`<runtime-notice>` block (chat templates may reject mid-conversation system
+messages).
+
+`sola init` (and `src/solakit/scaffold/`) ship templates: a SOUL skeleton, a
+small-model `profiles/interactive.md` and a sample playbook. They are templates,
+never defaults; the runtime reads only the operator's live files.
 
 ## 6. Channels and pinned sessions
 

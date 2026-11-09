@@ -179,8 +179,14 @@ def main() -> None:
 
         for provider in prepared.registry.distributions:
             print("Tool module " + description(provider))
+        from solakit.core import playbooks
         from solakit.jobs.definitions import inspect_definitions
 
+        for warning in playbooks.validate(
+            prepared.config,
+            {p: prepared.registry.tool_names(p) for p in prepared.config.profiles},
+        ):
+            print("Warning: " + warning)
         for name in prepared.config.profiles:
             print(prepared.registry.summary_access(name))
             diagnostics = prepared.registry.view(name).diagnostics(

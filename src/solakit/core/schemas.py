@@ -106,6 +106,11 @@ class Run(BaseModel):
     prompt_sha256: str | None = None
     turn_context_sha256: str | None = None
     request_params: dict[str, Any] | None = None
+    playbook: str | None = None
+    plan_items: int = 0
+    repeated_calls: int = 0
+    injections: list[dict[str, Any]] = Field(default_factory=list)
+    completed_via_wrapup: bool = False
     retries: list[dict[str, Any]] = Field(default_factory=list)
     reasoning_steps: int = 0
     tool_catalog_sha256: str | None = None

@@ -1,6 +1,7 @@
 """FIFO session queues feeding one bounded, cancellable execution path."""
 
 import asyncio
+import hashlib
 import json
 import logging
 import traceback
@@ -30,7 +31,7 @@ from solakit.core.schemas import (
     SessionArchived,
     now,
 )
-from solakit.core.store import Store
+from solakit.core.store import Store, plan_state
 from solakit.tools import Registry, ToolContext, render_for_model
 from solakit.tools.disclosure import DISCLOSURE_STEPS, ToolView
 
@@ -88,6 +89,7 @@ class Execution:
         tools: list[str] | None = None,
         tool_disclosure: str = "inherit",
         tool_resident: list[str] | None = None,
+        playbook: str | None = None,
     ) -> Pending:
         # Admission (durable run + queue ownership) is indivisible even if an
         # asynchronous HTTP client disconnects while the run record is written.
@@ -102,6 +104,7 @@ class Execution:
                 tools=tools,
                 tool_disclosure=tool_disclosure,
                 tool_resident=tool_resident,
+                playbook=playbook,
             )
         )
         try:
@@ -122,6 +125,7 @@ class Execution:
         tools: list[str] | None = None,
         tool_disclosure: str = "inherit",
         tool_resident: list[str] | None = None,
+        playbook: str | None = None,
         nested_parent: Pending | None = None,
         nested_task: asyncio.Task | None = None,
     ) -> Pending:
@@ -171,6 +175,7 @@ class Execution:
                 effective_tools=list(view.effective),
                 tool_view=view.metadata(),
                 origin=origin or Origin(),
+                playbook=playbook,
             )
             await durable(self.store.save_run, run)
             pending = Pending(run, text, asyncio.get_running_loop().create_future())
@@ -460,6 +465,7 @@ class Execution:
                 at=now(),
                 recall=recall,
                 tool_index=pending.tool_view.index_text,
+                playbook=run.playbook,
             )
             if history is None:
                 history = await durable(self.store.transcript, session.id)
@@ -598,6 +604,39 @@ class Execution:
 
         repairs = RepairBudget(cfg.repair_attempts, cfg.repair_ceiling)
         last_failure = None
+        repeats: dict = {}
+        outcomes: set = set()
+        no_progress = 0
+        reminded = False
+
+        async def inject(kind: str, text: str, *, as_message: bool = False) -> None:
+            """Request-only runtime notice; recorded as run evidence, never as a
+            transcript message attributed to the user, assistant or a tool."""
+            if as_message or messages[-1].get("role") != "tool":
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": f"<runtime-notice>\n{text}\n</runtime-notice>",
+                    }
+                )
+            else:
+                messages[-1] = {
+                    **messages[-1],
+                    "content": (messages[-1].get("content") or "") + "\n\n" + text,
+                }
+            run.injections.append(
+                {
+                    "step": step + 1,
+                    "kind": kind,
+                    "text_sha256": hashlib.sha256(text.encode()).hexdigest(),
+                }
+            )
+            await durable(
+                self.store.log_injection,
+                run.id,
+                {"step": step + 1, "kind": kind, "text": text},
+            )
+
         usage_complete = True
         # Assistant messages of this run in the active transcript: the streaming
         # preview baseline. Tracked in memory; recounted only after a rotation.
@@ -800,11 +839,34 @@ class Execution:
                 return
             calls = assistant.tool_calls or []
             if not calls:
+                if cfg.plan_reminder and not reminded:
+                    open_items = [
+                        item["text"]
+                        for item in plan_state(
+                            await durable(self.store.plan_events, run.id)
+                        )
+                        if item["status"] in ("todo", "doing")
+                    ]
+                    if open_items and work_steps + 1 < cfg.max_steps:
+                        reminded = True
+                        await inject(
+                            "plan_reminder",
+                            "You have unfinished plan items: "
+                            + "; ".join(open_items[:5])
+                            + ". Finish them, or mark them skipped with a reason, "
+                            "then answer.",
+                            as_message=True,
+                        )
+                        work_steps += 1
+                        step += 1
+                        run.tool_view["work_steps"] = work_steps
+                        continue
                 run.tool_view["work_steps"] = work_steps + 1
                 run.status = RunStatus.completed
                 return
             exhausted = False
             disclosure_only = view.mode == "deferred"
+            new_information = False
             for call in calls:
                 function = call["function"]
                 name = function["name"]
@@ -842,9 +904,25 @@ class Execution:
                         last_failure = key
                     else:
                         last_failure = None
+                    outcome = hashlib.sha256(result.content.encode()).hexdigest()
+                    seen = repeats.setdefault(key, {"count": 0, "outcome": None})
+                    seen["count"] = (
+                        seen["count"] + 1 if seen["outcome"] == outcome else 1
+                    )
+                    seen["outcome"] = outcome
+                    new_information |= outcome not in outcomes
+                    outcomes.add(outcome)
+                    if seen["count"] >= 3:
+                        run.repeated_calls += 1
+                        result.content += (
+                            f"\nNote: this exact call has run {seen['count']} "
+                            "times with the same outcome."
+                        )
+                        if cfg.repair_ceiling is not None:
+                            exhausted |= repairs.fail(key[0], "repeat")
                     if result.error and result.repairable:
                         escalated = True
-                        exhausted = repairs.fail(
+                        exhausted |= repairs.fail(
                             result._meta.get("name"), result._meta.get("error_class")
                         )
                     elif not result.error:
@@ -878,6 +956,61 @@ class Execution:
             if exhausted:
                 run.status = RunStatus.tool_error
                 return
+            no_progress = 0 if new_information else no_progress + 1
+            remaining = cfg.max_steps - work_steps
+            if cfg.step_notice_at and 0 < remaining <= cfg.step_notice_at:
+                await inject(
+                    "step_notice",
+                    f"[Runtime: {remaining} step(s) left. Finish soon; give the "
+                    "best answer you can.]",
+                )
+            elif cfg.step_notice_at and no_progress >= 2:
+                no_progress = 0
+                await inject(
+                    "no_progress",
+                    "[Runtime: the last two steps produced no new information. "
+                    "Change approach or finish with the best answer you can.]",
+                )
+        if cfg.wrapup != "off":
+            await inject(
+                "wrapup",
+                "The step budget is used up. Do not call tools. Give your best "
+                "final answer now from what you already have, and say what is "
+                "unfinished.",
+                as_message=True,
+            )
+            try:
+                data = await self.model.complete(
+                    messages,
+                    tools,
+                    params=self.config.model.request.wire(
+                        thinking="off" if cfg.model.thinking else None,
+                        override=cfg.model,
+                    ),
+                    max_tokens=output_tokens,
+                    tool_choice="none",
+                )
+            except ModelUnavailable:
+                # The honest outcome stands: the step budget was exceeded.
+                run.status = RunStatus.budget_exceeded
+                return
+            raw = data["choices"][0]["message"]
+            text = (raw.get("content") or "").strip()
+            if text and not raw.get("tool_calls"):
+                assistant = Message(
+                    role="assistant",
+                    content=raw.get("content"),
+                    origin=run.origin,
+                    run_id=run.id,
+                )
+                await durable(self.store.append_message, session.id, assistant)
+                run.completed_via_wrapup = True
+                if (
+                    cfg.wrapup == "answer"
+                    and data["choices"][0].get("finish_reason") != "length"
+                ):
+                    run.status = RunStatus.completed
+                    return
         run.status = RunStatus.budget_exceeded
 
     def _over_budget(self, cfg, messages, tools, output_tokens, measured) -> bool:

@@ -305,6 +305,12 @@ class Profile(StrictModel):
 
     prompt_layout: Literal["stable", "legacy"] = "stable"
     model: ProfileModel = Field(default_factory=ProfileModel)
+    # Operator playbooks indexed in this profile's prompt (fragments/playbooks).
+    playbooks: list[str] = Field(default_factory=list)
+    # Plan 6 workflow guidance; all opt-in until evaluated.
+    step_notice_at: int = Field(default=0, ge=0)
+    wrapup: Literal["off", "status", "answer"] = "off"
+    plan_reminder: bool = False
     context_tokens: int | None = Field(default=None, ge=256)
     tool_disclosure: Literal["eager", "deferred"] = "eager"
     tool_resident: list[str] = Field(default_factory=list)
@@ -363,6 +369,7 @@ class Job(StrictModel):
     tool_disclosure: Literal["inherit", "eager", "deferred"] = "inherit"
     tool_resident: list[str] | None = None
     task: str
+    playbook: str | None = Field(default=None, pattern=r"^[a-z0-9][a-z0-9_-]{0,63}$")
     bind_session: str
     sub_session: bool = False
     deliver: Delivery | None = None
