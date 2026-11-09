@@ -779,3 +779,19 @@ def test_channel_sessions_pinned_before_pagination(config, mock_model):
         assert second[0]["id"] != "pinned"
         filtered = client.get("/?q=recent")
         assert 'href="/sessions/pinned"' not in filtered.text
+
+
+def test_chat_sidebar_excludes_cron_sessions(config, mock_model):
+    app = create_app(config=config, model=mock_model)
+    with TestClient(app) as client:
+        sign_in(client)
+        app.state.store.create_session(Session(id="conversation"))
+        app.state.store.create_session(Session(id="scheduled", source="cron"))
+        for identity in ("conversation", "scheduled"):
+            page = client.get(f"/sessions/{identity}")
+            assert page.status_code == 200
+            sidebar = page.text.split('<aside class="chat-sidebar"', 1)[1].split(
+                "</aside>", 1
+            )[0]
+            assert 'href="/sessions/conversation"' in sidebar
+            assert 'href="/sessions/scheduled"' not in sidebar
