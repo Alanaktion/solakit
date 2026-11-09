@@ -98,8 +98,19 @@ def test_registry_metadata_and_grants(config):
         result = await registry.dispatch("math.eval", '{"expression":"0.1+0.2"}', ctx)
         assert not result.error
         assert json.loads(result.content)["result"] == "0.3"
-        for arguments in ('{"expression":"1", "extra":1}', '{"expression":true}'):
-            assert (await registry.dispatch("math.eval", arguments, ctx)).error
+        assert (await registry.dispatch("math.eval", '{"expression":true}', ctx)).error
+        # Read tools ignore one stray key (noted); strict profiles reject it.
+        lenient = await registry.dispatch(
+            "math.eval", '{"expression":"1", "extra":1}', ctx
+        )
+        assert not lenient.error
+        assert lenient.content.startswith("Ignored unknown argument(s): extra.")
+        ctx.config.profiles[ctx.profile].argument_mode = "strict"
+        strict = await registry.dispatch(
+            "math.eval", '{"expression":"1", "extra":1}', ctx
+        )
+        ctx.config.profiles[ctx.profile].argument_mode = "lenient"
+        assert strict.error
         assert (
             await registry.dispatch("math.eval", '{"expression":"__import__(1)"}', ctx)
         ).error

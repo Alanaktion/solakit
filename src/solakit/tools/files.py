@@ -53,7 +53,10 @@ async def write(
 ) -> ToolResult:
     """Create a UTF-8 file; never overwrite an existing file."""
     target = await ctx.fs.write(path, content)
-    return ToolResult(content=str(target), artifacts=[str(target)])
+    return ToolResult(
+        content=f"Created {target} ({len(content.encode())} bytes)",
+        artifacts=[str(target)],
+    )
 
 
 @tool(
@@ -82,7 +85,10 @@ async def edit(
 ) -> ToolResult:
     """Replace one exact nonempty match; fail on zero or multiple matches."""
     target = await ctx.fs.edit(path, old, new)
-    return ToolResult(content=str(target), artifacts=[str(target)])
+    return ToolResult(
+        content=f"Edited {target}: replaced 1 match ({len(old)} → {len(new)} chars)",
+        artifacts=[str(target)],
+    )
 
 
 @tool(
@@ -106,7 +112,10 @@ async def append(
 ) -> ToolResult:
     """Append text to an existing regular file inside profile write scopes."""
     target = await ctx.fs.append(path, content)
-    return ToolResult(content=str(target), artifacts=[str(target)])
+    return ToolResult(
+        content=f"Appended {len(content.encode())} bytes to {target}",
+        artifacts=[str(target)],
+    )
 
 
 @tool(

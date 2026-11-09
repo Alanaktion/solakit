@@ -315,6 +315,13 @@ class Profile(StrictModel):
     tool_timeout_s: float = Field(default=120, gt=0)
     tool_output_max_chars: int = Field(default=20000, ge=32)
     repair_attempts: int = Field(default=2, ge=0)
+    # None keeps the historical per-run count; a number counts repairs per
+    # tool + error class (each up to repair_attempts) under this run ceiling.
+    repair_ceiling: int | None = Field(default=None, ge=1)
+    # lenient: read tools tolerate blank args, JSON-string arrays/objects and
+    # one stray key (recorded); strict: only scalar/null/blank normalization.
+    argument_mode: Literal["lenient", "strict"] = "lenient"
+    tool_result_format: Literal["envelope", "text"] = "envelope"
 
 
 class DelegationConfig(StrictModel):

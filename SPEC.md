@@ -1502,6 +1502,44 @@ retain DST-gap/fold/naive-time/bad-date guidance and name unknown zones. Invalid
 remote URL/proxy configuration and malformed upstream payloads are expected
 errors without tool-log tracebacks.
 
+**Forgiving calls (profile `argument_mode`, default `lenient`).** Normalization
+changes representation, never meaning, and every applied rule is recorded in the
+tool log as `normalizations: [{path, kind}]`. All tools: blank arguments become `{}`
+when nothing is required (otherwise the repair names the required fields); an
+explicit `null` for a non-nullable defaulted field uses the default; numeric and
+`true`/`false` strings convert as before. Read tools (no effect, no writes, unless
+the manifest sets `lenient`) additionally parse a string that is entirely a JSON
+array/object where the schema expects one (never splitting on commas) and drop
+unknown top-level keys when the required arguments remain, prefixing the result
+with `Ignored unknown argument(s): …` and logging `ignored_args`.
+`argument_mode = "strict"` keeps only the all-tools rules.
+
+**Tool names.** Before access checks, a name that is not registered resolves to a
+unique granted tool by case-folding, separator normalization (`_ - / :` → `.`) and
+a stripped `functions.` prefix; the log records `resolved_from`. The transcript
+keeps the model's verbatim call. Still unknown is a repairable `Unknown tool` error
+with up to five close granted names and the callable tools or families; it never
+names ungranted tools. Known-but-ungranted keeps the access message.
+
+**Repair accounting.** Without `repair_ceiling` (default) more than
+`repair_attempts` repairable errors in a run ends it as `tool_error`. With a ceiling,
+each tool + error class (`arguments`, `unknown_tool`, `access`) gets
+`repair_attempts`, the run total is capped by the ceiling, and a success of the tool
+that just failed refunds one. A failure identical to the previous one (same tool,
+same canonical arguments) gains `You already tried exactly this. Change the approach
+or answer without the tool.`
+
+**Rendering (profile `tool_result_format`).** `envelope` (default) sends
+`ToolResult.model_dump_json()`. `text` sends the tool's content as-is, errors as
+`Error: …` (plus `Fix the arguments and call again.` when repairable), an
+`[incomplete]` line when a bounded source has no truncation marker, and
+`Files: …` for artifacts. Projections, truncation markers and `<external-content>`
+tags are unchanged; the transcript stores exactly what was sent.
+
+Mutating file tools confirm the effect: `Created <path> (<n> bytes)`,
+`Appended <n> bytes to <path>`, `Edited <path>: replaced 1 match (…)`. A lint
+test keeps literal `ToolError` messages non-empty and under 300 characters.
+
 GitHub PR output projects PR identity/state, author, head/base, combined status,
 first-page contexts/checks and `checks_summary` over the fetched check runs.
 Notifications project ID/unread/reason/update time, subject title/type/URL and

@@ -14,22 +14,46 @@ def _resolve(schema: dict, root: dict) -> dict:
     return schema
 
 
-def _normalize(value, schema: dict, root: dict):
+class BlankArguments(ValueError):
+    """Empty arguments for a tool that has required parameters."""
+
+
+def _note(notes, path, kind):
+    if notes is not None:
+        notes.append({"path": ".".join(map(str, path)) or "arguments", "kind": kind})
+
+
+def _normalize(value, schema: dict, root: dict, *, lenient=False, notes=None, path=()):
     schema = _resolve(schema, root)
     branches = schema.get("anyOf", [])
     if branches:
         # Normalize optional fields, but do not guess between union alternatives.
         branches = [s for s in branches if s.get("type") != "null"]
         if value is not None and len(branches) == 1:
-            return _normalize(value, branches[0], root)
+            return _normalize(
+                value, branches[0], root, lenient=lenient, notes=notes, path=path
+            )
         return value
     kind = schema.get("type")
     if isinstance(value, str):
         scalar = value.strip()
         if kind == "integer" and re.fullmatch(r"[+-]?[0-9]{1,100}", scalar):
+            _note(notes, path, "string_to_integer")
             return int(scalar)
         if kind == "boolean" and scalar.lower() in ("true", "false"):
+            _note(notes, path, "string_to_boolean")
             return scalar.lower() == "true"
+        if lenient and kind in ("array", "object") and scalar[:1] in "[{":
+            # Only a string that parses whole as the declared container.
+            try:
+                parsed = json.loads(scalar)
+            except ValueError:
+                parsed = None
+            if isinstance(parsed, list if kind == "array" else dict):
+                _note(notes, path, f"string_to_{kind}")
+                return _normalize(
+                    parsed, schema, root, lenient=lenient, notes=notes, path=path
+                )
         if (
             kind == "number"
             and len(scalar) <= 100
@@ -41,6 +65,7 @@ def _normalize(value, schema: dict, root: dict):
             # Do not turn a nonzero decimal into zero through float underflow.
             nonzero = any(c in "123456789" for c in re.split("[eE]", scalar)[0])
             if math.isfinite(number) and (number != 0 or not nonzero):
+                _note(notes, path, "string_to_number")
                 return number
     if kind == "object" and isinstance(value, dict):
         properties = schema.get("properties", {})
@@ -50,12 +75,80 @@ def _normalize(value, schema: dict, root: dict):
                 item,
                 properties.get(key, additional if isinstance(additional, dict) else {}),
                 root,
+                lenient=lenient,
+                notes=notes,
+                path=(*path, key),
             )
             for key, item in value.items()
         }
     if kind == "array" and isinstance(value, list):
-        return [_normalize(item, schema.get("items", {}), root) for item in value]
+        return [
+            _normalize(
+                item,
+                schema.get("items", {}),
+                root,
+                lenient=lenient,
+                notes=notes,
+                path=(*path, index),
+            )
+            for index, item in enumerate(value)
+        ]
     return value
+
+
+def _nullable(schema: dict, root: dict) -> bool:
+    schema = _resolve(schema, root)
+    if schema.get("type") == "null":
+        return True
+    return any(
+        _resolve(branch, root).get("type") == "null"
+        for branch in schema.get("anyOf", [])
+    )
+
+
+def prepare_arguments(
+    model: type[BaseModel], raw: str, *, lenient: bool = False
+) -> tuple[dict, list[dict], list[str]]:
+    """Parse and normalize model-supplied arguments; representation only.
+
+    Returns (validated values, normalizations applied, ignored unknown keys).
+    Every mode: blank arguments become {} when nothing is required, and an
+    explicit null for a non-nullable defaulted field means "use the default".
+    Lenient mode (read tools) also parses whole-string JSON arrays/objects and
+    drops unknown top-level keys when the remaining keys still validate."""
+    schema = model.model_json_schema()
+    required = set(schema.get("required", []))
+    properties = schema.get("properties", {})
+    notes: list[dict] = []
+    if not isinstance(raw, str) or not raw.strip():
+        if required:
+            raise BlankArguments(", ".join(sorted(required)))
+        _note(notes, (), "blank_to_empty_object")
+        parsed = {}
+    else:
+        parsed = json.loads(raw)
+    if isinstance(parsed, dict):
+        for key in [k for k, v in parsed.items() if v is None]:
+            if (
+                key in properties
+                and key not in required
+                and not _nullable(properties[key], schema)
+            ):
+                del parsed[key]
+                _note(notes, (key,), "null_to_default")
+    ignored: list[str] = []
+    additional = schema.get("additionalProperties", False)
+    if lenient and isinstance(parsed, dict) and additional is False:
+        unknown = [key for key in parsed if key not in properties]
+        if unknown and required <= (set(parsed) - set(unknown)):
+            ignored = unknown
+            parsed = {k: v for k, v in parsed.items() if k not in unknown}
+            for key in unknown:
+                _note(notes, (key,), "ignored_unknown")
+    values = model.model_validate(
+        _normalize(parsed, schema, schema, lenient=lenient, notes=notes)
+    )
+    return values.model_dump(), notes, ignored
 
 
 def validate_arguments(model: type[BaseModel], arguments) -> BaseModel:
@@ -66,7 +159,9 @@ def validate_arguments(model: type[BaseModel], arguments) -> BaseModel:
 def argument_error(model: type[BaseModel], exc: ValueError) -> str:
     """Never echo input, custom messages, error context or arbitrary map keys."""
     root = model.model_json_schema()
-    if not isinstance(exc, ValidationError):
+    if isinstance(exc, BlankArguments):
+        explanation = "arguments were empty; required: " + str(exc)
+    elif not isinstance(exc, ValidationError):
         explanation = (
             "expected a JSON object. Use double-quoted property names and "
             "strings, with no trailing commas"

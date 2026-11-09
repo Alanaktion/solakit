@@ -87,6 +87,10 @@ fragments = "fragments"
 # tool_resident = [] # Ordered, loaded/granted names; deferred initial full schemas.
 context_budget = 32000
 mid_run_compaction = false
+# Forgiving calls and repair accounting (SPEC "Tool result and error contracts").
+# argument_mode = "lenient"     # or "strict"
+# tool_result_format = "envelope" # "text": plain content, "Error: …" for errors
+# repair_ceiling = 6            # per tool+error-class repairs under a run cap
 tools = []
 read = "workspace"
 write = "none"

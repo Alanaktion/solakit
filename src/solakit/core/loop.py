@@ -31,7 +31,7 @@ from solakit.core.schemas import (
     now,
 )
 from solakit.core.store import Store
-from solakit.tools import Registry, ToolContext
+from solakit.tools import Registry, ToolContext, render_for_model
 from solakit.tools.disclosure import DISCLOSURE_STEPS, ToolView
 
 
@@ -596,7 +596,8 @@ class Execution:
                     {"step": step + 1, "activated": added}
                 )
 
-        repairs = 0
+        repairs = RepairBudget(cfg.repair_attempts, cfg.repair_ceiling)
+        last_failure = None
         usage_complete = True
         # Assistant messages of this run in the active transcript: the streaming
         # preview baseline. Tracked in memory; recounted only after a rotation.
@@ -817,8 +818,12 @@ class Execution:
                 )
                 disclosure_only = disclosure_only and discovery
                 if exhausted:
-                    content = json.dumps(
-                        {"error": True, "content": "Repair budget exhausted"}
+                    content = (
+                        "Error: Repair budget exhausted"
+                        if cfg.tool_result_format == "text"
+                        else json.dumps(
+                            {"error": True, "content": "Repair budget exhausted"}
+                        )
                     )
                 else:
                     result = await self.registry.dispatch(
@@ -827,11 +832,24 @@ class Execution:
                     for artifact in result.artifacts:
                         if artifact not in run.artifacts:
                             run.artifacts.append(artifact)
-                    content = result.model_dump_json()
+                    key = (result._meta.get("name"), result._meta.get("args_hash"))
+                    if result.error:
+                        if key == last_failure:
+                            result.content += (
+                                "\nYou already tried exactly this. Change the "
+                                "approach or answer without the tool."
+                            )
+                        last_failure = key
+                    else:
+                        last_failure = None
                     if result.error and result.repairable:
                         escalated = True
-                        repairs += 1
-                        exhausted = repairs > cfg.repair_attempts
+                        exhausted = repairs.fail(
+                            result._meta.get("name"), result._meta.get("error_class")
+                        )
+                    elif not result.error:
+                        repairs.success(result._meta.get("name"))
+                    content = render_for_model(result, cfg.tool_result_format)
                 tool_message = Message(
                     role="tool",
                     content=content,
@@ -948,6 +966,35 @@ class Execution:
             finally:
                 if self.memory:
                     await self.memory.close()
+
+
+class RepairBudget:
+    """Repairable-error accounting.
+
+    Without a ceiling (default) this is the historical rule: more than
+    ``attempts`` repairs in a run is exhaustion. With a ceiling, each tool +
+    error class gets ``attempts`` repairs, the run total is capped by the
+    ceiling, and a successful call of the tool that just failed refunds one."""
+
+    def __init__(self, attempts: int, ceiling: int | None = None):
+        self.attempts, self.ceiling = attempts, ceiling
+        self.total = 0
+        self.classes: dict[tuple, int] = {}
+        self.last_failed: str | None = None
+
+    def fail(self, tool: str | None, error_class: str | None) -> bool:
+        self.total += 1
+        if self.ceiling is None:
+            return self.total > self.attempts
+        key = (tool, error_class)
+        self.classes[key] = self.classes.get(key, 0) + 1
+        self.last_failed = tool
+        return self.classes[key] > self.attempts or self.total > self.ceiling
+
+    def success(self, tool: str | None) -> None:
+        if self.ceiling is not None and tool == self.last_failed and self.total:
+            self.total -= 1
+        self.last_failed = None
 
 
 def max_output(config: Config, profile) -> int:

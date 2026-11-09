@@ -13,13 +13,20 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, get_type_hints
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, create_model
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    PrivateAttr,
+    ValidationError,
+    create_model,
+)
 
 from solakit.core.config import EFFECTS, Config, Profile
 from solakit.core.io import durable
 from solakit.core.schemas import Session
 from solakit.core.store import Store
-from solakit.tools.arguments import argument_error, validate_arguments
+from solakit.tools.arguments import argument_error, prepare_arguments
 from solakit.tools.distributions import SYNC_HINT, identity, installed
 
 
@@ -33,6 +40,39 @@ class ToolResult(BaseModel):
     repairable: bool = False
     content_complete: bool = True
     artifacts: list[str] = Field(default_factory=list)
+    # Runtime bookkeeping (canonical name, error class, argument hash); never
+    # serialized into the model-visible envelope.
+    _meta: dict = PrivateAttr(default_factory=dict)
+
+
+def render_for_model(result: ToolResult, fmt: str = "envelope") -> str:
+    """The exact tool-message text the model sees.
+
+    ``envelope`` (default) is the historical ``model_dump_json``. ``text`` sends
+    the tool's content as-is (real newlines; projected JSON untouched), errors as
+    ``Error: …``, an ``[incomplete]`` notice when a bounded source carries no
+    truncation marker, and a trailing ``Files:`` line for artifacts."""
+    if fmt != "text":
+        return result.model_dump_json()
+    if result.error:
+        text = "Error: " + result.content
+        if result.repairable:
+            text += "\nFix the arguments and call again."
+        return text
+    text = result.content
+    if not result.content_complete and "[truncated " not in text:
+        text += "\n[incomplete]"
+    if result.artifacts:
+        text += "\nFiles: " + ", ".join(result.artifacts)
+    return text
+
+
+def _name_key(name: str) -> str:
+    key = name.casefold().strip()
+    for prefix in ("functions.", "functions:", "function."):
+        if key.startswith(prefix):
+            key = key[len(prefix) :]
+    return re.sub(r"[_\-/:\s]+", ".", key)
 
 
 def truncate_output(content: str, limit: int, *, complete: bool) -> tuple[str, int]:
@@ -118,6 +158,30 @@ class ToolContext:
         return candidate
 
 
+def error_class(exc: Exception, *, known: bool, before: bool) -> str:
+    if not known:
+        return "unknown_tool"
+    if isinstance(exc, TimeoutError):
+        return "timeout"
+    if (
+        before
+        and isinstance(exc, (ValidationError, ValueError))
+        and not isinstance(exc, ToolError)
+    ):
+        return "arguments"
+    return "access" if before else "tool"
+
+
+def _arguments_hash(arguments) -> str:
+    import hashlib
+
+    try:
+        canonical = json.dumps(json.loads(arguments), sort_keys=True)
+    except (ValueError, TypeError):
+        canonical = str(arguments)
+    return hashlib.sha256(canonical.encode()).hexdigest()[:16]
+
+
 def scope_root(scope: str, config: Config) -> Path | None:
     if scope.startswith("repo:"):
         path = config.repositories.get(scope[5:])
@@ -179,6 +243,14 @@ class Manifest:
     summary: str | None = None
     keywords: tuple[str, ...] = ()
     effect: str | None = None
+    lenient: bool | None = None
+
+    @property
+    def lenient_arguments(self) -> bool:
+        """Read tools are lenient by default; effectful/writing tools opt in."""
+        if self.lenient is not None:
+            return self.lenient
+        return self.effect is None and not self.writes
 
 
 def tool(
@@ -191,6 +263,7 @@ def tool(
     manages_timeout: bool = False,
     summary: str | None = None,
     keywords: tuple[str, ...] = (),
+    lenient: bool | None = None,
 ):
     def decorate(function: Callable) -> Callable:
         function.__sola_tool__ = Manifest(
@@ -202,6 +275,7 @@ def tool(
             summary,
             tuple(keywords),
             effect,
+            lenient,
         )
         return function
 
@@ -492,6 +566,54 @@ class Registry:
 
         return resolve(self, profile, tools, mode, resident, strict=strict)
 
+    def granted_names(self, ctx: ToolContext) -> list[str]:
+        names = [
+            n
+            for n in self.tool_names(ctx.profile)
+            if ctx.tool_allowlist is None or n in ctx.tool_allowlist
+        ]
+        if ctx.tool_view is not None and ctx.tool_view.mode == "deferred":
+            names += ["tools.search", "tools.load"]
+        return names
+
+    def resolve_name(self, name: str, ctx: ToolContext) -> tuple[str, bool]:
+        """Map a near-miss spelling to a unique granted name: (name, resolved)."""
+        if name in self.tools or name in ("tools.search", "tools.load"):
+            return name, False
+        key = _name_key(name)
+        matches = [n for n in self.granted_names(ctx) if _name_key(n) == key]
+        if not matches and "." in key:
+            stripped = key.split(".", 1)[1] if key.startswith("tools.") else None
+            if stripped:
+                matches = [
+                    n for n in self.granted_names(ctx) if _name_key(n) == stripped
+                ]
+        if len(matches) == 1:
+            return matches[0], True
+        return name, False
+
+    def unknown_tool_message(self, name: str, ctx: ToolContext) -> str:
+        import difflib
+
+        granted = self.granted_names(ctx)
+        close = difflib.get_close_matches(name, granted, n=5, cutoff=0.5)
+        if not close:
+            key = _name_key(name)
+            close = difflib.get_close_matches(
+                key, [_name_key(n) for n in granted], n=5, cutoff=0.5
+            )
+            close = [n for n in granted if _name_key(n) in close][:5]
+        families = sorted({n.split(".")[0] for n in granted})
+        message = f"Unknown tool '{name[:80]}'."
+        if close:
+            message += " Did you mean: " + ", ".join(close) + "?"
+        message += (
+            " Tools you can call: " + (", ".join(granted[:40]) or "none") + "."
+            if len(granted) <= 40
+            else " Tool families you can call: " + ", ".join(families) + "."
+        )
+        return message
+
     async def dispatch(self, name: str, arguments: str, ctx: ToolContext) -> ToolResult:
         start = time.monotonic()
         result = ToolResult(content="Tool execution failed", error=True)
@@ -500,6 +622,10 @@ class Registry:
         repairable = False
         execution_started = False
         values = None
+        requested = name
+        normalizations: list[dict] = []
+        ignored: list[str] = []
+        name, resolved = self.resolve_name(name, ctx)
         try:
             if (
                 ctx.tool_view is not None
@@ -510,6 +636,9 @@ class Registry:
 
                 result = disclose(name, arguments, ctx)
                 return result
+            if name not in self.tools:
+                repairable = True
+                raise ToolError(self.unknown_tool_message(requested, ctx))
             if ctx.tool_allowlist is not None and name not in ctx.tool_allowlist:
                 repairable = True
                 raise ToolError(
@@ -542,8 +671,13 @@ class Registry:
             cfg = self.config.profiles[ctx.profile]
             self.check_access(registered, cfg)
             repairable = True
-            parsed = json.loads(arguments)
-            values = validate_arguments(registered.arguments, parsed).model_dump()
+            values, normalizations, ignored = prepare_arguments(
+                registered.arguments,
+                arguments,
+                lenient=registered.manifest.lenient_arguments
+                and cfg.argument_mode == "lenient",
+            )
+            parsed = json.loads(arguments) if arguments.strip() else {}
             repairable = False
             timeout = min(
                 registered.manifest.timeout or cfg.tool_timeout_s, cfg.tool_timeout_s
@@ -566,6 +700,10 @@ class Registry:
                 else ToolResult(content=str(returned))
             )
             candidate.artifacts = [str(ctx.path(path)) for path in candidate.artifacts]
+            if ignored and not candidate.error:
+                candidate.content = (
+                    "Ignored unknown argument(s): " + ", ".join(ignored) + ".\n"
+                ) + candidate.content
             result = candidate
         except (ToolError, ValidationError, ValueError, TimeoutError) as exc:
             if isinstance(exc, TimeoutError):
@@ -587,6 +725,9 @@ class Registry:
                     "before retrying side effects."
                 )
             result = ToolResult(content=message, error=True, repairable=repairable)
+            result._meta["error_class"] = error_class(
+                exc, known=name in self.tools, before=not execution_started
+            )
         except Exception:
             detail = traceback.format_exc()
         finally:
@@ -597,6 +738,17 @@ class Registry:
                 result.content, limit, complete=source_complete
             )
             result.content_complete = source_complete and omitted == 0
+            result._meta.update(
+                name=name,
+                args_hash=_arguments_hash(arguments),
+            )
+            extra = {}
+            if resolved:
+                extra["resolved_from"] = requested
+            if normalizations:
+                extra["normalizations"] = normalizations
+            if ignored:
+                extra["ignored_args"] = ignored
             await durable(
                 ctx.store.log_tool,
                 ctx.run_id,
@@ -611,6 +763,7 @@ class Registry:
                     "omitted_chars_min": omitted,
                     "result": result.model_dump(),
                     "traceback": detail,
+                    **extra,
                 },
             )
         return result
