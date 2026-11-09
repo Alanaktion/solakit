@@ -1,0 +1,10 @@
+id = "long-session-followup"
+family = "long_context"
+description = "Three turns over ~40k chars of history; later-turn first-token latency shows cross-turn prefix reuse."
+filler_chars = 40000
+prompt = "Quick check: what topic did my note 3 cover?"
+followups = ["And note 4?", "Thanks. Which note mentioned the home network?"]
+tools = ["sessions.search"]
+allow_tools = ["sessions.search"]
+expect_final_contains = ["5"]
+max_steps = 3
