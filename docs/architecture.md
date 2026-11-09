@@ -14,7 +14,7 @@ channel/API/job ──► Execution.enqueue (admission: durable run, session FIF
                       → system prompt (stable) + turn block (time/origin/recall/
                         notes/job playbook) → budget check / compaction
                       ▼
-                 _loop, per step:
+                 StepLoopMixin._loop, per step:
                    request = aged(messages)            (optional tool-result aging)
                    ModelClient.complete(request, schemas, sampling/thinking params)
                      ├─ reasoning → runs/<id>.reasoning.jsonl (never resent)
@@ -49,7 +49,8 @@ channel/API/job ──► Execution.enqueue (admission: durable run, session FIF
 |---|---|
 | `src/solakit/main.py` | app factory, API routes, startup diagnostics |
 | `src/solakit/cli.py` | `sola` commands (check, doctor, eval, init, config, tools, search) |
-| `src/solakit/core/loop.py` | admission, nesting, step loop, notices, wrap-up |
+| `src/solakit/core/loop.py` | Execution facade: admission, queues, nesting, run lifecycle |
+| `src/solakit/core/step_loop.py` | per-run step loop: requests, dispatch, notices, wrap-up (mixin) |
 | `src/solakit/core/steps.py` | pure step helpers: repair budget, thinking schedule, history validity |
 | `src/solakit/core/runtime_ops.py` | archive/compact operations and memory note staging (mixin) |
 | `src/solakit/core/model.py` | pinned model client, validation, fallback hook |

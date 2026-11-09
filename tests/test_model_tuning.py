@@ -10,8 +10,8 @@ from pydantic import ValidationError
 from test_execution import model_list, setup
 
 from solakit.core.config import ProfileModel, RequestParams
-from solakit.core.loop import step_thinking
 from solakit.core.model_stream import split_think
+from solakit.core.steps import step_thinking
 from solakit.core.toolcall_fallback import parse
 from solakit.tools import ToolContext, ToolResult, tool
 

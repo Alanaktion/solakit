@@ -11,7 +11,7 @@ import pytest
 from pydantic import Field
 from test_execution import completion, model_list, setup
 
-from solakit.core.loop import RepairBudget
+from solakit.core.steps import RepairBudget
 from solakit.tools import Registry, ToolContext, ToolResult, render_for_model, tool
 
 
