@@ -2,20 +2,33 @@
 {% from "macros/icons.html" import icon %}
 {% block title %}Prompt inspector · Solakit{% endblock %}
 {% block content %}
-<section class="page-heading"><div><h1>Prompt inspector</h1><p class="intro">{% if recorded_run %}Recorded prompt and tool schemas for run {{ recorded_run }}. Current profile edits do not change this evidence.{% else %}Dry-run output from the prompt API. No model call or live memory lookup.{% endif %}</p></div></section>
-{% if not recorded_run %}<form method="get" action="/prompt" class="inspector-form panel">
-  <div><label for="inspect-profile">Profile</label><select id="inspect-profile" name="profile">{% for profile in profiles %}<option {% if profile == values.profile %}selected{% endif %}>{{ profile }}</option>{% endfor %}</select></div>
-  <div><label for="inspect-session">Session</label><input id="inspect-session" name="session" list="session-options" value="{{ values.session }}" maxlength="128" required><datalist id="session-options">{% for session in sessions %}<option value="{{ session.id }}">{% endfor %}</datalist></div>
-  <div><label for="inspect-at">Timestamp (ISO 8601)</label><input id="inspect-at" name="at" value="{{ values.at }}" placeholder="Blank uses the current time" maxlength="128"></div>
-  <div><label for="inspect-origin">Origin</label><input id="inspect-origin" name="origin" value="{{ values.origin }}" maxlength="128" required></div>
-  <div><label for="inspect-job">Job ID (optional)</label><input id="inspect-job" name="job" value="{{ values.job }}" maxlength="128"><small class="field-note">Uses this job’s profile and disclosure settings.</small></div>
-  <button class="primary-button" type="submit">Inspect prompt {{ icon("arrow-right") }}</button>
-</form>{% else %}<p><a class="text-link" href="/runs/{{ recorded_run|urlencode }}">Return to run</a></p>{% endif %}
+<div class="prompt-inspector">
+<section class="page-heading"><div><span class="section-label">PROMPT WORKBENCH</span><h1>Prompt inspector</h1><p class="intro">{% if recorded_run %}Recorded prompt and tool schemas for run {{ recorded_run }}. Current profile edits do not change this evidence.{% else %}Dry-run output from the prompt API. No model call or live memory lookup.{% endif %}</p></div></section>
+{% if not recorded_run %}<form method="get" action="/prompt" class="panel prompt-inspection" aria-labelledby="inspection-heading">
+  <header class="prompt-section-heading"><h2 id="inspection-heading">Inspection inputs</h2><p class="muted">Choose a profile and session to preview the assembled request.</p></header>
+  <div class="prompt-inputs">
+  <div class="form-field"><label for="inspect-profile">Profile</label><select id="inspect-profile" name="profile">{% for profile in profiles %}<option {% if profile == values.profile %}selected{% endif %}>{{ profile }}</option>{% endfor %}</select></div>
+  <div class="form-field"><label for="inspect-session">Session</label><input id="inspect-session" name="session" list="session-options" value="{{ values.session }}" maxlength="128" required><datalist id="session-options">{% for session in sessions %}<option value="{{ session.id }}">{% endfor %}</datalist></div>
+  <div class="form-field"><label for="inspect-at">Timestamp (ISO 8601)</label><input id="inspect-at" name="at" value="{{ values.at }}" placeholder="Blank uses the current time" maxlength="128"></div>
+  <div class="form-field"><label for="inspect-origin">Origin</label><input id="inspect-origin" name="origin" value="{{ values.origin }}" maxlength="128" required></div>
+  <div class="form-field"><label for="inspect-job">Job ID (optional)</label><input id="inspect-job" name="job" value="{{ values.job }}" maxlength="128" aria-describedby="inspect-job-note"><small id="inspect-job-note" class="field-note">Uses this job’s profile and disclosure settings.</small></div>
+  </div>
+  <div class="prompt-form-footer"><p class="muted">Preview only · no model call or live memory lookup.</p><div class="action-group"><button class="primary-button" type="submit">Inspect prompt {{ icon("arrow-right") }}</button></div></div>
+</form>{% else %}<div class="action-group"><a class="text-link" href="/runs/{{ recorded_run|urlencode }}">{{ icon("arrow-right") }} Return to run</a></div>{% endif %}
 {% if error %}<div class="notice notice-error" role="alert">{{ error }}</div>{% endif %}
 {% if evidence %}
-{% if evidence.tool_view %}<section class="evidence-panel panel"><h2>Tool disclosure</h2><p>{{ evidence.tool_view.mode|capitalize }} · Effective: {{ evidence.tool_view.effective|join(', ') or 'none' }} · Resident: {{ evidence.tool_view.resident|join(', ') or 'none' }}</p><p class="digest">Index SHA-256: {{ evidence.tool_view.index_sha256 }}</p>{% if evidence.tool_view.activations %}<pre><code>{{ evidence.tool_view.activations|tojson(indent=2) }}</code></pre>{% endif %}</section>{% endif %}
-<section class="evidence-panel panel"><h2>Assembled prompt</h2><dl class="evidence-facts"><div><dt>SHA-256</dt><dd class="digest">{{ evidence.sha256 }}</dd></div><div><dt>Tokens</dt><dd>{{ evidence.tokens if evidence.tokens is not none else 'Not measured' }}</dd></div></dl><p class="muted">The SHA covers original prompt bytes from the API. This display masks resolved credentials; masking can change the displayed text.</p><pre class="evidence-text"><code>{{ evidence.prompt }}</code></pre></section>
-{% if evidence.turn %}<section class="evidence-panel panel"><h2>Turn context</h2><p class="muted">Request-time preamble placed before the user's verbatim text (time, origin, recall). It follows the cached history prefix, so the system message above stays identical across turns.</p><pre class="evidence-text"><code>{{ evidence.turn }}</code></pre></section>{% endif %}
-<section class="evidence-panel panel"><h2>Visible tool schemas · {{ evidence.tools|length }}</h2>{% for tool in schema_views %}<details class="schema-details"><summary>{{ tool.name }}</summary><pre><code>{{ tool.text }}</code></pre></details>{% else %}<p class="muted">No tools were exposed in this inspection.</p>{% endfor %}</section>
+{% if evidence.tool_view %}<section class="evidence-panel panel" aria-labelledby="disclosure-heading">
+  <header class="prompt-section-heading"><h2 id="disclosure-heading">Tool disclosure</h2><span class="profile-tag">{{ evidence.tool_view.mode|capitalize }}</span></header>
+  <dl class="prompt-disclosure">
+    <div><dt>Effective tools</dt><dd>{% for name in evidence.tool_view.effective %}<code class="subtle-tag">{{ name }}</code>{% else %}<span class="muted">None</span>{% endfor %}</dd></div>
+    <div><dt>Resident tools</dt><dd>{% for name in evidence.tool_view.resident %}<code class="subtle-tag">{{ name }}</code>{% else %}<span class="muted">None</span>{% endfor %}</dd></div>
+    <div><dt>Index SHA-256</dt><dd class="digest">{{ evidence.tool_view.index_sha256 }}</dd></div>
+  </dl>
+  {% if evidence.tool_view.activations %}<details class="schema-details"><summary>Activation history</summary><pre class="evidence-text"><code>{{ evidence.tool_view.activations|tojson(indent=2) }}</code></pre></details>{% endif %}
+</section>{% endif %}
+<section class="evidence-panel panel" aria-labelledby="assembled-heading"><header class="prompt-section-heading"><h2 id="assembled-heading">Assembled prompt</h2><span class="section-label">SYSTEM MESSAGE</span></header><dl class="evidence-facts"><div><dt>SHA-256</dt><dd class="digest">{{ evidence.sha256 }}</dd></div><div><dt>Tokens</dt><dd>{{ evidence.tokens if evidence.tokens is not none else 'Not measured' }}</dd></div></dl><p class="muted">The SHA covers original prompt bytes from the API. This display masks resolved credentials; masking can change the displayed text.</p><pre class="evidence-text"><code>{{ evidence.prompt }}</code></pre></section>
+{% if evidence.turn %}<section class="evidence-panel panel" aria-labelledby="turn-heading"><header class="prompt-section-heading"><h2 id="turn-heading">Turn context</h2><span class="section-label">REQUEST PREAMBLE</span></header><p class="muted">Request-time preamble placed before the user's verbatim text (time, origin, recall). It follows the cached history prefix, so the system message above stays identical across turns.</p><pre class="evidence-text"><code>{{ evidence.turn }}</code></pre></section>{% endif %}
+<section class="evidence-panel panel" aria-labelledby="schemas-heading"><header class="prompt-section-heading"><h2 id="schemas-heading">Visible tool schemas <span class="count-label">{{ evidence.tools|length }}</span></h2><p class="muted">Expand a tool to inspect its schema for this request.</p></header>{% for tool in schema_views %}<details class="schema-details"><summary>{{ tool.name }}</summary><pre class="evidence-text"><code>{{ tool.text }}</code></pre></details>{% else %}<p class="muted">No tools were exposed in this inspection.</p>{% endfor %}</section>
 {% endif %}
+</div>
 {% endblock %}

@@ -627,3 +627,48 @@ pre { overflow-x: auto; font-size: 11px; line-height: 1.55; color: var(--ink); }
   .health-ranking + .health-ranking { border-left: 0; border-top: 1px solid var(--line); }
   .health-records > li { padding: 18px 20px; }
 }
+
+/* Prompt workbench keeps controls, metadata, and verbatim evidence distinct. */
+.prompt-inspector { display: flex; flex-direction: column; gap: 24px; }
+.prompt-inspector > .page-heading { margin: 8px 0 0; }
+.prompt-inspector .page-heading::after { display: none; }
+.prompt-inspector .page-heading .section-label { display: block; margin-bottom: 10px; color: var(--accent); }
+.prompt-inspector h1 { font-size: 28px; margin-bottom: 10px; }
+.prompt-inspector .intro { max-width: 48rem; }
+.prompt-inspector .panel { box-shadow: var(--shadow); min-width: 0; }
+.prompt-inspection { overflow: hidden; }
+.prompt-section-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin-bottom: 20px; }
+.prompt-section-heading h2 { margin: 0; display: flex; align-items: baseline; gap: 10px; }
+.prompt-section-heading > p { flex-basis: 100%; margin: 0; }
+.prompt-inspection > .prompt-section-heading { padding: 24px 24px 0; }
+.prompt-inputs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; gap: 20px; padding: 0 24px 24px; }
+.prompt-form-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 24px; border-top: 1px solid var(--line); background: var(--surface-soft); }
+.prompt-form-footer p { margin: 0; }
+.prompt-inspector .evidence-panel { padding: 24px; margin: 0; }
+.prompt-inspector .evidence-facts { grid-template-columns: minmax(0, 3fr) minmax(0, 1fr); gap: 20px; padding: 18px 20px; margin: 0 0 16px; background: var(--surface-soft); border: 1px solid var(--line); border-radius: 8px; }
+.prompt-inspector .evidence-facts dd { font-variant-numeric: tabular-nums; }
+.prompt-inspector .evidence-text { margin: 16px 0 0; padding: 20px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-soft); font-size: 12px; line-height: 1.8; tab-size: 2; scrollbar-color: var(--muted) var(--surface-soft); }
+.prompt-inspector .code-block > .evidence-text { padding-right: 76px; }
+.prompt-inspector .evidence-text code { white-space: inherit; overflow-wrap: inherit; }
+.prompt-disclosure { margin: 0; }
+.prompt-disclosure > div { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 20px; padding: 16px 0; border-top: 1px solid var(--line); }
+.prompt-disclosure dt { color: var(--muted); font-size: 12px; }
+.prompt-disclosure dd { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; min-width: 0; margin: 0; }
+.prompt-disclosure dd.digest { display: block; }
+.prompt-inspector .schema-details { padding: 0; }
+.prompt-inspector .schema-details summary { padding: 16px 4px; font-weight: 500; color: var(--accent); overflow-wrap: anywhere; }
+.prompt-inspector .schema-details[open] { padding-bottom: 20px; }
+.prompt-inspector .schema-details .evidence-text { margin-top: 0; }
+@media (max-width: 900px) {
+  .prompt-inputs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 600px) {
+  .prompt-inspector { gap: 20px; }
+  .prompt-inspector .evidence-panel { padding: 20px; }
+  .prompt-inspection > .prompt-section-heading { padding: 20px 20px 0; }
+  .prompt-inputs { grid-template-columns: minmax(0, 1fr); padding: 0 20px 20px; }
+  .prompt-form-footer { padding: 16px 20px; }
+  .prompt-inspector .evidence-facts { grid-template-columns: minmax(0, 1fr); padding: 16px; }
+  .prompt-inspector .evidence-text { padding: 16px; }
+  .prompt-disclosure > div { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+}
