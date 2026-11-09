@@ -430,7 +430,11 @@ class Registry:
             elif not strict:
                 matches = []
             else:
-                raise ValueError(f"tool {entry} is not available to {profile}")
+                import difflib
+
+                close = difflib.get_close_matches(entry, available, n=3)
+                hint = f" (did you mean {', '.join(close)}?)" if close else ""
+                raise ValueError(f"tool {entry} is not available to {profile}{hint}")
             result.extend(matches)
         return list(dict.fromkeys(result))
 

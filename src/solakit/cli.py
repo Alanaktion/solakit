@@ -70,6 +70,25 @@ def main() -> None:
     compare = evaluate_commands.add_parser("compare", help="Compare two result files")
     compare.add_argument("a")
     compare.add_argument("b")
+    init = commands.add_parser("init", help="Scaffold config and prompt files")
+    init.add_argument("directory", nargs="?", default=".")
+    init.add_argument("--preset", choices=["qwen3-35b-a3b-omlx", "generic-openai"])
+    init.add_argument("--data", help="Runtime data directory (outside the code)")
+    init.add_argument("--timezone")
+    init.add_argument("--yes", action="store_true", help="Accept defaults")
+    init.add_argument("--force", action="store_true", help="Write *.new siblings")
+    configuration = commands.add_parser("config", help="Inspect configuration")
+    config_commands = configuration.add_subparsers(dest="config_command", required=True)
+    explain = config_commands.add_parser(
+        "explain", help="Effective profile: grants, roots, schemas, request params"
+    )
+    explain.add_argument("profile")
+    explain.add_argument("--json", action="store_true")
+    difference = config_commands.add_parser(
+        "diff", help="Grant changes between two config files"
+    )
+    difference.add_argument("old")
+    difference.add_argument("new")
     tools = commands.add_parser("tools", help="Offline tool catalog helpers")
     tools_commands = tools.add_subparsers(dest="tools_command", required=True)
     residents = tools_commands.add_parser(
@@ -96,6 +115,71 @@ def main() -> None:
     args = parser.parse_args()
     if args.command == "eval":
         run_eval(parser, args)
+        return
+    if args.command == "init":
+        from pathlib import Path
+
+        from solakit.core import scaffold
+
+        def ask(question, default):
+            if args.yes:
+                return default
+            answer = input(f"{question} [{default}]: ").strip()
+            return answer or default
+
+        preset = args.preset or ask(
+            "Preset (" + "/".join(scaffold.PRESETS) + ")", scaffold.PRESETS[0]
+        )
+        values = {
+            "data": args.data or ask("Data directory", scaffold.DEFAULTS["data"]),
+            "timezone": args.timezone or ask("Timezone", scaffold.DEFAULTS["timezone"]),
+        }
+        try:
+            files = scaffold.plan_files(preset, **values)
+            report = scaffold.write(Path(args.directory), files, force=args.force)
+        except (OSError, ValueError, KeyError) as exc:
+            parser.exit(1, f"Init failed: {exc}\n")
+        print("\n".join(report))
+        print(
+            "Next: put SOLA_OPERATOR_TOKEN (and any model key) in .env, then run "
+            "`sola check`, `sola doctor` and `sola serve`."
+        )
+        return
+    if args.command == "config":
+        from pathlib import Path
+
+        from solakit.core import explain as explaining
+
+        try:
+            if args.config_command == "diff":
+                lines = explaining.diff(Path(args.old), Path(args.new))
+                print("\n".join(lines) if lines else "No grant changes.")
+                return
+            config = load_config()
+            from solakit.tools import Registry
+
+            data = explaining.explain(config, Registry(config), args.profile)
+        except (OSError, ValueError) as exc:
+            parser.exit(1, f"Config inspection failed: {exc}\n")
+        if args.json:
+            print(json.dumps(data, indent=2, default=str))
+            return
+        print(f"Profile {data['profile']}")
+        print(f"  grants: {', '.join(data['grants']) or 'none'}")
+        print(f"  effective tools ({len(data['effective_tools'])}): ")
+        print("    " + ", ".join(data["effective_tools"]))
+        access = data["access"]
+        print(f"  read: {access['read']} {', '.join(access['read_roots'])}")
+        print(f"  write: {access['write']} {', '.join(access['write_roots'])}")
+        print(f"  effects: {', '.join(access['effects']) or 'none'}")
+        print(f"  resources: {', '.join(access['resources']) or 'none'}")
+        print(
+            f"  disclosure: {data['disclosure']['mode']}; visible schemas "
+            f"{len(data['visible_schemas'])}, {data['schema_bytes']} bytes"
+        )
+        print(f"  model request: {json.dumps(data['model_request'])}")
+        if data["playbooks"]:
+            print(f"  playbooks: {', '.join(data['playbooks'])}")
         return
     if args.command == "tools":
         from solakit.core.residents import suggest

@@ -1406,6 +1406,19 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
         except APIError as exc:
             return render(request, "error.html", {"error": exc.detail}, exc.status)
 
+    @router.get("/model-health")
+    async def model_health(request: Request):
+        if not logged_in(request):
+            return login_redirect(request)
+        try:
+            window = request.query_params.get("window", "100")
+            if not window.isdigit():
+                raise APIError(422, "Window must be a number of runs.")
+            stats = await api(request, "GET", f"/api/stats/model?window={window}")
+        except APIError as exc:
+            return render(request, "error.html", {"error": exc.detail}, exc.status)
+        return render(request, "model_health.html", {"stats": stats})
+
     @router.get("/operations")
     async def operations(request: Request):
         if not logged_in(request):

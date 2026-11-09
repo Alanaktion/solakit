@@ -537,6 +537,17 @@ def create_app(
         }
         return app.state.redactor.redact(catalog)
 
+    @api.get("/stats/model")
+    async def stats_model(window: int = 100) -> dict:
+        from solakit.core import doctor
+        from solakit.core.stats import model_stats
+
+        if not 1 <= window <= 1000:
+            raise HTTPException(422, "window must be between 1 and 1000")
+        stats = await asyncio.to_thread(model_stats, app.state.store, window)
+        stats["doctor"] = doctor.last(app.state.config)
+        return app.state.redactor.redact(stats)
+
     @api.get("/playbooks")
     async def list_playbooks() -> list[dict]:
         from solakit.core import playbooks

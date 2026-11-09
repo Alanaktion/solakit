@@ -1,0 +1,41 @@
+# Preset: any OpenAI-compatible endpoint serving one model. Conservative
+# defaults; run `sola doctor` to measure, then tune.
+timezone = "{timezone}"
+enabled_tools = ["files", "sessions", "datetime", "math", "runtime", "plan"]
+
+[toolsets]
+reader = ["files.read", "files.list", "files.find", "files.grep", "sessions.search"]
+
+[operator_token]
+env = "SOLA_OPERATOR_TOKEN"
+
+[model]
+base_url = "http://127.0.0.1:8000/v1"
+model_id = "your-model-id"
+# api_key = { env = "OPENAI_API_KEY" }
+concurrency = 1
+max_tokens = 4096
+tool_call_fallback = false
+
+[compaction]
+strategy = "auto"
+
+[paths]
+data = "{data}"
+soul = "SOUL.md"
+fragments = "fragments"
+
+[profile_defaults]
+context_budget = 32000
+read = "workspace"
+write = "none"
+
+[profiles.interactive]
+tools = ["@reader", "math.eval", "datetime.*", "plan.*"]
+max_steps = 30
+
+[profiles.maintenance]
+tools = ["*"]
+effects = ["operate"]
+write = "workspace"
+max_steps = 60

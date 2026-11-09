@@ -611,7 +611,11 @@ class Config(StrictModel):
                 raise ValueError("duplicate channel or job ID")
             for item in values:
                 if item.profile not in self.profiles:
-                    raise ValueError(f"unknown profile: {item.profile}")
+                    import difflib
+
+                    close = difflib.get_close_matches(item.profile, list(self.profiles))
+                    hint = f" (did you mean {close[0]}?)" if close else ""
+                    raise ValueError(f"unknown profile: {item.profile}{hint}")
         pins = [(c.type, c.channel_id) for c in self.channels]
         if len(pins) != len(set(pins)):
             raise ValueError("duplicate channel identity")

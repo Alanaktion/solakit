@@ -1,0 +1,82 @@
+# Preset: Qwen3.6-35B-A3B (MoE, ~3B active) served by oMLX on Apple silicon.
+# Values come from `sola doctor` and `sola eval` runs on 2026-11-09 (see
+# docs/plans/done/*-PLAN.md "Outcome" sections). Re-run both after changing the
+# model build, oMLX version or hardware, and edit freely: this is your file.
+timezone = "{timezone}"
+enabled_tools = ["files", "sessions", "web", "datetime", "math", "runtime", "plan", "playbook", "delegate"]
+
+[toolsets]
+reader = ["files.read", "files.list", "files.find", "files.grep", "sessions.search"]
+research = ["@reader", "web.search", "web.get_page", "math.eval", "datetime.*"]
+workflow = ["plan.*", "playbook.load"]
+
+[operator_token]
+env = "SOLA_OPERATOR_TOKEN"
+
+[server]
+host = "127.0.0.1"
+port = 8382
+
+[model]
+base_url = "http://127.0.0.1:8000/v1"
+model_id = "Qwen3.6-35B-A3B-mxfp4"
+# api_key = { env = "OMLX_API_KEY" }
+# doctor: throughput 56 → 73 → 82 tok/s at 1/2/4 parallel requests, p95 1.2 → 3.4 s.
+concurrency = 2
+max_tokens = 8192
+timeout_s = 600
+# doctor: tool calls arrive as parsed tool_calls; the fallback is not needed.
+tool_call_fallback = false
+
+[model.request]
+# Qwen's published non-thinking sampling; verify against the pinned build's card.
+# temperature = 0.7
+# top_p = 0.8
+# top_k = 20
+# presence_penalty = 0.5
+
+[compaction]
+strategy = "auto"
+
+[paths]
+data = "{data}"
+soul = "SOUL.md"
+fragments = "fragments"
+
+[profile_defaults]
+# doctor: advertised window 262144 tokens; measured ~3.9-4.6 bytes/token.
+context_budget = 400000
+context_tokens = 100000
+tool_disclosure = "auto"
+read = "workspace"
+write = "none"
+effects = []
+resources = []
+
+[profiles.interactive]
+tools = ["@research", "@workflow", "delegate.*"]
+playbooks = []
+max_steps = 40
+step_notice_at = 3
+wrapup = "status"
+
+[profiles.interactive.model]
+thinking = "{thinking}"
+
+[profiles.worker]
+# Read-only delegated worker: small, fast, no further delegation.
+tools = ["@research"]
+max_steps = 15
+tool_result_aging = "auto"
+
+[profiles.worker.model]
+thinking = "off"
+
+[profiles.maintenance]
+tools = ["*"]
+effects = ["operate", "shell"]
+write = "workspace"
+max_steps = 60
+
+[delegation]
+allowed_profiles = ["worker"]

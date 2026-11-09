@@ -23,6 +23,29 @@ class Prepared:
     model_key: str | None = field(default=None, repr=False)
 
 
+def config_keys() -> set[str]:
+    """Every field name of every configuration model, for did-you-mean."""
+    from pydantic import BaseModel
+
+    import solakit.core.config as module
+
+    names = set()
+    for value in vars(module).values():
+        if isinstance(value, type) and issubclass(value, BaseModel):
+            names.update(value.model_fields)
+    return names
+
+
+def suggestion(issue: dict) -> str:
+    import difflib
+
+    if issue["type"] != "extra_forbidden" or not issue["loc"]:
+        return ""
+    key = str(issue["loc"][-1])
+    close = difflib.get_close_matches(key, sorted(config_keys()), n=1, cutoff=0.7)
+    return f" (did you mean {close[0]}?)" if close else ""
+
+
 def prepare(config: Config | None = None) -> Prepared:
     try:
         config = config if config is not None else load_config()
@@ -31,7 +54,12 @@ def prepare(config: Config | None = None) -> Prepared:
     except ValidationError as exc:
         fields = [
             f"{'.'.join(str(part) for part in issue['loc'])}: "
-            + (issue["msg"] if issue["type"] == "access_config" else issue["type"])
+            + (
+                issue["msg"]
+                if issue["type"] in ("access_config", "value_error")
+                else issue["type"]
+            )
+            + suggestion(issue)
             for issue in exc.errors(include_input=False, include_url=False)
         ]
         raise ConfigurationError(

@@ -220,6 +220,7 @@ class Channels:
                 outbound = Outbound(
                     f"[Solakit status: {run.status.value}] "
                     f"Run {run.id} did not complete."
+                    + (f" Hint: {run.hint}" if run.hint else "")
                 )
             else:
                 history = await durable(store.all_messages, run.session)

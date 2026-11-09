@@ -593,3 +593,26 @@ parents and `parent_session=<id>` selects direct children before pagination.
 [Model tuning](operations/model-tuning.md) covers sampling and thinking settings,
 reasoning evidence, the `<tool_call>` fallback, calibrated token budgets,
 `sola doctor` live probes and the `sola eval` harness.
+
+## Model health and configuration review
+
+The **Model** page (`/model-health`, API `GET /api/stats/model?window=100`) shows
+the latest runs' outcome mix, repair/unknown-tool/length-stop/empty-completion
+rates, normalizations applied, repeated calls, reasoning retries and wrap-ups,
+average tokens/steps/seconds per step, the most used and most failing tools, the
+argument paths that fail most and links to runs worth inspecting, plus the last
+`sola doctor` result. It is computed on demand from the rebuildable run index and
+tool logs; nothing on it is authoritative state.
+
+Failed runs carry a static operator `hint` (shown on the run page and appended to
+channel status notices), e.g. "Raise [model].max_tokens …" or "Enable local
+compaction …". Hints are advice and never alter evidence.
+
+`sola config explain <profile> [--json]` prints the effective profile exactly as
+admission resolves it: grants with toolsets expanded, read/write roots, effects,
+resources, disclosure mode, visible schemas and bytes, and first-step model
+request parameters. `sola config diff old.toml new.toml` lists added/removed tools,
+effects, resources and filesystem roots per profile for access review before a
+restart. Unknown configuration keys, tool names and profile names suggest the
+closest valid spelling.
+

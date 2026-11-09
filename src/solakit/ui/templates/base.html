@@ -21,7 +21,7 @@
       <a class="brand" href="/"><span class="moon" aria-hidden="true">🌙</span><span>Solakit</span></a>
       {% block header_actions %}
       <nav class="nav" aria-label="Main navigation">
-        {% for href, label in [('/', 'Sessions'), ('/search', 'Search'), ('/prompt', 'Prompt'), ('/runs', 'Runs'), ('/operations', 'Operations'), ('/tools', 'Tools')] %}
+        {% for href, label in [('/', 'Sessions'), ('/search', 'Search'), ('/prompt', 'Prompt'), ('/runs', 'Runs'), ('/operations', 'Operations'), ('/tools', 'Tools'), ('/model-health', 'Model')] %}
         <a href="{{ href }}" class="nav-link" {% if request.url.path == href or (href == '/' and request.url.path.startswith('/sessions/')) or (href == '/runs' and request.url.path.startswith('/runs/')) %}aria-current="page"{% endif %}>{{ label }}</a>
         {% endfor %}
       </nav>

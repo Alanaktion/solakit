@@ -16,6 +16,7 @@ from solakit.core.compaction import (
     retain_recent_tools,
 )
 from solakit.core.config import Config
+from solakit.core.hints import failure_hint
 from solakit.core.io import durable
 from solakit.core.media import ImageRef, Media
 from solakit.core.memory import MemoryClient, MemoryUnavailable
@@ -569,6 +570,15 @@ class Execution:
         finally:
             try:
                 run.finished_at = now()
+                if run.status not in (RunStatus.completed, RunStatus.cancelled):
+                    try:
+                        logs = await durable(
+                            self.store._read,
+                            self.store._path("runs", run.id, ".tools.jsonl"),
+                        )
+                    except (OSError, ValueError):
+                        logs = []
+                    run.hint = failure_hint(run, self.config, logs)
                 await durable(self.store.save_run, run)
             finally:
                 if previous is None:

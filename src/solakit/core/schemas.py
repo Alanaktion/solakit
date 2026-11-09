@@ -114,6 +114,7 @@ class Run(BaseModel):
     injections: list[dict[str, Any]] = Field(default_factory=list)
     completed_via_wrapup: bool = False
     aging: list[dict[str, Any]] = Field(default_factory=list)
+    hint: str | None = None
     retries: list[dict[str, Any]] = Field(default_factory=list)
     reasoning_steps: int = 0
     tool_catalog_sha256: str | None = None

@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Model health · Solakit{% endblock %}
+{% block content %}
+<div class="operations-page">
+<section class="page-heading"><div><h1>Model health</h1><p class="intro">How the pinned model is doing over the latest {{ stats.window }} runs. Aggregates are computed from run records and tool logs; open a run for its evidence.</p></div><div class="action-group">{% for size in [50, 100, 500] %}<a class="secondary-button" href="/model-health?window={{ size }}">{{ size }} runs</a>{% endfor %}</div></section>
+<section class="operations-panel panel" aria-labelledby="mix-heading">
+  <header class="operations-section-heading"><div><h2 id="mix-heading">Outcomes</h2></div></header>
+  <div class="operation-tags">{% for status, count in stats.status.items() %}<span class="profile-tag">{{ status }} · {{ count }}</span>{% endfor %}</div>
+  <dl class="evidence-facts">
+    {% for key, value in stats.rates.items() %}<div><dt>{{ key|replace('_', ' ') }}</dt><dd>{{ value }}</dd></div>{% endfor %}
+    {% for key, value in stats.averages.items() %}<div><dt>avg {{ key|replace('_', ' ') }}</dt><dd>{{ value if value is not none else 'Not measured' }}</dd></div>{% endfor %}
+    <div><dt>tool calls</dt><dd>{{ stats.tool_calls }}</dd></div>
+  </dl>
+</section>
+<section class="operations-panel panel" aria-labelledby="tools-heading">
+  <header class="operations-section-heading"><div><h2 id="tools-heading">Tools</h2><p class="muted">Most used and most failing tools, and the argument paths that fail most: candidates for simpler schemas.</p></div></header>
+  <div class="table-scroll"><table class="data-table operations-table"><thead><tr><th scope="col">Most used</th><th scope="col">Most failing (count · rate)</th><th scope="col">Failing arguments</th></tr></thead><tbody>
+  {% for index in range([stats.top_tools|length, stats.top_failures|length, stats.failing_arguments|length]|max) %}<tr>
+    <td data-label="Most used">{% if index < stats.top_tools|length %}<code>{{ stats.top_tools[index][0] }}</code> · {{ stats.top_tools[index][1] }}{% endif %}</td>
+    <td data-label="Most failing">{% if index < stats.top_failures|length %}<code>{{ stats.top_failures[index][0] }}</code> · {{ stats.top_failures[index][1] }} · {{ stats.top_failures[index][2] }}{% endif %}</td>
+    <td data-label="Failing arguments">{% if index < stats.failing_arguments|length %}<code>{{ stats.failing_arguments[index][0] }}</code> · {{ stats.failing_arguments[index][1] }}{% endif %}</td>
+  </tr>{% else %}<tr><td colspan="3" class="operations-empty"><p>No tool calls in this window.</p></td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+<section class="operations-panel panel" aria-labelledby="runs-heading">
+  <header class="operations-section-heading"><div><h2 id="runs-heading">Runs to inspect <span class="count-label">{{ stats.offending_runs|length }}</span></h2></div></header>
+  <ul class="plain-list">{% for run in stats.offending_runs %}<li><a class="text-link" href="/runs/{{ run.id|urlencode }}">{{ run.id[:8] }}</a> <span class="subtle-tag">{{ run.status }}</span> <span class="operation-meta">{{ run.profile }} {{ run.error }}</span></li>{% else %}<li class="muted">Nothing failed in this window.</li>{% endfor %}</ul>
+</section>
+<section class="operations-panel panel" aria-labelledby="doctor-heading">
+  <header class="operations-section-heading"><div><h2 id="doctor-heading">Last sola doctor run</h2><p class="muted">Run <code>sola doctor</code> to refresh live probes.</p></div></header>
+  {% if stats.doctor %}<p class="operation-meta">{{ stats.doctor.checked_at }}</p><ul class="plain-list">{% for probe in stats.doctor.probes %}<li><span class="subtle-tag">{{ probe.status }}</span> <strong>{{ probe.name }}</strong> — {{ probe.detail }}{% if probe.remedy and probe.status in ['WARN', 'FAIL'] %} <span class="operation-meta">→ {{ probe.remedy }}</span>{% endif %}</li>{% endfor %}</ul>{% else %}<p class="muted">No doctor results recorded yet.</p>{% endif %}
+</section>
+</div>
+{% endblock %}

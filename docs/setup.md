@@ -1,5 +1,27 @@
 # Setup and configuration
 
+Fastest path on a new machine:
+
+```sh
+uv sync --frozen --all-packages
+uv run sola init ~/sola-site --preset qwen3-35b-a3b-omlx   # or generic-openai
+cd ~/sola-site && cp .env.example .env && chmod 600 .env    # fill in the token
+set -a; source .env; set +a
+SOLA_CONFIG=config.toml uv run --project /path/to/solakit sola check
+SOLA_CONFIG=config.toml uv run --project /path/to/solakit sola doctor
+SOLA_CONFIG=config.toml uv run --project /path/to/solakit sola serve
+```
+
+`sola init` writes `config.toml` from a packaged preset (annotated with the
+`sola doctor`/`sola eval` measurements that justified it), a SOUL skeleton,
+`fragments/profiles/<profile>.md` for every preset profile, a recall header, a
+sample playbook, `.gitignore` and `.env.example` (names only, never values). It
+refuses to overwrite; `--force` writes `<name>.new` siblings and prints a diff.
+`--yes` accepts defaults non-interactively. Templates are starting points: the
+runtime only reads your files.
+
+Manual path:
+
 ```sh
 uv sync --frozen --all-packages
 cp config.example.toml config.toml
