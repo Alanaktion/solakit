@@ -24,12 +24,32 @@ async def read(
             )
         ),
     ],
+    offset: Annotated[
+        int, Field(ge=1, description="First line to read (1-based) for windows.")
+    ] = 1,
+    limit: Annotated[
+        int | None, Field(ge=1, le=5000, description="Maximum lines to return.")
+    ] = None,
 ) -> ToolResult:
-    """Read a bounded UTF-8 operator file inside profile filesystem scopes.
+    """Read a UTF-8 operator file inside profile filesystem scopes.
 
-    Prefer a granted domain tool for its data; do not inspect runtime configuration
-    or credentials to discover resources. Use the domain discovery tool instead."""
-    return await ctx.fs.read(path)
+    A file that fits is returned whole. A large file, or a call with offset or
+    limit, returns numbered lines and a footer with the next offset; call again
+    with that offset to continue. Prefer a granted domain tool for its data; do
+    not inspect runtime configuration or credentials to discover resources."""
+    whole = None
+    if offset == 1 and limit is None:
+        whole = await ctx.fs.read(path)
+        if whole.content_complete:
+            return whole
+    window = await ctx.fs.window(path, offset, limit)
+    if window["cut"] and whole is not None:
+        return whole  # One overlong line: a counted character truncation.
+    if window["cut"]:
+        window["text"] += "\n[line cut to fit the output limit]"
+    footer = f"[lines {window['start']}-{window['end']} of {window['total']}"
+    footer += f"; next offset={window['next']}]" if window["next"] else "; end of file]"
+    return ToolResult(content=window["text"] + "\n" + footer)
 
 
 @tool(
@@ -50,11 +70,16 @@ async def write(
         ),
     ],
     content: Annotated[str, Field(description="Exact UTF-8 text to write.")],
+    overwrite: Annotated[
+        bool, Field(description="Replace an existing file instead of failing.")
+    ] = False,
 ) -> ToolResult:
-    """Create a UTF-8 file; never overwrite an existing file."""
-    target = await ctx.fs.write(path, content)
+    """Create a UTF-8 file. Existing files are refused unless overwrite is true."""
+    existed = overwrite and (await ctx.fs.exists(path))
+    target = await ctx.fs.write(path, content, overwrite=overwrite)
+    verb = "Replaced" if existed else "Created"
     return ToolResult(
-        content=f"Created {target} ({len(content.encode())} bytes)",
+        content=f"{verb} {target} ({len(content.encode())} bytes)",
         artifacts=[str(target)],
     )
 
@@ -83,10 +108,18 @@ async def edit(
         str, Field(description="Replacement text for the unique old match.")
     ],
 ) -> ToolResult:
-    """Replace one exact nonempty match; fail on zero or multiple matches."""
-    target = await ctx.fs.edit(path, old, new)
+    """Replace one unique match of old with new.
+
+    Exact text is preferred; if none matches, whole lines are matched ignoring
+    trailing whitespace and line endings. Zero or multiple matches fail."""
+    report: dict = {}
+    target = await ctx.fs.edit(path, old, new, report=report)
+    how = " (whitespace-insensitive)" if report.get("mode") == "whitespace" else ""
     return ToolResult(
-        content=f"Edited {target}: replaced 1 match ({len(old)} → {len(new)} chars)",
+        content=(
+            f"Edited {target}: replaced lines {report.get('start')}-"
+            f"{report.get('end')}{how}"
+        ),
         artifacts=[str(target)],
     )
 
@@ -146,3 +179,57 @@ async def list_files(
     return ToolResult(
         content=json.dumps({"entries": entries, "more": more}, ensure_ascii=False)
     )
+
+
+@tool(
+    summary="Find files by name pattern below a directory",
+    keywords=("file", "find", "glob", "locate", "name"),
+    name="files.find",
+    profiles=["*"],
+)
+async def find(
+    ctx: ToolContext,
+    pattern: Annotated[
+        str, Field(description="Glob such as *.toml or docs/*.md (matched on names).")
+    ],
+    path: Annotated[str, Field(description="Directory to search below.")] = ".",
+    limit: Annotated[int, Field(ge=1, le=200, description="Maximum results.")] = 50,
+) -> ToolResult:
+    """Find files recursively by glob, returning relative paths and sizes.
+
+    Hidden directories and symlinks are skipped. Use files.grep to search
+    contents and files.read to open a result."""
+    result = await ctx.fs.find(pattern, path, limit)
+    return ToolResult(content=json.dumps(result, ensure_ascii=False))
+
+
+@tool(
+    summary="Search file contents for text, with line context",
+    keywords=("file", "grep", "search", "contents", "text", "where"),
+    name="files.grep",
+    profiles=["*"],
+)
+async def grep(
+    ctx: ToolContext,
+    query: Annotated[str, Field(min_length=1, description="Text to find (no case).")],
+    path: Annotated[str, Field(description="File or directory to search.")] = ".",
+    glob: Annotated[
+        str | None, Field(description="Only files matching this glob, e.g. *.py.")
+    ] = None,
+    regex: Annotated[
+        bool, Field(description="Treat query as a regular expression.")
+    ] = False,
+    context: Annotated[
+        int, Field(ge=0, le=5, description="Lines of context around each match.")
+    ] = 2,
+    limit: Annotated[int, Field(ge=1, le=100, description="Maximum matches.")] = 30,
+) -> ToolResult:
+    """Search text files recursively; lines read path:line: text (matches) and
+    path-line- text (context). Binary files and symlinks are skipped."""
+    result = await ctx.fs.grep(
+        query, path, glob=glob, regex=regex, context=context, limit=limit
+    )
+    if not result["lines"]:
+        return ToolResult(content="No matches.")
+    tail = "\n[more matches not shown; narrow the search]" if result["more"] else ""
+    return ToolResult(content="\n".join(result["lines"]) + tail)

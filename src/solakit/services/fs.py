@@ -51,14 +51,76 @@ class Filesystem:
             raise ToolError("Cannot read requested file") from exc
         return ToolResult(content=content, content_complete=len(content) <= limit)
 
-    async def write(self, path, content: str) -> Path:
+    async def exists(self, path) -> bool:
+        def check():
+            return self.ctx.path(str(path), write=True).exists()
+
+        try:
+            return await durable(check)
+        except (OSError, ToolError):
+            return False
+
+    async def window(self, path, offset: int = 1, limit: int | None = None) -> dict:
+        """Line window of a UTF-8 file: numbered lines plus position facts."""
+        try:
+            content, _ = await durable(self._read, path, _EDIT_LIMIT)
+        except (OSError, UnicodeError) as exc:
+            raise ToolError("Cannot read requested file") from exc
+        if len(content) > _EDIT_LIMIT:
+            raise ToolError("File is too large to window")
+        lines = content.splitlines()
+        total = len(lines)
+        if offset > max(total, 1):
+            raise ToolError(f"Offset is past the end of the file ({total} lines)")
+        budget = self.ctx.config.profiles[self.ctx.profile].tool_output_max_chars
+        budget = max(64, budget - 160)  # Leave room for the footer.
+        shown, used, cut = [], 0, False
+        for number in range(offset, total + 1):
+            if limit is not None and len(shown) >= limit:
+                break
+            line = f"{number:>6}\t{lines[number - 1]}"
+            if used + len(line) + 1 > budget and shown:
+                break
+            cut |= len(line) > budget
+            shown.append(line[:budget])
+            used += len(line) + 1
+        end = offset + len(shown) - 1
+        return {
+            "text": "\n".join(shown),
+            "start": offset,
+            "end": end,
+            "total": total,
+            "next": end + 1 if end < total else None,
+            "cut": cut,
+        }
+
+    async def write(self, path, content: str, *, overwrite: bool = False) -> Path:
         def create():
             with _LOCK:
                 target = self.ctx.path(str(path), write=True)
-                with target.open("x", encoding="utf-8") as stream:
-                    stream.write(content)
-                    stream.flush()
-                    os.fsync(stream.fileno())
+                if overwrite and target.exists():
+                    if target.is_symlink() or not target.is_file():
+                        raise ToolError("Only regular files can be overwritten")
+                    mode = stat.S_IMODE(target.stat().st_mode)
+                    descriptor, name = tempfile.mkstemp(
+                        prefix=".solakit-", dir=target.parent
+                    )
+                    try:
+                        with os.fdopen(
+                            descriptor, "w", encoding="utf-8", newline=""
+                        ) as stream:
+                            os.fchmod(stream.fileno(), mode)
+                            stream.write(content)
+                            stream.flush()
+                            os.fsync(stream.fileno())
+                        os.replace(name, target)
+                    finally:
+                        Path(name).unlink(missing_ok=True)
+                else:
+                    with target.open("x", encoding="utf-8") as stream:
+                        stream.write(content)
+                        stream.flush()
+                        os.fsync(stream.fileno())
                 sync_directory(target.parent)
                 return target
 
@@ -66,10 +128,11 @@ class Filesystem:
             return await durable(create)
         except OSError as exc:
             raise ToolError(
-                "Cannot create requested file (it may already exist)"
+                "Cannot create requested file (it may already exist; pass "
+                "overwrite=true to replace it)"
             ) from exc
 
-    async def edit(self, path, old: str, new: str) -> Path:
+    async def edit(self, path, old: str, new: str, *, report=None) -> Path:
         if not old:
             raise ToolError("Replacement text must be nonempty")
 
@@ -80,8 +143,24 @@ class Filesystem:
                 if len(content) > _EDIT_LIMIT:
                     raise ToolError("File is too large for exact replacement")
                 first = content.find(old)
-                if first < 0 or content.find(old, first + 1) >= 0:
-                    raise ToolError("Replacement must match exactly once")
+                if first >= 0 and content.find(old, first + 1) >= 0:
+                    raise ToolError(
+                        "Replacement must match exactly once; it matches more "
+                        "than once, so include more surrounding lines in old"
+                    )
+                if first >= 0:
+                    updated = content.replace(old, new, 1)
+                    line = content.count("\n", 0, first) + 1
+                    if report is not None:
+                        report.update(
+                            mode="exact",
+                            start=line,
+                            end=line + old.count("\n"),
+                        )
+                else:
+                    updated, start, end = whitespace_replace(content, old, new)
+                    if report is not None:
+                        report.update(mode="whitespace", start=start, end=end)
                 descriptor, name = tempfile.mkstemp(
                     prefix=".solakit-", dir=target.parent
                 )
@@ -90,7 +169,7 @@ class Filesystem:
                         descriptor, "w", encoding="utf-8", newline=""
                     ) as stream:
                         os.fchmod(stream.fileno(), stat.S_IMODE(metadata.st_mode))
-                        stream.write(content.replace(old, new, 1))
+                        stream.write(updated)
                         stream.flush()
                         os.fsync(stream.fileno())
                     os.replace(name, target)
@@ -171,6 +250,119 @@ class Filesystem:
         except OSError as exc:
             raise ToolError("Cannot list requested directory") from exc
 
+    def _walk(self, path, max_files=5000):
+        """Scope-checked regular files below path; symlinks are never followed."""
+        root = self.ctx.path(str(path))
+        if root.is_file():
+            yield root, root.name
+            return
+        seen = 0
+        for directory, dirs, files in os.walk(root, followlinks=False):
+            dirs[:] = sorted(d for d in dirs if not d.startswith("."))
+            for name in sorted(files):
+                candidate = Path(directory) / name
+                if candidate.is_symlink():
+                    continue
+                try:
+                    self.ctx.path(str(candidate))
+                except ToolError:
+                    continue
+                seen += 1
+                if seen > max_files:
+                    yield None, None
+                    return
+                yield candidate, str(candidate.relative_to(root))
+
+    async def find(self, pattern: str, path=".", limit: int = 50) -> dict:
+        def search():
+            matches, more = [], False
+            for file, relative in self._walk(path):
+                if file is None:
+                    more = True
+                    break
+                target = relative if "/" in pattern else file.name
+                if fnmatch.fnmatch(target, pattern):
+                    if len(matches) >= limit:
+                        more = True
+                        break
+                    info = file.stat()
+                    matches.append(
+                        {
+                            "path": relative,
+                            "bytes": info.st_size,
+                            "modified": int(info.st_mtime),
+                        }
+                    )
+            return {"matches": matches, "more": more}
+
+        try:
+            return await durable(search)
+        except OSError as exc:
+            raise ToolError("Cannot search requested directory") from exc
+
+    async def grep(
+        self,
+        query: str,
+        path=".",
+        *,
+        glob: str | None = None,
+        regex: bool = False,
+        context: int = 2,
+        limit: int = 30,
+    ) -> dict:
+        import re
+
+        try:
+            matcher = re.compile(query if regex else re.escape(query), re.I)
+        except re.error as exc:
+            raise ToolError("Invalid regular expression") from exc
+
+        def search():
+            hits, lines_out, more = 0, [], False
+            for file, relative in self._walk(path):
+                if file is None:
+                    more = True
+                    break
+                if glob and not fnmatch.fnmatch(
+                    relative if "/" in glob else file.name, glob
+                ):
+                    continue
+                try:
+                    if file.stat().st_size > 2_000_000:
+                        continue
+                    raw = file.read_bytes()
+                except OSError:
+                    continue
+                if b"\0" in raw[:4096]:
+                    continue
+                try:
+                    lines = raw.decode("utf-8").splitlines()
+                except UnicodeDecodeError:
+                    continue
+                shown = set()
+                for index, line in enumerate(lines):
+                    if not matcher.search(line):
+                        continue
+                    if hits >= limit:
+                        return {"lines": lines_out, "matches": hits, "more": True}
+                    hits += 1
+                    for near in range(
+                        max(0, index - context), min(len(lines), index + context + 1)
+                    ):
+                        if near in shown:
+                            continue
+                        shown.add(near)
+                        mark = ":" if near == index else "-"
+                        lines_out.append(
+                            f"{relative}{mark}{near + 1}{mark} {lines[near][:300]}"
+                        )
+            return {"lines": lines_out, "matches": hits, "more": more}
+
+        try:
+            return await durable(search)
+        except OSError as exc:
+            raise ToolError("Cannot search requested directory") from exc
+
     async def mkdir(self, path) -> Path:
         def create():
             with _LOCK:
@@ -182,3 +374,35 @@ class Filesystem:
             return await durable(create)
         except OSError as exc:
             raise ToolError("Cannot create requested directory") from exc
+
+
+def whitespace_replace(content: str, old: str, new: str) -> tuple[str, int, int]:
+    """Replace whole lines matching ``old`` ignoring trailing whitespace/CRLF.
+
+    Small models often reproduce text without exact trailing spaces or line
+    endings. Only a unique run of complete lines qualifies; the file keeps its
+    own line-ending style. Returns (content, first line, last line)."""
+    wanted = [line.rstrip() for line in old.strip("\r\n").splitlines()]
+    if not wanted or not any(wanted):
+        raise ToolError("Replacement must match exactly once")
+    lines = content.splitlines(keepends=True)
+    normalized = [line.rstrip() for line in lines]
+    size = len(wanted)
+    hits = [
+        index
+        for index in range(len(lines) - size + 1)
+        if normalized[index : index + size] == wanted
+    ]
+    if len(hits) != 1:
+        raise ToolError(
+            "Replacement must match exactly once"
+            + ("; include more surrounding lines" if hits else "")
+        )
+    start = hits[0]
+    ending = "\r\n" if lines[start].endswith("\r\n") else "\n"
+    replacement = new.replace("\r\n", "\n").replace("\n", ending)
+    last = lines[start + size - 1]
+    if last.endswith(("\n", "\r")) and not replacement.endswith(ending):
+        replacement += ending
+    updated = "".join(lines[:start]) + replacement + "".join(lines[start + size :])
+    return updated, start + 1, start + size

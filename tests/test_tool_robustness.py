@@ -287,4 +287,4 @@ def test_mutating_file_tools_confirm_what_changed(config, tmp_path):
         "files.edit",
         json.dumps({"path": str(target), "old": "hello", "new": "bye"}),
     )
-    assert result.content.startswith(f"Edited {target}: replaced 1 match")
+    assert result.content == f"Edited {target}: replaced lines 1-1"

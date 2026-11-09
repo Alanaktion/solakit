@@ -23,6 +23,8 @@ MODULES = [
     "math",
     "memory",
     "messages",
+    "playbook",
+    "plan",
     "repo_git",
     "runtime",
     "sessions",

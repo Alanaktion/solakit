@@ -112,3 +112,24 @@ Feed connections pin a validated public IP on every redirect, preserving the Hos
 header and TLS server name; environment proxies are disabled. Page conversion is
 performed by Cloudflare: local URL checks cannot pin Cloudflare’s DNS resolution
 or validate its subsequent redirects.
+
+## Local file tools
+
+`files.read(path, offset=1, limit=None)` returns a file that fits the output cap
+whole and unchanged. Larger files (or calls with `offset`/`limit`) return numbered
+lines with a footer such as `[lines 1-180 of 1832; next offset=181]`; call again
+with that offset to continue. A single overlong line keeps the counted character
+truncation marker.
+
+`files.find(pattern, path=".", limit=50)` lists files recursively by glob (on
+names, or relative paths when the pattern contains `/`) with sizes and modification
+times. `files.grep(query, path=".", glob=None, regex=False, context=2, limit=30)`
+searches text case-insensitively and returns `path:line: text` matches with
+`path-line- text` context. Both skip hidden directories, symlinks, binary files and
+anything outside the profile's read roots; they need no shell, so read-only
+profiles can use them.
+
+`files.write(..., overwrite=false)` refuses existing files unless `overwrite` is
+true (atomic replace, mode preserved). `files.edit` prefers an exact unique match;
+otherwise it matches whole lines ignoring trailing whitespace and CRLF/LF
+differences, keeps the file's line endings, and reports the replaced line range.
