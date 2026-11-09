@@ -23,6 +23,10 @@ smtp_security = "tls" # Or "starttls", usually with port 587.
 # smtp_password = { file = "mail-password" } # Relative to this file; mode 0600.
 timeout_s = 15
 max_message_bytes = 1000000
+# Opt-ins, all off by default:
+# allow_mark_read = true                       # email.mark_read
+# trash_folder = "Trash"                       # email.delete moves here; never expunges
+# allowed_recipients = ["alan@example.invalid"] # email.send; "@domain" or "*" allowed
 
 # Optional 58mm ESC/POS thermal printer; replace IDs with actual hardware.
 # No cut command: feed two lines after text.

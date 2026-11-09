@@ -366,6 +366,12 @@ Consequences, all deliberate:
 
 Any run can end with a delivery: `{to: channel config id, mode}`.
 
+Separately, the built-in `messages.send(channel, text, operation_id)` tool lets a run
+post to an enabled channel granted as resource `channel:<id>` with the `send` effect.
+It uses the same adapter `deliver` seam with an untargeted `Outbound`, keeps private
+append-only receipts under `channel-posts/` keyed by channel and operation ID, and
+never replays an uncertain post. It does not count as, or suppress, run delivery.
+
 | Mode | Behaviour |
 |------|-----------|
 | `final` | Post the run's final assistant message to the channel |
@@ -700,8 +706,10 @@ readable. Symlink resolution precedes containment checks. Anywhere means `/`.
 `effects` is a closed list: `push`, `send`, `print`, `shell`, `operate`.
 `operate` authorizes job mutations/triggers and cross-profile/cross-session runtime
 access. `resources` lists named pack aliases, for example `mailbox:personal`.
-Resource read needs the alias; reply also needs `send`, print needs `print`, and
-image generation needs a non-none write tier. Mixed read/reply authority across
+Resource read needs the alias; reply/send also needs `send`, print needs `print`, and
+image generation needs a non-none write tier. Mailbox mark-read/delete need only the
+alias plus the mailbox's sidecar opt-in. Core `channel:<id>` grants with `send` allow
+`messages.send` to that configured channel. Mixed read/reply authority across
 mailboxes requires separate profiles. Shell runs with host-user privileges; its
 cwd check is not OS containment.
 
@@ -795,7 +803,8 @@ gets a **semantic tool** whose implementation hides the mechanics:
 | `journal.create / journal.publish / journal.list_recent` | configured collection layout, pack-owned front matter, scoped Python filesystem/Git services | "publish these entries", returns commit identity. Never a shell command line. |
 | `letters.pull_new / letters.reply / letters.send` | clone/pull of the letters repo, next-number computation, filename convention from the letters protocol | "reply to letter 003" — the `NNN-YYYY-MM-DD-sola.md` rule lives in code, not in a prompt hoping she remembers it |
 | `repo_git.status / commit_push` | git in a *named, configured* repo only | scoped fallback for repos without a domain toolset yet |
-| `email.search / read / reply` | IMAP/SMTP, thread-aware reply | reply-by-ID, not raw SMTP |
+| `email.search / read / reply / send / mark_read / delete` | IMAP/SMTP, thread-aware reply, opt-in flags/trash/allowlisted new mail | reply-by-ID, not raw SMTP |
+| `messages.channels / send` | configured channel adapters | post text to a granted `channel:<id>`, receipted |
 | `memory.search / memory.read` | OpenViking REST/SDK | scoped by `ctx.session.memory_scope` (§13) |
 | `printer.print_text` | named thermal printer | text in, receipt out |
 | `calendar.events` | named read-only ICS export | bounded agenda with timezone/recurrence handling |

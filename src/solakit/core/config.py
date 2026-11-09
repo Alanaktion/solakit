@@ -486,6 +486,13 @@ class Config(StrictModel):
         if any(j.profile == "maintenance" for j in self.jobs):
             raise ValueError("Maintenance cannot be scheduled")
         channel_ids = {c.id for c in self.channels}
+        for name, profile in self.profiles.items():
+            for grant in profile.resources:
+                if (
+                    grant.startswith("channel:")
+                    and grant.removeprefix("channel:") not in channel_ids
+                ):
+                    raise ValueError(f"Profile {name}: unknown channel grant: {grant}")
         for job in self.jobs:
             if (
                 job.deliver

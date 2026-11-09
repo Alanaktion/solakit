@@ -65,6 +65,7 @@ class ToolContext:
     deliver: Any = None
     runtime_provider: Any = None
     job_manager: Any = None
+    channel_poster: Any = None
     nested_submit: Any = None
     stage_memory: Any = None
     configured_tool_names: frozenset[str] = frozenset()
@@ -236,6 +237,7 @@ class Registry:
         self.tools: dict[str, Registered] = {}
         self.runtime_status = None
         self.job_manager = None
+        self.channel_poster = None
         self.distributions: list[dict] = []
         for module in config.enabled_tools:
             if not re.fullmatch(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*", module):
@@ -536,6 +538,7 @@ class Registry:
                 )
             ctx.runtime_provider = self.runtime_status
             ctx.job_manager = self.job_manager
+            ctx.channel_poster = self.channel_poster
             cfg = self.config.profiles[ctx.profile]
             self.check_access(registered, cfg)
             repairable = True

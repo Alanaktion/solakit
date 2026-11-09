@@ -54,8 +54,13 @@ password = { env = "PACK_MAIL_PASSWORD" }
         entered = threading.Event()
         release = threading.Event()
         gate = False
+        capabilities = ("IMAP4REV1", "MOVE")
+        selects = []
+        flags = {}
+        trash = []
 
     net = Network()
+    net.sent, net.commands, net.selects, net.flags, net.trash = [], [], [], {}, []
 
     class IMAP:
         def __init__(self, host, port, ssl_context, timeout):
@@ -71,8 +76,11 @@ password = { env = "PACK_MAIL_PASSWORD" }
             assert supplied == password
             return "OK", []
 
+        capabilities = property(lambda self: net.capabilities)
+
         def select(self, folder, readonly):
-            assert readonly is True and "INBOX" in folder
+            assert "INBOX" in folder
+            net.selects.append(readonly)
             return "OK", [b"1"]
 
         def response(self, key):
@@ -81,8 +89,31 @@ password = { env = "PACK_MAIL_PASSWORD" }
 
         def uid(self, command, *arguments):
             net.commands.append((command, arguments))
+            if command == "SEARCH" and arguments[1:2] == ("UID",):
+                wanted = arguments[2].split(",")
+                found = [uid for uid in wanted if uid in net.messages]
+                return "OK", [" ".join(found).encode()]
             if command == "SEARCH":
                 return "OK", [b" ".join(uid.encode() for uid in net.messages)]
+            if command == "STORE":
+                uids, change, flags = arguments
+                for uid in uids.split(","):
+                    target = net.flags.setdefault(uid, set())
+                    flag = flags.strip("()")
+                    target.add(flag) if change == "+FLAGS" else target.discard(flag)
+                return "OK", []
+            if command in {"MOVE", "COPY"}:
+                uids, folder = arguments
+                for uid in uids.split(","):
+                    net.trash.append(net.messages[uid])
+                    if command == "MOVE":
+                        del net.messages[uid]
+                return "OK", []
+            if command == "EXPUNGE":
+                for uid in arguments[0].split(","):
+                    if "\\Deleted" in net.flags.get(uid, set()):
+                        del net.messages[uid]
+                return "OK", []
             assert command == "FETCH"
             uid, part = arguments
             assert "BODY.PEEK[" in part
@@ -552,3 +583,247 @@ def test_fetch_reports_seen_flag():
 
     _, seen = mail.fetch(Client(), "1", 1000, headers=True, with_flags=True)
     assert seen is True
+
+
+def mail_registry(ctx):
+    from solakit.tools import Registry
+
+    return Registry(ctx.config)
+
+
+def test_mark_read_requires_opt_in_and_changes_only_flags(fixture):
+    registry, ctx, net, settings, _ = fixture
+    ctx.config.profiles["inbox"].tools.append("email.mark_read")
+    registry = mail_registry(ctx)
+
+    async def exercise():
+        refused = await dispatch(
+            registry, ctx, "email.mark_read", mailbox="personal", message_ids=["123:1"]
+        )
+        assert refused.error and "not enabled" in refused.content
+        assert net.imap_connections == 0
+        settings.write_text(settings.read_text() + "allow_mark_read = true\n")
+        result = await dispatch(
+            registry,
+            ctx,
+            "email.mark_read",
+            mailbox="personal",
+            message_ids=["123:1", "123:9"],
+        )
+        assert not result.error, result.content
+        payload = json.loads(result.content)
+        assert payload["updated"] == ["123:1"] and payload["not_found"] == ["123:9"]
+        assert net.flags["1"] == {"\\Seen"} and net.selects[-1] is False
+        assert "1" in net.messages
+        result = await dispatch(
+            registry,
+            ctx,
+            "email.mark_read",
+            mailbox="personal",
+            message_ids=["123:1"],
+            read=False,
+        )
+        assert not result.error and net.flags["1"] == set()
+        stale = await dispatch(
+            registry, ctx, "email.mark_read", mailbox="personal", message_ids=["99:1"]
+        )
+        assert stale.error and "UIDVALIDITY" in stale.content
+        # Reading still selects the folder read-only.
+        await dispatch(
+            registry, ctx, "email.read", mailbox="personal", message_id="123:1"
+        )
+        assert net.selects[-1] is True
+        assert net.smtp_attempts == 0
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.parametrize(
+    "capabilities", [("IMAP4REV1", "MOVE"), ("IMAP4REV1", "UIDPLUS"), ("IMAP4REV1",)]
+)
+def test_delete_moves_to_trash_and_never_plain_expunges(fixture, capabilities):
+    registry, ctx, net, settings, _ = fixture
+    ctx.config.profiles["inbox"].tools.append("email.delete")
+    registry = mail_registry(ctx)
+    net.capabilities = capabilities
+
+    async def exercise():
+        refused = await dispatch(
+            registry, ctx, "email.delete", mailbox="personal", message_ids=["123:1"]
+        )
+        assert refused.error and "trash_folder" in refused.content
+        settings.write_text(settings.read_text() + 'trash_folder = "Trash"\n')
+        result = await dispatch(
+            registry, ctx, "email.delete", mailbox="personal", message_ids=["123:1"]
+        )
+        if capabilities == ("IMAP4REV1",):
+            assert result.error and "neither MOVE nor UIDPLUS" in result.content
+            assert "1" in net.messages and not net.trash
+            return
+        assert not result.error, result.content
+        payload = json.loads(result.content)
+        assert payload["moved_to_trash"] == ["123:1"]
+        assert payload["trash_folder"] == "Trash"
+        assert "1" not in net.messages and len(net.trash) == 1
+        commands = [command for command, _ in net.commands]
+        assert ("MOVE" in commands) == ("MOVE" in capabilities)
+        if "UIDPLUS" in capabilities:
+            assert commands[-3:] == ["COPY", "STORE", "EXPUNGE"]
+            assert net.commands[-1][1] == ("1",)
+        again = await dispatch(
+            registry, ctx, "email.delete", mailbox="personal", message_ids=["123:1"]
+        )
+        assert not again.error
+        assert json.loads(again.content)["not_found"] == ["123:1"]
+        assert len(net.trash) == 1
+
+    asyncio.run(exercise())
+
+
+def test_trash_folder_must_differ_from_selected_folder(fixture):
+    registry, ctx, net, settings, _ = fixture
+    ctx.config.profiles["inbox"].tools.append("email.delete")
+    registry = mail_registry(ctx)
+    settings.write_text(settings.read_text() + 'trash_folder = "INBOX"\n')
+    result = asyncio.run(
+        dispatch(
+            registry, ctx, "email.delete", mailbox="personal", message_ids=["123:1"]
+        )
+    )
+    assert result.error and net.imap_connections == 0
+
+
+def test_send_new_email_allowlist_receipts_and_effect(fixture):
+    registry, ctx, net, settings, password = fixture
+    ctx.config.profiles["inbox"].tools.append("email.send")
+    registry = mail_registry(ctx)
+    arguments = {
+        "mailbox": "personal",
+        "to": ["Friend <friend@example.invalid>"],
+        "subject": "Moon notes",
+        "body": "Tonight ☾",
+        "operation_id": "moon-1",
+    }
+
+    async def exercise():
+        refused = await dispatch(registry, ctx, "email.send", **arguments)
+        assert refused.error and "not enabled" in refused.content
+        settings.write_text(
+            settings.read_text()
+            + 'allowed_recipients = ["friend@example.invalid", "@team.invalid"]\n'
+        )
+        outside = await dispatch(
+            registry, ctx, "email.send", **{**arguments, "to": ["x@evil.invalid"]}
+        )
+        assert outside.error and "allowed_recipients" in outside.content
+        injected = await dispatch(
+            registry,
+            ctx,
+            "email.send",
+            **{**arguments, "subject": "Hi\r\nBcc: x@evil.invalid"},
+        )
+        assert injected.error and net.smtp_attempts == 0
+        first = await dispatch(
+            registry,
+            ctx,
+            "email.send",
+            **{**arguments, "cc": ["lead@team.invalid"]},
+        )
+        assert not first.error, first.content
+        result = json.loads(first.content)
+        assert result["to"] == ["friend@example.invalid"]
+        assert result["cc"] == ["lead@team.invalid"]
+        message, sender, recipients = net.sent[0]
+        assert sender == "sola@example.invalid"
+        assert recipients == ["friend@example.invalid", "lead@team.invalid"]
+        assert str(message["Subject"]) == "Moon notes"
+        assert not message.get("In-Reply-To") and not message.get("Bcc")
+        assert message.get_content().strip() == "Tonight ☾"
+        assert net.imap_connections == 0
+        again = await dispatch(
+            registry,
+            ctx,
+            "email.send",
+            **{**arguments, "cc": ["lead@team.invalid"]},
+        )
+        assert not again.error and json.loads(again.content) == result
+        assert net.smtp_attempts == 1
+        reused = await dispatch(
+            registry, ctx, "email.send", **{**arguments, "body": "changed"}
+        )
+        assert reused.error and "different request" in reused.content
+        net.fail = "uncertain"
+        failed = await dispatch(
+            registry,
+            ctx,
+            "email.send",
+            **{**arguments, "operation_id": "moon-2", "body": "Second"},
+        )
+        assert failed.error and "uncertain" in failed.content
+        net.fail = None
+        blocked = await dispatch(
+            registry,
+            ctx,
+            "email.send",
+            **{**arguments, "operation_id": "moon-3", "body": "Second"},
+        )
+        assert blocked.error and "pending or uncertain" in blocked.content
+        assert net.smtp_attempts == 2
+        evidence = b"".join(
+            path.read_bytes()
+            for path in (ctx.store.root / "pack-operations/email").glob("*.jsonl")
+        )
+        assert password.encode() not in evidence
+        ctx.config.profiles["inbox"].effects.remove("send")
+        denied = await dispatch(
+            registry, ctx, "email.send", **{**arguments, "operation_id": "moon-4"}
+        )
+        assert denied.error and "requires effect" in denied.content
+        assert net.smtp_attempts == 2
+
+    asyncio.run(exercise())
+
+
+def test_partial_recipient_refusal_is_uncertain(fixture):
+    registry, ctx, net, settings, _ = fixture
+    ctx.config.profiles["inbox"].tools.append("email.send")
+    registry = mail_registry(ctx)
+    settings.write_text(settings.read_text() + 'allowed_recipients = ["*"]\n')
+    original = mail.smtplib.SMTP_SSL
+
+    class Partial(original):
+        def send_message(self, message, from_addr, to_addrs):
+            net.smtp_attempts += 1
+            return {to_addrs[1]: (550, b"no")}
+
+    mail.smtplib.SMTP_SSL = Partial
+    try:
+        result = asyncio.run(
+            dispatch(
+                registry,
+                ctx,
+                "email.send",
+                mailbox="personal",
+                to=["a@example.invalid", "b@example.invalid"],
+                subject="Both",
+                body="Body",
+                operation_id="partial",
+            )
+        )
+    finally:
+        mail.smtplib.SMTP_SSL = original
+    assert result.error and "uncertain" in result.content
+
+
+def test_discovery_lists_enabled_mutations(fixture):
+    registry, ctx, net, settings, _ = fixture
+    ctx.config.profiles["inbox"].tools.append("email.list_mailboxes")
+    registry = mail_registry(ctx)
+    settings.write_text(
+        settings.read_text()
+        + 'allow_mark_read = true\ntrash_folder = "Trash"\n'
+        + 'allowed_recipients = ["@example.invalid"]\n'
+    )
+    result = asyncio.run(dispatch(registry, ctx, "email.list_mailboxes"))
+    payload = json.loads(result.content.split("\n")[1])
+    assert payload[0]["actions"] == ["read", "mark_read", "delete", "reply", "send"]

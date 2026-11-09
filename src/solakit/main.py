@@ -119,6 +119,7 @@ def create_app(
         app.state.channels = Channels(cfg, app.state.execution, adapters)
         app.state.jobs = Jobs(cfg, app.state.execution, app.state.channels)
         app.state.registry.job_manager = app.state.jobs
+        app.state.registry.channel_poster = app.state.channels.post
         app.state.session_lifecycle = SessionLifecycle(
             cfg, app.state.execution, app.state.jobs
         )

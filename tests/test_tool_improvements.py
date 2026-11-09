@@ -22,6 +22,7 @@ MODULES = [
     "jobs",
     "math",
     "memory",
+    "messages",
     "repo_git",
     "runtime",
     "sessions",

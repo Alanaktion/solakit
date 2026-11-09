@@ -1,6 +1,8 @@
 """Configured channels share the existing queue and stored-message delivery."""
 
 import asyncio
+import hashlib
+import json
 import os
 import stat
 import weakref
@@ -18,6 +20,7 @@ from solakit.tools import ToolContext
 
 class ApiAdapter:
     type = "api"
+    outbound = False  # API consumers read stored runs; nothing is posted.
 
     async def start(self, emit):
         self.emit = emit
@@ -114,6 +117,73 @@ class Channels:
         )
         await self.deliver(run, Delivery(to=channel.id))
         return run
+
+    async def post(self, channel_id: str, text: str, operation_id: str, run_id: str):
+        """Post tool-authored text once; uncertain outcomes are never replayed.
+
+        Receipts are keyed by channel and operation ID and bound to the exact text.
+        A run's own final-message delivery is unaffected.
+        """
+        channel = next(
+            (c for c in self.config.channels if c.id == channel_id and c.enabled), None
+        )
+        adapter = self.adapters.get(channel.type) if channel else None
+        if channel is None or adapter is None:
+            raise LookupError("Channel is unknown, disabled or not connected")
+        if not getattr(adapter, "outbound", True):
+            raise LookupError("Channel type has no outbound message surface")
+        store = self.execution.store
+        key = hashlib.sha256(
+            json.dumps([channel_id, operation_id]).encode()
+        ).hexdigest()
+        request_hash = hashlib.sha256(text.encode()).hexdigest()
+        lock = self.delivery_locks.setdefault("post-" + key, asyncio.Lock())
+        async with lock:
+            events = await durable(store.channel_post_events, key)
+            if events and events[0].get("request_hash") != request_hash:
+                raise ValueError("Operation ID already used for different text")
+            if events and events[-1]["stage"] == "delivered":
+                return {**events[-1]["result"], "replayed": True}
+            if events:
+                raise RuntimeError(
+                    "Earlier post is pending or uncertain; inspect the channel "
+                    "before retrying with a new operation ID"
+                )
+            record = {
+                "channel": channel_id,
+                "operation_id": operation_id,
+                "run_id": run_id,
+                "request_hash": request_hash,
+            }
+            await durable(store.log_channel_post, key, {**record, "stage": "sending"})
+            try:
+                identity = await adapter.deliver(channel, Outbound(text))
+            except asyncio.CancelledError:
+                await durable(
+                    store.log_channel_post, key, {**record, "stage": "uncertain"}
+                )
+                raise
+            except Exception as exc:
+                # Adapters may fail after a partial multi-chunk send: uncertain.
+                await durable(
+                    store.log_channel_post,
+                    key,
+                    {
+                        **record,
+                        "stage": "uncertain",
+                        "error_type": type(exc).__name__,
+                    },
+                )
+                raise RuntimeError(
+                    "Post outcome uncertain; inspect the channel before retrying"
+                ) from exc
+            result = {"channel": channel_id, "external_id": identity}
+            await durable(
+                store.log_channel_post,
+                key,
+                {**record, "stage": "delivered", "result": result},
+            )
+            return result
 
     async def deliver(self, run: Run, delivery: Delivery):
         lock = self.delivery_locks.setdefault(run.id, asyncio.Lock())

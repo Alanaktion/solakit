@@ -1203,6 +1203,17 @@ class Store:
             self.redactor.redact(record),
         )
 
+    def channel_post_events(self, key: str) -> list[dict]:
+        return self._read(self._path("channel-posts", key, ".jsonl"))
+
+    def log_channel_post(self, key: str, record: dict) -> None:
+        """Append-only tool-initiated post receipts, separate from run delivery."""
+        directory = self.root / "channel-posts"
+        directory.mkdir(exist_ok=True, mode=0o700)
+        self._append(
+            self._path("channel-posts", key, ".jsonl"), self.redactor.redact(record)
+        )
+
     def log_diagnostic(self, run_id: str, record: dict) -> None:
         self._append(
             self._path("runs", run_id, ".diagnostics.jsonl"),

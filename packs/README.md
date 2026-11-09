@@ -7,7 +7,8 @@ move to a separate repository without changes to core execution.
 - `blog`: Astro posts and dreams, optional generated covers, one-call publication.
 - `journal`: dated, configured collections (posts, dreams, poems).
 - `letters`: sequential immutable correspondence in a named Git repository.
-- `email`: named TLS mailboxes, read/search and sender-only threaded replies.
+- `email`: named TLS mailboxes, read/search, sender-only threaded replies, and opt-in
+  allowlisted new mail, mark-read and move-to-trash.
 - `printer`: named USB/serial 58mm ESC/POS text receipts with feed and send evidence.
 - `calendar`: read-only named ICS agendas with bounded recurrence expansion.
 - `image`: named ComfyUI API workflows, explicit seeds and non-replaying receipts.
@@ -47,7 +48,9 @@ optional package. See [built-in shell and migration](../docs/operations/shell.md
 `effects` is a closed list: `push`, `send`, `print`, `shell`, `operate`.
 `operate` authorizes job mutations/triggers and cross-profile/cross-session runtime
 access. `resources` lists named pack aliases, for example `mailbox:personal`.
-Resource read needs the alias; reply also needs `send`, print needs `print`, and
-image generation needs a non-none write tier. Mixed read/reply authority across
+Resource read needs the alias; reply/send also needs `send`, print needs `print`, and
+image generation needs a non-none write tier. Mailbox mark-read/delete need only the
+alias plus the mailbox's sidecar opt-in. Core `channel:<id>` grants with `send` allow
+`messages.send` to that configured channel. Mixed read/reply authority across
 mailboxes requires separate profiles. Shell runs with host-user privileges; its
 cwd check is not OS containment.

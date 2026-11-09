@@ -10,6 +10,8 @@ enabled_tools = []
 # The current profile is always allowed; list additional worker profiles explicitly.
 # Memory tools: load "memory" and explicitly grant memory.search/read/remember.
 # remember stages exact notes for the existing commit; it never claims extraction.
+# Channel posts are built in: load "messages"; grant messages.send plus effect
+# "send" and resources = ["channel:<channel id>"] per destination.
 # Session history search is built in: "sessions" or "solakit.tools.sessions".
 # Grant tools = ["sessions.search"] for current-session history; additionally
 # effects = ["operate"] allows another session or all sessions.

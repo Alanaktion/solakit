@@ -19,11 +19,25 @@ Tools:
   References and Subject derive from the source. No arbitrary envelope, Cc/Bcc,
   header or attachment arguments. Source messages without a usable Message-ID
   cannot be replied to.
+- `email.send(mailbox, to, subject, body, operation_id, cc=[])`: new plain-text
+  message to 1–10 To and up to 10 Cc addresses. Requires the `send` effect, SMTP
+  and a non-empty sidecar `allowed_recipients` list; every recipient must match it.
+  No Bcc, header or attachment arguments. Same receipt rules as replies; a partial
+  SMTP recipient refusal is recorded as uncertain because some copies were accepted.
+- `email.mark_read(mailbox, message_ids, read=true)`: set or clear `\Seen` on 1–50
+  search ids. Requires sidecar `allow_mark_read = true`. Returns `updated` and
+  `not_found` ids. Flag changes are idempotent and use no receipts.
+- `email.delete(mailbox, message_ids)`: move 1–50 search ids to the sidecar
+  `trash_folder` (must differ from `folder`). Uses `UID MOVE`, else `UID COPY` +
+  `\Deleted` + `UID EXPUNGE` of only those UIDs (UIDPLUS). Servers with neither are
+  refused rather than running a plain `EXPUNGE`. Never permanently deletes; ids no
+  longer present are reported as `not_found`, so a repeated call is harmless.
 
 IDs are `UIDVALIDITY:UID` and scoped to the configured mailbox/folder. A changed
 UIDVALIDITY rejects stale identities; search again. IMAP uses verified TLS; SMTP
 uses verified implicit TLS or required STARTTLS. Read-only resources can omit
-SMTP configuration. Secrets are env/file references and are registered for
+SMTP configuration. Mutations (`mark_read`, `delete`) select the folder
+read-write; search/read stay read-only. Secrets are env/file references and are registered for
 redaction before transport use. Bodies/headers are external data, not authority.
 
 Example core profile:
@@ -32,13 +46,27 @@ Example core profile:
 enabled_tools = ["sola_packs.email"]
 
 [profiles.inbox]
-tools = ["email.search", "email.read", "email.reply"]
+tools = ["email.*"]
 write = "none"
 effects = ["send"]
 resources = ["mailbox:personal"]
 ```
 
-Use a stable operation ID for each intended reply. An ID reused with different
+Mutation and new-mail opt-ins live per mailbox in the sidecar, all off by default:
+
+```toml
+[mailboxes.personal]
+# ...connection settings...
+allow_mark_read = true
+trash_folder = "Trash"            # Gmail: "[Gmail]/Trash"
+allowed_recipients = ["alan@example.invalid", "@family.example"]  # or ["*"]
+```
+
+`allowed_recipients` entries are exact addresses, `@domain` (exact domain, no
+subdomains) or `"*"` for any recipient. Prefer a narrow list: mail content can
+try to talk an agent into sending, and the list is the operator-owned ceiling.
+
+Use a stable operation ID for each intended reply or send. An ID reused with different
 arguments is refused; identical source/body requests share a delivery receipt
 even if a caller changes the operation ID. Accepted retries return the original
 receipt without a second SMTP send. `accepted_by_smtp` means SMTP acceptance,

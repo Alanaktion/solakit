@@ -87,6 +87,8 @@ Read `SPEC.md` for behavioral contracts, `README.md` for an introduction,
   with the existing redactor before network access. Collections remain named repo
   subdirectories; `collection:<alias>` grants only that directory.
 - `channels/`: API and opt-in Discord adapters through shared session execution.
+  Built-in messages.send posts to granted channel:<id> resources (send effect)
+  through Channels.post with non-replaying channel-posts/ receipts.
   Discord image attachments use core/media.py for bounded immutable source/JPEG
   evidence. Messages retain image refs; the model client projects those into
   OpenAI image_url data parts, including later/tool/streaming turns. Never silently

@@ -35,7 +35,14 @@ def resource(ctx, section, alias, model, action):
     profile = ctx.config.profiles[ctx.profile]
     if f"{prefix}:{alias}" not in profile.resources:
         raise ToolError(f"Missing resource: {prefix}:{alias}")
-    effect = {"read": None, "reply": "send", "print": "print", "generate": None}[action]
+    effect = {
+        "read": None,
+        "manage": None,
+        "reply": "send",
+        "send": "send",
+        "print": "print",
+        "generate": None,
+    }[action]
     if effect and effect not in profile.effects:
         raise ToolError(f"Missing effect: {effect}")
     if action == "generate" and profile.write == "none":

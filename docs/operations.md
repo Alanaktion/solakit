@@ -382,6 +382,26 @@ supported. Oversized fenced blocks attach intact as UTF-8 text; implicit mention
 are suppressed. Intent/results are durable; uncertain sends are not replayed.
 `GET /api/channels` reports status, connection time and last accepted message.
 
+Load the built-in `messages` module for tool-initiated posts. `messages.channels`
+lists enabled channel ids granted to the profile; `messages.send(channel, text,
+operation_id)` posts verbatim text (up to 8000 characters, chunked by the adapter,
+mentions suppressed) to one of them. It requires the `send` effect and a
+`channel:<id>` resource per destination; unknown channel grants fail configuration.
+API channels have no outbound surface and are refused. Receipts live under
+`channel-posts/` in the data tree (back them up with evidence): the same ID and text
+returns the original result, different text is refused, and a failed or interrupted
+post is uncertain and never replayed. These posts are separate from the run's own
+final delivery, which still happens as configured.
+
+```toml
+enabled_tools = ["messages"]
+
+[profiles.interactive]
+tools = ["messages.*"]
+effects = ["send"]
+resources = ["channel:discord-blog"]
+```
+
 APScheduler 3 supplies wake-ups and cron calculations. Job definitions live in
 SQLite and can be managed through **Operations → New job**, the API, or chat tools.
 Existing TOML jobs import once per ID; later file edits do not overwrite managed
@@ -503,7 +523,9 @@ for letters/mailboxes; core config only loads modules and grants tools, tiers, e
   Grant `letters.send` explicitly (or through `letters.*`) to enable new letters.
 - [Email](../packs/email/README.md): verified TLS search/read, stable UIDVALIDITY/UID
   identities, external-content markers, and receipted sender-only threaded replies.
-  The inbox profile needs no filesystem write reach. SMTP acceptance is reported
+  Opt-in per mailbox: `email.mark_read` (`allow_mark_read`), `email.delete` (moves to
+  `trash_folder`, never expunges permanently) and `email.send` (new mail limited to
+  `allowed_recipients`, `send` effect, same non-replaying receipts). The inbox profile needs no filesystem write reach. SMTP acceptance is reported
   separately from recipient delivery; uncertain sends are not auto-replayed.
 - [Shell](operations/shell.md): enabled by config literal argv and `/bin/sh` tools,
   explicit `shell.exec` grant, finite timeouts, bounded output and process-group
