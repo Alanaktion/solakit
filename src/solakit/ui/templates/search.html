@@ -2,30 +2,36 @@
 {% from "macros/icons.html" import icon %}
 {% block title %}Search sessions · Solakit{% endblock %}
 {% block content %}
-<section class="page-heading"><h1>Search sessions</h1></section>
-<p class="field-note">Find active and archived sessions. Full text includes current conversations and numbered transcript archives.</p>
-<form class="session-filters" action="/search" method="get">
-<div><label for="search-mode">Search in</label><select id="search-mode" name="mode"><option value="sessions" {% if mode == 'sessions' %}selected{% endif %}>Session name or ID</option><option value="text" {% if mode == 'text' %}selected{% endif %}>Full text</option></select></div>
-<div><label for="search-query">Search query</label><input id="search-query" name="q" value="{{ query }}" maxlength="2000" required></div>
-<button class="primary-button" type="submit">Search</button>
-</form>
-<p class="field-note">Full text matches all terms; use quotes for phrases. Terms need at least three characters. Up to 100 matching messages are shown in relevance order; narrow the query if needed.</p>
-{% if error %}<div class="notice notice-error" role="alert">{{ error }}</div>
-{% elif query.strip() %}
-<section class="search-results" aria-label="Search results">
-{% for result in results %}
-<article class="panel search-result">
-{% if mode == 'text' %}
-<h2><a href="{{ result.url }}">{{ result.session_id }}</a></h2>
-<p class="field-note">{{ 'Current transcript' if result.archive == 'active' else 'Archive ' ~ result.archive.rsplit('.', 1)[1] }} · Line {{ result.line_no }} · {{ result.role }}{% if result.ts %} · <time datetime="{{ result.ts }}">{{ result.ts|display_time }}</time>{% endif %}</p>
-<pre class="search-snippet">{{ result.snippet }}</pre>
-{% else %}
-<h2><a href="/sessions/{{ result.id|urlencode }}">{{ result.title or result.id }}</a></h2>
-<p class="field-note">{{ result.id }} · {{ result.default_profile }} · {{ 'Archived' if result.archived_at else 'Active' }} · <time datetime="{{ result.last_activity_at }}">{{ result.last_activity_at|display_time }}</time></p>
-{% endif %}
-</article>
-{% else %}<div class="empty-state"><h2>No matching sessions or messages.</h2><p>{% if mode == 'sessions' %}Try another name or ID, or choose Full text to search message content.{% else %}Try another phrase.{% endif %}</p></div>{% endfor %}
-</section>
-<nav class="session-pagination" aria-label="Search pages">{% if previous %}<a class="text-link" href="{{ previous }}" rel="prev">{{ icon("arrow-left") }} Previous</a>{% endif %}{% if next %}<a class="text-link" href="{{ next }}" rel="next">Next {{ icon("arrow-right") }}</a>{% endif %}</nav>
-{% endif %}
+<div class="session-search">
+  <section class="page-heading"><div><span class="section-label">CONVERSATION LIBRARY</span><h1>Search sessions</h1><p class="intro">Find active and archived sessions, or look inside conversations and numbered transcript archives.</p></div></section>
+  <form class="panel search-form" action="/search" method="get" aria-label="Search sessions">
+    <div class="search-inputs">
+      <div class="form-field"><label for="search-mode">Search in</label><select id="search-mode" name="mode"><option value="sessions" {% if mode == 'sessions' %}selected{% endif %}>Session name or ID</option><option value="text" {% if mode == 'text' %}selected{% endif %}>Full text</option></select></div>
+      <div class="form-field"><label for="search-query">Search query</label><input id="search-query" name="q" value="{{ query }}" maxlength="2000" aria-describedby="search-help" required></div>
+      <div class="action-group"><button class="primary-button" type="submit">Search {{ icon("arrow-right") }}</button></div>
+    </div>
+    <p class="search-help" id="search-help"><strong>Full text tips</strong> Matches all terms; use quotes for phrases. Terms need at least three characters. Up to 100 matching messages are shown in relevance order; narrow the query if needed.</p>
+  </form>
+  {% if error %}<div class="notice notice-error" role="alert">{{ error }}</div>
+  {% elif query.strip() %}
+  <section class="search-results" aria-labelledby="search-results-heading">
+    <header class="search-results-heading"><h2 id="search-results-heading">{{ 'Message matches' if mode == 'text' else 'Session matches' }}</h2><span class="muted">{{ results|length }} on this page</span></header>
+    {% for result in results %}
+    <article class="panel search-result">
+      {% if mode == 'text' %}
+      <div class="search-result-heading"><h2><a class="text-link" href="{{ result.url }}">{{ result.session_id }} {{ icon("arrow-up-right") }}</a></h2><span class="subtle-tag">{{ result.role }}</span></div>
+      <div class="search-result-meta"><span>{{ 'Current transcript' if result.archive == 'active' else 'Archive ' ~ result.archive.rsplit('.', 1)[1] }}</span><span>Line {{ result.line_no }}</span>{% if result.ts %}<time datetime="{{ result.ts }}">{{ result.ts|display_time }}</time>{% endif %}</div>
+      <pre class="search-snippet">{{ result.snippet }}</pre>
+      {% else %}
+      <div class="search-result-heading"><h2><a class="text-link" href="/sessions/{{ result.id|urlencode }}">{{ result.title or result.id }} {{ icon("arrow-up-right") }}</a></h2><span class="subtle-tag">{{ 'Archived' if result.archived_at else 'Active' }}</span></div>
+      <div class="search-result-meta"><code>{{ result.id }}</code><span>{{ result.default_profile }}</span><time datetime="{{ result.last_activity_at }}">{{ result.last_activity_at|display_time }}</time></div>
+      {% endif %}
+    </article>
+    {% else %}<div class="panel empty-state search-empty"><span class="section-label">NO RESULTS</span><h2>No matching sessions or messages.</h2><p class="muted">{% if mode == 'sessions' %}Try another name or ID, or choose Full text to search message content.{% else %}Try another phrase.{% endif %}</p></div>{% endfor %}
+  </section>
+  {% if previous or next %}<nav class="session-pagination" aria-label="Search pages">{% if previous %}<a class="secondary-button" href="{{ previous }}" rel="prev">{{ icon("arrow-left") }} Previous</a>{% endif %}{% if next %}<a class="secondary-button" href="{{ next }}" rel="next">Next {{ icon("arrow-right") }}</a>{% endif %}</nav>{% endif %}
+  {% else %}
+  <section class="panel empty-state search-empty" aria-label="Start a search"><span class="section-label">YOUR SESSION HISTORY</span><h2>Pick up a conversation.</h2><p class="muted">Search by session name or ID, or choose Full text to find a message.</p></section>
+  {% endif %}
+</div>
 {% endblock %}

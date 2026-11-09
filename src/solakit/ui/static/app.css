@@ -672,3 +672,37 @@ pre { overflow-x: auto; font-size: 11px; line-height: 1.55; color: var(--ink); }
   .prompt-inspector .evidence-text { padding: 16px; }
   .prompt-disclosure > div { grid-template-columns: minmax(0, 1fr); gap: 8px; }
 }
+
+/* Session search gives queries, result metadata, and literal snippets room. */
+.session-search { display: flex; flex-direction: column; gap: 24px; }
+.session-search > .page-heading { margin: 8px 0 0; }
+.session-search .page-heading::after { display: none; }
+.session-search .page-heading .section-label { display: block; margin-bottom: 10px; color: var(--accent); }
+.session-search h1 { font-size: 28px; margin-bottom: 10px; }
+.session-search .intro { max-width: 46rem; }
+.search-form { min-width: 0; overflow: hidden; box-shadow: var(--shadow); }
+.search-inputs { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(0, 3fr) auto; align-items: end; gap: 20px; padding: 24px; }
+.search-help { margin: 0; padding: 16px 24px; border-top: 1px solid var(--line); background: var(--surface-soft); color: var(--muted); font-size: 12px; line-height: 1.7; }
+.search-help strong { display: block; margin-bottom: 4px; color: var(--ink); font-weight: 500; }
+.session-search .search-results { margin: 0; gap: 16px; min-width: 0; }
+.search-results-heading, .search-result-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.search-results-heading { margin: 4px 0; }
+.search-results-heading h2 { margin: 0; }
+.session-search .search-result { padding: 24px; box-shadow: var(--shadow); }
+.search-result-heading h2 { min-width: 0; flex: 1 1 200px; font-size: 16px; margin: 0; }
+.search-result-heading .subtle-tag { flex: none; }
+.search-result-meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 20px; margin-top: 12px; color: var(--muted); font-size: 11px; }
+.search-result-meta > * { min-width: 0; overflow-wrap: anywhere; }
+.search-result-meta code { font-size: 11px; }
+.session-search .search-snippet { margin: 20px 0 0; padding: 16px 20px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-soft); line-height: 1.8; }
+.search-empty { padding: 40px 24px; gap: 12px; }
+.search-empty h2, .search-empty p { margin: 0; }
+.search-empty p { max-width: 34rem; }
+.session-search .session-pagination { margin: 0; }
+@media (max-width: 700px) {
+  .session-search { gap: 20px; }
+  .search-inputs { grid-template-columns: minmax(0, 1fr); padding: 20px; gap: 16px; }
+  .search-help { padding: 16px 20px; }
+  .session-search .search-result { padding: 20px; }
+  .session-search .search-snippet { padding: 16px; }
+}
