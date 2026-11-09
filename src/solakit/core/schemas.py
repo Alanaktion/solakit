@@ -50,12 +50,18 @@ class Message(BaseModel):
     kind: Literal["message", "compaction"] = "message"
     summary_uri: str | None = None
     archive: str | None = None
+    # Request-time preamble (time, origin, recall) sent before a user turn's
+    # verbatim text. Stored beside, never inside, the operator's content so the
+    # exact request bytes replay identically on later turns (prefix caching).
+    turn_context: str | None = None
 
     def model_message(self) -> dict[str, Any]:
         result = self.model_dump(
             include={"role", "content", "tool_calls", "tool_call_id"},
             exclude_none=True,
         )
+        if self.turn_context is not None and self.role == "user":
+            result["content"] = self.turn_context + "\n\n" + (self.content or "")
         if self.images:
             result["images"] = [image.model_dump() for image in self.images]
         return result
@@ -96,6 +102,7 @@ class Run(BaseModel):
     created_at: datetime = Field(default_factory=now)
     finished_at: datetime | None = None
     prompt_sha256: str | None = None
+    turn_context_sha256: str | None = None
     tool_catalog_sha256: str | None = None
     tool_view: dict | None = None
     access: dict | None = None

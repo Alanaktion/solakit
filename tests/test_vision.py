@@ -13,6 +13,7 @@ import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 from test_execution import completion, model_list, setup
+from turns import plain
 
 from solakit.channels import Channels
 from solakit.channels.base import Inbound
@@ -151,7 +152,7 @@ def test_discord_attachment_pixels_reach_model_with_history_and_tool_turns(
         parts = user["content"]
         image = decode(parts[-1])
         assert image.size == (64, 32) and image.getpixel((10, 10))[0] > 240
-        assert parts[0]["text"] == caption if caption else len(parts) == 1
+        assert (plain(parts[0]["text"]) if len(parts) > 1 else "") == caption
         assert (
             "images" not in user
             and "cdn.discordapp.com" not in request.content.decode()

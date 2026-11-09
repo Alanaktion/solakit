@@ -10,5 +10,6 @@
 {% if run.error %}<div class="notice notice-error" role="alert">{{ run.error }}</div>{% endif %}
 <section class="evidence-panel panel"><h2>Messages and tools</h2>{% include 'fragments/message_tail.html' %}</section>
 <section class="evidence-panel panel"><details><summary>Stored prompt</summary><p class="muted">Original SHA above; resolved credentials are masked in this display.</p><pre class="evidence-text"><code>{{ run.prompt if run.prompt is not none else 'Not recorded' }}</code></pre></details></section>
+{% if run.turn_context %}<section class="evidence-panel panel"><details><summary>Stored turn context</summary><p class="muted">Sent before the user's verbatim message; resolved credentials are masked in this display.</p><pre class="evidence-text"><code>{{ run.turn_context }}</code></pre></details></section>{% endif %}
 {% for key, label in [('compaction', 'Latest compaction'), ('diagnostics', 'Diagnostics'), ('memory_events', 'Memory events'), ('memory_notes', 'Staged memory notes'), ('deliveries', 'Delivery events'), ('artifacts', 'Artifacts')] %}<section class="evidence-panel panel"><details><summary>{{ label }}</summary><pre><code>{{ run[key]|tojson(indent=2) }}</code></pre></details></section>{% endfor %}
 {% endblock %}

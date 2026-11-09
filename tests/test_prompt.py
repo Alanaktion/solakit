@@ -4,7 +4,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from solakit.core.prompt import read_prompt
+from solakit.core.prompt import read_prompt, read_turn
 from solakit.main import create_app
 
 FIXTURES = Path(__file__).parent / "fixtures/prompt"
@@ -37,6 +37,7 @@ def test_golden_dry_run(config, auth, monkeypatch):
         data = response.json()
         golden = (FIXTURES / "golden.txt").read_bytes()
         assert data["prompt"].encode() == golden
+        assert data["turn"].encode() == (FIXTURES / "golden-turn.txt").read_bytes()
         assert data["sha256"] == hashlib.sha256(golden).hexdigest()
         assert data["tokens"] is None
         assert data["tools"] == []
@@ -83,8 +84,8 @@ def test_empty_context_and_header_newline_remain_literal(config):
     assert empty.count(SEPARATOR) == 3
     assert SEPARATOR + SEPARATOR in empty
     (config.paths.fragments / "recall-header.md").write_bytes(b"Header\n")
-    recalled = read_prompt(config, recall="record", **kwargs)
-    assert "Header\n\n<recall>\nrecord\n</recall>" in recalled
+    _, turn = read_turn(config, recall="record", **kwargs)
+    assert "Header\n\n<recall>\nrecord\n</recall>" in turn
 
 
 def test_front_page_live_literal_and_breakdown(config):
@@ -105,20 +106,19 @@ def test_front_page_live_literal_and_breakdown(config):
     path.write_bytes(b"Synthetic current fact\r\n  \n")
     (config.paths.fragments / "context.md").write_text("Synthetic rule")
     (config.paths.fragments / "recall-header.md").write_text("Header")
-    first = read_prompt(config, recall="Synthetic recall", **kwargs)
+    first, turn = read_turn(config, recall="Synthetic recall", **kwargs)
     sections = first.split(SEPARATOR)
-    assert sections[:4] == [
+    assert sections[:3] == [
         config.paths.soul.read_bytes().decode(),
         "Synthetic current fact\r\n  \n",
         "Synthetic rule",
-        "Header\n<recall>\nSynthetic recall\n</recall>",
     ]
+    assert "Header\n<recall>\nSynthetic recall\n</recall>" in turn
     info = inspection(first, [])
     assert [f["name"] for f in info["fragments"]] == [
         "soul",
         "memory",
         "context",
-        "recall",
         "profile",
         "run",
     ]
@@ -243,3 +243,98 @@ def test_historical_fragment_evidence(config, auth, mock_model):
         assert client.get("/api/prompt", headers=auth, params=params).json() == before
         with pytest.raises(FileExistsError):
             client.app.state.store.write_prompt(record["id"], "replacement")
+
+
+def test_memory_present_legacy_layout_is_unchanged(config, tmp_path):
+    import shutil
+
+    shutil.copytree(FIXTURES, tmp_path / "prompt")
+    config.paths.fragments = tmp_path / "prompt"
+    config.paths.soul = config.paths.fragments / "SOUL.md"
+    config.profiles["interactive"].prompt_layout = "legacy"
+    (config.paths.fragments / "memory.md").write_bytes(b"Synthetic front page.\r\n  \n")
+    prompt, turn = read_turn(
+        config,
+        profile="interactive",
+        session="golden",
+        origin="api",
+        at=datetime.fromisoformat("2026-11-04T19:00:00+00:00"),
+        recall="A remembered fact.",
+    )
+    assert turn is None
+    assert prompt.encode() == (FIXTURES / "memory-present-legacy.txt").read_bytes()
+
+
+def test_stable_layout_keeps_per_run_values_out_of_system_message(config):
+    """Guard: nothing that varies per run may appear in the system message."""
+    (config.paths.fragments / "recall-header.md").write_text("Recalled:")
+    kwargs = dict(profile="interactive", session="s", origin="discord")
+    a, turn_a = read_turn(
+        config,
+        at=datetime.fromisoformat("2026-11-04T19:00:01.123456+00:00"),
+        recall="first recall",
+        **kwargs,
+    )
+    b, turn_b = read_turn(
+        config,
+        at=datetime.fromisoformat("2026-11-05T08:31:59+00:00"),
+        recall=None,
+        **{**kwargs, "origin": "api"},
+    )
+    assert a == b
+    for value in ("2026-11-0", "first recall", "discord", "origin"):
+        assert value not in a
+    assert "time: 2026-11-04T12:00-07:00" in turn_a
+    assert "first recall" in turn_a and "<recall>" not in turn_b
+
+
+def test_two_turns_share_byte_identical_request_prefix(config):
+    import asyncio
+    import json
+
+    import httpx
+
+    from solakit.core.loop import Execution
+    from solakit.core.model import ModelClient
+    from solakit.core.schemas import Session
+    from solakit.core.store import Store
+    from solakit.tools import Registry
+
+    requests = []
+
+    def handler(request):
+        if request.url.path.endswith("/models"):
+            return httpx.Response(200, json={"data": [{"id": config.model.model_id}]})
+        requests.append(json.loads(request.content))
+        return httpx.Response(
+            200,
+            json={
+                "model": config.model.model_id,
+                "choices": [{"message": {"role": "assistant", "content": "ok"}}],
+            },
+        )
+
+    store = Store(config.paths.data)
+    store.create_session(Session(id="s"))
+    execution = Execution(
+        config,
+        store,
+        Registry(config),
+        ModelClient(config.model, transport=httpx.MockTransport(handler)),
+    )
+
+    async def exercise():
+        first = await execution.submit("s", "first")
+        await execution.submit("s", "second")
+        await execution.close()
+        return first
+
+    first = asyncio.run(exercise())
+    one, two = requests
+    # The entire first request (system + its user turn) is a prefix of the second.
+    assert two["messages"][: len(one["messages"])] == one["messages"]
+    record = store.run(first.id)
+    assert one["messages"][-1]["content"] == record["turn_context"] + "\n\nfirst"
+    transcript = store.transcript("s")
+    assert transcript[0]["content"] == "first"
+    assert transcript[0]["turn_context"] == record["turn_context"]

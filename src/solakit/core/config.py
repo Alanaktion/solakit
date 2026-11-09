@@ -211,6 +211,7 @@ class Profile(StrictModel):
             values.pop(key, None)
         return values
 
+    prompt_layout: Literal["stable", "legacy"] = "stable"
     tool_disclosure: Literal["eager", "deferred"] = "eager"
     tool_resident: list[str] = Field(default_factory=list)
     tools: list[str] = Field(default_factory=list)

@@ -67,12 +67,15 @@ def test_recall_then_commit_then_recall(config):
         assert first.memory_commit["task_id"] == "task1"
         second = await execution.submit("s", "What does Sola like?")
         assert second.status == "completed"
-        prompt = execution.store.run(second.id)["prompt"]
+        record = execution.store.run(second.id)
+        prompt, turn = record["prompt"], record["turn_context"]
         assert (
             "<recall>\nviking://user/sola/memories/fact.md\nSola likes apricots."
-            in prompt
+            in turn
         )
+        assert "<recall>" not in prompt
         assert model_requests[1]["messages"][0]["content"] == prompt
+        assert model_requests[1]["messages"][-1]["content"].startswith(turn)
         # Repeating a known acknowledged commit never appends messages twice.
         scoped = execution.memory.scoped(Session(id="s"))
         count = len(batches)

@@ -64,7 +64,8 @@ async def probe(execution: Execution, fact: str, query: str, expected: str) -> d
     evidence = await durable(execution.store.run, second.id)
     passed = (
         second.status == RunStatus.completed
-        and expected in (evidence["prompt"] or "")
+        and expected
+        in (evidence["prompt"] or "") + (evidence.get("turn_context") or "")
         and expected in (evidence.get("recall") or "")
     )
     return {

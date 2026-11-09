@@ -18,7 +18,7 @@ from solakit.core.io import durable
 from solakit.core.media import ImageRef, Media
 from solakit.core.memory import MemoryClient, MemoryUnavailable
 from solakit.core.model import ModelClient, ModelUnavailable
-from solakit.core.prompt import read_prompt
+from solakit.core.prompt import read_turn
 from solakit.core.recall import recall_query, trivial_turn
 from solakit.core.schemas import (
     MemoryNote,
@@ -451,8 +451,8 @@ class Execution:
                 run.memory_status = run.recall_status = "ephemeral"
             else:
                 run.recall_status = "disabled"
-            prompt = await durable(
-                read_prompt,
+            prompt, turn = await durable(
+                read_turn,
                 self.config,
                 profile=run.profile,
                 session=run.session,
@@ -473,6 +473,7 @@ class Execution:
                     images=run.input_images,
                     origin=run.origin,
                     run_id=run.id,
+                    turn_context=turn,
                 ).model_message(),
             ]
             if (
@@ -495,8 +496,12 @@ class Execution:
                 self.store.write_tool_schemas, run.id, tools
             )
             run.prompt_sha256 = await durable(self.store.write_prompt, run.id, prompt)
+            if turn is not None:
+                run.turn_context_sha256 = await durable(
+                    self.store.write_turn_context, run.id, turn
+                )
             await durable(self.store.save_run, run)
-            await self._loop(run, session, prompt, pending.text)
+            await self._loop(run, session, prompt, pending.text, turn)
             if self.memory and session.memory_scope == "shared":
                 # Mid-run compaction may have moved this run's early messages
                 # to archives. Commit the whole original run, exactly once.
@@ -561,7 +566,9 @@ class Execution:
                 else:
                     self.performing[task] = previous
 
-    async def _loop(self, run: Run, session: Session, prompt: str, text: str) -> None:
+    async def _loop(
+        self, run: Run, session: Session, prompt: str, text: str, turn=None
+    ) -> None:
         cfg = self.config.profiles[run.profile]
         history = await durable(self.store.transcript, session.id)
         messages = [{"role": "system", "content": prompt}]
@@ -575,6 +582,7 @@ class Execution:
             images=run.input_images,
             origin=run.origin,
             run_id=run.id,
+            turn_context=turn,
         )
         messages.append(user.model_message())
         view = self.pending[run.id].tool_view
@@ -595,6 +603,9 @@ class Execution:
 
         repairs = 0
         usage_complete = True
+        # Assistant messages of this run in the active transcript: the streaming
+        # preview baseline. Tracked in memory; recounted only after a rotation.
+        run_assistants = 0
         ctx = ToolContext(
             session,
             run.profile,
@@ -637,6 +648,7 @@ class Execution:
                 # between an assistant call envelope and its matching result group.
                 await self._compact_run(run, session, "mid_run", step)
                 active = await durable(self.store.transcript, session.id)
+                run_assistants = count_run_assistants(active, run.id)
                 reminder = user.model_message()
                 reminder["content"] = (
                     "Continue the current turn from the preceding compaction "
@@ -682,13 +694,7 @@ class Execution:
                 await durable(self.store.save_run, run)
 
             if pending.stream:
-                active = await durable(self.store.transcript, session.id)
-                baseline = sum(
-                    m["role"] == "assistant"
-                    and m.get("kind", "message") == "message"
-                    and m["run_id"] == run.id
-                    for m in active
-                )
+                baseline = run_assistants
 
                 async def preview(content):
                     pending.preview = {
@@ -729,6 +735,7 @@ class Execution:
                 run_id=run.id,
             )
             await durable(self.store.append_message, session.id, assistant)
+            run_assistants += 1
             pending.preview = None
             messages.append(assistant.model_message())
             if data["choices"][0].get("finish_reason") == "length":
@@ -866,6 +873,15 @@ class Execution:
             finally:
                 if self.memory:
                     await self.memory.close()
+
+
+def count_run_assistants(messages: list[dict], run_id: str) -> int:
+    return sum(
+        m["role"] == "assistant"
+        and m.get("kind", "message") == "message"
+        and m["run_id"] == run_id
+        for m in messages
+    )
 
 
 def valid_history(history: list[dict]) -> list[dict]:

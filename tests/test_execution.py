@@ -3,6 +3,7 @@ import json
 
 import httpx
 import pytest
+from turns import plain
 
 from solakit.core.loop import Execution
 from solakit.core.model import ModelClient
@@ -75,7 +76,7 @@ def test_exact_context_tool_order_and_usage(config):
         record = execution.store.run(run.id)
         assert captured[0]["messages"] == [
             {"role": "system", "content": record["prompt"]},
-            {"role": "user", "content": "hello"},
+            {"role": "user", "content": record["turn_context"] + "\n\nhello"},
         ]
         assert captured[0]["tools"][0]["function"]["name"] == "echo"
         assert [m["role"] for m in captured[1]["messages"]] == [
@@ -155,7 +156,7 @@ def test_fifo_global_limit_cancellation_and_shutdown(config):
             active += 1
             maximum = max(maximum, active)
             body = json.loads(request.content)
-            seen.append(body["messages"][-1]["content"])
+            seen.append(plain(body["messages"][-1]["content"]))
             entered.set()
             try:
                 await release.wait()
@@ -227,8 +228,12 @@ def test_successful_fifo_and_history(config):
             await asyncio.sleep(0)
         release.set()
         await asyncio.gather(first, second, third)
-        assert [m[-1]["content"] for m in captured] == ["first", "second", "third"]
-        assert [m.get("content") for m in captured[-1][1:]] == [
+        assert [plain(m[-1]["content"]) for m in captured] == [
+            "first",
+            "second",
+            "third",
+        ]
+        assert [plain(m.get("content")) for m in captured[-1][1:]] == [
             "first",
             "reply1",
             "second",
@@ -540,7 +545,7 @@ def test_verbatim_transcript_and_context_are_separate_from_redacted_logs(config)
         assert json.loads(transcript[2]["content"])["content"] == secret
         await execution.submit("s", "continue")
         history = captured[-1]["messages"][1:-1]
-        assert history[0]["content"] == f"Verbatim {secret}"
+        assert plain(history[0]["content"]) == f"Verbatim {secret}"
         assert history[1]["tool_calls"][0]["function"]["arguments"] == json.dumps(
             {"text": secret}
         )

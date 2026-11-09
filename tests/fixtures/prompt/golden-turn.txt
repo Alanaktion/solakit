@@ -1,0 +1,10 @@
+<turn>
+time: 2026-11-04T12:00-07:00
+origin: api
+
+Recalled records:
+
+<recall>
+A remembered fact.
+</recall>
+</turn>

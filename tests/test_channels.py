@@ -3,6 +3,7 @@ import json
 
 import pytest
 from test_execution import completion, model_list, setup
+from turns import plain
 
 from solakit.channels import Channels
 from solakit.channels.base import Inbound
@@ -104,12 +105,12 @@ def test_gating_parent_pinning_context_and_stored_delivery(config):
         await channels.receive(
             Inbound("discord", "one", "alan", "follow up", "3", mentioned=True)
         )
-        assert [m["content"] for m in captured[-1][1:]] == [
+        assert [plain(m["content"]) for m in captured[-1][1:]] == [
             "first",
             "stored final",
             "follow up",
         ]
-        assert captured[-2][1]["content"] == "other room"
+        assert plain(captured[-2][1]["content"]) == "other room"
         assert len(channels.status()) == 2
         await channels.stop()
         assert not adapter.started

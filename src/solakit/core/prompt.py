@@ -25,6 +25,7 @@ class PromptInput:
     at: datetime
     timezone: str
     tool_index: str = ""
+    layout: str = "stable"
 
 
 class AssembledPrompt(str):
@@ -44,6 +45,9 @@ class AssembledPrompt(str):
 
 
 def build_prompt(parts: PromptInput) -> str:
+    """System message. The stable layout holds only per-session constants so the
+    system message and replayed history form a byte-identical cacheable prefix;
+    per-run values (time, origin, recall) go into the turn block instead."""
     if parts.at.tzinfo is None:
         raise ValueError("prompt time must be timezone-aware")
     fragments = [("soul", parts.soul)]
@@ -51,23 +55,93 @@ def build_prompt(parts: PromptInput) -> str:
         fragments.append(("memory", parts.memory))
     if parts.context is not None:
         fragments.append(("context", parts.context))
-    if parts.recall:
+    if parts.recall and parts.layout == "legacy":
         fragments.append(
             ("recall", f"{parts.recall_header}\n<recall>\n{parts.recall}\n</recall>")
         )
     fragments.append(("profile", parts.profile_fragment))
     if parts.tool_index:
         fragments.append(("tool_index", parts.tool_index))
-    local = parts.at.astimezone(ZoneInfo(parts.timezone))
-    fragments.append(
-        (
-            "run",
+    if parts.layout == "legacy":
+        local = parts.at.astimezone(ZoneInfo(parts.timezone))
+        run = (
             f"<run>\ntime: {local.isoformat()}\ntimezone: {parts.timezone}\n"
             f"profile: {parts.profile}\nsession: {parts.session}\n"
-            f"origin: {parts.origin}\n</run>",
+            f"origin: {parts.origin}\n</run>"
         )
-    )
+    else:
+        run = (
+            f"<run>\ntimezone: {parts.timezone}\nprofile: {parts.profile}\n"
+            f"session: {parts.session}\n</run>"
+        )
+    fragments.append(("run", run))
     return AssembledPrompt(fragments)
+
+
+def build_turn(parts: PromptInput) -> str | None:
+    """Per-run preamble placed before the user's verbatim text (stable layout).
+
+    Minute precision keeps the block short; it changes every turn by design and
+    sits after the cached history prefix."""
+    if parts.layout == "legacy":
+        return None
+    local = parts.at.astimezone(ZoneInfo(parts.timezone)).replace(
+        second=0, microsecond=0
+    )
+    lines = [
+        "<turn>",
+        f"time: {local.isoformat(timespec='minutes')}",
+        f"origin: {parts.origin}",
+    ]
+    if parts.recall:
+        lines += [
+            "",
+            f"{parts.recall_header}\n<recall>\n{parts.recall}\n</recall>",
+        ]
+    lines.append("</turn>")
+    return "\n".join(lines)
+
+
+def prompt_input(
+    config: Config,
+    *,
+    profile: str,
+    session: str,
+    origin: str,
+    at: datetime,
+    recall: str | None = None,
+    tool_index: str = "",
+) -> PromptInput:
+    """Snapshot current files, preserving line endings and trailing whitespace."""
+    if profile not in config.profiles:
+        raise ValueError("unknown profile")
+    safe_id(profile)
+    root = config.paths.fragments
+    memory = root / "memory.md"
+    context = root / "context.md"
+    header = root / "recall-header.md"
+    profile_path = root / "profiles" / f"{profile}.md"
+    return PromptInput(
+        tool_index=tool_index,
+        soul=config.paths.soul.read_bytes().decode("utf-8"),
+        memory=memory.read_bytes().decode("utf-8") if memory.exists() else None,
+        context=context.read_bytes().decode("utf-8") if context.exists() else None,
+        recall=recall,
+        recall_header=header.read_bytes().decode("utf-8") if recall else "",
+        profile_fragment=profile_path.read_bytes().decode("utf-8"),
+        profile=profile,
+        session=session,
+        origin=origin,
+        at=at,
+        timezone=config.timezone,
+        layout=config.profiles[profile].prompt_layout,
+    )
+
+
+def read_turn(config: Config, **kwargs) -> tuple[str, str | None]:
+    """System prompt and turn block from one consistent file snapshot."""
+    parts = prompt_input(config, **kwargs)
+    return build_prompt(parts), build_turn(parts)
 
 
 def read_prompt(
@@ -80,36 +154,26 @@ def read_prompt(
     recall: str | None = None,
     tool_index: str = "",
 ) -> str:
-    """Snapshot current files, preserving line endings and trailing whitespace."""
-    if profile not in config.profiles:
-        raise ValueError("unknown profile")
-    safe_id(profile)
-    root = config.paths.fragments
-    memory = root / "memory.md"
-    context = root / "context.md"
-    header = root / "recall-header.md"
-    profile_path = root / "profiles" / f"{profile}.md"
+    """The system message only; see ``read_turn`` for the per-run preamble."""
     return build_prompt(
-        PromptInput(
-            tool_index=tool_index,
-            soul=config.paths.soul.read_bytes().decode("utf-8"),
-            memory=memory.read_bytes().decode("utf-8") if memory.exists() else None,
-            context=context.read_bytes().decode("utf-8") if context.exists() else None,
-            recall=recall,
-            recall_header=header.read_bytes().decode("utf-8") if recall else "",
-            profile_fragment=profile_path.read_bytes().decode("utf-8"),
+        prompt_input(
+            config,
             profile=profile,
             session=session,
             origin=origin,
             at=at,
-            timezone=config.timezone,
+            recall=recall,
+            tool_index=tool_index,
         )
     )
 
 
-def inspection(prompt: str, tools: list[dict], fragments=None) -> dict:
+def inspection(
+    prompt: str, tools: list[dict], fragments=None, turn: str | None = None
+) -> dict:
     return {
         "prompt": prompt,
+        "turn": turn,
         "fragments": fragments
         if fragments is not None
         else getattr(prompt, "fragments", None),

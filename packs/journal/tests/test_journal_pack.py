@@ -7,7 +7,7 @@ import subprocess
 import pytest
 
 from solakit.core.config import CollectionConfig, Config, PathsConfig, Profile
-from solakit.core.schemas import Session
+from solakit.core.schemas import Message, Session
 from solakit.core.store import Store
 from solakit.tools import Registry, ToolContext
 
@@ -227,11 +227,7 @@ def test_runner_creates_and_publishes_to_scratch_remote(fixture, tmp_path):
             assert history[-1]["content"] == "Published the moon entry."
             for step, body in enumerate(captured):
                 assert body["messages"][1:] == [
-                    {
-                        key: item[key]
-                        for key in ("role", "content", "tool_calls", "tool_call_id")
-                        if key in item and item[key] is not None
-                    }
+                    Message.model_validate(item).model_message()
                     for item in history[: 1 + step * 2]
                 ]
                 assert {tool["function"]["name"] for tool in body["tools"]} == set(

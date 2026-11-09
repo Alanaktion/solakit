@@ -5,6 +5,7 @@ import json
 
 import httpx
 import pytest
+from turns import plain
 
 from solakit.core.config import Config, DelegationConfig, Profile
 from solakit.core.loop import Execution
@@ -60,7 +61,7 @@ def setup(config, worker=None, *, memory=None, default_profile="interactive"):
         captured.append(data)
         if (
             any(
-                m["role"] == "user" and m["content"] == args["task"]
+                m["role"] == "user" and plain(m["content"]) == args["task"]
                 for m in data["messages"]
             )
             or "profile: research\n" in data["messages"][0]["content"]
@@ -330,8 +331,12 @@ def test_normal_child_turns_cannot_overlap_nested_work(config):
             nonlocal active
             active += 1
             assert active == 1, "Two turns entered the same child session"
-            task = next(
-                m["content"] for m in reversed(data["messages"]) if m["role"] == "user"
+            task = plain(
+                next(
+                    m["content"]
+                    for m in reversed(data["messages"])
+                    if m["role"] == "user"
+                )
             )
             if task != "External queued turn":
                 entered.set()
@@ -489,8 +494,12 @@ def test_grants_allow_nested_depth_and_parent_cancellation_propagates(config):
         entered = asyncio.Event()
 
         async def worker(data):
-            task = next(
-                m["content"] for m in reversed(data["messages"]) if m["role"] == "user"
+            task = plain(
+                next(
+                    m["content"]
+                    for m in reversed(data["messages"])
+                    if m["role"] == "user"
+                )
             )
             if task == "Grandchild task":
                 entered.set()

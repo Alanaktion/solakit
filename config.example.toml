@@ -67,6 +67,9 @@ fragments = "fragments"
 # Optional values inherited by every profile. A value in a named profile replaces
 # its default; list values replace the whole list rather than being appended.
 [profile_defaults]
+# prompt_layout = "stable" # Per-run time/origin/recall go in a turn block before
+# the user text so the system message + history stay a cacheable prefix. "legacy"
+# restores the old in-system-message placement.
 # Disclosure stays eager by default. See docs/operations/tool-disclosure.md.
 # tool_disclosure = "eager" # Opt in per profile to "deferred" after evaluation.
 # tool_resident = [] # Ordered, loaded/granted names; deferred initial full schemas.

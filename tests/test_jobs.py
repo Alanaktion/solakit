@@ -7,6 +7,7 @@ import pytest
 from pydantic import ValidationError
 from test_channels import FakeAdapter
 from test_execution import completion, model_list, setup
+from turns import plain
 
 from solakit.channels import Channels
 from solakit.channels.base import Inbound
@@ -128,9 +129,9 @@ def test_nonoverlap_includes_queued_jobs_and_channel_continuity(config):
         await channels.receive(
             Inbound("discord", "100", "alan", "follow up", "external")
         )
-        assert captured[-1][1]["content"].startswith("Job ")
+        assert plain(captured[-1][1]["content"]).startswith("Job ")
         assert captured[-1][2]["content"] == "stored job result"
-        assert captured[-1][3]["content"] == "follow up"
+        assert plain(captured[-1][3]["content"]) == "follow up"
         await jobs.stop_admission()
         await execution.close()
         await jobs.drain()
@@ -318,7 +319,9 @@ def test_sub_sessions_keep_memory_and_deliver_only_final(config, silent):
             assert child.memory_scope == "shared"
             assert child.bound_channel is None
             assert run.recall_status == "recalled"
-            assert "Shared remembered fact" in execution.store.run(run.id)["prompt"]
+            assert (
+                "Shared remembered fact" in execution.store.run(run.id)["turn_context"]
+            )
         assert execution.store.all_messages(parent.id) == before
         assert len(adapter.sent) == (0 if silent else 2)
         if not silent:

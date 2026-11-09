@@ -6,6 +6,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 from test_execution import completion, model_list, setup
+from turns import plain
 
 from solakit.core.archival import archive_session
 from solakit.core.schemas import Message, Origin, Session
@@ -81,7 +82,7 @@ def test_archive_api_preserves_binding_evidence_and_starts_fresh(config, auth):
             "user",
         ]
         assert "Earlier turn" not in json.dumps(captured[-1])
-        assert captured[-1]["messages"][-1]["content"] == "Fresh turn"
+        assert plain(captured[-1]["messages"][-1]["content"]) == "Fresh turn"
         client.post("/api/sessions/s/archive", headers=auth)
         assert app.state.store.archives("s") == ["s.jsonl.1", "s.jsonl.2"]
         assert (config.paths.data / "sessions/s.jsonl.1").read_bytes() == source

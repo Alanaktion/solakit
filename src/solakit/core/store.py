@@ -1038,6 +1038,10 @@ class Store:
         record["prompt_fragments"] = (
             json.loads(fragments.read_bytes()) if fragments.exists() else None
         )
+        turn = self._path("runs", run_id, ".turn.txt")
+        record["turn_context"] = (
+            turn.read_bytes().decode("utf-8") if turn.exists() else None
+        )
         record["tool_schemas"] = None
         if record.get("tool_schema_sha256"):
             try:
@@ -1133,6 +1137,10 @@ class Store:
                 run_id, ".prompt-fragments.json", json.dumps(fragments).encode()
             )
         return self._write_run_input(run_id, ".prompt.txt", payload)
+
+    def write_turn_context(self, run_id: str, turn: str) -> str:
+        # Exact request-time preamble sent before the user's verbatim text.
+        return self._write_run_input(run_id, ".turn.txt", turn.encode("utf-8"))
 
     def write_tool_catalog(self, run_id: str, catalog_json: str) -> str:
         return self._write_run_input(

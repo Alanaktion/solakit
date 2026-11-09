@@ -240,10 +240,37 @@ The system prompt is the concatenation, in this fixed order, of:
 | 1 | Persona | `SOUL.md` (verbatim) | always |
 | 2 | Curated memory | `fragments/memory.md` (verbatim, optional) | file exists |
 | 3 | Standing context | `fragments/context.md` (verbatim, optional) | file exists |
-| 4 | Recall | OpenViking results, wrapped in `<recall>…</recall>` with a one-line header from `fragments/recall-header.md` | recall non-empty |
-| 5 | Profile fragment | `fragments/profiles/<profile>.md` | always (may be empty) |
-| 6 | Tool index | Generated deferred tool index | deferred disclosure enabled |
-| 7 | Run facts | Generated: date/time + timezone, profile name, session ID, origin channel/job — one short block, format fixed in code, golden-tested | always |
+| 4 | Profile fragment | `fragments/profiles/<profile>.md` | always (may be empty) |
+| 5 | Tool index | Generated deferred tool index | deferred disclosure enabled |
+| 6 | Run facts | Generated `<run>` block: timezone, profile name, session ID — per-session constants only, format fixed in code, golden-tested | always |
+
+**Prefix stability (profile `prompt_layout = "stable"`, the default).** The system
+message holds nothing that varies per run, so the system message plus replayed
+history is a byte-identical prefix across turns and a server KV/prefix cache can
+reuse it. Per-run values form a request-time **turn block** placed before the
+user's verbatim text in the current user message:
+
+```
+<turn>
+time: 2026-11-09T10:42-07:00      (minute precision)
+origin: api                       (channel or job id)
+
+<recall header>
+<recall>
+…OpenViking results…
+</recall>                         (only when recall is non-empty)
+</turn>
+
+<user text>
+```
+
+The transcript stores the user's text verbatim in `content` and the exact block in
+the message's separate `turn_context` field; history replay reproduces the request
+bytes exactly (block + `\n\n` + text). Each run stores the block in immutable
+`runs/<id>.turn.txt` with `turn_context_sha256`; prompt inspection returns it as
+`turn`. `prompt_layout = "legacy"` restores the previous construction (recall
+fragment after standing context and `time`/`origin` in `<run>`, no turn block).
+A regression test fails if any per-run value reaches the system message.
 
 Nothing else. No tool instructions (tools are out-of-band, §2.2), no
 framework identity, no behavioural boilerplate, and — new in v2 — **no
@@ -255,7 +282,7 @@ fragment, in Sola's / Alan's words.
 Fragments are joined with `\n\n---\n\n`. Assembled prompt, SHA-256, and
 token count are recorded per run. JSON prompt inspection includes ordered
 `fragments: [{name, chars, sha256}]` from assembly, with names `soul`, `memory`,
-`context`, `recall`, `profile`, `tool_index`, `run` as applicable. New runs retain
+`context`, `recall` (legacy layout only), `profile`, `tool_index`, `run` as applicable. New runs retain
 this breakdown in immutable `runs/*.prompt-fragments.json`; older runs report
 `fragments: null` rather than reconstructing boundaries or reading current files.
 Plain-text `sola prompt` remains the exact prompt text.
@@ -270,7 +297,7 @@ included independently of `[memory].enabled`; `[memory].front_page_max_chars`
 nor rejects an oversized front page. `runtime.status.front_page` reports
 `{chars, cap, over}` from the live file. Existing context budgets still apply. The
 recall header is preserved verbatim, including its trailing newline, before the
-builder adds a newline and the `<recall>` block. These rules deliberately preserve
+builder adds a newline and the `<recall>` block inside the turn block. These rules deliberately preserve
 literal whitespace; no fragment is stripped or silently replaced with empty text.
 
 ### 5.2 Session history in context
