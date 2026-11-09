@@ -27,6 +27,10 @@ filesystem grants still apply.
 - [Scheduled jobs](docs/operations/jobs.md) and [shell tools](docs/operations/shell.md).
 - [Session archival](docs/operations/session-archive.md): reversible cleanup of imported history, activity filters and bulk restore.
 - [Web, reference and calculation tools](docs/operations/read-tools.md).
+- [Model tuning, `sola doctor` and `sola eval`](docs/operations/model-tuning.md):
+  sampling and thinking, reasoning evidence, live probes and the real-model
+  evaluation harness ([evals/](evals/README.md)). `sola init` scaffolds a new site.
+- [Architecture](docs/architecture.md) and the generated [tool reference](docs/tools.md).
 - [Optional tool packs](packs/README.md) and their resource configuration.
 - [Configuration example](config.example.toml), [behavioral specification](SPEC.md), and [contributor guide](AGENTS.md).
 
