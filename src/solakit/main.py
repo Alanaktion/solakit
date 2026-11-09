@@ -598,7 +598,11 @@ def create_app(  # noqa: C901
         limit: int = 50,
         offset: int = 0,
         page: bool = False,
+        pin_channels: bool = False,
     ):
+        channel_names = {}
+        for channel in app.state.config.channels:
+            channel_names.setdefault(channel.session, []).append(channel.id)
         try:
             result = app.state.store.list_sessions(
                 status=status,
@@ -608,9 +612,12 @@ def create_app(  # noqa: C901
                 exclude_source=exclude_source,
                 roots_only=roots_only,
                 parent_session=parent_session,
+                pinned_ids=tuple(channel_names) if pin_channels else (),
                 limit=limit,
                 offset=offset,
             )
+            for session in result["sessions"]:
+                session["channel_names"] = channel_names.get(session["id"], [])
             return result if page else result["sessions"]
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc

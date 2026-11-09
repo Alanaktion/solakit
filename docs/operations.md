@@ -31,6 +31,10 @@ Profile access separates tool grants, read/write tiers and roots, effects,
 resources, and available tools into labeled rows. Expand Profile access
 for tool links or Configuration & diagnostics for modules and disclosure details.
 Session listings default to active sessions, paginated and ordered by last activity.
+The Sessions UI pins sessions named in channel configuration first and shows their
+configured channel IDs, including disabled channels. Filters still apply; each
+group is ordered by last activity. API clients can request this ordering with
+`pin_channels=true`.
 Use `status=archived|all`, `q`, `profile`, `before`, `limit`, `offset`, and `page=true`
 for the full catalog. [Session archival](operations/session-archive.md) describes
 reversible metadata archival, bulk cleanup and undo for imported history. Message

@@ -236,6 +236,7 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
         parameters = {key: value for key, value in filters.items() if value}
         parameters["page"] = "true"
         parameters["roots_only"] = "true"
+        parameters["pin_channels"] = "true"
         catalog, profiles, state = await asyncio.gather(
             api(request, "GET", "/api/sessions?" + urlencode(parameters)),
             api(request, "GET", "/api/profiles"),

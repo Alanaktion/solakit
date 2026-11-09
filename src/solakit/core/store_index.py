@@ -412,6 +412,7 @@ class IndexMixin:
         limit=50,
         offset=0,
         ids=None,
+        pinned_ids=(),
     ):
         if status not in {"active", "archived", "all"}:
             raise ValueError("Invalid session status")
@@ -459,6 +460,12 @@ class IndexMixin:
             clauses.append("json_extract(s.payload, '$.default_profile')=?")
             args.append(profile)
         where = " WHERE " + " AND ".join(clauses) if clauses else ""
+        pin_order = (
+            "CASE WHEN s.id IN (" + ",".join("?" for _ in pinned_ids) + ") "
+            "THEN 0 ELSE 1 END, "
+            if pinned_ids
+            else ""
+        )
         with self.lock, closing(sqlite3.connect(self.root / "app.db")) as db, db:
             total = db.execute(
                 f"SELECT count(*) FROM {source}" + where, args
@@ -466,8 +473,8 @@ class IndexMixin:
             rows = db.execute(
                 f"SELECT s.payload, {at} FROM {source}"
                 + where
-                + f" ORDER BY julianday({at}) DESC, s.id LIMIT ? OFFSET ?",
-                [*args, limit, offset],
+                + f" ORDER BY {pin_order}julianday({at}) DESC, s.id LIMIT ? OFFSET ?",
+                [*args, *pinned_ids, limit, offset],
             ).fetchall()
             counts = dict(
                 db.execute(

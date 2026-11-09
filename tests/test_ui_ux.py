@@ -747,3 +747,35 @@ def test_active_tool_hydration_skips_unloaded_mid_run_calls(config, mock_model):
         earlier = client.get("/sessions/split/earlier?before=split-run").json()
         assert "Result 0" in earlier["html"]
         assert "Result 1" not in earlier["html"]
+
+
+def test_channel_sessions_pinned_before_pagination(config, mock_model):
+    from solakit.core.config import Channel
+
+    config.channels = [
+        Channel(id="moon-room", type="api", channel_id="123", session="pinned"),
+        Channel(id="second-room", type="api", channel_id="456", session="pinned"),
+    ]
+    app = create_app(config=config, model=mock_model)
+    with TestClient(app) as client:
+        sign_in(client)
+        store = app.state.store
+        store.create_session(
+            Session(id="pinned", created_at=datetime(2020, 1, 1, tzinfo=UTC))
+        )
+        for index in range(51):
+            store.create_session(Session(id=f"recent-{index:02}"))
+        store.create_session(Session(id="stale-binding", bound_channel="removed"))
+        page = client.get("/")
+        assert page.status_code == 200
+        assert page.text.index('href="/sessions/pinned"') < page.text.index(
+            'href="/sessions/recent-'
+        )
+        assert "moon-room, second-room" in page.text
+        first = client.get("/api/sessions?pin_channels=true&limit=1&page=true").json()
+        assert first["sessions"][0]["id"] == "pinned"
+        assert first["sessions"][0]["channel_names"] == ["moon-room", "second-room"]
+        second = client.get("/api/sessions?pin_channels=true&limit=1&offset=1").json()
+        assert second[0]["id"] != "pinned"
+        filtered = client.get("/?q=recent")
+        assert 'href="/sessions/pinned"' not in filtered.text
