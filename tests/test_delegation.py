@@ -577,3 +577,58 @@ def test_current_run_profile_is_allowed_without_allowlist(config, explicit):
             await execution.close()
 
     asyncio.run(exercise())
+
+
+def test_delegate_map_runs_serial_children_in_order(config):
+    from test_execution import setup as base_setup
+
+    config.enabled_tools = ["delegate"]
+    config.profiles["interactive"].tools = ["delegate.*"]
+
+    def handler(request):
+        if request.url.path.endswith("/models"):
+            return httpx.Response(200, json={"data": [{"id": config.model.model_id}]})
+        data = json.loads(request.content)
+        user = plain(
+            next(
+                m["content"] for m in reversed(data["messages"]) if m["role"] == "user"
+            )
+        )
+        if user.startswith("Summarize "):
+            return answer(config, "report for " + user.rsplit(" ", 1)[1])
+        if data["messages"][-1]["role"] == "user":
+            return answer(
+                config,
+                name="delegate.map",
+                arguments={
+                    "task_template": "Summarize {item}",
+                    "items": ["a", "b", "c"],
+                },
+            )
+        return answer(config, "Parent final reply")
+
+    execution = base_setup(config, handler)
+
+    async def exercise():
+        try:
+            async with asyncio.timeout(5):
+                parent = await execution.submit("s", "Map it")
+                assert parent.status == "completed"
+                tool = [
+                    m
+                    for m in execution.store.run(parent.id)["messages"]
+                    if m["role"] == "tool"
+                ][0]
+                content = json.loads(tool["content"])["content"]
+                data = json.loads(content.split("\n")[1])
+                assert [r["item"] for r in data["results"]] == ["a", "b", "c"]
+                assert [r["report"] for r in data["results"]] == [
+                    "report for a",
+                    "report for b",
+                    "report for c",
+                ]
+                assert len({r["session_id"] for r in data["results"]}) == 3
+        finally:
+            await execution.close()
+
+    asyncio.run(exercise())

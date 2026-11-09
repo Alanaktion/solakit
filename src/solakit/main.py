@@ -537,6 +537,15 @@ def create_app(
         }
         return app.state.redactor.redact(catalog)
 
+    @api.get("/sessions/{session_id}/notes")
+    async def session_notes(session_id: str) -> dict:
+        try:
+            safe_id(session_id)
+            notes = await asyncio.to_thread(app.state.store.session_notes, session_id)
+        except (FileNotFoundError, ValueError) as exc:
+            raise HTTPException(404, "Session not found") from exc
+        return app.state.redactor.redact(notes)
+
     @api.get("/stats/model")
     async def stats_model(window: int = 100) -> dict:
         from solakit.core import doctor

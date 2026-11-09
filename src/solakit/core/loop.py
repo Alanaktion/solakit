@@ -476,6 +476,7 @@ class Execution:
                 recall=recall,
                 tool_index=pending.tool_view.index_text,
                 playbook=run.playbook,
+                notes=await durable(self.store.session_notes, session.id),
             )
             if history is None:
                 history = await durable(self.store.transcript, session.id)

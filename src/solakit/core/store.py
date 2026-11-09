@@ -1225,6 +1225,22 @@ class Store:
             self._path("channel-posts", key, ".jsonl"), self.redactor.redact(record)
         )
 
+    def log_session_note(self, session_id: str, record: dict) -> None:
+        # Append-only small facts for one session; survives compaction/archival.
+        self.session(session_id)
+        self._append(self._path("sessions", session_id, ".notes.jsonl"), record)
+
+    def session_notes(self, session_id: str) -> dict[str, dict]:
+        """Latest value per key (deleted keys omitted), in first-set order."""
+        notes: dict[str, dict] = {}
+        for event in self._read(self._path("sessions", session_id, ".notes.jsonl")):
+            key = event.get("key")
+            if event.get("value") is None:
+                notes.pop(key, None)
+            else:
+                notes[key] = event
+        return notes
+
     def log_plan(self, run_id: str, record: dict) -> None:
         # Append-only, model-authored checklist events for one run.
         self._append(self._path("runs", run_id, ".plan.jsonl"), record)

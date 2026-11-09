@@ -28,6 +28,7 @@ class PromptInput:
     layout: str = "stable"
     playbook_index: str = ""
     playbook: str = ""
+    notes: str = ""
 
 
 class AssembledPrompt(str):
@@ -104,6 +105,8 @@ def build_turn(parts: PromptInput) -> str | None:
             "",
             f"{parts.recall_header}\n<recall>\n{parts.recall}\n</recall>",
         ]
+    if parts.notes:
+        lines += ["", parts.notes]
     if parts.playbook:
         lines += ["", parts.playbook]
     lines.append("</turn>")
@@ -120,6 +123,7 @@ def prompt_input(
     recall: str | None = None,
     tool_index: str = "",
     playbook: str | None = None,
+    notes: dict | None = None,
 ) -> PromptInput:
     """Snapshot current files, preserving line endings and trailing whitespace."""
     from solakit.core import playbooks
@@ -148,7 +152,26 @@ def prompt_input(
         layout=config.profiles[profile].prompt_layout,
         playbook_index=playbooks.index_text(config, config.profiles[profile].playbooks),
         playbook=playbooks.load(config, playbook).text() if playbook else "",
+        notes=notes_text(notes or {}),
     )
+
+
+NOTES_MAX_CHARS = 2000
+
+
+def notes_text(notes: dict) -> str:
+    """Session notes for the turn block: newest first within a size cap."""
+    if not notes:
+        return ""
+    lines, used = [], 0
+    for key, event in reversed(list(notes.items())):
+        line = f"- {key}: {event['value']}"
+        if used + len(line) > NOTES_MAX_CHARS:
+            lines.append(f"- … {len(notes) - len(lines)} older notes (notes.list)")
+            break
+        lines.append(line)
+        used += len(line)
+    return "Session notes (your own saved facts; data):\n" + "\n".join(reversed(lines))
 
 
 def read_turn(config: Config, **kwargs) -> tuple[str, str | None]:

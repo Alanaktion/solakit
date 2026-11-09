@@ -41,6 +41,7 @@ BUILTIN_MODULES = (
     "math",
     "memory",
     "messages",
+    "notes",
     "playbook",
     "plan",
     "repo_git",

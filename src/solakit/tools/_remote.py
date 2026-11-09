@@ -165,27 +165,39 @@ class RemoteTools:
             raise ValueError("URL must resolve only to public addresses")
         return addresses[0][4][0]
 
-    async def search(self, query: str, count: int = 5) -> dict:
+    async def search(self, query: str, count: int = 5, fetch_top: int = 0) -> dict:
         if not query.strip() or not 1 <= count <= 20:
             raise ToolError("Provide a query and count between 1 and 20")
+        if not 0 <= fetch_top <= 3:
+            raise ToolError("fetch_top must be between 0 and 3")
         response = await self.request(
             "GET",
             "https://api.search.brave.com/res/v1/web/search",
             params={"q": query, "count": count},
             headers={"X-Subscription-Token": self.credential("brave_api_key")},
         )
-        return {
-            "results": [
-                project(r, ("title", "url", "description"))
-                for r in array_data(
-                    object_data(object_data(response.json()).get("web", {})).get(
-                        "results", []
-                    )
-                )[:count]
-            ]
-        }
+        results = [
+            project(r, ("title", "url", "description"))
+            for r in array_data(
+                object_data(object_data(response.json()).get("web", {})).get(
+                    "results", []
+                )
+            )[:count]
+        ]
+        for result in results[:fetch_top]:
+            # Same SSRF/redirect guards as get_page; failures stay per result.
+            try:
+                page = await self.get_page(str(result.get("url", "")), query=query)
+                result["extracts"] = [
+                    passage["text"][:600] for passage in page["passages"][:2]
+                ]
+            except ToolError as exc:
+                result["extract_error"] = str(exc)[:200]
+        return {"results": results}
 
-    async def get_page(self, url: str, offset: int = 0) -> dict:
+    async def get_page(
+        self, url: str, offset: int = 0, query: str | None = None
+    ) -> dict:
         await asyncio.to_thread(self.public_url, url)
         account = self.ctx.config.tool_apis.cloudflare_account_id
         if not account:
@@ -222,6 +234,15 @@ class RemoteTools:
             raise ToolError("Cloudflare markdown conversion returned no result")
         if offset < 0:
             raise ToolError("offset must be nonnegative")
+        if query:
+            from solakit.tools._passages import rank
+
+            return {
+                "url": url,
+                "query": query,
+                "total_chars": len(markdown),
+                "passages": rank(markdown, query),
+            }
         cap = self.ctx.config.profiles[self.ctx.profile].tool_output_max_chars
         size = min(cap, 16000, max(0, len(markdown) - offset))
 
