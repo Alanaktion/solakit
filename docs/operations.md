@@ -587,3 +587,9 @@ and chat sidebar list parent sessions. Open a parent to browse its paginated
 sub-sessions, including archived children and scheduled children; each child links
 back to its parent. API listings remain flat by default; `roots_only=true` selects
 parents and `parent_session=<id>` selects direct children before pagination.
+
+## Model tuning and diagnostics
+
+[Model tuning](operations/model-tuning.md) covers sampling and thinking settings,
+reasoning evidence, the `<tool_call>` fallback, calibrated token budgets,
+`sola doctor` live probes and the `sola eval` harness.

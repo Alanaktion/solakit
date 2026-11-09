@@ -478,7 +478,7 @@ def test_pre_turn_compaction_failure_banner_remains_after_summary(memory_app, co
     app, _ = memory_app
     config.profiles["interactive"].context_budget = 1500
 
-    async def unavailable(*args):
+    async def unavailable(*args, **kwargs):
         raise ModelUnavailable("backend became unavailable")
 
     with TestClient(app) as client:

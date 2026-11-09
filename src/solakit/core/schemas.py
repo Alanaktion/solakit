@@ -54,6 +54,8 @@ class Message(BaseModel):
     # verbatim text. Stored beside, never inside, the operator's content so the
     # exact request bytes replay identically on later turns (prefix caching).
     turn_context: str | None = None
+    # "content_fallback" when tool calls were recovered from assistant text.
+    tool_call_source: str | None = None
 
     def model_message(self) -> dict[str, Any]:
         result = self.model_dump(
@@ -103,6 +105,9 @@ class Run(BaseModel):
     finished_at: datetime | None = None
     prompt_sha256: str | None = None
     turn_context_sha256: str | None = None
+    request_params: dict[str, Any] | None = None
+    retries: list[dict[str, Any]] = Field(default_factory=list)
+    reasoning_steps: int = 0
     tool_catalog_sha256: str | None = None
     tool_view: dict | None = None
     access: dict | None = None

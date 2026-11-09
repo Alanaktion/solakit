@@ -347,6 +347,11 @@ def install_fakes(registry, scenario: Scenario, calls: list) -> None:
         registered.function = fake
 
 
+FIRST_TOKEN = re.compile(
+    rb'"(?:content|reasoning_content|reasoning)":\s*"[^"]|"tool_calls":\s*\['
+)
+
+
 class TimingTransport(httpx.AsyncBaseTransport):
     """Record per-request time to first response byte and total time."""
 
@@ -366,7 +371,8 @@ class TimingTransport(httpx.AsyncBaseTransport):
         class Timed(httpx.AsyncByteStream):
             async def __aiter__(self):
                 async for chunk in inner_stream:
-                    if sample["ttfb"] is None and chunk:
+                    # First generated token, not headers or empty keepalives.
+                    if sample["ttfb"] is None and FIRST_TOKEN.search(chunk):
                         sample["ttfb"] = time.monotonic() - started
                     yield chunk
                 sample["seconds"] = time.monotonic() - started
@@ -480,6 +486,7 @@ def score(scenario: Scenario, run: dict, calls: list[dict]) -> dict:
         "passed": not failures,
         "failures": failures,
         "status": status,
+        "error": run.get("error"),
         "first_tool": first,
         "first_tool_ok": (
             None
@@ -705,6 +712,7 @@ async def run_suite(
     progress=None,
     transport_factory=None,
 ) -> dict:
+    meta = provenance(base)
     results = []
     for cell in matrix or [{}]:
         for scenario in scenarios:
@@ -746,7 +754,7 @@ async def run_suite(
                 if progress:
                     progress(result)
     return {
-        "provenance": provenance(base),
+        "provenance": meta,
         "trials_per_scenario": trials,
         "summary": report(results),
         "trials": results,

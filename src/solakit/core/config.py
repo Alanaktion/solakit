@@ -54,6 +54,95 @@ def validate_api_token(value: str) -> str:
     return value
 
 
+RESERVED_REQUEST_KEYS = frozenset(
+    {
+        "model",
+        "messages",
+        "tools",
+        "tool_choice",
+        "stream",
+        "stream_options",
+        "max_tokens",
+        "max_completion_tokens",
+        "n",
+    }
+)
+
+
+class SamplingParams(StrictModel):
+    """Known sampling keys; None means "server default" and is never sent."""
+
+    temperature: float | None = Field(default=None, ge=0, le=2)
+    top_p: float | None = Field(default=None, gt=0, le=1)
+    top_k: int | None = Field(default=None, ge=1, le=1000)
+    min_p: float | None = Field(default=None, ge=0, le=1)
+    presence_penalty: float | None = Field(default=None, ge=-2, le=2)
+    frequency_penalty: float | None = Field(default=None, ge=-2, le=2)
+    repetition_penalty: float | None = Field(default=None, gt=0, le=2)
+
+
+class RequestParams(SamplingParams):
+    """[model.request]: defaults for every completion (profiles may override)."""
+
+    parallel_tool_calls: bool | None = None
+    # How thinking on/off reaches the server. "chat_template_kwargs" sends
+    # {"chat_template_kwargs": {"enable_thinking": bool}} (Qwen/vLLM/oMLX style).
+    thinking_control: Literal["chat_template_kwargs", "none"] = "chat_template_kwargs"
+    extra_body: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def safe_extra(self) -> Self:
+        import json
+
+        forbidden = RESERVED_REQUEST_KEYS.intersection(self.extra_body)
+        if forbidden:
+            raise ValueError(
+                "extra_body must not override request keys: "
+                + ", ".join(sorted(forbidden))
+            )
+        if len(json.dumps(self.extra_body)) > 4096:
+            raise ValueError("extra_body is limited to 4096 bytes of JSON")
+        return self
+
+    def wire(self, *, thinking: str | None = None, override=None) -> dict:
+        """Exact extra request keys; empty when nothing is configured."""
+        values = self.model_dump(
+            include=set(SamplingParams.model_fields) | {"parallel_tool_calls"},
+            exclude_none=True,
+        )
+        if override is not None:
+            values.update(
+                override.model_dump(
+                    include=set(SamplingParams.model_fields) | {"parallel_tool_calls"},
+                    exclude_none=True,
+                )
+            )
+        result = {**values}
+        for key, value in self.extra_body.items():
+            if (
+                key == "chat_template_kwargs"
+                and isinstance(value, dict)
+                and isinstance(result.get(key), dict)
+            ):
+                result[key] = {**result[key], **value}
+            else:
+                result[key] = value
+        if thinking in ("on", "off") and self.thinking_control != "none":
+            kwargs = dict(result.get("chat_template_kwargs") or {})
+            kwargs["enable_thinking"] = thinking == "on"
+            result["chat_template_kwargs"] = kwargs
+        return result
+
+
+class ProfileModel(SamplingParams):
+    """[profiles.<name>.model]: per-profile thinking, output and sampling."""
+
+    thinking: Literal["off", "on", "auto"] | None = None
+    max_tokens: int | None = Field(default=None, ge=1)
+    max_reasoning_tokens: int | None = Field(default=None, ge=64)
+    parallel_tool_calls: bool | None = None
+
+
 class ModelConfig(StrictModel):
     base_url: str = "http://127.0.0.1:8000/v1"
     api_key: SecretRef | None = None
@@ -62,6 +151,9 @@ class ModelConfig(StrictModel):
     timeout_s: float = Field(default=120, gt=0)
     max_tokens: int = Field(default=4096, ge=1)
     trust_env: bool = False
+    request: RequestParams = Field(default_factory=RequestParams)
+    # Parse <tool_call> blocks the server left in content (fail-closed).
+    tool_call_fallback: bool = False
 
     def resolve_api_key(self) -> str | None:
         return validate_api_token(self.api_key.resolve()) if self.api_key else None
@@ -212,6 +304,8 @@ class Profile(StrictModel):
         return values
 
     prompt_layout: Literal["stable", "legacy"] = "stable"
+    model: ProfileModel = Field(default_factory=ProfileModel)
+    context_tokens: int | None = Field(default=None, ge=256)
     tool_disclosure: Literal["eager", "deferred"] = "eager"
     tool_resident: list[str] = Field(default_factory=list)
     tools: list[str] = Field(default_factory=list)

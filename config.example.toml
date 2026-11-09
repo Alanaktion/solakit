@@ -52,6 +52,18 @@ concurrency = 1
 max_tokens = 4096
 # Opt in only if this service needs proxy/CA environment settings.
 trust_env = false
+# Parse <tool_call> blocks a server leaves in content (see sola doctor).
+tool_call_fallback = false
+
+# Sampling and thinking (docs/operations/model-tuning.md). Unset keys are not sent.
+[model.request]
+# temperature = 0.7
+# top_p = 0.8
+# top_k = 20
+# presence_penalty = 0.5
+# parallel_tool_calls = false
+# [model.request.extra_body]
+# chat_template_kwargs = { enable_thinking = false }
 
 # Empty by default: delegate.run uses the current profile unless another is selected.
 [delegation]
@@ -80,6 +92,11 @@ read = "workspace"
 write = "none"
 effects = []
 resources = []
+
+[profiles.interactive.model]
+# thinking = "auto" # "off" | "on" | "auto"
+# max_tokens = 8192
+# max_reasoning_tokens = 4096
 
 [profiles.interactive]
 # With enabled_tools including "memory", a deliberate grant could be:

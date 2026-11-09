@@ -2,6 +2,7 @@ id = "stop-on-failure"
 family = "loop"
 quick = true
 prompt = "Fetch the weather page at https://weather.example.test/today and tell me the forecast."
+allow_tools = ["web.get_page"]
 tools = ["web.get_page"]
 expect_status = "completed"
 expect_final_any = ["unavailable", "could not", "couldn't", "unable", "error", "failed"]

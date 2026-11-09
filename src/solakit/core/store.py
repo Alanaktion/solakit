@@ -1067,6 +1067,7 @@ class Store:
         record["memory_events"] = self.memory_events(run_id)
         record["memory_notes"] = self.memory_notes(run_id)
         record["tools"] = self._read(self._path("runs", run_id, ".tools.jsonl"))
+        record["reasoning"] = self.reasoning(run_id)
         record["deliveries"] = self.delivery_events(run_id)
         record["diagnostics"] = self._read(
             self._path("runs", run_id, ".diagnostics.jsonl")
@@ -1221,6 +1222,56 @@ class Store:
         self._append(
             self._path("channel-posts", key, ".jsonl"), self.redactor.redact(record)
         )
+
+    def log_reasoning(self, run_id: str, record: dict) -> None:
+        # Model reasoning is run evidence only: never transcript, never resent.
+        self._append(
+            self._path("runs", run_id, ".reasoning.jsonl"),
+            self.redactor.redact(record),
+        )
+
+    def reasoning(self, run_id: str) -> list[dict]:
+        return self._read(self._path("runs", run_id, ".reasoning.jsonl"))
+
+    def calibration(self, model_id: str) -> dict | None:
+        """Measured bytes-per-token for a model (rebuildable, advisory)."""
+        path = self.root / "calibration.json"
+        try:
+            return json.loads(path.read_bytes()).get(model_id)
+        except (OSError, ValueError, AttributeError):
+            return None
+
+    def record_calibration(
+        self, model_id: str, request_bytes: int, prompt_tokens: int
+    ) -> dict | None:
+        if prompt_tokens <= 0 or request_bytes <= 0:
+            return None
+        ratio = min(8.0, max(1.5, request_bytes / prompt_tokens))
+        path = self.root / "calibration.json"
+        with self.lock:
+            try:
+                data = json.loads(path.read_bytes())
+                if not isinstance(data, dict):
+                    data = {}
+            except (OSError, ValueError):
+                data = {}
+            entry = data.get(model_id) or {"bytes_per_token": ratio, "samples": 0}
+            samples = min(int(entry.get("samples", 0)) + 1, 1000)
+            weight = max(0.05, 1 / samples)
+            entry = {
+                "bytes_per_token": round(
+                    entry["bytes_per_token"] * (1 - weight) + ratio * weight, 4
+                ),
+                "samples": samples,
+            }
+            data[model_id] = entry
+            temp = path.with_suffix(".json.tmp")
+            try:
+                temp.write_text(json.dumps(data))
+                temp.replace(path)
+            except OSError:
+                return None
+        return entry
 
     def log_diagnostic(self, run_id: str, record: dict) -> None:
         self._append(

@@ -3,5 +3,5 @@ family = "thinking"
 prompt = "Plan a 3-day hiking itinerary in Zion for a beginner, one short paragraph per day. No tools are needed."
 tools = ["web.search"]
 expect_no_tools = true
-expect_final_any = ["day 1", "day one"]
+expect_final_any = ["day 1", "day one", "first day", "day 2"]
 max_steps = 3

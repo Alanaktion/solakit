@@ -514,7 +514,7 @@ def test_streaming_does_not_replace_loaded_names_with_transcript(config, monkeyp
     )
     original = execution.model.complete
 
-    async def complete(messages, tools, on_text=None):
+    async def complete(messages, tools, on_text=None, **kwargs):
         # Exercise preview baselines without constructing a network SSE fixture.
         if on_text:
             await on_text("Preview")

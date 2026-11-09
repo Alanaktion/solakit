@@ -17,7 +17,7 @@ from solakit.core.config import Config
 from solakit.core.io import durable
 from solakit.core.media import ImageRef, Media
 from solakit.core.memory import MemoryClient, MemoryUnavailable
-from solakit.core.model import ModelClient, ModelUnavailable
+from solakit.core.model import ModelClient, ModelUnavailable, ReasoningExhausted
 from solakit.core.prompt import read_turn
 from solakit.core.recall import recall_query, trivial_turn
 from solakit.core.schemas import (
@@ -476,14 +476,9 @@ class Execution:
                     turn_context=turn,
                 ).model_message(),
             ]
-            if (
-                request_bytes(
-                    self.config.model.model_id,
-                    preview,
-                    tools,
-                    self.config.model.max_tokens,
-                )
-                > self.config.profiles[run.profile].context_budget
+            profile_cfg = self.config.profiles[run.profile]
+            if self._over_budget(
+                profile_cfg, preview, tools, max_output(self.config, profile_cfg), {}
             ):
                 await self._compact_run(run, session, "before_turn", 0)
             if pending.tool_view.mode == "deferred":
@@ -627,19 +622,14 @@ class Execution:
                 else None
             ),
         )
+        escalated = False
+        measured: dict = {}
+        output_tokens = max_output(self.config, cfg)
         while work_steps < cfg.max_steps:
             if self.pending[run.id].cancellation is not None:
                 raise asyncio.CancelledError
             tools = view.schemas(loaded_tools)
-            if (
-                request_bytes(
-                    self.config.model.model_id,
-                    messages,
-                    tools,
-                    self.config.model.max_tokens,
-                )
-                > cfg.context_budget
-            ):
+            if self._over_budget(cfg, messages, tools, output_tokens, measured):
                 if not cfg.mid_run_compaction or step == 0:
                     raise ContextLimit(
                         "Request exceeds conservative context byte budget"
@@ -671,15 +661,8 @@ class Execution:
                     max_tokens=self.config.model.max_tokens,
                     budget=cfg.context_budget,
                 )
-                if (
-                    request_bytes(
-                        self.config.model.model_id,
-                        messages,
-                        tools,
-                        self.config.model.max_tokens,
-                    )
-                    > cfg.context_budget
-                ):
+                measured = {}
+                if self._over_budget(cfg, messages, tools, output_tokens, measured):
                     raise ContextLimit(
                         "Compacted request still exceeds context byte budget"
                     )
@@ -703,13 +686,60 @@ class Execution:
                         "content": content,
                     }
 
-                data = await self.model.complete(messages, tools, on_text=preview)
             else:
-                data = await self.model.complete(messages, tools)
+                preview = None
+            thinking = step_thinking(cfg.model.thinking, step, escalated)
+            params = self.config.model.request.wire(
+                thinking=thinking, override=cfg.model
+            )
+            if run.request_params is None:
+                run.request_params = {
+                    "params": params,
+                    "max_tokens": output_tokens,
+                    "thinking": cfg.model.thinking,
+                    "max_reasoning_tokens": cfg.model.max_reasoning_tokens,
+                }
+            size = request_bytes(
+                self.config.model.model_id, messages, tools, output_tokens
+            )
+            try:
+                data = await self.model.complete(
+                    messages,
+                    tools,
+                    on_text=preview,
+                    params=params,
+                    max_tokens=output_tokens,
+                    max_reasoning_chars=(
+                        cfg.model.max_reasoning_tokens * 4
+                        if cfg.model.max_reasoning_tokens
+                        else None
+                    ),
+                )
+            except ReasoningExhausted:
+                # Retry once in the same step with thinking off; recorded.
+                run.retries.append({"step": step + 1, "reason": "reasoning_exhausted"})
+                params = self.config.model.request.wire(
+                    thinking="off", override=cfg.model
+                )
+                data = await self.model.complete(
+                    messages,
+                    tools,
+                    on_text=preview,
+                    params=params,
+                    max_tokens=output_tokens,
+                )
             if step == 0:
                 await durable(self.store.append_message, session.id, user)
             run.steps = step + 1
             usage = data.get("usage")
+            if isinstance(usage, dict) and isinstance(usage.get("prompt_tokens"), int):
+                measured = {"tokens": usage["prompt_tokens"], "bytes": size}
+                await durable(
+                    self.store.record_calibration,
+                    self.config.model.model_id,
+                    size,
+                    usage["prompt_tokens"],
+                )
             if (
                 usage_complete
                 and isinstance(usage, dict)
@@ -727,12 +757,20 @@ class Execution:
                 run.tokens = None
                 usage_complete = False
             raw = data["choices"][0]["message"]
+            if raw.get("reasoning"):
+                run.reasoning_steps += 1
+                await durable(
+                    self.store.log_reasoning,
+                    run.id,
+                    {"step": step + 1, "thinking": thinking, "text": raw["reasoning"]},
+                )
             assistant = Message(
                 role="assistant",
                 content=raw.get("content"),
                 tool_calls=raw.get("tool_calls"),
                 origin=run.origin,
                 run_id=run.id,
+                tool_call_source=raw.get("tool_call_source"),
             )
             await durable(self.store.append_message, session.id, assistant)
             run_assistants += 1
@@ -742,10 +780,22 @@ class Execution:
                 # Keep partial output as evidence, but never execute a potentially
                 # truncated tool call or mark a token-limited answer complete.
                 run.status = RunStatus.budget_exceeded
-                run.error = (
-                    "Model output reached model.max_tokens "
-                    f"({self.config.model.max_tokens}); response may be incomplete."
-                )
+                if (
+                    not (raw.get("content") or "").strip()
+                    and not raw.get("tool_calls")
+                    and raw.get("reasoning")
+                ):
+                    run.error = (
+                        "Thinking exhausted model.max_tokens "
+                        f"({output_tokens}) before a visible reply; raise "
+                        "max_tokens or set thinking = "
+                        '"off" for this profile.'
+                    )
+                else:
+                    run.error = (
+                        f"Model output reached model.max_tokens ({output_tokens}); "
+                        "response may be incomplete."
+                    )
                 return
             calls = assistant.tool_calls or []
             if not calls:
@@ -779,6 +829,7 @@ class Execution:
                             run.artifacts.append(artifact)
                     content = result.model_dump_json()
                     if result.error and result.repairable:
+                        escalated = True
                         repairs += 1
                         exhausted = repairs > cfg.repair_attempts
                 tool_message = Message(
@@ -810,6 +861,30 @@ class Execution:
                 run.status = RunStatus.tool_error
                 return
         run.status = RunStatus.budget_exceeded
+
+    def _over_budget(self, cfg, messages, tools, output_tokens, measured) -> bool:
+        """Byte guard always; calibrated token budget when context_tokens is set.
+
+        The previous step's server-reported prompt_tokens is an exact floor for
+        the next request within a run (the prompt only grows)."""
+        size = request_bytes(self.config.model.model_id, messages, tools, output_tokens)
+        if size > cfg.context_budget:
+            return True
+        if not cfg.context_tokens:
+            return False
+        sample = self.store.calibration(self.config.model.model_id)
+        if not sample:
+            return False
+        ratio = sample["bytes_per_token"]
+        estimate = size / ratio
+        if measured:
+            estimate = max(
+                estimate, measured["tokens"] + (size - measured["bytes"]) / ratio
+            )
+        return (
+            estimate + output_tokens > cfg.context_tokens
+            or estimate > 0.85 * cfg.context_tokens
+        )
 
     async def cancel(self, run_id: str) -> bool:
         pending = self.pending.get(run_id)
@@ -873,6 +948,18 @@ class Execution:
             finally:
                 if self.memory:
                     await self.memory.close()
+
+
+def max_output(config: Config, profile) -> int:
+    return profile.model.max_tokens or config.model.max_tokens
+
+
+def step_thinking(mode: str | None, step: int, escalated: bool) -> str | None:
+    """Per-step thinking. ``auto``: on for the fresh user message and after a
+    repairable tool error; off for plain tool-result continuations."""
+    if mode == "auto":
+        return "on" if step == 0 or escalated else "off"
+    return mode
 
 
 def count_run_assistants(messages: list[dict], run_id: str) -> int:

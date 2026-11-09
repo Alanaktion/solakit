@@ -192,7 +192,13 @@ delivery — that message delivered to a channel (§6.3 / §7.2).
    mid-loop — further memory access is an explicit tool call.
 5. Loop, at most profile.max_steps times:
    a. POST messages + enabled tool schemas to the model endpoint with
-      model.max_tokens (default 4096) as a per-completion output bound.
+      model.max_tokens (default 4096, or the profile's model.max_tokens) as a
+      per-completion output bound, plus any configured [model.request] and
+      profile sampling/thinking keys (none by default; see
+      docs/operations/model-tuning.md). Reasoning is split from the visible
+      reply into run evidence and never resent. With
+      model.tool_call_fallback, <tool_call> blocks left in content become
+      calls (fail-closed; verbatim content kept).
       If no schemas are granted, omit tools and set tool_choice to "none".
       A finish_reason of "length" preserves partial output, ends the run as
       budget_exceeded with an explicit error, and executes no tool calls.

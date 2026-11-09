@@ -2,9 +2,44 @@
 
 import json
 
-from solakit.core.model import ModelUnavailable
+from solakit.core.model import ModelUnavailable, ReasoningExhausted
 
 MAX_STREAM_BYTES = 2 * 1024 * 1024
+THINK_OPEN, THINK_CLOSE = "<think>", "</think>"
+
+
+def split_think(raw: str) -> tuple[str, str]:
+    """Split a leading ``<think>…</think>`` from content: (reasoning, visible).
+
+    Servers that do not separate reasoning emit it inline. Only a block at the
+    very start counts; an unclosed block is all reasoning so far."""
+    stripped = raw.lstrip()
+    if not stripped.startswith(THINK_OPEN):
+        if THINK_OPEN.startswith(stripped) and stripped:
+            return "", ""  # A partial "<thi" prefix: undecided, show nothing yet.
+        return "", raw
+    end = stripped.find(THINK_CLOSE)
+    if end < 0:
+        return stripped[len(THINK_OPEN) :], ""
+    visible = stripped[end + len(THINK_CLOSE) :]
+    return stripped[len(THINK_OPEN) : end], visible.lstrip("\n")
+
+
+def normalize_message(message: dict) -> dict:
+    """Move server or inline reasoning out of content into ``reasoning``."""
+    reasoning = message.pop("reasoning_content", None) or message.pop("reasoning", None)
+    content = message.get("content")
+    inline = ""
+    if isinstance(content, str):
+        inline, visible = split_think(content)
+        if inline or content.lstrip().startswith(THINK_OPEN):
+            message["content"] = (
+                visible if visible or not message.get("tool_calls") else None
+            )
+    combined = "\n".join(part for part in (reasoning, inline) if part)
+    if combined:
+        message["reasoning"] = combined
+    return message
 
 
 async def events(response):
@@ -57,9 +92,10 @@ def empty_keepalive(data):
     )
 
 
-async def complete_stream(client, request, on_text):
+async def complete_stream(client, request, on_text, *, max_reasoning_chars=None):
     request = {**request, "stream": True, "stream_options": {"include_usage": True}}
-    content, calls = "", {}
+    content, calls, reasoning = "", {}, ""
+    shown = ""
     usage, finish = None, None
     total, done = 0, False
     async with client.stream("POST", "chat/completions", json=request) as response:
@@ -72,7 +108,11 @@ async def complete_stream(client, request, on_text):
                 body.extend(chunk)
                 if len(body) > MAX_STREAM_BYTES:
                     raise ModelUnavailable("Model response exceeds size limit")
-            return json.loads(body)
+            data = json.loads(body)
+            for choice in data.get("choices") or []:
+                if isinstance(choice.get("message"), dict):
+                    normalize_message(choice["message"])
+            return data
         async for event in events(response):
             total += len(event.encode("utf-8"))
             if total > MAX_STREAM_BYTES:
@@ -96,13 +136,28 @@ async def complete_stream(client, request, on_text):
             delta = choice["delta"]
             if delta.get("role") not in {None, "assistant"}:
                 raise ModelUnavailable("Invalid streamed role")
+            for key in ("reasoning_content", "reasoning"):
+                thought = delta.get(key)
+                if thought is not None:
+                    if not isinstance(thought, str):
+                        raise ModelUnavailable("Invalid streamed reasoning")
+                    reasoning += thought
             text = delta.get("content")
             if text is not None:
                 if not isinstance(text, str):
                     raise ModelUnavailable("Invalid streamed content")
                 content += text
-                if on_text is not None:
-                    await on_text(content)
+                visible = split_think(content)[1]
+                if on_text is not None and visible != shown:
+                    shown = visible
+                    await on_text(visible)
+            if (
+                max_reasoning_chars is not None
+                and not calls
+                and not split_think(content)[1].strip()
+                and len(reasoning) + len(split_think(content)[0]) > max_reasoning_chars
+            ):
+                raise ReasoningExhausted("Reasoning exceeded max_reasoning_tokens")
             for fragment in delta.get("tool_calls") or []:
                 index = fragment["index"]
                 if type(index) is not int or not 0 <= index < 64:
@@ -134,6 +189,9 @@ async def complete_stream(client, request, on_text):
     }
     if calls:
         message["tool_calls"] = [calls[index] for index in sorted(calls)]
+    if reasoning:
+        message["reasoning_content"] = reasoning
+    normalize_message(message)
     return {
         "model": request["model"],
         "choices": [{"message": message, "finish_reason": finish}],

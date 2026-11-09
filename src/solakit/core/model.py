@@ -30,6 +30,12 @@ class ModelUnavailable(Exception):
     """Pinned endpoint is unreachable, invalid, or serving another model."""
 
 
+class ReasoningExhausted(ModelUnavailable):
+    """Reasoning reached its cap before any visible answer or tool call.
+
+    The endpoint is healthy; the caller may retry once with thinking off."""
+
+
 class ModelClient:
     def __init__(
         self, config: ModelConfig, transport=None, *, api_key: str | None = None
@@ -131,7 +137,15 @@ class ModelClient:
             raise ModelUnavailable("Model endpoint unavailable") from exc
 
     async def complete(
-        self, messages: list[dict], tools: list[dict], *, on_text=None
+        self,
+        messages: list[dict],
+        tools: list[dict],
+        *,
+        on_text=None,
+        params: dict | None = None,
+        max_tokens: int | None = None,
+        tool_choice: str | None = None,
+        max_reasoning_chars: int | None = None,
     ) -> dict:
         started = self._begin(
             "completion POST", "chat/completions", self.config.timeout_s
@@ -147,10 +161,14 @@ class ModelClient:
             request = {
                 "model": self.config.model_id,
                 "messages": messages,
-                "max_tokens": self.config.max_tokens,
+                "max_tokens": max_tokens or self.config.max_tokens,
             }
+            # Configured sampling/thinking keys; validation excludes reserved keys.
+            request.update(params or {})
             if tools:
                 request["tools"] = tools
+                if tool_choice is not None:
+                    request["tool_choice"] = tool_choice
             else:
                 request["tool_choice"] = "none"
             from solakit.core.model_stream import complete_stream
@@ -158,7 +176,12 @@ class ModelClient:
             # Always stream the transport so closing it on cancellation signals
             # disconnect to the generator, even when no UI preview is requested.
             async with asyncio.timeout(self.config.timeout_s):
-                data = await complete_stream(self.client, request, on_text)
+                data = await complete_stream(
+                    self.client,
+                    request,
+                    on_text,
+                    max_reasoning_chars=max_reasoning_chars,
+                )
             if data.get("model") != self.config.model_id:
                 raise ModelUnavailable("Completion model does not match pinned ID")
             message = data["choices"][0]["message"]
@@ -185,6 +208,21 @@ class ModelClient:
                     ):
                         raise ModelUnavailable("Invalid tool call envelope")
                     ids.add(call["id"])
+            if (
+                self.config.tool_call_fallback
+                and tools
+                and not calls
+                and data["choices"][0].get("finish_reason") != "length"
+                and message.get("content")
+            ):
+                from solakit.core.toolcall_fallback import parse
+
+                offered = {tool["function"]["name"] for tool in tools}
+                recovered = parse(message["content"], offered)
+                if recovered:
+                    calls = message["tool_calls"] = recovered
+                    message["tool_call_source"] = "content_fallback"
+                    data["choices"][0]["finish_reason"] = "tool_calls"
             # A stream with neither text nor calls assembles to "". Only a
             # token-limited response may be empty; it is kept as partial evidence.
             if not calls and (
@@ -201,6 +239,9 @@ class ModelClient:
                 (time.monotonic() - started) * 1000,
             )
             return data
+        except ReasoningExhausted:
+            self.available = True
+            raise
         except ModelUnavailable as exc:
             self.available = False
             self._failure("completion POST", "chat/completions", exc)

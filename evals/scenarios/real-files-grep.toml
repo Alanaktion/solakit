@@ -1,6 +1,7 @@
 id = "real-files-grep"
 family = "multi_step"
 prompt = "In my workspace, which file under config/ sets the port, and what is the port?"
+allow_tools = ["files.list"]
 tools = ["files.list", "files.read"]
 real_tools = ["files.list", "files.read"]
 expect_calls = [{ name = "files.read" }]
