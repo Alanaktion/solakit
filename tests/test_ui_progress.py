@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 from jinja2 import Environment, FileSystemLoader
 
+from solakit.ui.routes import display_time
 from solakit.ui.view import turns
 
 
@@ -60,11 +61,14 @@ def test_tool_progress(status, result, expected):
         loader=FileSystemLoader(Path(__file__).parents[1] / "src/solakit/ui/templates"),
         autoescape=True,
     )
+    env.filters["display_time"] = display_time
     env.filters["markdown"] = lambda text: text
     template = env.get_template("fragments/message_tail.html")
     html = template.render(turns=history)
     assert ('class="tool-spinner"' in html) == (expected == "running")
     assert ('class="typing-indicator"' in html) == (status == "running" and result)
+    assert '<time datetime="2026-11-07T00:00:00Z" data-time>' in html
+    assert "Nov 7, 2026 · 00:00:00 UTC</time>" in html
     assert "PRIVATE" not in html
     if status == "running" and result:
         history[0]["preview"] = "Partial response"
