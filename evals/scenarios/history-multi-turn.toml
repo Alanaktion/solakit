@@ -1,0 +1,24 @@
+id = "history-multi-turn"
+family = "long_context"
+description = "Fact from earlier turn in a scripted history, no search needed."
+prompt = "Which city did I say I'm flying to?"
+tools = ["sessions.search", "memory.search"]
+allow_tools = ["sessions.search"]
+expect_final_contains = ["porto"]
+max_steps = 3
+
+[[history]]
+role = "user"
+content = "I'm flying to Porto on Friday."
+
+[[history]]
+role = "assistant"
+content = "Have a great trip to Porto!"
+
+[[history]]
+role = "user"
+content = "Also remind me what I should pack for rain."
+
+[[history]]
+role = "assistant"
+content = "A light rain jacket, quick-dry shoes and an umbrella."

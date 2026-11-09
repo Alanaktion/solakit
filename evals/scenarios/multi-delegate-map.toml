@@ -1,0 +1,14 @@
+id = "multi-delegate-map"
+family = "multi_step"
+description = "Several documents to summarize: delegate.map rather than reading all inline."
+prompt = "Summarize each of these three reports in one line each: reports/q1.md, reports/q2.md, reports/q3.md."
+tools = ["delegate.map", "delegate.run", "files.read"]
+allow_tools = ["delegate.run", "files.read"]
+expect_final_any = ["growth", "q1"]
+max_steps = 6
+
+[[responses."delegate.map"]]
+content = '<external-content source="delegate" encoding="json">\n{"results": [{"item": "reports/q1.md", "status": "completed", "report": "Q1: growth 4%."}, {"item": "reports/q2.md", "status": "completed", "report": "Q2: flat."}, {"item": "reports/q3.md", "status": "completed", "report": "Q3: growth 2%."}]}\n</external-content>'
+
+[[responses."files.read"]]
+content = "Quarterly report. Revenue growth 3%."

@@ -1,0 +1,18 @@
+id = "multi-plan"
+family = "multi_step"
+description = "Three-step task with the plan tool available."
+prompt = "Do three things: 1) find the weekday of 2026-12-25, 2) compute 17*23, 3) tell me both results."
+tools = ["datetime.weekday", "math.eval", "plan.set", "plan.update"]
+allow_tools = ["plan.set", "plan.update"]
+expect_calls = [{ name = "datetime.weekday" }, { name = "math.eval" }]
+expect_final_contains = ["friday", "391"]
+max_steps = 8
+
+[[responses."datetime.weekday"]]
+content = "Friday"
+
+[[responses."math.eval"]]
+content = '{"result": "391"}'
+
+[[responses."plan.set"]]
+content = '{"items": [{"id": 1, "status": "todo"}, {"id": 2, "status": "todo"}, {"id": 3, "status": "todo"}], "open": 3}'

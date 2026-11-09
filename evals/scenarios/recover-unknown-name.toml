@@ -1,0 +1,11 @@
+id = "recover-unknown-name"
+family = "recovery"
+description = "A wrong tool name must be corrected after the did-you-mean error."
+prompt = "Use the weekday tool to tell me the weekday of 2027-01-01."
+tools = ["datetime.weekday"]
+expect_calls = [{ name = "datetime.weekday" }]
+expect_final_contains = ["friday"]
+max_steps = 4
+
+[[responses."datetime.weekday"]]
+content = "Friday"

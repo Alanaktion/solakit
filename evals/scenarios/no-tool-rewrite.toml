@@ -1,0 +1,7 @@
+id = "no-tool-rewrite"
+family = "formatting"
+prompt = "Rewrite this more politely, one sentence: 'Send me the file now.'"
+tools = ["files.read", "web.search", "sessions.search"]
+expect_no_tools = true
+expect_final_any = ["please", "could you", "would you"]
+max_steps = 2

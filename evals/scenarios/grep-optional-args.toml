@@ -1,0 +1,13 @@
+id = "grep-optional-args"
+family = "arguments"
+prompt = "Search only the Python files in my workspace for the word TODO."
+tools = ["files.grep", "files.find", "files.read"]
+real_tools = ["files.grep", "files.find", "files.read"]
+allow_tools = ["files.find", "files.read"]
+expect_calls = [{ name = "files.grep", args_subset = { glob = "py" } }]
+expect_final_contains = ["app.py"]
+max_steps = 5
+
+[files]
+"app.py" = "# TODO: refactor\n"
+"notes.txt" = "TODO buy milk\n"

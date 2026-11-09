@@ -1,0 +1,11 @@
+id = "schedule-when"
+family = "arguments"
+quick = true
+prompt = "Create a job with id water-plants that reminds me to water the plants every Sunday at 10am. Turn it on."
+tools = ["jobs.schedule", "jobs.list", "jobs.update"]
+allow_tools = ["jobs.list"]
+expect_calls = [{ name = "jobs.schedule", args_subset = { id = "water-plants", when = "0 10 * * 0", enabled = true } }]
+max_steps = 4
+
+[[responses."jobs.schedule"]]
+content = '{"created": "water-plants", "enabled": true}'

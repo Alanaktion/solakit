@@ -1,0 +1,11 @@
+id = "web-passage"
+family = "selection"
+prompt = "On https://docs.example.test/install, what is the minimum Python version?"
+tools = ["web.get_page", "web.search"]
+expect_calls = [{ name = "web.get_page", args_subset = { url = "docs.example.test/install" } }]
+allow_tools = ["web.search"]
+expect_final_contains = ["3.12"]
+max_steps = 4
+
+[[responses."web.get_page"]]
+content = '{"url": "https://docs.example.test/install", "markdown": "# Install\n\nRequires Python 3.12 or newer.\n\nRun pip install app.", "returned_chars": 70, "total_chars": 70, "truncated": false}'

@@ -1,0 +1,17 @@
+id = "grep-config"
+family = "selection"
+quick = true
+description = "Content search should use files.grep, not listing and reading everything."
+prompt = "Where in my workspace is the database URL configured?"
+tools = ["files.grep", "files.find", "files.list", "files.read", "shell.run"]
+real_tools = ["files.grep", "files.find", "files.list", "files.read"]
+allow_tools = ["files.find", "files.read", "files.list"]
+expect_calls = [{ name = "files.grep" }]
+forbid_tools = ["shell.run"]
+expect_final_contains = ["settings/db.env"]
+max_steps = 6
+
+[files]
+"settings/db.env" = "DATABASE_URL=postgres://localhost/app\n"
+"settings/app.env" = "DEBUG=false\n"
+"src/main.py" = "print('hi')\n"

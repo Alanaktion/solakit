@@ -1,0 +1,11 @@
+id = "no-tool-math-trivial"
+family = "formatting"
+prompt = "What is 2 + 2? Just the number."
+tools = ["math.eval", "web.search"]
+allow_tools = ["math.eval"]
+forbid_tools = ["web.search"]
+expect_final_contains = ["4"]
+max_steps = 3
+
+[[responses."math.eval"]]
+content = '{"result": "4"}'

@@ -1,0 +1,12 @@
+id = "disclosure-discover"
+family = "disclosure"
+description = "With deferred disclosure the model must load the weekday tool first."
+prompt = "What weekday is 2026-11-20?"
+tools = ["datetime.weekday", "datetime.add_days", "datetime.convert", "math.eval", "web.search", "files.read"]
+overrides = { "profile.tool_disclosure" = "deferred" }
+expect_calls = [{ name = "datetime.weekday" }]
+expect_final_contains = ["friday"]
+max_steps = 4
+
+[[responses."datetime.weekday"]]
+content = "Friday"

@@ -1,0 +1,10 @@
+id = "recover-validation"
+family = "recovery"
+prompt = "Mark message 42 in the work mailbox as read."
+tools = ["email.mark_read"]
+expect_calls = [{ name = "email.mark_read", args_subset = { mailbox = "work" } }]
+max_steps = 4
+
+[[responses."email.mark_read"]]
+match = { message_ids = ["42"] }
+content = '{"updated": ["42"]}'

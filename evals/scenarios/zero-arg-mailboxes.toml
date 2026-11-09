@@ -1,0 +1,11 @@
+id = "zero-arg-mailboxes"
+family = "zero_arg"
+prompt = "Which mailboxes can you read?"
+tools = ["email.list_mailboxes", "email.search"]
+expect_calls = [{ name = "email.list_mailboxes" }]
+forbid_tools = ["email.search"]
+expect_final_contains = ["work"]
+max_steps = 3
+
+[[responses."email.list_mailboxes"]]
+content = '[{"mailbox": "personal"}, {"mailbox": "work"}]'

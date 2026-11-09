@@ -1,0 +1,10 @@
+id = "schedule-once"
+family = "arguments"
+prompt = "Schedule a one-time job called dentist on 2026-12-03 at 08:30 to remind me about the dentist. Enable it."
+tools = ["jobs.schedule", "jobs.list"]
+allow_tools = ["jobs.list"]
+expect_calls = [{ name = "jobs.schedule", args_subset = { id = "dentist", when = "2026-12-03" } }]
+max_steps = 4
+
+[[responses."jobs.schedule"]]
+content = '{"created": "dentist", "enabled": true}'

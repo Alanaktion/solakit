@@ -1,0 +1,15 @@
+id = "find-by-name"
+family = "selection"
+prompt = "List every markdown file in the docs folder of my workspace."
+tools = ["files.find", "files.list", "files.read", "shell.run"]
+real_tools = ["files.find", "files.list", "files.read"]
+allow_tools = ["files.list"]
+expect_calls = [{ name = "files.find" }]
+forbid_tools = ["shell.run"]
+expect_final_contains = ["intro.md", "usage.md"]
+max_steps = 5
+
+[files]
+"docs/intro.md" = "# Intro\n"
+"docs/guide/usage.md" = "# Usage\n"
+"docs/logo.png" = "binary"

@@ -1,0 +1,11 @@
+id = "zero-arg-list-jobs"
+family = "zero_arg"
+prompt = "What scheduled jobs do I have?"
+tools = ["jobs.list", "jobs.schedule", "jobs.delete"]
+expect_calls = [{ name = "jobs.list" }]
+forbid_tools = ["jobs.schedule", "jobs.delete"]
+expect_final_contains = ["morning-brief"]
+max_steps = 3
+
+[[responses."jobs.list"]]
+content = '[{"id": "morning-brief", "cron": "0 7 * * *", "enabled": true}]'

@@ -67,7 +67,10 @@ channel/API/job ──► Execution.enqueue (admission: durable run, session FIF
 | `src/solakit/core/explain.py` | config explain/diff |
 | `src/solakit/core/residents.py` | resident suggestions |
 | `src/solakit/core/scaffold.py` | `sola init` |
-| `src/solakit/core/store.py` | evidence storage and indexes |
+| `src/solakit/core/store.py` | Store facade: sessions, transcripts, runs, append/recovery |
+| `src/solakit/core/store_base.py` | identifiers, corruption error, durable/atomic writes |
+| `src/solakit/core/store_index.py` | rebuildable SQLite indexes, activity, search (mixin) |
+| `src/solakit/core/store_sidecars.py` | run/session sidecar evidence and calibration (mixin) |
 | `src/solakit/core/config.py` | configuration models |
 | `src/solakit/tools/__init__.py` | registry, dispatch, rendering, `tool_json` |
 | `src/solakit/tools/arguments.py` | argument preparation and repair messages |

@@ -153,7 +153,7 @@ def test_fts_failure_never_prevents_append_and_rebuild_repairs(config):
 
 
 def test_fts_unavailable_at_startup_still_allows_evidence(config, monkeypatch):
-    monkeypatch.setattr("solakit.core.store.FTS_SCHEMA", "invalid sql")
+    monkeypatch.setattr("solakit.core.store_index.FTS_SCHEMA", "invalid sql")
     store = Store(config.paths.data)
     append(store, "needle")
     assert len(store.transcript("s")) == 1
