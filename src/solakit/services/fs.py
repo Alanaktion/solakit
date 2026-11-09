@@ -281,7 +281,11 @@ class Filesystem:
                     more = True
                     break
                 target = relative if "/" in pattern else file.name
-                if fnmatch.fnmatch(target, pattern):
+                # "**/" also matches zero directories, as in shell globstar.
+                if fnmatch.fnmatch(target, pattern) or (
+                    "**/" in pattern
+                    and fnmatch.fnmatch(target, pattern.replace("**/", ""))
+                ):
                     if len(matches) >= limit:
                         more = True
                         break

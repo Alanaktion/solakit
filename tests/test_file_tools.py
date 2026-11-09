@@ -112,6 +112,13 @@ def test_find_and_grep(files, tmp_path):
         "config/app.toml",
         "config/server.toml",
     ]
+    deep = json.loads(
+        call("files.find", pattern="config/**/*.toml", path=str(root)).content
+    )
+    assert [m["path"] for m in deep["matches"]] == [
+        "config/app.toml",
+        "config/server.toml",
+    ]
     grep = call("files.grep", query="PORT", path=str(root), context=1)
     assert grep.content.splitlines() == [
         'config/server.toml-1- host = "x"',

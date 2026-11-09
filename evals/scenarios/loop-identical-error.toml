@@ -3,7 +3,7 @@ family = "loop"
 description = "Tool always fails; the model must stop and report rather than retry forever."
 prompt = "Look up the latest release of acme/widgets."
 tools = ["github.latest_release"]
-expect_final_any = ["unable", "could not", "couldn't", "not found", "error", "failed"]
+expect_final_any = ["unable", "could not", "couldn't", "not found", "error", "failed", "does not exist", "inaccessible", "confirm"]
 max_steps = 8
 
 [[responses."github.latest_release"]]
