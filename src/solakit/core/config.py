@@ -477,6 +477,9 @@ class Config(StrictModel):
     repositories: dict[str, Path] = Field(default_factory=dict)
     collections: dict[str, CollectionConfig] = Field(default_factory=dict)
     enabled_tools: list[str] = Field(default_factory=list)
+    # Named grant bundles: profiles/jobs grant "@name". Pure grant sugar,
+    # expanded before access checks; entries may be names, families or @sets.
+    toolsets: dict[str, list[str]] = Field(default_factory=dict)
     tool_apis: ToolApisConfig = Field(default_factory=ToolApisConfig)
     timezone: str = "America/Denver"
     discord_token: SecretRef | None = None
@@ -567,6 +570,12 @@ class Config(StrictModel):
             }
         )
         ZoneInfo(self.timezone)
+        for name, entries in self.toolsets.items():
+            if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{0,63}", name):
+                raise ValueError(f"invalid toolset name: {name}")
+            for entry in entries:
+                if entry.startswith("@") and entry[1:] not in self.toolsets:
+                    raise ValueError(f"toolset {name}: unknown toolset {entry}")
         for profile in self.delegation.allowed_profiles:
             if profile not in self.profiles:
                 raise ValueError(f"unknown delegation profile: {profile}")

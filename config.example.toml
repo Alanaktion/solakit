@@ -24,6 +24,17 @@ enabled_tools = []
 # See docs/operations/read-tools.md.
 # discord_token = { env = "SOLA_DISCORD_TOKEN" }
 
+# Named grant bundles. Profiles and jobs grant "@name"; entries may be exact
+# names, first-family patterns or other toolsets. Pure sugar: expanded before
+# access checks, shown expanded in run evidence. Narrow profiles built from small
+# toolsets keep wrong tools absent, which suits small local models.
+[toolsets]
+reader = ["files.read", "files.list", "sessions.search", "web.search", "web.get_page"]
+editor = ["@reader", "files.write", "files.edit", "files.append"]
+mail = ["email.list_mailboxes", "email.search", "email.read", "email.mark_read"]
+publishing = ["journal.*", "blog.*"]
+ops = ["runtime.status", "jobs.*", "shell.run"]
+
 [tool_apis]
 # brave_api_key = { env = "BRAVE_API_KEY" }
 # cloudflare_account_id = "your-account-id"

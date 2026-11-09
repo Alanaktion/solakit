@@ -909,6 +909,11 @@ Notes:
   input) is never one prompt-injection away from a filesystem write.
 - Profiles are config, not code: adding one is a TOML block + an optional
   fragment file. No profile may be created by the model.
+- **Toolsets** (`[toolsets] reader = ["files.read", …]`) are named grant bundles.
+  Profiles and job tool overrides grant `"@reader"`; entries may be exact names,
+  first-family patterns or other toolsets (cycles and unknown sets are errors).
+  Expansion happens before access checks and run evidence records expanded names,
+  so a toolset never grants anything an explicit list could not.
 
 ## 9. FastAPI scaffold & API surface
 

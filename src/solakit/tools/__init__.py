@@ -383,7 +383,7 @@ class Registry:
         )
         families = sorted({n.split(".")[0] for n in available})
         result = []
-        for entry in entries:
+        for entry in self.expand_toolsets(entries):
             if entry == "*":
                 matches = available
             elif re.fullmatch(r"[A-Za-z_]\w*\.\*", entry):
@@ -404,6 +404,23 @@ class Registry:
                 raise ValueError(f"tool {entry} is not available to {profile}")
             result.extend(matches)
         return list(dict.fromkeys(result))
+
+    def expand_toolsets(self, entries: list[str], seen=()) -> list[str]:
+        """Replace "@name" grants by their toolset entries (recursively)."""
+        result = []
+        for entry in entries:
+            if not entry.startswith("@"):
+                result.append(entry)
+                continue
+            name = entry[1:]
+            if name in seen:
+                raise ValueError(f"toolset cycle: {' -> '.join((*seen, name))}")
+            if name not in self.config.toolsets:
+                raise ValueError(f"unknown toolset: {entry}")
+            result.extend(
+                self.expand_toolsets(self.config.toolsets[name], (*seen, name))
+            )
+        return result
 
     def allowed(self, name: str, profile: str) -> bool:
         return name in self.tool_names(profile)
@@ -509,6 +526,10 @@ class Registry:
                 for name in self.config.profiles
             },
             "modules": list(self.config.enabled_tools),
+            "toolsets": {
+                name: self.expand_toolsets([f"@{name}"])
+                for name in sorted(self.config.toolsets)
+            },
             "distributions": list(self.distributions),
             "profiles": {
                 name: [schema["function"]["name"] for schema in self.schemas(name)]
