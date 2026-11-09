@@ -40,7 +40,7 @@ button:disabled, input:disabled, select:disabled, textarea:disabled { opacity: .
 .brand { display: inline-flex; align-items: center; gap: 8px; font-size: 17px; font-weight: 500; letter-spacing: -.6px; }
 .moon { display: grid; place-items: center; font-size: 23px; width: 28px; height: 28px; filter: drop-shadow(0 0 6px var(--accent-soft)); }
 .nav { flex: 1; }
-.nav-link { font-size: 13px; padding: 12px 0; border-bottom: 2px solid transparent; color: var(--muted); transition: color .15s, border-color .15s; }
+.nav-link { font-size: 13px; padding: 1px 3px; border-bottom: 2px solid transparent; color: var(--muted); transition: color .15s, border-color .15s; }
 .nav-link:hover { color: var(--accent); }
 .quiet-button { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; gap: 8px; line-height: 1.4; background: none; color: var(--muted); padding: 10px 0 10px 12px; font-size: 12px; }
 .quiet-button:hover, .back-link:hover { color: var(--accent); }
@@ -217,7 +217,7 @@ pre { overflow-x: auto; font-size: 11px; line-height: 1.55; color: var(--ink); }
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }
 /* Capability inspection uses the same API as startup diagnostics. */
-.nav { display: flex; gap: 20px; }
+.nav { display: flex; gap: 14px; }
 .nav-link[aria-current="page"] { color: var(--ink); border-bottom-color: var(--accent); }
 .tool-profiles, .tool-configuration { padding: 10px 14px; }
 .tool-profiles { margin-bottom: 16px; }
@@ -261,7 +261,7 @@ pre { overflow-x: auto; font-size: 11px; line-height: 1.55; color: var(--ink); }
 .tool-configuration h2 { margin-top: 12px; font-size: 13px; }
 .tool-configuration pre, .tool-arguments pre { max-width: 100%; overflow-x: auto; padding: 12px; border-radius: 6px; background: var(--surface-soft); }
 @media (max-width: 640px) {
-  .nav { gap: 12px; }
+  .nav { gap: 8px; }
   .chat-app .header-inner { gap: 12px; }
   .tool-card > summary { grid-template-columns: minmax(0, 1fr); gap: 4px; }
   .tool-card-heading { grid-template-columns: minmax(0, 1fr); gap: 2px; }
