@@ -8,7 +8,6 @@ import traceback
 from dataclasses import dataclass
 
 from solakit.core.aging import age_tool_results
-from solakit.core.archival import archive_session
 from solakit.core.compaction import (
     Compactor,
     ContextLimit,
@@ -23,8 +22,8 @@ from solakit.core.memory import MemoryClient, MemoryUnavailable
 from solakit.core.model import ModelClient, ModelUnavailable, ReasoningExhausted
 from solakit.core.prompt import read_turn
 from solakit.core.recall import recall_query, trivial_turn
+from solakit.core.runtime_ops import RuntimeOps
 from solakit.core.schemas import (
-    MemoryNote,
     Message,
     Origin,
     Run,
@@ -32,6 +31,13 @@ from solakit.core.schemas import (
     Session,
     SessionArchived,
     now,
+)
+from solakit.core.steps import (
+    RepairBudget,
+    count_run_assistants,
+    max_output,
+    step_thinking,
+    valid_history,
 )
 from solakit.core.store import Store, plan_state
 from solakit.tools import Registry, ToolContext, render_for_model
@@ -51,7 +57,7 @@ class Pending:
     tool_view: ToolView | None = None
 
 
-class Execution:
+class Execution(RuntimeOps):
     def __init__(
         self,
         config: Config,
@@ -307,94 +313,6 @@ class Execution:
                     pending.future.set_result(pending.run)
                 self.pending.pop(pending.run.id, None)
                 self.session_locks[session_id].release()
-
-    async def stage_memory_note(self, text: str) -> MemoryNote:
-        pending = self.performing.get(asyncio.current_task())
-        if pending is None or pending.run.status != RunStatus.running:
-            raise MemoryUnavailable("Memory notes require a running tool call")
-        session = await durable(self.store.session, pending.run.session)
-        if self.memory is None or session.memory_scope != "shared":
-            raise MemoryUnavailable("Memory notes require enabled shared memory")
-        if not text.strip() or len(text) > self.config.memory.remember_max_chars:
-            raise MemoryUnavailable(
-                "Memory note is empty or exceeds remember_max_chars"
-            )
-        note = MemoryNote(
-            run_id=pending.run.id,
-            session_id=session.id,
-            profile=pending.run.profile,
-            text=text,
-        )
-        await durable(self.store.stage_memory_note, note)
-        return note
-
-    async def archive_session(self, session_id: str) -> dict:
-        async with self.submit_lock:
-            if self.closing:
-                raise ValueError("Runtime is shutting down")
-            session = await durable(self.store.session, session_id)
-            if session.archived_at:
-                raise SessionArchived(
-                    "Session is archived; restore it before changing context"
-                )
-            if any(
-                pending.run.session == session_id and not pending.future.done()
-                for pending in self.pending.values()
-            ):
-                raise ValueError("Wait for queued or running turns before archiving")
-            # Cancellation waits for rotation before releasing admission: no late
-            # file operation can race a new turn or runtime shutdown.
-            return await durable(archive_session, self.store, session_id)
-
-    async def compact_session(self, session_id: str) -> dict:
-        async with self.submit_lock:
-            if self.closing:
-                raise ValueError("Runtime is shutting down")
-            session = await durable(self.store.session, session_id)
-            if session.archived_at:
-                raise SessionArchived(
-                    "Session is archived; restore it before changing context"
-                )
-            if any(
-                p.run.session == session_id and not p.future.done()
-                for p in self.pending.values()
-            ):
-                raise ValueError("Wait for queued or running turns before compacting")
-            self.compactor.memory = self.memory
-
-            async def compact():
-                if self.compactor.strategy(session) == "local":
-                    # Explicit local compaction uses one inference slot.
-                    async with self.semaphore:
-                        return await self.compactor.compact(session)
-                return await self.compactor.compact(session)
-
-            task = asyncio.create_task(compact())
-            try:
-                manifest = await asyncio.shield(task)
-            except asyncio.CancelledError:
-                # Finish accepted remote work/rotation before admission or shutdown
-                # can proceed; a disconnected operator does not orphan a compaction.
-                await asyncio.gather(task, return_exceptions=True)
-                raise
-            return {"session": session_id, **manifest}
-
-    async def _compact_run(self, run, session, trigger, step):
-        async def perform():
-            self.compactor.memory = self.memory
-            manifest = await self.compactor.compact(session)
-            run.compaction = {**manifest, "trigger": trigger, "step": step}
-            # Each rotation is retained in append-only run events.
-            await durable(self.store.save_run, run)
-
-        task = asyncio.create_task(perform())
-        try:
-            await asyncio.shield(task)
-        except asyncio.CancelledError:
-            # Keep accepted rotation and its run attribution together, even when
-            # cancellation arrives while the manifest is being committed.
-            await asyncio.gather(task, return_exceptions=True)
-            raise
 
     async def _worker(self, queue: asyncio.Queue) -> None:
         while True:
@@ -1185,80 +1103,3 @@ class Execution:
             finally:
                 if self.memory:
                     await self.memory.close()
-
-
-class RepairBudget:
-    """Repairable-error accounting.
-
-    Without a ceiling (default) this is the historical rule: more than
-    ``attempts`` repairs in a run is exhaustion. With a ceiling, each tool +
-    error class gets ``attempts`` repairs, the run total is capped by the
-    ceiling, and a successful call of the tool that just failed refunds one."""
-
-    def __init__(self, attempts: int, ceiling: int | None = None):
-        self.attempts, self.ceiling = attempts, ceiling
-        self.total = 0
-        self.classes: dict[tuple, int] = {}
-        self.last_failed: str | None = None
-
-    def fail(self, tool: str | None, error_class: str | None) -> bool:
-        self.total += 1
-        if self.ceiling is None:
-            return self.total > self.attempts
-        key = (tool, error_class)
-        self.classes[key] = self.classes.get(key, 0) + 1
-        self.last_failed = tool
-        return self.classes[key] > self.attempts or self.total > self.ceiling
-
-    def success(self, tool: str | None) -> None:
-        if self.ceiling is not None and tool == self.last_failed and self.total:
-            self.total -= 1
-        self.last_failed = None
-
-
-def max_output(config: Config, profile) -> int:
-    return profile.model.max_tokens or config.model.max_tokens
-
-
-def step_thinking(mode: str | None, step: int, escalated: bool) -> str | None:
-    """Per-step thinking. ``auto``: on for the fresh user message and after a
-    repairable tool error; off for plain tool-result continuations."""
-    if mode == "auto":
-        return "on" if step == 0 or escalated else "off"
-    return mode
-
-
-def count_run_assistants(messages: list[dict], run_id: str) -> int:
-    return sum(
-        m["role"] == "assistant"
-        and m.get("kind", "message") == "message"
-        and m["run_id"] == run_id
-        for m in messages
-    )
-
-
-def valid_history(history: list[dict]) -> list[dict]:
-    """Include only complete assistant/tool groups; retain every source entry."""
-    result = []
-    index = 0
-    while index < len(history):
-        message = Message.model_validate(history[index])
-        calls = message.tool_calls or []
-        if calls:
-            following = history[index + 1 : index + 1 + len(calls)]
-            expected = [call["id"] for call in calls]
-            actual = [
-                item.get("tool_call_id")
-                for item in following
-                if item.get("role") == "tool"
-            ]
-            if expected == actual:
-                result.append(message.model_message())
-                result.extend(
-                    Message.model_validate(item).model_message() for item in following
-                )
-                index += len(calls)
-        elif message.role != "tool":
-            result.append(message.model_message())
-        index += 1
-    return result

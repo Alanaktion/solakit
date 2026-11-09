@@ -98,3 +98,12 @@ def test_architecture_doc_module_paths_exist():
     assert len(paths) > 15
     for path in paths:
         assert (ROOT / path).exists(), path
+
+
+def test_every_operations_doc_is_linked():
+    linked = "".join(
+        (ROOT / name).read_text()
+        for name in ("docs/operations.md", "README.md", "docs/setup.md")
+    )
+    for path in (ROOT / "docs/operations").glob("*.md"):
+        assert path.name in linked, path.name
