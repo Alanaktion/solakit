@@ -34,7 +34,7 @@ def extract(content: str):
     return json.loads(text)
 
 
-def errors(schema: dict, value, path: str = "$") -> list[str]:
+def errors(schema: dict, value, path: str = "$") -> list[str]:  # noqa: C901
     kind = schema.get("type")
     found = []
     if kind == "integer":

@@ -14,8 +14,10 @@ from pydantic import Field, model_validator
 from sola_packs.support import Settings, external, fingerprint, resource
 from sola_packs.support.evidence import Lease, Operation
 
-from solakit.core.io import durable
-from solakit.tools import ToolContext, ToolError, ToolResult, tool
+from solakit.sdk import ToolContext, ToolError, ToolResult, durable, tool
+
+SOLA_SDK = ">=1,<2"
+
 
 _PATTERN = re.compile(
     r"([0-9]{3,})-([0-9]{4}-[0-9]{2}-[0-9]{2})-([a-z][a-z0-9_-]*)\.md\Z"

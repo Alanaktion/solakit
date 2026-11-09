@@ -91,7 +91,7 @@ def same_job_local_time(job, value):
         return False
 
 
-def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRouter:
+def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRouter:  # noqa: C901
     router = APIRouter(include_in_schema=False)
 
     def logged_in(request):
@@ -270,7 +270,7 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
             status,
         )
 
-    async def conversation(request, identity, number=None):
+    async def conversation(request, identity, number=None):  # noqa: C901
         # Read run state first: a terminal run's transcript is already durable
         # before the following session read (avoids ending a stream on stale text).
         records = await api(
@@ -1079,7 +1079,7 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
             )
 
     @router.get("/sessions/{identity}/events")
-    async def conversation_events(request: Request, identity: str):
+    async def conversation_events(request: Request, identity: str):  # noqa: C901
         if not logged_in(request):
             return Response(status_code=401, headers=HEADERS)
         try:

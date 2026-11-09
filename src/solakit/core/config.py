@@ -399,7 +399,7 @@ class Job(StrictModel):
     enabled: bool = False
 
     @model_validator(mode="after")
-    def valid_timezone(self) -> Self:
+    def valid_timezone(self) -> Self:  # noqa: C901
         try:
             zone = ZoneInfo(self.timezone)
         except (KeyError, ValueError) as exc:
@@ -597,7 +597,7 @@ class Config(StrictModel):
         return values
 
     @model_validator(mode="after")
-    def references(self) -> Self:
+    def references(self) -> Self:  # noqa: C901
         # Validate partial defaults even when no concrete entry happens to use them.
         Profile.model_validate(self.profile_defaults)
         Channel.model_validate(

@@ -12,7 +12,7 @@ from solakit.core.config import ServerConfig, load_config
 from solakit.core.startup import ConfigurationError, prepare
 
 
-def main() -> None:
+def main() -> None:  # noqa: C901
     parser = argparse.ArgumentParser(prog="sola")
     parser.add_argument(
         "--url", default=os.environ.get("SOLA_URL", "http://127.0.0.1:8382")
@@ -70,6 +70,8 @@ def main() -> None:
     compare = evaluate_commands.add_parser("compare", help="Compare two result files")
     compare.add_argument("a")
     compare.add_argument("b")
+    compare.add_argument("--a-cell", help='Matrix cell of A as JSON, e.g. "{}"')
+    compare.add_argument("--b-cell", help="Matrix cell of B as JSON")
     init = commands.add_parser("init", help="Scaffold config and prompt files")
     init.add_argument("directory", nargs="?", default=".")
     init.add_argument("--preset", choices=["qwen3-35b-a3b-omlx", "generic-openai"])
@@ -448,7 +450,11 @@ def run_eval(parser, args) -> None:
             b = json.loads(Path(args.b).read_text())
         except (OSError, ValueError) as exc:
             parser.exit(1, f"Compare failed: {exc}\n")
-        print(evaluation.compare(a, b))
+        try:
+            cells = [json.loads(c) if c else None for c in (args.a_cell, args.b_cell)]
+        except ValueError:
+            parser.exit(1, "Cells must be JSON objects.\n")
+        print(evaluation.compare(a, b, *cells))
         return
     try:
         config = load_config()

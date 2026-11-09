@@ -15,6 +15,13 @@ move to a separate repository without changes to core execution.
 - `common`: pack-owned config, grants, secret registration, operation evidence,
   optional contract-test fixtures.
 
+Packs import core only through `solakit.sdk` (`tool`, `ToolContext`, `ToolError`,
+`ToolResult`, `tool_json`, `durable`, `SecretRef`, filesystem/process/git helpers
+and typed `ports`) and declare `SOLA_SDK = ">=1,<2"`; the registry refuses a pack
+whose requirement the running `SDK_VERSION` does not satisfy, and a contract test
+fails if a pack imports anything else from `solakit`. `docs/tools.md` is the
+generated reference of every tool.
+
 From the existing core development checkout:
 
 ```sh

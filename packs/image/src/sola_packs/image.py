@@ -12,9 +12,10 @@ from pydantic import Field, field_validator, model_validator
 from sola_packs.support import IDENTIFIER, Settings, external, resource, secret
 from sola_packs.support.evidence import Lease, Operation
 
-from solakit.core.config import SecretRef
-from solakit.core.io import durable
-from solakit.tools import ToolContext, ToolError, ToolResult, tool
+from solakit.sdk import SecretRef, ToolContext, ToolError, ToolResult, durable, tool
+
+SOLA_SDK = ">=1,<2"
+
 
 PROMPT_ID = re.compile(r"[A-Za-z0-9_-]{1,128}\Z")
 

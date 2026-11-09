@@ -305,7 +305,7 @@ class Store:
             json.dumps(sorted(recovery)),
         )
 
-    def rebuild(self, *, incremental=False) -> None:
+    def rebuild(self, *, incremental=False) -> None:  # noqa: C901
         """Refresh changed source units; explicit rebuild always rechecks everything.
 
         Source stats are a disposable cache, committed with the derived rows.

@@ -35,7 +35,12 @@ testpaths = ["tests"]
 target-version = "py312"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP"]
+select = ["E", "F", "I", "UP", "C901"]
+
+[tool.ruff.lint.mccabe]
+# Complexity budget: existing offenders carry `# noqa: C901` (an allowlist that
+# may only shrink); new functions must stay under the threshold.
+max-complexity = 15
 
 [tool.hatch.build.targets.sdist]
 exclude = ["/packs"]

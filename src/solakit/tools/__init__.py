@@ -28,6 +28,14 @@ from solakit.core.schemas import Session
 from solakit.core.store import Store
 from solakit.tools.arguments import argument_error, prepare_arguments
 from solakit.tools.distributions import SYNC_HINT, identity, installed
+from solakit.tools.ports import (
+    ChannelPoster,
+    JobManagerPort,
+    MemoryStager,
+    NestedSubmit,
+    RuntimeStatus,
+    ToolActivation,
+)
 
 
 class ToolError(Exception):
@@ -117,17 +125,18 @@ class ToolContext:
     config: Config
     store: Store
     run_id: str
-    memory_client: Any = None
+    # Seams injected by the runtime; see solakit.tools.ports / solakit.sdk.
+    memory_client: Any = None  # ScopedMemory facade or None
     deliver: Any = None
-    runtime_provider: Any = None
-    job_manager: Any = None
-    channel_poster: Any = None
-    nested_submit: Any = None
-    stage_memory: Any = None
+    runtime_provider: "RuntimeStatus | None" = None
+    job_manager: "JobManagerPort | None" = None
+    channel_poster: "ChannelPoster | None" = None
+    nested_submit: "NestedSubmit | None" = None
+    stage_memory: "MemoryStager | None" = None
     configured_tool_names: frozenset[str] = frozenset()
-    tool_view: Any = None
-    activate_tools: Any = None
-    active_tools: Any = None
+    tool_view: Any = None  # solakit.tools.disclosure.ToolView
+    activate_tools: "ToolActivation | None" = None
+    active_tools: list[str] | None = None
     tool_allowlist: frozenset[str] | None = None
 
     @property
@@ -360,6 +369,15 @@ class Registry:
                     f"enabled_tools references {path} but its imports failed; "
                     f"check installed distributions and dependencies; {SYNC_HINT}"
                 ) from None
+            requirement = getattr(imported, "SOLA_SDK", None)
+            if requirement is not None:
+                from solakit.sdk import SDK_VERSION, satisfies
+
+                if not satisfies(str(requirement)):
+                    raise ValueError(
+                        f"{path} requires solakit SDK {requirement}; this runtime "
+                        f"provides {SDK_VERSION}"
+                    )
             self.distributions.append(identity(path, imported, provider))
             for function in vars(imported).values():
                 manifest = getattr(function, "__sola_tool__", None)
@@ -681,7 +699,7 @@ class Registry:
         )
         return message
 
-    async def dispatch(self, name: str, arguments: str, ctx: ToolContext) -> ToolResult:
+    async def dispatch(self, name: str, arguments: str, ctx: ToolContext) -> ToolResult:  # noqa: C901
         start = time.monotonic()
         result = ToolResult(content="Tool execution failed", error=True)
         parsed = None
@@ -732,9 +750,13 @@ class Registry:
                     f"{name} was not loaded; its full schema is now loaded "
                     "for this run. It was not executed — call it again."
                 )
-            ctx.runtime_provider = self.runtime_status
-            ctx.job_manager = self.job_manager
-            ctx.channel_poster = self.channel_poster
+            # Injected when the context is built; fill only what is missing.
+            if ctx.runtime_provider is None:
+                ctx.runtime_provider = self.runtime_status
+            if ctx.job_manager is None:
+                ctx.job_manager = self.job_manager
+            if ctx.channel_poster is None:
+                ctx.channel_poster = self.channel_poster
             cfg = self.config.profiles[ctx.profile]
             self.check_access(registered, cfg)
             repairable = True

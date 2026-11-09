@@ -136,7 +136,7 @@ class ModelClient:
             self._failure("preflight GET", "models", exc)
             raise ModelUnavailable("Model endpoint unavailable") from exc
 
-    async def complete(
+    async def complete(  # noqa: C901
         self,
         messages: list[dict],
         tools: list[dict],

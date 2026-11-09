@@ -8,6 +8,9 @@ expect_calls = [{ name = "email.search" }, { name = "email.read", args_subset = 
 expect_final_any = ["june", "renew"]
 max_steps = 6
 
+[[responses."email.list_mailboxes"]]
+content = '[{"mailbox": "personal"}]'
+
 [[responses."email.search"]]
 content = '{"messages": [{"message_id": "l7", "from": "landlord@flats.test", "subject": "Lease renewal", "unseen": false}], "more": false}'
 

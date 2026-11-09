@@ -8,8 +8,7 @@ from datetime import UTC, datetime
 
 from sola_packs.support import fingerprint
 
-from solakit.core.store import sync_directory
-from solakit.tools import ToolError
+from solakit.sdk import ToolError, sync_directory
 
 
 class Lease:

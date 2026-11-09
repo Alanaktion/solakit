@@ -92,7 +92,7 @@ def empty_keepalive(data):
     )
 
 
-async def complete_stream(client, request, on_text, *, max_reasoning_chars=None):
+async def complete_stream(client, request, on_text, *, max_reasoning_chars=None):  # noqa: C901
     request = {**request, "stream": True, "stream_options": {"include_usage": True}}
     content, calls, reasoning = "", {}, ""
     shown = ""

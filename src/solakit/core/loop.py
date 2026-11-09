@@ -434,7 +434,7 @@ class Execution:
             pending.run.finished_at = now()
             await durable(self.store.save_run, pending.run)
 
-    async def _perform_locked(self, pending: Pending) -> None:
+    async def _perform_locked(self, pending: Pending) -> None:  # noqa: C901
         run = pending.run
         task = asyncio.current_task()
         previous = self.performing.get(task)
@@ -595,7 +595,7 @@ class Execution:
                 else:
                     self.performing[task] = previous
 
-    async def _loop(
+    async def _loop(  # noqa: C901
         self, run: Run, session: Session, prompt: str, text: str, turn=None
     ) -> None:
         cfg = self.config.profiles[run.profile]
@@ -682,6 +682,9 @@ class Execution:
             configured_tool_names=frozenset(self.registry.tools),
             nested_submit=self.submit_nested,
             stage_memory=self.stage_memory_note,
+            runtime_provider=self.registry.runtime_status,
+            job_manager=self.registry.job_manager,
+            channel_poster=self.registry.channel_poster,
             tool_allowlist=frozenset(run.effective_tools)
             if run.effective_tools is not None
             else None,

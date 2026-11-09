@@ -123,6 +123,16 @@ Read `SPEC.md` for behavioral contracts, `README.md` for an introduction,
   (actions, filters, status chips, metadata). Keep actions in `.action-group`
   with intrinsic button widths. Single-field editors use `.edit-form` and
   `.form-field`; do not reuse `.new-session-form`'s fixed creation grid.
+- Small-model runtime (see `docs/architecture.md`, `docs/plans/done/`): `core/eval.py`
+  (`sola eval` harness, `evals/`), `core/doctor.py` (`sola doctor` live probes),
+  request tuning and reasoning evidence (`core/model*.py`, `core/toolcall_fallback.py`),
+  prefix-stable prompt + turn block (`core/prompt.py`), lenient arguments, name
+  resolution and result rendering (`tools/arguments.py`, `tools/__init__.py`),
+  toolsets/auto disclosure, playbooks/plan/notes tools, aging and local compaction
+  (`core/aging.py`, `core/compaction.py`), structured job outputs
+  (`core/structured.py`), stats/hints/explain/init (`core/stats.py`, `hints.py`,
+  `explain.py`, `scaffold.py`). Packs import only `solakit.sdk`. Every behavioural
+  prompt/tool change should land with a `sola eval compare` result.
 - `cli.py`: offline checks, server launch, API inspection and explicit operator
   operations. Tests are under `tests/` and use mocked transports/controlled clocks.
 

@@ -76,7 +76,7 @@ async def probe_model(model: ModelClient) -> dict[str, str]:
         return {"status": "unavailable", "reason": "pinned model unavailable"}
 
 
-def create_app(
+def create_app(  # noqa: C901
     config: Config | None = None, model: ModelClient | None = None
 ) -> FastAPI:
     ui_sessions = UISessions()

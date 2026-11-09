@@ -6,7 +6,7 @@ from decimal import Decimal, localcontext
 from zoneinfo import ZoneInfo
 
 
-def evaluate(expression: str) -> dict:
+def evaluate(expression: str) -> dict:  # noqa: C901
     """Evaluate bounded arithmetic without executing Python code."""
     if len(expression) > 2000:
         raise ValueError("Expression is too long")

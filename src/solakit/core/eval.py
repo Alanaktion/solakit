@@ -803,19 +803,24 @@ def _bootstrap(a: list[float], b: list[float], rounds: int = 2000, seed: int = 7
     return deltas[int(rounds * 0.025)], deltas[int(rounds * 0.975)]
 
 
-def compare(a: dict, b: dict) -> str:
-    """Per-scenario pass-rate deltas with a 95% bootstrap interval."""
+def compare(a: dict, b: dict, a_cell=None, b_cell=None) -> str:
+    """Per-scenario pass-rate deltas with a 95% bootstrap interval.
 
-    def passes(result):
+    ``a_cell``/``b_cell`` (override dicts) select one matrix cell from each
+    result so a cell can be compared against a baseline by scenario."""
+
+    def passes(result, cell):
         table: dict[str, list[float]] = {}
         for trial in result["trials"]:
+            if cell is not None and trial["overrides"] != cell:
+                continue
             key = trial["scenario"]
-            if trial["overrides"]:
+            if trial["overrides"] and cell is None:
                 key += " " + json.dumps(trial["overrides"], sort_keys=True)
             table.setdefault(key, []).append(float(trial["passed"]))
         return table
 
-    left, right = passes(a), passes(b)
+    left, right = passes(a, a_cell), passes(b, b_cell)
     lines = ["| scenario | A | B | Δ | 95% CI |", "|---|---:|---:|---:|---|"]
     every_a, every_b = [], []
     for key in sorted(set(left) & set(right)):

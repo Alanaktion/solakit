@@ -82,7 +82,7 @@ class SessionLifecycle:
     async def batch(self, request, *, archived=True):
         return await self._complete(self._batch(request, archived))
 
-    async def _batch(self, request, archived):
+    async def _batch(self, request, archived):  # noqa: C901
         if request.before and request.inactive_days is not None:
             raise ValueError("Choose before or inactive_days")
         cutoff = (

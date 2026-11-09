@@ -11,7 +11,10 @@ from zoneinfo import ZoneInfo
 
 from pydantic import Field
 
-from solakit.tools import ToolContext, ToolError, ToolResult, tool
+from solakit.sdk import ToolContext, ToolError, ToolResult, tool
+
+SOLA_SDK = ">=1,<2"
+
 
 DEFAULT_LAYOUT = "---\ntitle: {title}\ndate: {date}\n---\n\n{body}\n"
 

@@ -15,11 +15,19 @@ from pydantic import BaseModel, ConfigDict, Field
 from sola_packs.support import IDENTIFIER, external
 from sola_packs.support.evidence import Operation
 
-from solakit.core.io import durable
-from solakit.core.store import sync_directory
-from solakit.services.git import repository_lock
-from solakit.services.process import execute
-from solakit.tools import ToolContext, ToolError, ToolResult, tool
+from solakit.sdk import (
+    ToolContext,
+    ToolError,
+    ToolResult,
+    durable,
+    execute,
+    repository_lock,
+    sync_directory,
+    tool,
+)
+
+SOLA_SDK = ">=1,<2"
+
 
 DIRECTORIES = {"post": "src/content/blog", "dream": "src/content/dreams"}
 COVERS = "src/assets/blog-images"

@@ -444,7 +444,7 @@ class Jobs:
             for job in self.jobs.values()
         ]
 
-    def validate_job(self, job, *, check_tools=True):
+    def validate_job(self, job, *, check_tools=True):  # noqa: C901
         safe_id(job.id)
         if not any(c.id == job.bind_session for c in self.config.channels):
             safe_id(job.bind_session)

@@ -300,7 +300,7 @@ class Filesystem:
         except OSError as exc:
             raise ToolError("Cannot search requested directory") from exc
 
-    async def grep(
+    async def grep(  # noqa: C901
         self,
         query: str,
         path=".",

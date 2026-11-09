@@ -11,7 +11,7 @@ from sola_packs import email as mail
 
 
 @pytest.fixture
-def fixture(pack_context, tmp_path, monkeypatch):
+def fixture(pack_context, tmp_path, monkeypatch):  # noqa: C901
     password = "fixture-mail-password"
     monkeypatch.setenv("PACK_MAIL_PASSWORD", password)
     settings = tmp_path / "packs.toml"

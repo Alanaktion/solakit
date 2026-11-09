@@ -11,8 +11,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict
 
-from solakit.core.config import SecretRef
-from solakit.tools import ToolError
+from solakit.sdk import SecretRef, ToolError
 
 _SECRET_LOCK = threading.Lock()
 IDENTIFIER = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}\Z")

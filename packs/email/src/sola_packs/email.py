@@ -24,9 +24,10 @@ from sola_packs.support import (
 )
 from sola_packs.support.evidence import Operation
 
-from solakit.core.config import SecretRef
-from solakit.core.io import durable
-from solakit.tools import ToolContext, ToolError, ToolResult, tool
+from solakit.sdk import SecretRef, ToolContext, ToolError, ToolResult, durable, tool
+
+SOLA_SDK = ">=1,<2"
+
 
 MailboxAlias = Annotated[
     str,

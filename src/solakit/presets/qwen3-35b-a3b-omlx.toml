@@ -61,6 +61,10 @@ step_notice_at = 3
 wrapup = "status"
 
 [profiles.interactive.model]
+# eval (21 scenarios x 2): thinking off 95% pass, 11.7 s/trial, 78 completion
+# tokens; auto 93%, 18.4 s; server default (thinking on) 93%, 18.4 s, 485 tokens
+# and occasional 8192-token runaway length stops. Switch to "auto" or "on" for
+# profiles doing hard planning, and re-measure.
 thinking = "{thinking}"
 
 [profiles.worker]

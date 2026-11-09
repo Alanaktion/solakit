@@ -10,9 +10,9 @@ from icalendar import Calendar as ICS
 from pydantic import Field, field_validator
 from sola_packs.support import Settings, external, resource
 
-from solakit.core.io import durable
-from solakit.core.search import timestamp
-from solakit.tools import ToolContext, ToolError, ToolResult, tool
+from solakit.sdk import ToolContext, ToolError, ToolResult, durable, timestamp, tool
+
+SOLA_SDK = ">=1,<2"
 
 
 class Calendar(Settings):
