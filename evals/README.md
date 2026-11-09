@@ -60,3 +60,20 @@ only large differences are meaningful; `compare` prints a bootstrap interval.
 `--matrix key=a,b` runs the cross-product. Keys are dotted config paths;
 `profile.<field>` targets the scenario's profile. Aliases: `disclosure`,
 `thinking`, `result_format`, `aging`, `max_tokens`, `concurrency`.
+
+## Scheduled regression runs
+
+Evaluation is a CLI process that drives the model directly, so schedule it with the
+OS rather than as a Solakit job (a job is a model run and cannot spawn the
+harness). A weekly `--quick` run compared with the committed baseline is enough to
+catch drift after an oMLX or model update:
+
+```sh
+# crontab -e  (Sundays 03:00; adjust paths)
+0 3 * * 0 cd /path/to/solakit && set -a && . ./.env && set +a && \
+  uv run sola eval --quick --matrix thinking=off --out evals/results >> evals/results/cron.log 2>&1
+```
+
+Then `uv run sola eval compare evals/results/baseline.json <new>.json --a-cell '{}'
+--b-cell '{"profile.model.thinking": "off"}'`. Refresh `baseline.json` deliberately
+when the pinned model, oMLX version or hardware changes.
