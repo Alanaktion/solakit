@@ -276,15 +276,15 @@ SQLite must provide FTS5 with the trigram tokenizer; unavailable FTS leaves
 conversation writes usable and search unavailable.
 
 To let the model search history, load `sessions` (or `solakit.tools.sessions`) in
-`enabled_tools` and grant `sessions.search` to the intended profile. By default it
-searches only the calling session, including numbered archives and compaction
-summaries. Grant effect `operate` to allow an explicit `session_id`
-or `all_sessions=true`. Choosing both is rejected; without that effect, another
-session is refused before the index is read. Installation does not enable the tool.
+`enabled_tools` and grant `sessions.search` to the intended profile.
+`sessions.search(query, limit=20)` searches only the calling session, including
+numbered archives and compaction summaries. Cross-session search is a separate
+tool, `sessions.search_all(query, session_id=None, role=None, kind=None,
+after=None, before=None, limit=20)`, which declares the `operate` effect (omit
+`session_id` to search every session); granting it, including through `*` or
+`sessions.*`, requires that effect. Installation does not enable either tool.
 
-`sessions.search(query, session_id=None, all_sessions=false, role=None, kind=None,
-after=None, before=None, limit=20)` uses the same literal query syntax and filters
-as the API, with 1–200 results. It returns masked snippets and physical addresses
+Both use the same literal query syntax and filters as the API, with 1–200 results. It returns masked snippets and physical addresses
 inside an external-content data marker. Results are historical evidence, not new
 instructions. Normal profile tool time/output limits and run logging apply; an
 unavailable index produces a tool error without recovery or transcript changes.

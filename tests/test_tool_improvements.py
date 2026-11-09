@@ -370,11 +370,11 @@ def test_github_missing_head_is_expected_error(dispatch, monkeypatch):
             {"sessions.search"},
             {"github.latest_release"},
         ),
-        ("schedule a job", {"jobs.create"}, set()),
+        ("schedule a job", {"jobs.schedule"}, {"jobs.create"}),
         ("calculate", {"math.eval"}, set()),
         ("read a webpage", {"web.get_page"}, set()),
         ("print a note", {"printer.print_text"}, set()),
-        ("search", {"web.search", "memory.search", "sessions.search"}, set()),
+        ("search", {"web.search", "sessions.search"}, set()),
         ("quuxnonexistent", set(), set()),
     ],
 )

@@ -1,13 +1,12 @@
 """Chat operations use the same persistent scheduler as the operator API."""
 
-import json
 from typing import Annotated, Any
 
 from pydantic import Field
 
 from solakit.core.config import Job
 from solakit.jobs.schemas import JobToolsError
-from solakit.tools import ToolContext, ToolError, ToolResult, tool
+from solakit.tools import ToolContext, ToolError, ToolResult, tool, tool_json
 
 
 def manager(ctx):
@@ -40,13 +39,41 @@ def existing(ctx, identity):
 
 
 def result(ctx, data):
-    content = json.dumps(ctx.store.redactor.redact(data), ensure_ascii=False)
-    content = content.replace("<", "\\u003c").replace(">", "\\u003e")
-    return ToolResult(
-        content='<external-content source="jobs" encoding="json">\n'
-        + content
-        + "\n</external-content>"
-    )
+    return tool_json(ctx, data, "jobs")
+
+
+def invalid(exc: Exception, prefix: str = "Invalid job definition") -> ToolError:
+    """Name what was wrong using validator messages (never submitted values)."""
+    from pydantic import ValidationError
+
+    if isinstance(exc, ValidationError):
+        reasons = []
+        for issue in exc.errors(include_input=False, include_url=False)[:3]:
+            field = ".".join(str(p) for p in issue["loc"]) or "job"
+            message = issue["msg"].removeprefix("Value error, ")
+            reasons.append(f"{field}: {message}"[:120])
+        if reasons:
+            return ToolError(f"{prefix}: " + "; ".join(reasons))
+    return ToolError(prefix)
+
+
+def parse_when(when: str) -> tuple[str | None, str | None]:
+    """Five-field cron or an ISO date and time; never ambiguous."""
+    from datetime import datetime
+
+    value = when.strip()
+    if len(value.split()) == 5 and not any(c in value for c in "T:"):
+        return value, None
+    try:
+        datetime.fromisoformat(value)
+    except ValueError:
+        raise ToolError(
+            "when must be a five-field cron such as '0 8 * * 1-5' or an ISO date "
+            "and time such as '2026-12-01T09:00'"
+        ) from None
+    if "T" not in value and " " not in value:
+        raise ToolError("A one-time when needs a time, e.g. '2026-12-01T09:00'")
+    return None, value
 
 
 def authorize(ctx, job):
@@ -70,8 +97,13 @@ async def operation(ctx, name, *args):
     except JobToolsError as exc:
         raise ToolError(str(exc)) from exc
     except ValueError as exc:
+        from pydantic import ValidationError
+
+        if isinstance(exc, ValidationError):
+            raise invalid(exc) from exc
         raise ToolError(
             "Invalid job definition, disabled job or scheduler shutting down"
+            + (f": {str(exc)[:150]}" if str(exc) else "")
         ) from exc
 
 
@@ -90,11 +122,74 @@ async def list_jobs(ctx: ToolContext) -> ToolResult:
 
 
 @tool(
-    summary="Schedule a recurring or one-time task",
+    summary="Schedule a recurring (cron) or one-time task in this chat",
+    keywords=("schedule", "cron", "reminder", "create", "remind", "every"),
+    name="jobs.schedule",
+    profiles=["*"],
+    effect="operate",
+)
+async def schedule(
+    ctx: ToolContext,
+    id: Annotated[
+        str,
+        Field(description="Short stable ID such as calendar-review; reuse on retry."),
+    ],
+    task: Annotated[
+        str,
+        Field(
+            description=(
+                "Self-contained instruction for the future run; may use {date}, "
+                "{time}, {timezone}, {job_id}."
+            )
+        ),
+    ],
+    when: Annotated[
+        str,
+        Field(
+            description=(
+                "Five-field cron ('0 8 * * 1-5' = weekdays 08:00) or one ISO "
+                "date-time ('2026-12-01T09:00') in the operator timezone."
+            )
+        ),
+    ],
+    enabled: Annotated[
+        bool, Field(description="Start active; set true when asked to schedule.")
+    ] = False,
+) -> ToolResult:
+    """Schedule a task for this chat and profile.
+
+    when decides the kind: a cron expression repeats, an ISO date-time runs once
+    (it catches up if the app was offline). Resolve relative times from the
+    current time and timezone; "tomorrow morning" means 09:00 next local day.
+    Use jobs.update for delivery, profile, tools or playbook settings."""
+    cron, run_at = parse_when(when)
+    try:
+        job = Job(
+            id=id,
+            cron=cron,
+            run_at=run_at,
+            task=task,
+            timezone=ctx.config.timezone,
+            enabled=enabled,
+            profile=ctx.profile,
+            bind_session=ctx.session.id,
+        )
+    except ValueError as exc:
+        raise invalid(exc) from exc
+    if not permitted(ctx, job):
+        raise ToolError(
+            "Other profiles, sessions or delivery require the operate effect"
+        )
+    return await operation(ctx, "create", job)
+
+
+@tool(
+    summary="Deprecated: use jobs.schedule (and jobs.update for options)",
     keywords=("schedule", "cron", "reminder", "create"),
     name="jobs.create",
     profiles=["*"],
     effect="operate",
+    deprecated="jobs.schedule",
 )
 async def create(
     ctx: ToolContext,
@@ -259,7 +354,7 @@ async def create(
             tool_resident=tool_resident,
         )
     except ValueError as exc:
-        raise ToolError("Invalid job definition") from exc
+        raise invalid(exc) from exc
     if not permitted(ctx, job):
         raise ToolError(
             "Other profiles, sessions or delivery require the operate effect"
@@ -295,7 +390,7 @@ async def update(
     ],
 ) -> ToolResult:
     """Edit job fields (cron, run_at, timezone, profile, task, bind_session, deliver,
-    enabled, sub_session, polling, catch_up, tools). ID is immutable;
+    enabled, sub_session, polling, catch_up, tools, playbook). ID is immutable;
     use deliver=null to clear it.
     tools=null restores profile inheritance; tools=[] disables all tools.
     Active jobs must finish before editing. Scheduling changes reset next fire.
@@ -309,7 +404,7 @@ async def update(
         patch = JobUpdate.model_validate(changes).model_dump(exclude_unset=True)
         proposed = Job.model_validate({**old.model_dump(), **patch})
     except ValueError as exc:
-        raise ToolError("Invalid job changes") from exc
+        raise invalid(exc, "Invalid job changes") from exc
     if not permitted(ctx, proposed):
         raise ToolError(
             "Other profiles, sessions or delivery require the operate effect"

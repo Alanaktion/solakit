@@ -4,9 +4,15 @@ Load `shell` or `solakit.tools.shell` in core `enabled_tools`. No optional pack,
 common support package, sidecar or extra dependency is required. Process execution
 lives in the generic `solakit.services.process` service.
 
-- `shell.exec(argv, directory, timeout_s=30)` executes literal argv without a shell.
-- `shell.run(command, directory, timeout_s=30)` executes `/bin/sh -c`, supporting
-  pipelines, redirection and ordinary shell scripting.
+- `shell.exec(argv, directory=".", timeout_s=30)` executes literal argv without a
+  shell (pipes, redirects, globs and `~` are not interpreted).
+- `shell.run(command, directory=".", timeout_s=30)` executes `/bin/sh -c`,
+  supporting pipelines, redirection and ordinary shell scripting.
+
+`directory` defaults to `.`, which resolves against `[server].cwd` (or the server
+process directory) and must still be inside write roots. Prefer granting only
+`shell.run` (the recommended `ops` toolset does); grant `shell.exec` where literal
+argv safety matters.
 
 Access is controlled by profile tool/effect and working-directory grants.
 Any profile may receive these grants; no profile name is hard-coded:

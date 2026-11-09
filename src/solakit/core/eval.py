@@ -65,7 +65,7 @@ PACK_MODULES = tuple(
 DEFAULT_RESPONSE = "No results."
 MATRIX_ALIASES = {
     "disclosure": "profile.tool_disclosure",
-    "thinking": "profile.thinking",
+    "thinking": "profile.model.thinking",
     "result_format": "profile.tool_result_format",
     "aging": "profile.tool_result_aging",
     "max_tokens": "model.max_tokens",

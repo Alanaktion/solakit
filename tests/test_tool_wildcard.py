@@ -123,9 +123,14 @@ def test_empty_wildcard_and_real_config_toml(config, tmp_path, monkeypatch):
     assert registry.schemas("interactive") == []
     assert loaded.enabled_tools == []
     loaded.enabled_tools = ["runtime", "sessions"]
+    # "*" includes sessions.search_all, whose operate effect must be granted.
+    with pytest.raises(ValueError, match="requires effect 'operate'"):
+        Registry(loaded)
+    loaded.profiles["interactive"].effects = ["operate"]
     registry = Registry(loaded)
     assert registry.catalog()["profiles"]["interactive"] == [
         "runtime.status",
         "sessions.search",
+        "sessions.search_all",
     ]
     assert json.dumps(registry.catalog())

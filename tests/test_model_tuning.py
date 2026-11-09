@@ -371,3 +371,27 @@ def test_calibration_bounds_and_token_budget(config):
     assert not execution._over_budget(cfg, messages, [], 100, {})
     # The measured prompt_tokens of the previous step is a floor.
     assert execution._over_budget(cfg, messages, [], 100, {"tokens": 99000, "bytes": 1})
+
+
+def test_reasoning_only_reply_retries_with_thinking_off(config):
+    bodies = []
+
+    def handler(request):
+        if request.url.path.endswith("/models"):
+            return model_list(config)
+        bodies.append(json.loads(request.content))
+        if len(bodies) == 1:
+            return sse(config, [{"role": "assistant", "reasoning_content": "hmm"}])
+        return sse(config, [{"role": "assistant", "content": "Answer."}])
+
+    execution = setup(config, handler)
+
+    async def exercise():
+        run = await execution.submit("s", "question")
+        await execution.close()
+        return run
+
+    run = asyncio.run(exercise())
+    assert run.status == "completed"
+    assert run.retries == [{"step": 1, "reason": "reasoning_exhausted"}]
+    assert bodies[1]["chat_template_kwargs"] == {"enable_thinking": False}

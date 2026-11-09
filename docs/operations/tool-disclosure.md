@@ -7,6 +7,18 @@ A profile can instead use `tool_disclosure = "deferred"` and an ordered
 are loaded and granted. Keep interactive profiles eager until the pinned model
 passes the live evaluation below.
 
+`tool_disclosure = "auto"` resolves at admission: eager while the effective schema
+bytes stay at or below `min(tool_auto_threshold, context_budget / 5)` (default
+threshold 12000), deferred otherwise. It is a pure function of grants, tool code
+and configuration, never of usage, so the system message and schema list stay
+byte-identical across runs (prefix-cache stable).
+
+Residents are operator configuration only. `sola tools residents --suggest
+<profile>` reads tool logs (default 30 days, at least 100 runs) and prints an
+advisory `tool_resident` line with its schema bytes. Tiers are coarse with
+hysteresis: tools used successfully in at least 25% of runs are proposed, current
+residents stay until they fall below 10%. Nothing is applied automatically.
+
 Deferred runs receive a static, alphabetically grouped index of granted tool names,
 one-line summaries and write markers. Full schemas initially include `tools.search`,
 `tools.load`, then resident tools in configured order. Search ranks lexical matches
@@ -38,7 +50,7 @@ or job tool/resident lists. Meta-tools never enter wildcard grants.
 
 The job form, API and `jobs.create`/`jobs.update` support:
 
-- `tool_disclosure`: `inherit` (default), `eager` or `deferred`.
+- `tool_disclosure`: `inherit` (default), `eager`, `deferred` or `auto`.
 - `tool_resident`: `null` (inherit profile residents), `[]` (discovery only in
   deferred mode), or an ordered replacement list of exact names.
 - `tools`: the existing narrowing-only ceiling; `null` inherits grants and `[]`

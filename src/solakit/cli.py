@@ -70,6 +70,15 @@ def main() -> None:
     compare = evaluate_commands.add_parser("compare", help="Compare two result files")
     compare.add_argument("a")
     compare.add_argument("b")
+    tools = commands.add_parser("tools", help="Offline tool catalog helpers")
+    tools_commands = tools.add_subparsers(dest="tools_command", required=True)
+    residents = tools_commands.add_parser(
+        "residents", help="Suggest tool_resident from historical tool logs"
+    )
+    residents.add_argument("--suggest", metavar="PROFILE", required=True)
+    residents.add_argument("--days", type=int, default=30)
+    residents.add_argument("--min-runs", type=int, default=100)
+    residents.add_argument("--json", action="store_true")
     doctor = commands.add_parser(
         "doctor", help="Probe the live model: tool calls, sampling, cache, concurrency"
     )
@@ -87,6 +96,40 @@ def main() -> None:
     args = parser.parse_args()
     if args.command == "eval":
         run_eval(parser, args)
+        return
+    if args.command == "tools":
+        from solakit.core.residents import suggest
+        from solakit.tools import Registry
+
+        try:
+            config = load_config()
+            registry = Registry(config)
+            if args.suggest not in config.profiles:
+                raise ValueError(f"unknown profile {args.suggest}")
+            result = suggest(
+                config,
+                registry,
+                args.suggest,
+                days=args.days,
+                min_runs=args.min_runs,
+            )
+        except (OSError, ValueError) as exc:
+            parser.exit(1, f"Resident suggestion failed: {exc}\n")
+        if args.json:
+            print(json.dumps(result, indent=2))
+            return
+        print(f"Profile {result['profile']}: {result['runs']} runs in {args.days} days")
+        for name, share in sorted(result["shares"].items(), key=lambda i: -i[1]):
+            print(f"  {share:6.1%}  {name}")
+        if not result["enough_evidence"]:
+            print(f"Not enough evidence (minimum {args.min_runs} runs); no change.")
+            return
+        print("Advisory only; apply by editing the profile:")
+        print("tool_resident = " + json.dumps(result["proposed"]))
+        print(
+            f"# +{len(result['added'])} -{len(result['removed'])}; "
+            f"{result['schema_bytes']} schema bytes"
+        )
         return
     if args.command == "doctor":
         run_doctor(parser, args)
@@ -186,6 +229,8 @@ def main() -> None:
             prepared.config,
             {p: prepared.registry.tool_names(p) for p in prepared.config.profiles},
         ):
+            print("Warning: " + warning)
+        for warning in prepared.registry.deprecation_warnings():
             print("Warning: " + warning)
         for name in prepared.config.profiles:
             print(prepared.registry.summary_access(name))

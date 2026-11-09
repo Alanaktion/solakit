@@ -45,6 +45,20 @@ class ToolResult(BaseModel):
     _meta: dict = PrivateAttr(default_factory=dict)
 
 
+def tool_json(ctx, data, source: str | None = None) -> ToolResult:
+    """The one JSON result helper: credential-masked JSON, optionally wrapped as
+    ``<external-content>`` data (angle brackets escaped) for untrusted sources."""
+    content = json.dumps(ctx.store.redactor.redact(data), ensure_ascii=False)
+    if source is None:
+        return ToolResult(content=content)
+    content = content.replace("<", "\\u003c").replace(">", "\\u003e")
+    return ToolResult(
+        content=f'<external-content source="{source}" encoding="json">\n'
+        + content
+        + "\n</external-content>"
+    )
+
+
 def render_for_model(result: ToolResult, fmt: str = "envelope") -> str:
     """The exact tool-message text the model sees.
 
@@ -64,6 +78,8 @@ def render_for_model(result: ToolResult, fmt: str = "envelope") -> str:
         text += "\n[incomplete]"
     if result.artifacts:
         text += "\nFiles: " + ", ".join(result.artifacts)
+    if result._meta.get("next"):
+        text += "\nNext: " + result._meta["next"]
     return text
 
 
@@ -244,6 +260,11 @@ class Manifest:
     keywords: tuple[str, ...] = ()
     effect: str | None = None
     lenient: bool | None = None
+    # Replacement tool name: kept for explicit grants only (never via "*" or
+    # family patterns) for one release; sola check warns.
+    deprecated: str | None = None
+    # Read-only follow-up shown after successful results in text rendering.
+    next_hint: str | None = None
 
     @property
     def lenient_arguments(self) -> bool:
@@ -264,7 +285,12 @@ def tool(
     summary: str | None = None,
     keywords: tuple[str, ...] = (),
     lenient: bool | None = None,
+    deprecated: str | None = None,
+    next_hint: str | None = None,
 ):
+    if next_hint is not None and len(next_hint) > 120:
+        raise ValueError("next_hint must be at most 120 characters")
+
     def decorate(function: Callable) -> Callable:
         function.__sola_tool__ = Manifest(
             name,
@@ -276,6 +302,8 @@ def tool(
             tuple(keywords),
             effect,
             lenient,
+            deprecated,
+            next_hint,
         )
         return function
 
@@ -382,13 +410,14 @@ class Registry:
             if profile in t.manifest.profiles or "*" in t.manifest.profiles
         )
         families = sorted({n.split(".")[0] for n in available})
+        current = [n for n in available if not self.tools[n].manifest.deprecated]
         result = []
         for entry in self.expand_toolsets(entries):
             if entry == "*":
-                matches = available
+                matches = current
             elif re.fullmatch(r"[A-Za-z_]\w*\.\*", entry):
                 family = entry[:-2]
-                matches = [n for n in available if n.split(".")[0] == family]
+                matches = [n for n in current if n.split(".")[0] == family]
                 if not matches and strict:
                     raise ValueError(
                         f"Profile {profile}: unknown tool family: {family} "
@@ -437,7 +466,20 @@ class Registry:
         if effect and effect not in profile.effects:
             raise ToolError(f"{registered.manifest.name} requires effect '{effect}'")
 
+    def deprecation_warnings(self) -> list[str]:
+        warnings = []
+        for profile in self.config.profiles:
+            for name in self.tool_names(profile):
+                replacement = self.tools[name].manifest.deprecated
+                if replacement:
+                    warnings.append(
+                        f"Profile {profile} grants deprecated {name}; use {replacement}"
+                    )
+        return warnings
+
     def validate(self) -> None:
+        for warning in self.deprecation_warnings():
+            logging.getLogger(__name__).warning("%s", warning)
         for name, profile in self.config.profiles.items():
             for entry in profile.workspace + (profile.write_workspace or []):
                 if scope_root(entry, self.config) is None:
@@ -721,6 +763,8 @@ class Registry:
                 else ToolResult(content=str(returned))
             )
             candidate.artifacts = [str(ctx.path(path)) for path in candidate.artifacts]
+            if registered.manifest.next_hint and not candidate.error:
+                candidate._meta["next"] = registered.manifest.next_hint
             if ignored and not candidate.error:
                 candidate.content = (
                     "Ignored unknown argument(s): " + ", ".join(ignored) + ".\n"

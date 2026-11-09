@@ -143,6 +143,11 @@ class ToolView:
         }
 
 
+def auto_threshold(cfg) -> int:
+    """Eager while schemas stay under min(threshold, 20% of the byte budget)."""
+    return min(cfg.tool_auto_threshold, cfg.context_budget // 5)
+
+
 def resolve(
     registry, profile, tools=None, mode="inherit", resident=None, *, strict=True
 ):
@@ -151,6 +156,11 @@ def resolve(
     cfg = registry.config.profiles[profile]
     effective = tuple(registry.effective_tools(profile, tools))
     mode = cfg.tool_disclosure if mode == "inherit" else mode
+    if mode == "auto":
+        # A pure function of the effective catalog and config: it changes only
+        # when grants, tool code or thresholds change, never with usage.
+        size = len(json.dumps([registry.tools[n].schema() for n in effective]).encode())
+        mode = "eager" if size <= auto_threshold(cfg) else "deferred"
     if mode not in ("eager", "deferred"):
         raise ValueError("Invalid tool disclosure mode")
     selected = cfg.tool_resident if resident is None else resident

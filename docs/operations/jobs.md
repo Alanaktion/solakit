@@ -150,14 +150,22 @@ cannot use this option. The default is false, preserving existing inline jobs.
 ## Chat tools
 
 Load the built-in `jobs` module through `enabled_tools`. Grant the desired names
-(`jobs.list`, `jobs.create`, `jobs.update`, `jobs.run`, `jobs.pause`, `jobs.delete`)
-or use `jobs.*`. Mutation and triggering tools require the `operate` effect.
+(`jobs.list`, `jobs.schedule`, `jobs.update`, `jobs.run`, `jobs.pause`,
+`jobs.delete`) or use `jobs.*`. Mutation and triggering tools require the
+`operate` effect.
 
-Creation defaults to the current chat/profile, configured timezone and disabled
-state. `jobs.create` accepts either `cron` or `run_at`. For a request such as
+`jobs.schedule(id, task, when, enabled=false)` creates a job for the current
+chat/profile in the configured timezone. `when` decides the kind: a five-field cron
+(`0 8 * * 1-5`) repeats, an ISO date-time (`2026-12-01T09:00`) runs once; anything
+else is refused with both examples. Validation errors name the field and rule.
+Use `jobs.update` for delivery, profile, bind session, sub-session, polling,
+tools, disclosure or `playbook`. `jobs.create` (15 parameters, mutually exclusive
+`cron`/`run_at`) is deprecated for one release: it is excluded from `*`/`jobs.*`
+grants, still works when granted by exact name, and `sola check` warns. In live
+tool logs before this change every `jobs.create` call failed. For a request such as
 “check on this tomorrow morning”, the model resolves tomorrow in the current
 run's timezone, uses 09:00 if no specific morning time was given, and passes
-`run_at` with `enabled: true`. It uses the current conversation so the follow-up
+that date-time as `when` with `enabled: true`. It uses the current conversation so the follow-up
 retains the original context. The model should confirm the actual local date/time.
 `jobs.update(id, changes)` takes a partial field object; use `enabled: true`
 to activate a job and `deliver: null` to clear delivery. `jobs.pause(id, paused=false)`

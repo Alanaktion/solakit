@@ -947,6 +947,16 @@ Notes:
   input) is never one prompt-injection away from a filesystem write.
 - Profiles are config, not code: adding one is a TOML block + an optional
   fragment file. No profile may be created by the model.
+- **Tool shape rules** (small local models): default-granted tools stay at most five
+  parameters and about 1,000 schema bytes where possible; no either/or parameters
+  (`jobs.schedule(id, task, when, enabled)` parses `when` as cron or ISO instant;
+  `sessions.search` vs `sessions.search_all`; `delegate.run` vs
+  `delegate.continue`; `shell.run`/`shell.exec` stay separate). Renamed tools keep
+  a `deprecated` manifest for one release: excluded from `*`/family grants, usable
+  by exact grant, and reported by `sola check`. JSON results use one helper,
+  `tool_json(ctx, data, source=None)`, which masks credentials and wraps untrusted
+  sources in `<external-content>`. Read-only discovery tools may declare a
+  `next_hint` (≤ 120 chars) shown as a trailing `Next:` line in text rendering.
 - **Toolsets** (`[toolsets] reader = ["files.read", …]`) are named grant bundles.
   Profiles and job tool overrides grant `"@reader"`; entries may be exact names,
   first-family patterns or other toolsets (cycles and unknown sets are errors).

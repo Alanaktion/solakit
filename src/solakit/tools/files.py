@@ -186,6 +186,7 @@ async def list_files(
     keywords=("file", "find", "glob", "locate", "name"),
     name="files.find",
     profiles=["*"],
+    next_hint="files.read(path=...) or files.grep(query=..., path=...)",
 )
 async def find(
     ctx: ToolContext,
@@ -208,6 +209,7 @@ async def find(
     keywords=("file", "grep", "search", "contents", "text", "where"),
     name="files.grep",
     profiles=["*"],
+    next_hint="files.read(path=..., offset=<line>) to see more",
 )
 async def grep(
     ctx: ToolContext,

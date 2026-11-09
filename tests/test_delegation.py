@@ -42,7 +42,7 @@ def answer(config, content=None, *, name=None, arguments=None):
 def setup(config, worker=None, *, memory=None, default_profile="interactive"):
     config.enabled_tools = ["delegate"]
     config.model.concurrency = 1
-    config.profiles["interactive"].tools = ["delegate.run"]
+    config.profiles["interactive"].tools = ["delegate.*"]
     config.profiles["interactive"].context_budget = 100000
     config.profiles["research"] = Profile(context_budget=100000)
     config.delegation = DelegationConfig(allowed_profiles=["research"])
@@ -70,6 +70,12 @@ def setup(config, worker=None, *, memory=None, default_profile="interactive"):
                 return await worker(data)
             return answer(config, "A concise worker report")
         if data["messages"][-1]["role"] == "user":
+            if "session" in args:
+                return answer(
+                    config,
+                    name="delegate.continue",
+                    arguments={"session": args["session"], "task": args["task"]},
+                )
             return answer(config, name="delegate.run", arguments=args)
         return answer(config, "Parent final reply")
 
@@ -511,7 +517,7 @@ def test_grants_allow_nested_depth_and_parent_cancellation_propagates(config):
             )
 
         execution, _, _ = setup(config, worker)
-        config.profiles["research"].tools = ["delegate.run"]
+        config.profiles["research"].tools = ["delegate.*"]
         execution.registry.validate()
         try:
             async with asyncio.timeout(5):
@@ -534,7 +540,7 @@ def test_current_run_profile_is_allowed_without_allowlist(config, explicit):
     execution, args, _ = setup(config, default_profile="research")
     config.delegation.allowed_profiles = []
     # The active run profile, rather than the session default, must be used.
-    config.profiles["research"].tools = ["delegate.run"]
+    config.profiles["research"].tools = ["delegate.*"]
     if explicit:
         args["profile"] = "interactive"
     else:

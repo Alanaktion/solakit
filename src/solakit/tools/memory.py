@@ -16,6 +16,7 @@ PROFILES = ["*"]
     keywords=("recall", "semantic", "facts", "preferences"),
     name="memory.search",
     profiles=PROFILES,
+    next_hint="memory.read(uri=...) for a full record",
 )
 async def search(
     ctx: ToolContext,

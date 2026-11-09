@@ -223,6 +223,14 @@ class ModelClient:
                     calls = message["tool_calls"] = recovered
                     message["tool_call_source"] = "content_fallback"
                     data["choices"][0]["finish_reason"] = "tool_calls"
+            if (
+                not calls
+                and not (message.get("content") or "").strip()
+                and message.get("reasoning")
+                and data["choices"][0].get("finish_reason") != "length"
+            ):
+                # Healthy endpoint, but only reasoning came back: retryable.
+                raise ReasoningExhausted("Completion contained only reasoning")
             # A stream with neither text nor calls assembles to "". Only a
             # token-limited response may be empty; it is kept as partial evidence.
             if not calls and (

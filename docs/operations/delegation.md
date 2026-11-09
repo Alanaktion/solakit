@@ -1,6 +1,8 @@
 # Delegated sub-agents
 
-`delegate.run` moves a bounded task into its own child session. The parent keeps
+`delegate.run(task, profile=None)` moves a bounded task into its own child
+session; `delegate.continue(session, task)` sends a follow-up to an idle child of
+this conversation, which keeps the child's own profile. The parent keeps
 the brief and final report; the child's reads, tool calls and intermediate output
 stay in its own transcript. Child evidence uses the existing session/run APIs,
 web UI and full-text search. This is serial delegation within one process.

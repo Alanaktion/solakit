@@ -13,6 +13,7 @@ from solakit.tools._read_api import invoke
     profiles=["*"],
     summary="Search the web with Brave Search.",
     keywords=("web", "search", "brave", "discover"),
+    next_hint="web.get_page(url=...) for a result's page",
 )
 async def search(
     ctx: ToolContext,

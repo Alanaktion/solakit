@@ -57,18 +57,21 @@ async def exec_command(
     argv: Annotated[
         list[str],
         Field(
-            description="Executable followed by literal arguments; no shell expansion."
+            description=(
+                "Executable then literal arguments. Pipes, redirects, globs and ~ "
+                "are not interpreted; use shell.run for those."
+            )
         ),
     ],
     directory: Annotated[
         str,
         Field(
             description=(
-                "Existing working directory inside profile write scopes; "
-                "commands run as the host user."
+                "Working directory inside profile write scopes; omit for the "
+                "configured server.cwd."
             )
         ),
-    ],
+    ] = ".",
     timeout_s: Annotated[
         float,
         Field(
@@ -80,9 +83,10 @@ async def exec_command(
         ),
     ] = 30,
 ) -> ToolResult:
-    """Run literal argv with host-user access and configured grants.
+    """Run literal argv (no shell) with host-user access and configured grants.
 
-    Use only when no granted domain tool covers the task. Do not use shell to
+    For pipes, redirects or globs use shell.run. Use only when no granted domain
+    tool covers the task. Do not use shell to
     bypass a domain error or discover runtime configuration or credentials."""
     return await run_process(ctx, argv, directory, timeout_s)
 
@@ -110,11 +114,11 @@ async def run(
         str,
         Field(
             description=(
-                "Existing working directory inside profile write scopes; "
-                "commands run as the host user."
+                "Working directory inside profile write scopes; omit for the "
+                "configured server.cwd."
             )
         ),
-    ],
+    ] = ".",
     timeout_s: Annotated[
         float,
         Field(

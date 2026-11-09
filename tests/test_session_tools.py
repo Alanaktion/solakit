@@ -21,8 +21,10 @@ from solakit.tools.sessions import search
 def setup(config):
     config.enabled_tools = ["sessions"]
     (config.paths.fragments / "profiles/research.md").write_text("")
+    (config.paths.fragments / "profiles/operator.md").write_text("")
     config.profiles = {
         "research": Profile(tools=["sessions.search"]),
+        "operator": Profile(tools=["sessions.*"], effects=["operate"]),
         "plain": Profile(),
     }
     store = Store(config.paths.data)
@@ -41,13 +43,20 @@ def setup(config):
     return Registry(config), ctx
 
 
-def invoke(setup, **kwargs):
+def invoke(setup, tool="sessions.search", **kwargs):
     registry, ctx = setup
     return asyncio.run(
-        registry.dispatch(
-            "sessions.search", json.dumps({"query": "moonlit", **kwargs}), ctx
-        )
+        registry.dispatch(tool, json.dumps({"query": "moonlit", **kwargs}), ctx)
     )
+
+
+def invoke_all(setup, **kwargs):
+    _, ctx = setup
+    profile, ctx.profile = ctx.profile, "operator"
+    try:
+        return invoke(setup, "sessions.search_all", **kwargs)
+    finally:
+        ctx.profile = profile
 
 
 def payload(result):
@@ -60,17 +69,19 @@ def test_current_default_and_explicit_cross_session_grant(setup):
     assert {hit["session_id"] for hit in payload(invoke(setup))["matches"]} == {
         "current"
     }
-    assert payload(invoke(setup, session_id="current"))["session_id"] == "current"
-    assert "operate" in invoke(setup, session_id="other").content
-    assert "operate" in invoke(setup, all_sessions=True).content
-    ctx.config.profiles[ctx.profile].effects = ["operate"]
-    assert {
-        hit["session_id"]
-        for hit in payload(invoke(setup, all_sessions=True))["matches"]
-    } == {"current", "other"}
+    # sessions.search never widens: a stray session_id is ignored and noted.
+    stray = invoke(setup, session_id="other")
+    assert stray.content.startswith("Ignored unknown argument(s): session_id.")
+    assert '"session_id": "current"' in stray.content
+    denied = invoke(setup, "sessions.search_all")
+    assert denied.error and "not permitted" in denied.content
+    assert {hit["session_id"] for hit in payload(invoke_all(setup))["matches"]} == {
+        "current",
+        "other",
+    }
     assert [
         hit["session_id"]
-        for hit in payload(invoke(setup, session_id="other"))["matches"]
+        for hit in payload(invoke_all(setup, session_id="other"))["matches"]
     ] == ["other"]
 
 
@@ -102,8 +113,9 @@ def test_archive_filters_addresses_and_read_only_masking(setup):
         p: p.read_bytes() for p in ctx.store.root.rglob("*") if p.is_file()
     } == before
     hits = payload(
-        invoke(
+        invoke_all(
             setup,
+            session_id="current",
             query="channel:compaction moonlit",
             role="assistant",
             kind="compaction",
@@ -125,7 +137,7 @@ def test_profile_schema_and_denial_before_index_access(setup, monkeypatch):
         raise AssertionError("index must not be queried")
 
     monkeypatch.setattr(ctx.store, "search", forbidden)
-    assert invoke(setup, all_sessions=True).error
+    assert invoke(setup, "sessions.search_all").error
     ctx.profile = "plain"
     assert "not permitted" in invoke(setup).content
 
@@ -133,7 +145,6 @@ def test_profile_schema_and_denial_before_index_access(setup, monkeypatch):
 @pytest.mark.parametrize(
     "kwargs",
     [
-        {"all_sessions": True, "session_id": "current"},
         {"session_id": "../other"},
         {"query": '"unclosed'},
         {"limit": 201},
@@ -145,12 +156,12 @@ def test_profile_schema_and_denial_before_index_access(setup, monkeypatch):
     ],
 )
 def test_invalid_arguments(setup, kwargs):
-    assert invoke(setup, **kwargs).error
+    assert invoke_all(setup, **kwargs).error
 
 
 def test_numeric_strings_are_accepted_without_widening_search_scope(setup):
     assert payload(invoke(setup, limit="20"))["session_id"] == "current"
-    assert "operate" in invoke(setup, all_sessions="true").content
+    assert "not permitted" in invoke(setup, "sessions.search_all").content
 
 
 def test_unavailable_index_tool_error_and_tool_log(setup):

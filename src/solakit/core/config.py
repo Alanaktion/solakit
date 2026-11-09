@@ -312,8 +312,9 @@ class Profile(StrictModel):
     wrapup: Literal["off", "status", "answer"] = "off"
     plan_reminder: bool = False
     context_tokens: int | None = Field(default=None, ge=256)
-    tool_disclosure: Literal["eager", "deferred"] = "eager"
+    tool_disclosure: Literal["eager", "deferred", "auto"] = "eager"
     tool_resident: list[str] = Field(default_factory=list)
+    tool_auto_threshold: int = Field(default=12000, ge=0)
     tools: list[str] = Field(default_factory=list)
     max_steps: int = Field(default=40, ge=1)
     context_budget: int = Field(default=32000, ge=1)
@@ -366,7 +367,7 @@ class Job(StrictModel):
     timezone: str = "America/Denver"
     profile: str
     tools: list[str] | None = Field(default=None, max_length=256)
-    tool_disclosure: Literal["inherit", "eager", "deferred"] = "inherit"
+    tool_disclosure: Literal["inherit", "eager", "deferred", "auto"] = "inherit"
     tool_resident: list[str] | None = None
     task: str
     playbook: str | None = Field(default=None, pattern=r"^[a-z0-9][a-z0-9_-]{0,63}$")

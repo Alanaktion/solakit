@@ -34,6 +34,19 @@ def receipt(child, run, *, timed_out=False, report=None):
     )
 
 
+TASK = Annotated[
+    str,
+    Field(
+        description=(
+            "Self-contained worker brief, 1\u201332000 characters; the child "
+            "does not see this conversation."
+        ),
+        min_length=1,
+        max_length=32000,
+    ),
+]
+
+
 @tool(
     summary="Delegate a self-contained task and receive only the final report",
     keywords=("delegate", "worker", "subtask", "report"),
@@ -43,50 +56,57 @@ def receipt(child, run, *, timed_out=False, report=None):
 )
 async def run(
     ctx: ToolContext,
-    task: Annotated[
-        str,
-        Field(
-            description=(
-                "Self-contained worker brief, 1\u201332000 characters; the child "
-                "does not see parent history."
-            ),
-            min_length=1,
-            max_length=32000,
-        ),
-    ],
+    task: TASK,
     profile: Annotated[
         str | None,
-        Field(
-            description=(
-                "Worker profile; omit to use the current profile. Other profiles "
-                "must be listed in delegation.allowed_profiles."
-            )
-        ),
-    ] = None,
-    session: Annotated[
-        str | None,
-        Field(
-            description=(
-                "Optional idle, unarchived ephemeral child ID from this "
-                "conversation to continue; omit to start a child."
-            )
-        ),
+        Field(description="Worker profile; omit to use the current profile."),
     ] = None,
 ) -> ToolResult:
-    """Run a self-contained brief in a fresh ephemeral child session.
+    """Run a brief in a fresh private child session; returns its final report.
 
-    Complete simple operations directly in one or two calls rather than delegating.
-    Defaults to the current profile; other profiles require
-    delegation.allowed_profiles. Supply session to continue an
-    idle, unarchived child of this conversation. The child sees its own history,
-    not this conversation; return includes child session/run IDs, status and only
-    its final report on success. Full child work remains in its own transcript.
-    """
+    Use for long reading or multi-step side work whose details this conversation
+    does not need. Do simple operations directly instead."""
+    return await delegate(ctx, task, profile, None)
+
+
+@tool(
+    summary="Send a follow-up brief to an earlier delegated child session",
+    keywords=("delegate", "worker", "continue", "follow-up"),
+    name="delegate.continue",
+    profiles=["*"],
+    manages_timeout=True,
+)
+async def continue_child(
+    ctx: ToolContext,
+    session: Annotated[
+        str, Field(description="session_id from an earlier delegate.run receipt.")
+    ],
+    task: TASK,
+) -> ToolResult:
+    """Continue an idle child of this conversation with its own history."""
+    return await delegate(ctx, task, None, session)
+
+
+async def delegate(ctx, task, profile, session) -> ToolResult:
+    """Child sees its own history, not this conversation; the receipt carries
+    child session/run IDs, status and only the final report on success."""
     if not task.strip():
         raise ToolError("Delegation requires a nonempty task")
+    if session is not None and profile is None:
+        # A continuation keeps the child's own profile.
+        try:
+            profile = (await durable(ctx.store.session, session)).default_profile
+        except (FileNotFoundError, ValueError) as exc:
+            raise ToolError("Child session not found") from exc
     profile = ctx.profile if profile is None else profile
-    if profile != ctx.profile and profile not in ctx.config.delegation.allowed_profiles:
-        raise ToolError("Profile is not allowed for delegation")
+    allowed = ctx.config.delegation.allowed_profiles
+    if profile != ctx.profile and profile not in allowed:
+        raise ToolError(
+            f"Profile {profile[:40]!r} is not allowed for delegation. Omit profile "
+            "to use the current one"
+            + (f", or choose: {', '.join(allowed)}" if allowed else "")
+            + "."
+        )
     if ctx.nested_submit is None:
         raise ToolError("Nested execution is unavailable in this context")
     child = (
