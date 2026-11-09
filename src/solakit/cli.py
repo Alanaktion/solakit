@@ -70,6 +70,14 @@ def main() -> None:
     compare = evaluate_commands.add_parser("compare", help="Compare two result files")
     compare.add_argument("a")
     compare.add_argument("b")
+    doctor = commands.add_parser(
+        "doctor", help="Probe the live model: tool calls, sampling, cache, concurrency"
+    )
+    doctor.add_argument(
+        "--quick", action="store_true", help="Skip prefix-cache/concurrency"
+    )
+    doctor.add_argument("--json", action="store_true")
+    doctor.add_argument("--write-memory", action="store_true")
     serve = commands.add_parser("serve", help="Run the server (default 127.0.0.1:8382)")
     serve.add_argument("--host")
     serve.add_argument("--port", type=int)
@@ -79,6 +87,9 @@ def main() -> None:
     args = parser.parse_args()
     if args.command == "eval":
         run_eval(parser, args)
+        return
+    if args.command == "doctor":
+        run_doctor(parser, args)
         return
     if args.command == "search":
         from solakit.core.search import SearchUnavailable, search_index
@@ -257,6 +268,32 @@ def main() -> None:
     else:
         # No print newline: stdout is exactly the prompt's UTF-8 bytes.
         sys.stdout.buffer.write(data["prompt"].encode("utf-8"))
+
+
+def run_doctor(parser, args) -> None:
+    import asyncio
+    from dataclasses import asdict
+
+    from solakit.core import doctor
+
+    try:
+        config = load_config()
+        config.model.resolve_api_key()
+    except (OSError, ValueError) as exc:
+        parser.exit(1, f"Doctor setup failed: {exc}\n")
+    probes = asyncio.run(
+        doctor.run_doctor(config, quick=args.quick, write_memory=args.write_memory)
+    )
+    saved = doctor.save(config, probes)
+    if args.json:
+        print(json.dumps([asdict(p) for p in probes], indent=2))
+    else:
+        for probe in probes:
+            print(doctor.format_probe(probe))
+        if saved:
+            print(f"Saved: {saved}")
+    if any(p.status == doctor.FAIL for p in probes):
+        parser.exit(1)
 
 
 def run_eval(parser, args) -> None:
