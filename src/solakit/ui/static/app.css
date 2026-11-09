@@ -575,3 +575,55 @@ pre { overflow-x: auto; font-size: 11px; line-height: 1.55; color: var(--ink); }
 /* Local Lucide symbols inherit the control's color in both color schemes. */
 .icon { display: inline-block; width: 1em; height: 1em; flex-shrink: 0; vertical-align: -.125em; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
 .thread-avatar .icon, .avatar .icon { width: 18px; height: 18px; }
+
+/* Model observatory: spaced metrics, independent rankings, and evidence records. */
+.model-health { display: flex; flex-direction: column; gap: 24px; }
+.model-health > .page-heading { margin: 8px 0 0; gap: 24px; align-items: flex-end; }
+.model-health .section-label { display: block; margin-bottom: 10px; color: var(--accent); }
+.model-health h1 { font-size: 28px; margin-bottom: 10px; }
+.model-health .intro { max-width: 42rem; }
+.model-health .page-heading::after { display: none; }
+.model-health .health-window { flex: 0 1 auto; }
+.health-window .operation-label { margin-bottom: 8px; }
+.health-window [aria-current="page"] { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+.model-health .operations-panel { box-shadow: var(--shadow); }
+.model-health .operations-section-heading { padding: 24px; gap: 16px; }
+.model-health .operations-section-heading .operation-tags { flex: 0 1 auto; gap: 8px; }
+.health-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 0; padding: 0 24px 20px; }
+.health-metrics > div { padding: 16px 18px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-soft); min-width: 0; }
+.health-metrics dt { color: var(--muted); font-size: 11px; margin-bottom: 10px; text-transform: capitalize; }
+.health-metrics dd { margin: 0; font-size: 25px; line-height: 1.3; font-weight: 500; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; letter-spacing: -.5px; }
+.health-unit { margin-left: 3px; font-size: 15px; color: var(--muted); }
+.health-metrics dd.health-unmeasured { font-size: 14px; color: var(--muted); letter-spacing: 0; }
+.health-footnote { margin: 0; padding: 0 24px 20px; color: var(--muted); font-size: 11px; }
+.health-rankings { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-top: 1px solid var(--line); }
+.health-ranking { min-width: 0; padding: 20px 24px; }
+.health-ranking + .health-ranking { border-left: 1px solid var(--line); }
+.health-ranking h3 { font-size: 12px; font-weight: 500; color: var(--muted); margin-bottom: 12px; }
+.health-list, .health-records { list-style: none; padding: 0; margin: 0; }
+.health-list li { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; padding: 12px 0; border-top: 1px solid var(--line); }
+.health-list code { font-size: 11px; overflow-wrap: anywhere; min-width: 0; }
+.health-tally { flex: none; text-align: right; font-variant-numeric: tabular-nums; font-size: 15px; }
+.health-tally small { display: block; font-size: 10px; color: var(--muted); }
+.health-diagnostics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 24px; }
+.health-records > li { padding: 18px 24px; border-top: 1px solid var(--line); }
+.health-record-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.health-record-heading strong { font-size: 13px; font-weight: 500; overflow-wrap: anywhere; }
+.health-record-detail { margin: 10px 0 0; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.health-remedy { margin: 12px 0 0; padding: 10px 12px; border-radius: 6px; background: var(--surface-soft); color: var(--warning); font-size: 12px; overflow-wrap: anywhere; }
+.health-records .health-empty { padding: 24px; }
+@media (max-width: 1000px) {
+  .health-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .health-diagnostics { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 700px) {
+  .model-health { gap: 20px; }
+  .model-health .operations-section-heading { padding: 20px; }
+  .health-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 0 20px 20px; gap: 10px; }
+  .health-metrics > div { padding: 14px; }
+  .health-footnote { padding-inline: 20px; }
+  .health-rankings { grid-template-columns: minmax(0, 1fr); }
+  .health-ranking { padding: 20px; }
+  .health-ranking + .health-ranking { border-left: 0; border-top: 1px solid var(--line); }
+  .health-records > li { padding: 18px 20px; }
+}
