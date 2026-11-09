@@ -362,10 +362,13 @@ def test_web_search_names_ids_archived_text_links_and_errors(config, mock_model)
         page = client.get("/search", params={"q": "Imported note"})
         assert page.status_code == 200
         assert page.text.count('class="panel search-result"') == 50
-        assert "Next →" in page.text
+        assert 'rel="next">Next <svg' in page.text
+        assert "/static/vendor/lucide.svg#arrow-right" in page.text
         page = client.get("/search", params={"q": "Imported note", "offset": 50})
         assert page.text.count('class="panel search-result"') == 5
-        assert "← Previous" in page.text
+        assert " Previous</a>" in page.text
+        assert 'rel="prev">' in page.text
+        assert "/static/vendor/lucide.svg#arrow-left" in page.text
         page = client.get("/search", params={"q": "old"})
         assert "Archived" in page.text and 'href="/sessions/old"' in page.text
         page = client.get("/search", params={"mode": "text", "q": "Moonstone"})

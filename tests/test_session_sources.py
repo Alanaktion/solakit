@@ -156,7 +156,9 @@ def test_children_live_with_parent_in_ui(config, mock_model):
             in client.get("/sessions/parent?child_offset=50").text
         )
         child = client.get("/sessions/child-00").text
-        assert 'href="/sessions/parent">← Parent session' in child
+        assert 'href="/sessions/parent">' in child
+        assert " Parent session</a>" in child
+        assert "/static/vendor/lucide.svg#arrow-left" in child
         assert 'href="/sessions/child-00"' not in child.split("</aside>")[0]
         assert (
             client.get(

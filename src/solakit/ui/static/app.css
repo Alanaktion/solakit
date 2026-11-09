@@ -428,7 +428,7 @@ pre { overflow-x: auto; font-size: 11px; line-height: 1.55; color: var(--ink); }
   .chat-toolbar { flex-wrap: wrap; padding: 4px 14px; gap: 6px; }
   .chat-toolbar .session-badges { display: none; }
   .chat-health summary { min-height: 44px; display: flex; align-items: center; }
-  .table-scroll::before { content: "Scroll sideways to see all columns →"; display: block; position: sticky; left: 0; width: fit-content; padding: 6px 0; font-size: 11px; color: var(--muted); }
+  .table-scroll::before { content: "Scroll sideways to see all columns"; display: block; position: sticky; left: 0; width: fit-content; padding: 6px 0; font-size: 11px; color: var(--muted); }
 }
 .header-status .status-list { align-items: center; }
 @media (max-width: 640px) {
@@ -571,3 +571,7 @@ pre { overflow-x: auto; font-size: 11px; line-height: 1.55; color: var(--ink); }
   .header-inner .nav { mask-image: linear-gradient(to right, #000 82%, transparent); -webkit-mask-image: linear-gradient(to right, #000 82%, transparent); padding-right: 24px; }
 }
 @media (prefers-reduced-motion: reduce) { .run-status-active::before { animation: none; } }
+
+/* Local Lucide symbols inherit the control's color in both color schemes. */
+.icon { display: inline-block; width: 1em; height: 1em; flex-shrink: 0; vertical-align: -.125em; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
+.thread-avatar .icon, .avatar .icon { width: 18px; height: 18px; }

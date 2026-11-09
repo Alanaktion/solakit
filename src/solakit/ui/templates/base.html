@@ -1,3 +1,4 @@
+{% from "macros/icons.html" import icon %}
 <!doctype html>
 <html lang="en">
 <head>
@@ -25,7 +26,7 @@
         <a href="{{ href }}" class="nav-link" {% if request.url.path == href or (href == '/' and request.url.path.startswith('/sessions/')) or (href == '/runs' and request.url.path.startswith('/runs/')) %}aria-current="page"{% endif %}>{{ label }}</a>
         {% endfor %}
       </nav>
-      <form method="post" action="/logout"><button class="quiet-button" type="submit">Sign out <span aria-hidden="true">↗</span></button></form>
+      <form method="post" action="/logout"><button class="quiet-button" type="submit">Sign out {{ icon("arrow-up-right") }}</button></form>
       {% endblock %}
     </div>
     {% block status %}<div class="header-status">{% include 'fragments/status.html' %}</div>{% endblock %}

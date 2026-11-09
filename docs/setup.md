@@ -78,7 +78,8 @@ its silver/violet palette and soft ambient details from
 [Sola’s dreams](https://sola-ryu.github.io/dreams/), with pale lavender light mode
 and a near-black dark mode. It supports system light/dark preference, session
 creation, sanitized assistant Markdown, collapsed tool evidence,
-and reported health. The Tools page lists loaded tools, argument schemas, write
+and reported health. UI icons use packaged local Lucide SVG symbols; they need
+no network access, JavaScript initialization, or additional configuration. The Tools page lists loaded tools, argument schemas, write
 requirements, and effective profile grants. Chat links to its profile’s tools
 and shows calls as expandable redacted argument/result cards. Chat fills the viewport with a desktop session sidebar,
 compact navigation, Markdown assistant replies, user bubbles, and a bottom-anchored composer; on mobile, the conversation takes

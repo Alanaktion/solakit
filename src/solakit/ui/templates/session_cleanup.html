@@ -1,7 +1,8 @@
 {% extends 'base.html' %}
+{% from "macros/icons.html" import icon %}
 {% block title %}Session cleanup · Solakit{% endblock %}
 {% block content %}
-<section class="page-heading"><div><a class="back-link" href="/">← Sessions</a><h1>Review sessions to archive</h1><p class="intro">{% if preview.before %}Last activity before <time datetime="{{ preview.before }}" data-time>{{ preview.before|display_time }}</time>.{% endif %} Transcripts, media and search results are preserved.</p></div></section>
+<section class="page-heading"><div><a class="back-link" href="/">{{ icon("arrow-left") }} Sessions</a><h1>Review sessions to archive</h1><p class="intro">{% if preview.before %}Last activity before <time datetime="{{ preview.before }}" data-time>{{ preview.before|display_time }}</time>.{% endif %} Transcripts, media and search results are preserved.</p></div></section>
 <section class="panel evidence-panel"><h2>{{ preview.sessions|length }} sessions eligible</h2>
 <p>Busy sessions and sessions used by enabled channels or unfinished enabled jobs are protected. Activity and bindings are checked again when you archive. You can restore these sessions afterwards.</p>
 {% if preview.sessions %}<form id="cleanup-preview-action" class="action-group" method="post" action="/sessions/cleanup/apply"><input type="hidden" name="selection" value="{{ selection }}"><input type="hidden" name="from_preview" value="1"><label><input type="checkbox" id="select-session-page" checked class="session-select-all"> Select all eligible</label><button class="primary-button" type="submit">Archive selected sessions</button></form>{% endif %}

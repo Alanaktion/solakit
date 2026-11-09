@@ -1,0 +1,4 @@
+{# Decorative icons: the containing control supplies its visible/accessibility label. #}
+{% macro icon(name) -%}
+<svg class="icon" aria-hidden="true" focusable="false"><use href="/static/vendor/lucide.svg#{{ name }}"></use></svg>
+{%- endmacro %}

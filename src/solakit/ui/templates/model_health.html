@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "macros/icons.html" import icon %}
 {% block title %}Model health · Solakit{% endblock %}
 {% block content %}
 <div class="operations-page">
@@ -28,7 +29,7 @@
 </section>
 <section class="operations-panel panel" aria-labelledby="doctor-heading">
   <header class="operations-section-heading"><div><h2 id="doctor-heading">Last sola doctor run</h2><p class="muted">Run <code>sola doctor</code> to refresh live probes.</p></div></header>
-  {% if stats.doctor %}<p class="operation-meta">{{ stats.doctor.checked_at }}</p><ul class="plain-list">{% for probe in stats.doctor.probes %}<li><span class="subtle-tag">{{ probe.status }}</span> <strong>{{ probe.name }}</strong> — {{ probe.detail }}{% if probe.remedy and probe.status in ['WARN', 'FAIL'] %} <span class="operation-meta">→ {{ probe.remedy }}</span>{% endif %}</li>{% endfor %}</ul>{% else %}<p class="muted">No doctor results recorded yet.</p>{% endif %}
+  {% if stats.doctor %}<p class="operation-meta">{{ stats.doctor.checked_at }}</p><ul class="plain-list">{% for probe in stats.doctor.probes %}<li><span class="subtle-tag">{{ probe.status }}</span> <strong>{{ probe.name }}</strong> — {{ probe.detail }}{% if probe.remedy and probe.status in ['WARN', 'FAIL'] %} <span class="operation-meta">{{ icon("arrow-right") }} {{ probe.remedy }}</span>{% endif %}</li>{% endfor %}</ul>{% else %}<p class="muted">No doctor results recorded yet.</p>{% endif %}
 </section>
 </div>
 {% endblock %}
