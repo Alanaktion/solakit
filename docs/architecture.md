@@ -80,5 +80,8 @@ channel/API/job ──► Execution.enqueue (admission: durable run, session FIF
 | `src/solakit/services/fs.py` | scope-checked filesystem (windows, grep, find) |
 | `src/solakit/jobs/__init__.py` | scheduler, chaining |
 | `src/solakit/channels/__init__.py` | delivery and channel posts |
-| `src/solakit/ui/routes.py` | operator UI routes |
+| `src/solakit/ui/routes.py` | UI router: auth, rendering/API helpers, login, conversation views |
+| `src/solakit/ui/routes_sessions.py` | session list, chat, lifecycle, archive/compact, streaming events |
+| `src/solakit/ui/routes_runs.py` | prompt inspector, runs, model health, tools, status chips |
+| `src/solakit/ui/routes_jobs.py` | operations page and job forms/actions |
 | `packs/email/src/sola_packs/email.py` | example external pack (uses only `solakit.sdk`) |
