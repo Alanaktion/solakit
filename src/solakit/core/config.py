@@ -329,6 +329,20 @@ class Profile(StrictModel):
     # one stray key (recorded); strict: only scalar/null/blank normalization.
     argument_mode: Literal["lenient", "strict"] = "lenient"
     tool_result_format: Literal["envelope", "text"] = "envelope"
+    # Request-time stubbing of old, large tool results (evidence unchanged).
+    tool_result_aging: Literal["off", "auto"] = "off"
+    aging_keep_groups: int = Field(default=2, ge=0)
+    aging_min_chars: int = Field(default=1500, ge=100)
+
+
+class CompactionConfig(StrictModel):
+    """openviking: OpenViking summaries only (historical behaviour). local: the
+    pinned model summarizes. auto: OpenViking for shared sessions with memory
+    enabled, the local model otherwise."""
+
+    strategy: Literal["openviking", "local", "auto"] = "openviking"
+    max_summary_tokens: int = Field(default=1024, ge=64, le=16384)
+    max_input_chars: int = Field(default=60000, ge=2000)
 
 
 class DelegationConfig(StrictModel):
@@ -474,6 +488,7 @@ class Config(StrictModel):
     server: ServerConfig = Field(default_factory=ServerConfig)
     memory: MemoryConfig = Field(default_factory=MemoryConfig)
     delegation: DelegationConfig = Field(default_factory=DelegationConfig)
+    compaction: CompactionConfig = Field(default_factory=CompactionConfig)
     paths: PathsConfig = Field(default_factory=PathsConfig)
     profile_defaults: dict[str, Any] = Field(default_factory=dict)
     channel_defaults: dict[str, Any] = Field(default_factory=dict)

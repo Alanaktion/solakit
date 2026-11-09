@@ -49,6 +49,8 @@ class Message(BaseModel):
     ts: datetime = Field(default_factory=now)
     kind: Literal["message", "compaction"] = "message"
     summary_uri: str | None = None
+    # "local_model" when the pinned model wrote a compaction summary.
+    summary_source: str | None = None
     archive: str | None = None
     # Request-time preamble (time, origin, recall) sent before a user turn's
     # verbatim text. Stored beside, never inside, the operator's content so the
@@ -111,6 +113,7 @@ class Run(BaseModel):
     repeated_calls: int = 0
     injections: list[dict[str, Any]] = Field(default_factory=list)
     completed_via_wrapup: bool = False
+    aging: list[dict[str, Any]] = Field(default_factory=list)
     retries: list[dict[str, Any]] = Field(default_factory=list)
     reasoning_steps: int = 0
     tool_catalog_sha256: str | None = None

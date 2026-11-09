@@ -7,6 +7,7 @@ import logging
 import traceback
 from dataclasses import dataclass
 
+from solakit.core.aging import age_tool_results
 from solakit.core.archival import archive_session
 from solakit.core.compaction import (
     Compactor,
@@ -66,7 +67,7 @@ class Execution:
         )
         self.model.media = Media(store.root)
         self.memory = memory
-        self.compactor = Compactor(store, memory)
+        self.compactor = Compactor(store, memory, model, config.compaction)
         self.semaphore = asyncio.Semaphore(config.model.concurrency)
         self.session_locks: dict[str, asyncio.Lock] = {}
         self.performing: dict[asyncio.Task, Pending] = {}
@@ -351,7 +352,15 @@ class Execution:
             ):
                 raise ValueError("Wait for queued or running turns before compacting")
             self.compactor.memory = self.memory
-            task = asyncio.create_task(self.compactor.compact(session))
+
+            async def compact():
+                if self.compactor.strategy(session) == "local":
+                    # Explicit local compaction uses one inference slot.
+                    async with self.semaphore:
+                        return await self.compactor.compact(session)
+                return await self.compactor.compact(session)
+
+            task = asyncio.create_task(compact())
             try:
                 manifest = await asyncio.shield(task)
             except asyncio.CancelledError:
@@ -669,7 +678,8 @@ class Execution:
             if self.pending[run.id].cancellation is not None:
                 raise asyncio.CancelledError
             tools = view.schemas(loaded_tools)
-            if self._over_budget(cfg, messages, tools, output_tokens, measured):
+            request = self._aged(cfg, messages, run, step)
+            if self._over_budget(cfg, request, tools, output_tokens, measured):
                 if not cfg.mid_run_compaction or step == 0:
                     raise ContextLimit(
                         "Request exceeds conservative context byte budget"
@@ -702,7 +712,8 @@ class Execution:
                     budget=cfg.context_budget,
                 )
                 measured = {}
-                if self._over_budget(cfg, messages, tools, output_tokens, measured):
+                request = self._aged(cfg, messages, run, step)
+                if self._over_budget(cfg, request, tools, output_tokens, measured):
                     raise ContextLimit(
                         "Compacted request still exceeds context byte budget"
                     )
@@ -740,11 +751,11 @@ class Execution:
                     "max_reasoning_tokens": cfg.model.max_reasoning_tokens,
                 }
             size = request_bytes(
-                self.config.model.model_id, messages, tools, output_tokens
+                self.config.model.model_id, request, tools, output_tokens
             )
             try:
                 data = await self.model.complete(
-                    messages,
+                    request,
                     tools,
                     on_text=preview,
                     params=params,
@@ -762,7 +773,7 @@ class Execution:
                     thinking="off", override=cfg.model
                 )
                 data = await self.model.complete(
-                    messages,
+                    request,
                     tools,
                     on_text=preview,
                     params=params,
@@ -981,7 +992,7 @@ class Execution:
             )
             try:
                 data = await self.model.complete(
-                    messages,
+                    self._aged(cfg, messages, run, step),
                     tools,
                     params=self.config.model.request.wire(
                         thinking="off" if cfg.model.thinking else None,
@@ -1012,6 +1023,18 @@ class Execution:
                     run.status = RunStatus.completed
                     return
         run.status = RunStatus.budget_exceeded
+
+    def _aged(self, cfg, messages, run, step) -> list[dict]:
+        if cfg.tool_result_aging != "auto":
+            return messages
+        request, stubbed = age_tool_results(
+            messages, cfg.aging_keep_groups, cfg.aging_min_chars
+        )
+        if stubbed:
+            entry = {"step": step + 1, "stubbed": stubbed}
+            if not run.aging or run.aging[-1]["stubbed"] != stubbed:
+                run.aging.append(entry)
+        return request
 
     def _over_budget(self, cfg, messages, tools, output_tokens, measured) -> bool:
         """Byte guard always; calibrated token budget when context_tokens is set.

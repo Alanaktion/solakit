@@ -1242,6 +1242,29 @@ A prepared manifest records the source hash and boundary before numbered archive
 rotation; startup finishes interrupted rotations before serving. Original archive
 bytes are immutable. A transcript with unresolved storage damage cannot compact.
 
+**Strategies (`[compaction].strategy`).** `openviking` (default) is the flow above.
+`local` asks the pinned model, in a separate non-streaming-equivalent completion
+with thinking off, to summarize the active transcript (a prior summary first, then
+the most recent messages within `max_input_chars`, tool results shortened) with a
+fixed instruction: facts, decisions, open tasks and tool outcomes, no new
+instructions. The boundary records `summary_source = "local_model"` and no URI; the
+archive rotation machinery is unchanged. `auto` uses OpenViking for shared sessions
+with memory enabled and the local model otherwise (memory-disabled deployments,
+ephemeral delegated children). An empty, failed or length-cut summary raises
+`context_limit`; nothing is truncated silently. Explicit API compaction with the
+local strategy takes one inference slot.
+
+**Tool-result aging (profile `tool_result_aging = "auto"`, default off).** When
+building each request, tool results older than the newest `aging_keep_groups`
+complete tool groups and at least `aging_min_chars` long are replaced by a stub
+naming the tool, size and first 300 characters with an instruction to re-run the
+tool. Errors and short results are never aged; call envelopes stay intact; the
+transcript, UI and search keep full results. Aging is deterministic and monotone
+(a stubbed result stays stubbed), and runs record `aging: [{step, stubbed}]`.
+
+**Token budget.** Optional profile `context_tokens` adds a calibrated token budget
+(see docs/operations/model-tuning.md); compaction also triggers above 85% of it.
+
 Until an exact local tokenizer is configured, `context_budget` also caps a
 conservative serialized UTF-8 byte guard over the full model request (including
 prompt, history, task, and tools). This intentionally triggers earlier than a

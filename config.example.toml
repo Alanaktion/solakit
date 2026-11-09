@@ -87,6 +87,13 @@ data = "~/sola-data"
 soul = "/absolute/path/to/live/SOUL.md"
 fragments = "fragments"
 
+# Compaction when shared OpenViking is unavailable: "auto" summarizes with the
+# pinned model for memory-disabled or ephemeral sessions. Default: openviking only.
+[compaction]
+strategy = "openviking"
+# max_summary_tokens = 1024
+# max_input_chars = 60000
+
 # Optional values inherited by every profile. A value in a named profile replaces
 # its default; list values replace the whole list rather than being appended.
 [profile_defaults]
@@ -102,6 +109,8 @@ mid_run_compaction = false
 # argument_mode = "lenient"     # or "strict"
 # tool_result_format = "envelope" # "text": plain content, "Error: …" for errors
 # repair_ceiling = 6            # per tool+error-class repairs under a run cap
+# tool_result_aging = "auto"    # stub old large tool results in requests
+# context_tokens = 100000       # calibrated token budget beside context_budget
 tools = []
 read = "workspace"
 write = "none"

@@ -581,3 +581,20 @@ def format_probe(probe: Probe) -> str:
     if probe.remedy and probe.status in (WARN, FAIL):
         line += f"\n     → {probe.remedy}"
     return line
+
+
+def concurrency_warning(config: Config) -> str | None:
+    """Offline check against the last doctor measurement, when one exists."""
+    record = last(config)
+    if not record or record.get("model_id") != config.model.model_id:
+        return None
+    probe = next(
+        (p for p in record.get("probes", []) if p.get("name") == "concurrency"), None
+    )
+    knee = (probe or {}).get("data", {}).get("knee")
+    if isinstance(knee, int) and config.model.concurrency > knee:
+        return (
+            f"[model].concurrency = {config.model.concurrency} exceeds the measured "
+            f"knee {knee} (sola doctor, {record.get('checked_at', 'unknown')})"
+        )
+    return None

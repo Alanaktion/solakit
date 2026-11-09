@@ -232,6 +232,11 @@ def main() -> None:
             print("Warning: " + warning)
         for warning in prepared.registry.deprecation_warnings():
             print("Warning: " + warning)
+        from solakit.core.doctor import concurrency_warning
+
+        warning = concurrency_warning(prepared.config)
+        if warning:
+            print("Warning: " + warning)
         for name in prepared.config.profiles:
             print(prepared.registry.summary_access(name))
             diagnostics = prepared.registry.view(name).diagnostics(
