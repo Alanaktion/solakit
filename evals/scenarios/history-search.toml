@@ -1,0 +1,13 @@
+id = "history-search"
+family = "selection"
+quick = true
+prompt = "What did I say earlier in this chat about the database migration?"
+tools = ["sessions.search", "memory.search", "web.search", "files.read"]
+allow_tools = ["memory.search"]
+expect_calls = [{ name = "sessions.search", args_subset = { query = "migration" } }]
+forbid_tools = ["web.search", "files.read"]
+expect_final_contains = ["sunday"]
+max_steps = 5
+
+[[responses."sessions.search"]]
+content = '{"hits": [{"role": "user", "ts": "2026-11-02T10:00:00Z", "snippet": "the database migration must run on Sunday night after backups"}], "more": false}'

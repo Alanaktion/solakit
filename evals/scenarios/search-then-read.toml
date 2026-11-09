@@ -1,0 +1,16 @@
+id = "search-then-read"
+family = "multi_step"
+quick = true
+prompt = "Find the email from my landlord in the personal mailbox and tell me what it says about the lease."
+tools = ["email.list_mailboxes", "email.search", "email.read"]
+allow_tools = ["email.list_mailboxes"]
+expect_calls = [{ name = "email.search" }, { name = "email.read", args_subset = { message_id = "l7" } }]
+expect_final_any = ["june", "renew"]
+max_steps = 6
+
+[[responses."email.search"]]
+content = '{"messages": [{"message_id": "l7", "from": "landlord@flats.test", "subject": "Lease renewal", "unseen": false}], "more": false}'
+
+[[responses."email.read"]]
+match = { message_id = "l7" }
+content = '{"message_id": "l7", "subject": "Lease renewal", "body": "Your lease ends 30 June. Reply by 15 May if you want to renew for another year."}'

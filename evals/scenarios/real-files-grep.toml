@@ -1,0 +1,13 @@
+id = "real-files-grep"
+family = "multi_step"
+prompt = "In my workspace, which file under config/ sets the port, and what is the port?"
+tools = ["files.list", "files.read"]
+real_tools = ["files.list", "files.read"]
+expect_calls = [{ name = "files.read" }]
+expect_final_contains = ["9123"]
+max_steps = 8
+
+[files]
+"config/app.toml" = "name = \"demo\"\n"
+"config/server.toml" = "host = \"0.0.0.0\"\nport = 9123\n"
+"README.md" = "Demo project.\n"

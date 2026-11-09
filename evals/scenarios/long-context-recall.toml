@@ -1,0 +1,20 @@
+id = "long-context-recall"
+family = "long_context"
+description = "Answer from a fact buried early in ~60k chars of prior chat."
+filler_chars = 60000
+prompt = "Earlier I mentioned the locker combination. What was it?"
+tools = ["sessions.search", "memory.search"]
+allow_tools = ["sessions.search", "memory.search"]
+expect_final_contains = ["4-19-27"]
+max_steps = 4
+
+[[history]]
+role = "user"
+content = "Keep this handy: my gym locker combination is 4-19-27."
+
+[[history]]
+role = "assistant"
+content = "Got it, locker combination 4-19-27."
+
+[[responses."sessions.search"]]
+content = '{"hits": [{"role": "user", "snippet": "my gym locker combination is 4-19-27"}], "more": false}'

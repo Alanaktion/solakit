@@ -1,0 +1,21 @@
+id = "inbox-urgent"
+family = "selection"
+quick = true
+description = "Domain mail tool over generic files/shell (TOOL-USE-AUDIT)."
+prompt = "Check my personal inbox and tell me about anything urgent."
+tools = ["email.list_mailboxes", "email.search", "email.read", "files.list", "files.read", "shell.run"]
+allow_tools = ["email.list_mailboxes", "email.read"]
+expect_calls = [{ name = "email.search", args_subset = { mailbox = "personal" } }]
+forbid_tools = ["files.list", "files.read", "shell.run"]
+expect_final_contains = ["invoice"]
+max_steps = 6
+
+[[responses."email.list_mailboxes"]]
+content = '[{"mailbox": "personal"}, {"mailbox": "work"}]'
+
+[[responses."email.search"]]
+content = '{"messages": [{"message_id": "m1", "from": "billing@acme.test", "subject": "URGENT: invoice overdue, service suspended Friday", "unseen": true}, {"message_id": "m2", "from": "news@shop.test", "subject": "Weekly deals", "unseen": true}], "more": false}'
+
+[[responses."email.read"]]
+match = { message_id = "m1" }
+content = '{"message_id": "m1", "subject": "URGENT: invoice overdue", "body": "Invoice 4471 for $120 is 30 days overdue. Pay by Friday to avoid suspension."}'

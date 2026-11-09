@@ -1,0 +1,9 @@
+id = "follow-up-turn"
+family = "long_context"
+description = "Two turns in one session; second-turn TTFB measures prefix-cache reuse."
+prompt = "Remember: my project codename is BLUEHERON. Just acknowledge."
+followups = ["What is my project codename?"]
+tools = ["memory.search", "sessions.search"]
+allow_tools = ["sessions.search"]
+expect_final_contains = ["blueheron"]
+max_steps = 4

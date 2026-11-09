@@ -1,0 +1,11 @@
+id = "recover-tool-error"
+family = "recovery"
+prompt = "Read notes/todo.md and list the first item."
+tools = ["files.read", "files.list"]
+allow_tools = ["files.list"]
+expect_calls = [{ name = "files.read", args_subset = { path = "notes/todo.md" } }]
+expect_final_contains = ["buy milk"]
+max_steps = 5
+
+[[responses."files.read"]]
+content = "- buy milk\n- call bank"

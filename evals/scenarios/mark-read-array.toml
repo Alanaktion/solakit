@@ -1,0 +1,10 @@
+id = "mark-read-array"
+family = "arguments"
+prompt = "Mark messages m1 and m2 in my personal mailbox as read."
+tools = ["email.mark_read", "email.search", "email.read"]
+allow_tools = ["email.search"]
+expect_calls = [{ name = "email.mark_read", args_subset = { mailbox = "personal", message_ids = ["m1", "m2"] } }]
+max_steps = 4
+
+[[responses."email.mark_read"]]
+content = '{"updated": ["m1", "m2"]}'

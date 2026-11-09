@@ -47,6 +47,29 @@ def main() -> None:
     memory.add_argument("--fact", required=True)
     memory.add_argument("--query", required=True)
     memory.add_argument("--expected", required=True)
+    evaluate = commands.add_parser(
+        "eval", help="Run real-model evaluation scenarios in an isolated data dir"
+    )
+    evaluate.add_argument("--scenarios", default="evals/scenarios")
+    evaluate.add_argument("--only", help="Comma-separated scenario ids")
+    evaluate.add_argument("--family", help="Comma-separated scenario families")
+    evaluate.add_argument("--trials", type=int)
+    evaluate.add_argument(
+        "--quick", action="store_true", help="Flagged subset with 2 trials"
+    )
+    evaluate.add_argument(
+        "--matrix",
+        action="append",
+        default=[],
+        help="Override axis key=a,b (e.g. disclosure=eager,deferred)",
+    )
+    evaluate.add_argument("--out", default="evals/results")
+    evaluate.add_argument("--allow-memory", action="store_true")
+    evaluate.add_argument("--json", action="store_true")
+    evaluate_commands = evaluate.add_subparsers(dest="eval_command")
+    compare = evaluate_commands.add_parser("compare", help="Compare two result files")
+    compare.add_argument("a")
+    compare.add_argument("b")
     serve = commands.add_parser("serve", help="Run the server (default 127.0.0.1:8382)")
     serve.add_argument("--host")
     serve.add_argument("--port", type=int)
@@ -54,6 +77,9 @@ def main() -> None:
         "--log-level", choices=["debug", "info", "warning", "error", "critical"]
     )
     args = parser.parse_args()
+    if args.command == "eval":
+        run_eval(parser, args)
+        return
     if args.command == "search":
         from solakit.core.search import SearchUnavailable, search_index
         from solakit.core.secrets import SENSITIVE, Redactor
@@ -231,6 +257,69 @@ def main() -> None:
     else:
         # No print newline: stdout is exactly the prompt's UTF-8 bytes.
         sys.stdout.buffer.write(data["prompt"].encode("utf-8"))
+
+
+def run_eval(parser, args) -> None:
+    import asyncio
+    from pathlib import Path
+
+    from solakit.core import eval as evaluation
+
+    if args.eval_command == "compare":
+        try:
+            a = json.loads(Path(args.a).read_text())
+            b = json.loads(Path(args.b).read_text())
+        except (OSError, ValueError) as exc:
+            parser.exit(1, f"Compare failed: {exc}\n")
+        print(evaluation.compare(a, b))
+        return
+    try:
+        config = load_config()
+        scenarios = evaluation.load_scenarios(
+            Path(args.scenarios),
+            only=args.only.split(",") if args.only else None,
+            families=args.family.split(",") if args.family else None,
+            quick=args.quick,
+        )
+        matrix = evaluation.parse_matrix(args.matrix)
+    except (OSError, ValueError) as exc:
+        parser.exit(1, f"Evaluation setup failed: {exc}\n")
+    if not scenarios:
+        parser.exit(1, "No scenarios selected.\n")
+    if config.memory.enabled and args.allow_memory:
+        print("Warning: evaluation may write to the configured memory server.")
+    trials = args.trials or (2 if args.quick else 5)
+
+    def progress(result):
+        mark = "PASS" if result["passed"] else "FAIL"
+        reasons = "; ".join(result["failures"])
+        print(
+            f"{mark} {result['scenario']} #{result['trial']} "
+            f"{json.dumps(result['overrides']) if result['overrides'] else ''}"
+            f"{result['status']} steps={result['steps']} {reasons}",
+            file=sys.stderr,
+            flush=True,
+        )
+
+    result = asyncio.run(
+        evaluation.run_suite(
+            config,
+            scenarios,
+            trials=trials,
+            matrix=matrix,
+            allow_memory=args.allow_memory,
+            progress=progress,
+        )
+    )
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    path = evaluation.result_path(out, result)
+    path.write_text(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+    if args.json:
+        print(json.dumps(result["summary"], indent=2))
+    else:
+        print(evaluation.markdown(result))
+    print(f"Results: {path}")
 
 
 if __name__ == "__main__":

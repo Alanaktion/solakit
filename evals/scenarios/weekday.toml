@@ -1,0 +1,11 @@
+id = "weekday"
+family = "selection"
+prompt = "What day of the week is 2027-03-14?"
+tools = ["datetime.weekday", "datetime.add_days", "datetime.convert", "math.eval", "shell.run"]
+expect_calls = [{ name = "datetime.weekday", args_subset = { value = "2027-03-14" } }]
+forbid_tools = ["shell.run"]
+expect_final_contains = ["sunday"]
+max_steps = 4
+
+[[responses."datetime.weekday"]]
+content = "Sunday"

@@ -1,0 +1,12 @@
+id = "calc-math"
+family = "selection"
+quick = true
+prompt = "What is 18.5% of 2,347.20? Use a tool for the exact value."
+tools = ["math.eval", "shell.run", "web.search"]
+expect_first_tool = "math.eval"
+forbid_tools = ["shell.run", "web.search"]
+expect_final_contains = ["434.23"]
+max_steps = 4
+
+[[responses."math.eval"]]
+content = "434.232"

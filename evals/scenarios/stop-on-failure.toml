@@ -1,0 +1,12 @@
+id = "stop-on-failure"
+family = "loop"
+quick = true
+prompt = "Fetch the weather page at https://weather.example.test/today and tell me the forecast."
+tools = ["web.get_page"]
+expect_status = "completed"
+expect_final_any = ["unavailable", "could not", "couldn't", "unable", "error", "failed"]
+max_steps = 8
+
+[[responses."web.get_page"]]
+error = true
+content = "Fetch failed: host returned HTTP 503 Service Unavailable."

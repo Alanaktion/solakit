@@ -1,0 +1,11 @@
+id = "zero-arg-runtime"
+family = "zero_arg"
+quick = true
+prompt = "Check the runtime status and tell me how many runs are active."
+tools = ["runtime.status", "jobs.list"]
+expect_calls = [{ name = "runtime.status" }]
+expect_final_any = ["2", "two"]
+max_steps = 3
+
+[[responses."runtime.status"]]
+content = '{"active_runs": 2, "queued_runs": 0, "model_available": true}'

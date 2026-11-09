@@ -1,0 +1,11 @@
+id = "job-schedule"
+family = "arguments"
+quick = true
+prompt = "Every weekday at 8am, remind me to review my calendar. Create a scheduled job for it with id calendar-review."
+tools = ["jobs.create", "jobs.list", "jobs.update"]
+allow_tools = ["jobs.list"]
+expect_calls = [{ name = "jobs.create", args_subset = { id = "calendar-review" } }]
+max_steps = 5
+
+[[responses."jobs.create"]]
+content = '{"created": "calendar-review", "enabled": false}'

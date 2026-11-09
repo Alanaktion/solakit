@@ -1,0 +1,10 @@
+id = "job-one-time"
+family = "arguments"
+prompt = "Schedule a one-time job with id pay-rent on 2026-12-01 at 09:00 to remind me to pay rent."
+tools = ["jobs.create", "jobs.list"]
+allow_tools = ["jobs.list"]
+expect_calls = [{ name = "jobs.create", args_subset = { id = "pay-rent", run_at = "2026-12-01" } }]
+max_steps = 5
+
+[[responses."jobs.create"]]
+content = '{"created": "pay-rent", "enabled": false}'

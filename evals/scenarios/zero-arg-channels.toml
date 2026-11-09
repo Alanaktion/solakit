@@ -1,0 +1,11 @@
+id = "zero-arg-channels"
+family = "zero_arg"
+prompt = "Which channels can you post to?"
+tools = ["messages.channels", "messages.send"]
+expect_calls = [{ name = "messages.channels" }]
+forbid_tools = ["messages.send"]
+expect_final_contains = ["general"]
+max_steps = 3
+
+[[responses."messages.channels"]]
+content = '[{"channel": "general", "type": "discord"}]'

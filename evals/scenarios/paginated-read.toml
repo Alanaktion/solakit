@@ -1,0 +1,14 @@
+id = "paginated-read"
+family = "multi_step"
+prompt = "Read https://docs.example.test/guide and tell me the name of the final section."
+tools = ["web.get_page"]
+expect_calls = [{ name = "web.get_page", args_subset = { offset = 16000 } }]
+expect_final_contains = ["troubleshooting"]
+max_steps = 6
+
+[[responses."web.get_page"]]
+match = { offset = 16000 }
+content = '{"markdown": "...end of setup.\n\n## Troubleshooting\nRestart the service.", "offset": 16000, "next_offset": null, "complete": true}'
+
+[[responses."web.get_page"]]
+content = '{"markdown": "# Guide\n## Install\n... (long content)", "offset": 0, "next_offset": 16000, "complete": false}'

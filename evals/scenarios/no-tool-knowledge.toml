@@ -1,0 +1,7 @@
+id = "no-tool-knowledge"
+family = "formatting"
+prompt = "In one sentence, what is a Python list comprehension?"
+tools = ["web.search", "web.get_page", "files.read", "shell.run"]
+expect_no_tools = true
+expect_final_any = ["list", "comprehension"]
+max_steps = 3

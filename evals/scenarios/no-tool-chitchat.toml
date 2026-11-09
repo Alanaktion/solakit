@@ -1,0 +1,7 @@
+id = "no-tool-chitchat"
+family = "formatting"
+quick = true
+prompt = "Thanks, that's all for now!"
+tools = ["email.search", "files.list", "web.search", "sessions.search", "math.eval"]
+expect_no_tools = true
+max_steps = 3

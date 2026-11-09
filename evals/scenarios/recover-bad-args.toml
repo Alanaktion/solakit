@@ -1,0 +1,17 @@
+id = "recover-bad-args"
+family = "recovery"
+quick = true
+prompt = "Look up the latest release of the astral-sh/uv repository on GitHub."
+tools = ["github.latest_release", "web.search"]
+allow_tools = ["web.search"]
+expect_calls = [{ name = "github.latest_release", args_subset = { owner = "astral-sh", repo = "uv" } }]
+expect_final_contains = ["0.9.9"]
+max_steps = 5
+
+[[responses."github.latest_release"]]
+match = { repo = "astral-sh/uv" }
+error = true
+content = "Repository not found. Pass owner and repo separately: owner='astral-sh', repo='uv'."
+
+[[responses."github.latest_release"]]
+content = '{"tag": "0.9.9", "published_at": "2026-10-28"}'
