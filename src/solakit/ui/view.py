@@ -42,7 +42,8 @@ def turns(
     include_empty_runs: bool = True,
 ) -> list[dict]:
     metadata = {run["id"]: run for run in runs if run["session"] == session["id"]}
-    grouped, boundaries = {}, []
+    grouped: dict[tuple[str, str | None], list[dict]] = {}
+    boundaries: list[dict] = []
     cutoff = timestamp(session.get("context_started_at"))
     for message in session["messages"]:
         if message.get("kind") == "compaction":
@@ -81,7 +82,7 @@ def turns(
     result = boundaries
     # Mid-run compaction can split one run across multiple transcript segments.
     # Its immutable tool log still covers the whole run in execution order.
-    tool_offsets = {}
+    tool_offsets: dict[str, int] = {}
     for (identity, segment), messages in grouped.items():
         run = metadata.get(
             identity,
@@ -100,7 +101,7 @@ def turns(
         tool_offsets[identity] = offset + sum(
             len(m.get("tool_calls") or []) for m in messages
         )
-        items = []
+        items: list[dict] = []
         completed_calls = {
             message.get("tool_call_id")
             for message in messages

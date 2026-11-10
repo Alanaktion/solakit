@@ -37,6 +37,9 @@ jobs:
           uv run ruff check .
           uv run ruff format --check .
 
+      - name: Type check refactored subsystems
+        run: uv run mypy
+
       - name: Test (core + packs)
         run: uv run pytest tests packs/*/tests -q
 

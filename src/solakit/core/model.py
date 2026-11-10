@@ -9,7 +9,7 @@ import httpx
 
 from solakit.core.config import ModelConfig, validate_api_token
 from solakit.core.io import durable
-from solakit.core.media import MediaError
+from solakit.core.media import Media, MediaError
 from solakit.core.secrets import Redactor
 
 LOGGER = logging.getLogger(__name__)
@@ -49,7 +49,7 @@ class ModelClient:
         self.redactor = Redactor([key] if key else [])
         self.auth_configured = bool(key)
         self.available = False
-        self.media = None
+        self.media: Media | None = None
         self.client = httpx.AsyncClient(
             base_url=config.base_url.rstrip("/") + "/",
             timeout=config.timeout_s,

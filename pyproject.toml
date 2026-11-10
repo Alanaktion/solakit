@@ -23,7 +23,12 @@ dependencies = [
 sola = "solakit.cli:main"
 
 [dependency-groups]
-dev = ["httpx>=0.28,<1", "pytest>=8,<10", "ruff>=0.11,<1"]
+dev = [
+    "httpx>=0.28,<1",
+    "mypy>=1.15,<2",
+    "pytest>=8,<10",
+    "ruff>=0.11,<1",
+]
 
 [build-system]
 requires = ["hatchling>=1.27,<2"]
@@ -53,3 +58,24 @@ members = ["packs/*"]
 solakit = { workspace = true }
 solakit-packs-common = { workspace = true }
 solakit-packs-image = { workspace = true }
+
+[tool.mypy]
+python_version = "3.12"
+files = [
+    "src/solakit/api",
+    "src/solakit/ui",
+    "src/solakit/core/contracts.py",
+    "src/solakit/core/loop.py",
+    "src/solakit/core/runtime_ops.py",
+    "src/solakit/core/step_loop.py",
+    "src/solakit/core/store.py",
+    "src/solakit/core/store_base.py",
+    "src/solakit/core/store_index.py",
+    "src/solakit/core/store_sidecars.py",
+    "src/solakit/core/store_offsets.py",
+    "src/solakit/jobs",
+    "src/solakit/services",
+]
+check_untyped_defs = true
+follow_imports = "silent"
+ignore_missing_imports = true

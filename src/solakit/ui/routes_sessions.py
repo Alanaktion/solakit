@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 from urllib.parse import quote, urlencode
 
-from fastapi import Request
+from fastapi import APIRouter, Request
 from fastapi.responses import (
     JSONResponse,
     RedirectResponse,
@@ -15,6 +15,7 @@ from fastapi.responses import (
 )
 from fastapi.templating import Jinja2Templates
 
+from solakit.ui.context import UIContext
 from solakit.ui.markdown import markdown, preview_text
 from solakit.ui.view import timestamp, turns
 
@@ -24,7 +25,7 @@ TEMPLATES = Jinja2Templates(directory=str(ROOT / "templates"))
 TEMPLATES.env.filters["markdown"] = markdown
 
 
-def register(router, ns):  # noqa: C901
+def register(router: APIRouter, ns: UIContext) -> None:  # noqa: C901
     from solakit.ui.routes import (  # noqa: F401
         HEADERS,
         APIError,
@@ -35,6 +36,7 @@ def register(router, ns):  # noqa: C901
     render = ns.render
     form = ns.form
     api = ns.api
+    all_runs = ns.all_runs
     health = ns.health
     session_page = ns.session_page
     conversation = ns.conversation
@@ -338,7 +340,7 @@ def register(router, ns):  # noqa: C901
             )
             return JSONResponse(
                 {
-                    "html": page.body.decode(),
+                    "html": bytes(page.body).decode(),
                     "before": data["earlier"],
                     "later": data["later"],
                 },
@@ -542,9 +544,8 @@ def register(router, ns):  # noqa: C901
         if not logged_in(request):
             return Response(status_code=401, headers=HEADERS)
         try:
-            records = await api(
+            records = await all_runs(
                 request,
-                "GET",
                 "/api/runs?"
                 + urlencode({"session_id": identity, "include_archived": "true"}),
             )
@@ -602,9 +603,8 @@ def register(router, ns):  # noqa: C901
                     following = None
                     if not pending:
                         seen.add(current["id"])
-                        catalog = await api(
+                        catalog = await all_runs(
                             request,
-                            "GET",
                             "/api/runs?"
                             + urlencode(
                                 {"session_id": identity, "include_archived": "true"}
@@ -645,7 +645,7 @@ def register(router, ns):  # noqa: C901
                         {
                             "run_id": current["id"],
                             "created_at": current["created_at"],
-                            "html": page.body.decode(),
+                            "html": bytes(page.body).decode(),
                             "pending": pending or following is not None,
                         },
                         ensure_ascii=True,

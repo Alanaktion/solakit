@@ -6,11 +6,11 @@ import os
 import re
 import sqlite3
 import time
-from contextlib import closing
 from datetime import UTC, datetime
 
 from pydantic import ValidationError
 
+from solakit.core.contracts import StoreServices
 from solakit.core.schemas import (
     Message,
     Run,
@@ -33,11 +33,12 @@ from solakit.core.store_base import (  # noqa: F401,E501
     safe_id,
     sync_directory,
 )
+from solakit.core.store_offsets import OFFSET_SCHEMA
 
 
-class IndexMixin:
+class IndexMixin(StoreServices):
     def _index(self, kind: str, record_id: str, payload: dict) -> None:
-        with self.lock, closing(sqlite3.connect(self.root / "app.db")) as db, db:
+        with self._database() as db:
             db.execute(
                 f"INSERT OR REPLACE INTO {kind} VALUES (?, ?)",
                 (record_id, json.dumps(payload)),
@@ -45,7 +46,8 @@ class IndexMixin:
 
     def _inventory(self):
         """Stat evidence once per directory; never open unchanged historical files."""
-        units, recovery = {}, []
+        units: dict[tuple[str, str], list] = {}
+        recovery = []
         patterns = {
             "sessions": (
                 r"([A-Za-z0-9][A-Za-z0-9_-]{0,127})\."
@@ -99,7 +101,7 @@ class IndexMixin:
         failure therefore forces changed evidence to be re-read on restart.
         """
         started = time.perf_counter()
-        with self.lock, closing(sqlite3.connect(self.root / "app.db")) as db, db:
+        with self._database() as db:
             sources, recovery = self._inventory()
             required = {
                 "sessions",
@@ -157,6 +159,7 @@ class IndexMixin:
                 for key in sources.keys() | cached.keys()
                 if not incremental or sources.get(key) != cached.get(key)
             }
+            db.executescript(OFFSET_SCHEMA)
             db.execute("BEGIN")
             for kind in ("sessions", "runs", "jobs"):
                 db.execute(
@@ -165,6 +168,18 @@ class IndexMixin:
                 )
                 if not incremental:
                     db.execute(f"DELETE FROM {kind}")
+            for field in ("session", "status", "memory_status", "created_at"):
+                db.execute(
+                    f"CREATE INDEX IF NOT EXISTS runs_{field} "
+                    f"ON runs(json_extract(payload, '$.{field}'))"
+                )
+            db.execute(
+                "CREATE INDEX IF NOT EXISTS runs_pending_memory ON runs("
+                "json_extract(payload, '$.memory_status')='status_unavailable') "
+                "WHERE json_extract(payload, '$.memory_status') IN "
+                "('accepted','pending','running','cancelling','status_unavailable') "
+                "AND json_extract(payload, '$.status') NOT IN ('queued','running')"
+            )
             db.execute(
                 "CREATE TABLE IF NOT EXISTS session_activity "
                 "(id TEXT PRIMARY KEY, last_activity TEXT NOT NULL)"
@@ -182,6 +197,8 @@ class IndexMixin:
                 "(key TEXT PRIMARY KEY, value TEXT NOT NULL)"
             )
             if not incremental:
+                db.execute("DELETE FROM message_offsets")
+                db.execute("DELETE FROM message_files")
                 db.execute("DELETE FROM source_activity")
                 db.execute("DELETE FROM index_sources")
             fts = True
@@ -258,6 +275,7 @@ class IndexMixin:
                             )
                         ]
                         archives.sort(key=lambda name: int(name.rsplit(".", 1)[1]))
+                        self._refresh_offsets(db, identity)
                         rows = self._message_search_rows(identity, archives=archives)
                         dates = [row[7] for row in rows if row[7] is not None]
                         if dates:
@@ -338,7 +356,7 @@ class IndexMixin:
 
     def recover(self) -> None:
         # Completed historical runs without delivery evidence need no recovery.
-        with closing(sqlite3.connect(self.root / "app.db")) as db, db:
+        with self._database() as db:
             candidates = db.execute(
                 "SELECT payload FROM runs WHERE "
                 "json_extract(payload, '$.status') IN ('queued', 'running') OR "
@@ -397,7 +415,7 @@ class IndexMixin:
 
     def _touch_session(self, session_id, at):
         try:
-            with self.lock, closing(sqlite3.connect(self.root / "app.db")) as db, db:
+            with self._database() as db:
                 self._activity(db, session_id, self._activity_timestamp(at))
         except sqlite3.Error:
             self._issue(self.root / "app.db", "session_activity_index_unavailable")
@@ -469,7 +487,7 @@ class IndexMixin:
             if pinned_ids
             else ""
         )
-        with self.lock, closing(sqlite3.connect(self.root / "app.db")) as db, db:
+        with self._database() as db:
             total = db.execute(
                 f"SELECT count(*) FROM {source}" + where, args
             ).fetchone()[0]
@@ -486,7 +504,7 @@ class IndexMixin:
                     "FROM sessions GROUP BY 1"
                 ).fetchall()
             )
-        with self.lock, closing(sqlite3.connect(self.root / "app.db")) as db, db:
+        with self._database() as db:
             profiles = [
                 row[0]
                 for row in db.execute(
@@ -516,21 +534,40 @@ class IndexMixin:
             "offset": offset,
         }
 
-    def list_runs(self, session_id=None, include_archived=False):
+    def list_runs(
+        self,
+        session_id: str | None = None,
+        include_archived: bool = False,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+        status: str | None = None,
+        descending: bool = False,
+    ) -> list[dict]:
+        if not 1 <= limit <= 1000 or offset < 0:
+            raise ValueError("limit must be 1–1000 and offset must be nonnegative")
         clauses, args = [], []
         if session_id is not None:
             clauses.append("json_extract(r.payload, '$.session')=?")
             args.append(session_id)
+        if status is not None:
+            clauses.append("json_extract(r.payload, '$.status')=?")
+            args.append(status)
         if not include_archived:
             clauses.append("json_extract(s.payload, '$.archived_at') IS NULL")
         where = " WHERE " + " AND ".join(clauses) if clauses else ""
-        with self.lock, closing(sqlite3.connect(self.root / "app.db")) as db, db:
+        with self._database() as db:
             rows = db.execute(
                 "SELECT r.payload FROM runs r LEFT JOIN sessions s ON "
                 "s.id=json_extract(r.payload, '$.session')"
                 + where
-                + " ORDER BY r.rowid",
-                args,
+                + (
+                    " ORDER BY json_extract(r.payload, '$.created_at') DESC, r.id DESC"
+                    if descending
+                    else " ORDER BY r.rowid"
+                )
+                + " LIMIT ? OFFSET ?",
+                [*args, limit, offset],
             ).fetchall()
         return [json.loads(row[0]) for row in rows]
 
@@ -581,7 +618,7 @@ class IndexMixin:
 
     def _insert_search_message(self, row) -> None:
         def insert():
-            with closing(sqlite3.connect(self.root / "app.db")) as db, db:
+            with self._database() as db:
                 db.execute(FTS_INSERT, row)
 
         sqlite_retry(insert)
@@ -609,12 +646,13 @@ class IndexMixin:
                     self._touch_session(session_id, datetime.fromisoformat(max(dates)))
 
                 def replace_rows():
-                    with closing(sqlite3.connect(self.root / "app.db")) as db, db:
+                    with self._database() as db:
                         db.execute(
                             "DELETE FROM messages_fts WHERE session_id = ?",
                             (session_id,),
                         )
                         db.executemany(FTS_INSERT, rows)
+                        self._refresh_offsets(db, session_id)
 
                 sqlite_retry(replace_rows)
                 was_dirty = session_id in self._fts_dirty_sessions
@@ -662,6 +700,6 @@ class IndexMixin:
     def list_records(self, kind: str) -> list[dict]:
         if kind not in {"sessions", "runs", "jobs"}:
             raise ValueError("unknown index")
-        with self.lock, closing(sqlite3.connect(self.root / "app.db")) as db, db:
+        with self._database() as db:
             rows = db.execute(f"SELECT payload FROM {kind} ORDER BY rowid").fetchall()
         return [json.loads(row[0]) for row in rows]

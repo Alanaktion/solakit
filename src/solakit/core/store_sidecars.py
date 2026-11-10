@@ -5,6 +5,7 @@ import json
 import os
 from typing import Any
 
+from solakit.core.contracts import StoreServices
 from solakit.core.schemas import (
     MemoryNote,
 )
@@ -17,7 +18,7 @@ from solakit.core.store_base import (  # noqa: F401,E501
 )
 
 
-class SidecarMixin:
+class SidecarMixin(StoreServices):
     def write_prompt(self, run_id: str, prompt: str) -> str:
         payload = prompt.encode("utf-8")
         # Never redact prompt bytes: this is the exact model input for audit.
@@ -79,6 +80,10 @@ class SidecarMixin:
             self._path("runs", run_id, ".memory.jsonl"), self.redactor.redact(record)
         )
 
+    def tool_log(self, run_id: str) -> list[dict]:
+        """Read redacted tool execution evidence for a run."""
+        return self._read(self._path("runs", run_id, ".tools.jsonl"))
+
     def log_tool(self, run_id: str, record: dict[str, Any]) -> None:
         self._append(
             self._path("runs", run_id, ".tools.jsonl"), self.redactor.redact(record)
@@ -121,7 +126,7 @@ class SidecarMixin:
         """Latest value per key (deleted keys omitted), in first-set order."""
         notes: dict[str, dict] = {}
         for event in self._read(self._path("sessions", session_id, ".notes.jsonl")):
-            key = event.get("key")
+            key = event["key"]
             if event.get("value") is None:
                 notes.pop(key, None)
             else:

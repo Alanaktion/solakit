@@ -346,7 +346,7 @@ def test_explicit_compaction_rejects_busy_and_waits_on_disconnect(config):
     execution = setup(config, model)
     seed(execution.store)
 
-    async def held_summary(session):
+    async def held_summary(session, **kwargs):
         started.set()
         await release.wait()
         return {"stage": "committed"}

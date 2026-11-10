@@ -346,15 +346,35 @@ async function foundation(page) {
   await noOverflow(page);
 }
 
+async function runPages(page) {
+  const seeded = await (await page.request.post(base + '/qa/ux-history?count=500')).json();
+  await page.goto(base + '/runs?session=' + seeded.session);
+  const rows = page.locator('.runs-table tbody tr');
+  assert.equal(await rows.count(), 100);
+  assert.match(await rows.first().innerText(), new RegExp(seeded.last));
+  await noOverflow(page);
+  await page.screenshot({path: path.join(output, `runs-first-${page.qaLabel}.png`), fullPage: false});
+  await page.getByRole('link', {name: 'Next', exact: true}).click();
+  assert.match(page.url(), /offset=100/);
+  assert.equal(await rows.count(), 100);
+  await page.getByRole('link', {name: 'Previous', exact: true}).click();
+  assert.match(await rows.first().innerText(), new RegExp(seeded.last));
+  await page.getByLabel('Status', {exact: true}).selectOption('failed');
+  await page.getByRole('button', {name: 'Filter', exact: false}).click();
+  await page.getByText('No runs match these filters.', {exact: false}).waitFor();
+  assert.equal(await page.getByRole('link', {name: 'Next', exact: true}).count(), 0);
+  await noOverflow(page);
+}
+
 async function evidence(page) {
   const id = await createSession(page, 'evidence');
   await page.goto(`${base}/prompt?profile=interactive&session=${id}&origin=api&at=2026-11-04T19%3A00%3A00Z`);
   await page.getByRole('heading', {name: 'Assembled prompt'}).waitFor();
   const api = await (await page.request.get(`${base}/api/prompt?profile=interactive&session=${id}&origin=api&at=2026-11-04T19%3A00%3A00Z`)).json();
-  assert.equal(await page.locator('.digest').innerText(), api.sha256);
-  assert.equal(await page.locator('.evidence-text code').innerText(), api.prompt);
-  await page.locator('.schema-details summary').click();
-  assert(await page.locator('.schema-details pre').isVisible());
+  assert.equal(await page.locator('[aria-labelledby="assembled-heading"] .digest').innerText(), api.sha256);
+  assert.equal(await page.locator('[aria-labelledby="assembled-heading"] .evidence-text code').innerText(), api.prompt);
+  await page.locator('.schema-details').first().locator('summary').click();
+  assert(await page.locator('.schema-details').first().locator('pre').isVisible());
   await noOverflow(page);
   await page.screenshot({path: path.join(output, `11-prompt-${page.qaLabel}.png`), fullPage: true});
   const completed = await (await page.request.post(`${base}/api/sessions/${id}/messages`, {
@@ -366,7 +386,7 @@ async function evidence(page) {
   assert(await page.locator('.tool-details').isVisible());
   assert.match(await page.locator('.tool-details').innerText(), /Arguments|Result/);
   await page.getByText('Stored prompt', {exact: true}).click();
-  assert.match(await page.locator('.evidence-text').innerText(), /Browser QA persona/);
+  assert.match(await page.locator('details').filter({has: page.getByText('Stored prompt', {exact: true})}).locator('.evidence-text').innerText(), /Browser QA persona/);
   await noOverflow(page);
   await page.screenshot({path: path.join(output, `11-run-${page.qaLabel}.png`), fullPage: true});
   const pending = await (await page.request.post(`${base}/api/sessions/${id}/messages?wait=false`, {
@@ -701,7 +721,8 @@ async function auditUX(page) {
         await page.getByLabel('Operator token').fill('scratch-browser-token');
         await page.getByRole('button', {name: 'Sign in'}).click();
         await page.waitForURL(base + '/');
-        if (phase === 'audit') await auditUX(page);
+        if (phase === 'runs') await runPages(page);
+        else if (phase === 'audit') await auditUX(page);
         else if (phase === 'memory') await memoryDirection(page);
         else if (phase === 'rename') await sessionRename(page);
         else if (phase === 'search') await sessionSearch(page);

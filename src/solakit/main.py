@@ -3,69 +3,32 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager
-from datetime import datetime
-from typing import Annotated, Literal
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request
-from pydantic import BaseModel, ConfigDict, StringConstraints
-from starlette.responses import JSONResponse, Response
+from starlette.responses import JSONResponse
 from starlette.staticfiles import StaticFiles
 
 from solakit.channels import ApiAdapter, Channels
-from solakit.core.compaction import ContextLimit
-from solakit.core.config import Config, Job
+from solakit.core.config import Config
 from solakit.core.loop import Execution
-from solakit.core.media import Media, MediaError
 from solakit.core.memory import MemoryClient, MemoryUnavailable
-from solakit.core.memory_ops import probe, refresh_run, watch_memory
+from solakit.core.memory_ops import watch_memory
 from solakit.core.model import ModelClient, ModelUnavailable, safe_url
-from solakit.core.prompt import front_page_status, inspection, read_turn
+from solakit.core.prompt import front_page_status
 from solakit.core.routing import SessionRouter
-from solakit.core.schemas import Origin, Session, SessionArchived, now
-from solakit.core.search import SearchUnavailable
+from solakit.core.schemas import now
 from solakit.core.secrets import RedactingFilter, Redactor
 from solakit.core.session_lifecycle import (
-    ArchiveBatch,
-    LifecycleRequest,
     SessionLifecycle,
 )
 from solakit.core.startup import prepare
-from solakit.core.store import StorageCorruption, Store, safe_id
+from solakit.core.store import StorageCorruption, Store
 from solakit.jobs import Jobs
-from solakit.jobs.schemas import JobUpdate
 from solakit.ui import build_ui_router
 from solakit.ui.auth import COOKIE, LIFETIME, UISessions
+from solakit.ui.context import internal_client
 from solakit.ui.routes import ROOT as UI_ROOT
-
-
-class RunRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    message: Annotated[
-        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=32000)
-    ]
-    profile: str | None = None
-
-
-class CreateSessionRequest(Session):
-    model_config = ConfigDict(extra="forbid")
-
-
-class UpdateSessionRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True)
-    title: Annotated[str, StringConstraints(strip_whitespace=True, max_length=200)]
-
-
-class MemoryProbeRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    fact: Annotated[
-        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=4000)
-    ]
-    query: Annotated[
-        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)
-    ]
-    expected: Annotated[
-        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)
-    ]
 
 
 async def probe_model(model: ModelClient) -> dict[str, str]:
@@ -166,6 +129,7 @@ def create_app(  # noqa: C901
         )
         for handler in handlers:
             handler.addFilter(log_filter)
+        app.state.ui_client = internal_client(app)
         memory_watch = None
         try:
             runtime_logger.info("Starting Solakit: checking model and memory backends")
@@ -254,6 +218,7 @@ def create_app(  # noqa: C901
                     finally:
                         await app.state.channels.stop()
             finally:
+                await app.state.ui_client.aclose()
                 app.state.store.close()
                 for handler in handlers:
                     handler.removeFilter(log_filter)
@@ -313,23 +278,6 @@ def create_app(  # noqa: C901
 
     api = APIRouter(prefix="/api", dependencies=[Depends(authorize)])
 
-    @api.get("/media/{digest}")
-    async def image_media(digest: str):
-        try:
-            payload = await asyncio.to_thread(
-                Media(app.state.store.root).read_hash, digest
-            )
-        except MediaError as exc:
-            raise HTTPException(404, "Image unavailable") from exc
-        return Response(
-            payload,
-            media_type="image/jpeg",
-            headers={
-                "Cache-Control": "no-store",
-                "X-Content-Type-Options": "nosniff",
-            },
-        )
-
     @app.get("/health")
     async def health() -> dict:
         status = "ready" if app.state.model.available else "unavailable"
@@ -351,510 +299,10 @@ def create_app(  # noqa: C901
         app.state.model_health = await probe_model(app.state.model)
         return app.state.model_health
 
-    @api.get("/channels")
-    async def channels() -> list[dict]:
-        return app.state.channels.status()
+    from solakit.api import inspection, jobs, runs, sessions
 
-    @api.get("/jobs")
-    async def jobs() -> list[dict]:
-        return app.state.jobs.status(definitions=True)
-
-    @api.get("/job-options")
-    async def job_options() -> dict:
-        cfg = app.state.config
-        return {
-            "timezone": cfg.timezone,
-            "profiles": sorted(p for p in cfg.profiles if p != "maintenance"),
-            "channels": [c.id for c in cfg.channels],
-            "tools": app.state.registry.catalog()["tools"],
-        }
-
-    def job_error(exc):
-        from solakit.jobs.schemas import JobToolsError
-
-        if isinstance(exc, JobToolsError):
-            return HTTPException(422, app.state.redactor.redact(str(exc)))
-        if isinstance(exc, KeyError):
-            return HTTPException(404, "Job not found")
-        if isinstance(exc, (FileExistsError, RuntimeError)):
-            return HTTPException(409, str(exc))
-        return HTTPException(422, "Invalid job definition or references")
-
-    @api.post("/jobs", status_code=201)
-    async def job_create(job: Job) -> dict:
-        try:
-            return await app.state.jobs.create(job)
-        except (ValueError, KeyError, FileExistsError, RuntimeError) as exc:
-            raise job_error(exc) from exc
-
-    @api.get("/jobs/{job_id}")
-    async def job_get(job_id: str) -> dict:
-        try:
-            return app.state.jobs.get(job_id)
-        except KeyError as exc:
-            raise job_error(exc) from exc
-
-    @api.patch("/jobs/{job_id}")
-    async def job_update(job_id: str, changes: JobUpdate) -> dict:
-        try:
-            return await app.state.jobs.update(
-                job_id, changes.model_dump(exclude_unset=True)
-            )
-        except (ValueError, KeyError, RuntimeError) as exc:
-            raise job_error(exc) from exc
-
-    @api.delete("/jobs/{job_id}")
-    async def job_delete(job_id: str) -> dict:
-        try:
-            return await app.state.jobs.delete(job_id)
-        except (ValueError, KeyError, RuntimeError) as exc:
-            raise job_error(exc) from exc
-
-    @api.post("/jobs/{job_id}/run")
-    async def job_run(job_id: str, wait: bool = True, admission: bool = False):
-        if job_id not in app.state.jobs.states:
-            raise HTTPException(404, "Job not found")
-        try:
-            if admission:
-                return JSONResponse(
-                    await app.state.jobs.trigger_run(job_id), status_code=202
-                )
-            if not wait:
-                return JSONResponse(
-                    await app.state.jobs.trigger(job_id), status_code=202
-                )
-            run = await app.state.jobs.run_now(job_id)
-            return await asyncio.to_thread(app.state.store.run, run.id)
-        except KeyError as exc:
-            raise HTTPException(404, "Job not found") from exc
-        except (ValueError, RuntimeError) as exc:
-            raise HTTPException(409, str(exc)) from exc
-
-    @api.post("/jobs/{job_id}/{operation}")
-    async def job_control(job_id: str, operation: str) -> dict:
-        if job_id not in app.state.jobs.states or operation not in {"pause", "resume"}:
-            raise HTTPException(404, "Job operation not found")
-        try:
-            await app.state.jobs.pause(job_id, operation == "pause")
-        except KeyError as exc:
-            raise HTTPException(404, "Job not found") from exc
-        except ValueError as exc:
-            raise HTTPException(
-                409, "Job unavailable or scheduler shutting down"
-            ) from exc
-        return next(j for j in app.state.jobs.status() if j["id"] == job_id)
-
-    @api.get("/prompt")
-    async def prompt(
-        profile: str = "interactive",
-        session: str = "inspection",
-        recall: str | None = None,
-        at: datetime | None = None,
-        origin: str = "api",
-        run_id: str | None = None,
-        job: str | None = None,
-        step: int | None = None,
-    ) -> dict:
-        if run_id is not None:
-            try:
-                record = await asyncio.to_thread(app.state.store.run, run_id)
-            except (FileNotFoundError, ValueError) as exc:
-                raise HTTPException(404, "Run not found") from exc
-            if record.get("prompt") is None or record.get("tool_schemas") is None:
-                raise HTTPException(
-                    409, "Prompt or tool schema snapshot was not recorded for this run"
-                )
-            schemas = record["tool_schemas"]
-            view = record.get("tool_view")
-            if step is not None:
-                snapshots = (view or {}).get("schema_steps", [])
-                snapshot = next((s for s in snapshots if s["step"] == step), None)
-                if snapshot is None:
-                    raise HTTPException(404, "Schema step not recorded")
-                schemas = [record["tool_catalog"][name] for name in snapshot["visible"]]
-            return {
-                **inspection(
-                    record["prompt"],
-                    schemas,
-                    record.get("prompt_fragments"),
-                    record.get("turn_context"),
-                ),
-                "tool_view": view,
-                "schema_step": step,
-                "tool_catalog_sha256": record.get("tool_catalog_sha256"),
-                "run_id": run_id,
-                "profile": record["profile"],
-                "session": record["session"],
-                "effective_tools": record["effective_tools"],
-                "tool_schema_sha256": record["tool_schema_sha256"],
-            }
-        try:
-            if job is not None:
-                try:
-                    definition = app.state.jobs.job(job)
-                except KeyError as exc:
-                    raise HTTPException(404, "Job not found") from exc
-                profile = definition.profile
-                view = app.state.jobs.tool_view(definition)
-            else:
-                view = app.state.registry.view(profile)
-            result, turn = await asyncio.to_thread(
-                read_turn,
-                app.state.config,
-                profile=profile,
-                session=session,
-                origin=origin,
-                at=at or now(),
-                recall=recall,
-                tool_index=view.index_text,
-            )
-            return {
-                **inspection(result, view.schemas(), turn=turn),
-                "tool_view": view.metadata(),
-                "effective_tools": list(view.effective),
-            }
-        except (OSError, ValueError) as exc:
-            raise HTTPException(422, "Prompt files or profile are invalid") from exc
-
-    @api.get("/storage/health")
-    def storage_health() -> dict:
-        return app.state.store.storage_health()
-
-    @api.get("/search")
-    def search(
-        query: str,
-        session_id: str | None = None,
-        role: str | None = None,
-        kind: str | None = None,
-        after: str | None = None,
-        before: str | None = None,
-        limit: int = 50,
-    ) -> list[dict]:
-        try:
-            results = app.state.store.search(
-                query,
-                session_id=session_id,
-                role=role,
-                kind=kind,
-                after=after,
-                before=before,
-                limit=limit,
-            )
-            return app.state.redactor.redact(results)
-        except ValueError as exc:
-            raise HTTPException(422, str(exc)) from None
-        except SearchUnavailable as exc:
-            raise HTTPException(503, str(exc)) from None
-
-    @api.get("/tools")
-    async def tools() -> dict:
-        catalog = app.state.registry.catalog()
-        catalog["jobs"] = {
-            job.id: app.state.jobs.get(job.id)["tool_view"]
-            for job in app.state.jobs.jobs.values()
-        }
-        return app.state.redactor.redact(catalog)
-
-    @api.get("/sessions/{session_id}/notes")
-    async def session_notes(session_id: str) -> dict:
-        try:
-            safe_id(session_id)
-            notes = await asyncio.to_thread(app.state.store.session_notes, session_id)
-        except (FileNotFoundError, ValueError) as exc:
-            raise HTTPException(404, "Session not found") from exc
-        return app.state.redactor.redact(notes)
-
-    @api.get("/stats/model")
-    async def stats_model(window: int = 100) -> dict:
-        from solakit.core import doctor
-        from solakit.core.stats import model_stats
-
-        if not 1 <= window <= 1000:
-            raise HTTPException(422, "window must be between 1 and 1000")
-        stats = await asyncio.to_thread(model_stats, app.state.store, window)
-        stats["doctor"] = doctor.last(app.state.config)
-        return app.state.redactor.redact(stats)
-
-    @api.get("/playbooks")
-    async def list_playbooks() -> list[dict]:
-        from solakit.core import playbooks
-
-        cfg = app.state.config
-        jobs = [j for j in app.state.jobs.jobs.values()]
-        result = []
-        for name in playbooks.available(cfg):
-            try:
-                item = playbooks.load(cfg, name)
-                entry = {
-                    "name": name,
-                    "summary": item.summary,
-                    "tools": list(item.tools),
-                    "error": None,
-                }
-            except playbooks.PlaybookError as exc:
-                entry = {"name": name, "summary": "", "tools": [], "error": str(exc)}
-            entry["profiles"] = sorted(
-                p for p, c in cfg.profiles.items() if name in c.playbooks
-            )
-            entry["jobs"] = sorted(j.id for j in jobs if j.playbook == name)
-            result.append(entry)
-        return result
-
-    @api.get("/profiles")
-    async def profiles() -> list[str]:
-        return sorted(app.state.config.profiles)
-
-    @api.get("/sessions")
-    def sessions(
-        status: Literal["active", "archived", "all"] = "active",
-        q: str = "",
-        before: str | None = None,
-        profile: str | None = None,
-        exclude_source: str | None = None,
-        roots_only: bool = False,
-        parent_session: str | None = None,
-        limit: int = 50,
-        offset: int = 0,
-        page: bool = False,
-        pin_channels: bool = False,
-    ):
-        channel_names = {}
-        for channel in app.state.config.channels:
-            channel_names.setdefault(channel.session, []).append(channel.id)
-        try:
-            result = app.state.store.list_sessions(
-                status=status,
-                q=q,
-                before=before,
-                profile=profile,
-                exclude_source=exclude_source,
-                roots_only=roots_only,
-                parent_session=parent_session,
-                pinned_ids=tuple(channel_names) if pin_channels else (),
-                limit=limit,
-                offset=offset,
-            )
-            for session in result["sessions"]:
-                session["channel_names"] = channel_names.get(session["id"], [])
-            return result if page else result["sessions"]
-        except ValueError as exc:
-            raise HTTPException(422, str(exc)) from exc
-
-    @api.post("/sessions/archive-batch")
-    async def archive_sessions(request: ArchiveBatch):
-        try:
-            return await app.state.session_lifecycle.batch(request)
-        except ValueError as exc:
-            raise HTTPException(422, str(exc)) from exc
-
-    @api.post("/sessions/restore-batch")
-    async def restore_sessions(request: ArchiveBatch):
-        try:
-            return await app.state.session_lifecycle.batch(request, archived=False)
-        except ValueError as exc:
-            raise HTTPException(422, str(exc)) from exc
-
-    @api.post("/sessions/{session_id}/lifecycle")
-    async def session_lifecycle(session_id: str, request: LifecycleRequest):
-        try:
-            return await app.state.session_lifecycle.change(
-                session_id, request.archived
-            )
-        except FileNotFoundError as exc:
-            raise HTTPException(404, "Session not found") from exc
-        except ValueError as exc:
-            raise HTTPException(409, str(exc)) from exc
-
-    @api.post("/sessions", status_code=201)
-    def create_session(session: CreateSessionRequest, response: Response) -> dict:
-        try:
-            safe_id(session.id)
-            store = app.state.store
-            with store.lock:
-                try:
-                    existing = store.session(session.id)
-                except FileNotFoundError:
-                    if session.archived_at is not None:
-                        raise ValueError(
-                            "Use the session lifecycle endpoint to archive a session"
-                        )
-                    if session.default_profile not in app.state.config.profiles:
-                        raise ValueError("Unknown profile")
-                    if session.memory_scope == "isolated":
-                        raise ValueError("Isolated memory is not implemented")
-                    if session.bound_channel is not None:
-                        raise ValueError(
-                            "Channel bindings are controlled by configuration"
-                        )
-                    return store.create_session(session).model_dump(mode="json")
-                exclude = (
-                    set()
-                    if "created_at" in session.model_fields_set
-                    else {"created_at"}
-                )
-                if existing.model_dump(exclude=exclude) != session.model_dump(
-                    exclude=exclude
-                ):
-                    raise HTTPException(
-                        409, "Session ID already exists with different fields"
-                    )
-                response.status_code = 200
-                return existing.model_dump(mode="json")
-        except ValueError as exc:
-            raise HTTPException(422, str(exc)) from exc
-
-    @api.patch("/sessions/{session_id}")
-    def update_session(session_id: str, request: UpdateSessionRequest) -> dict:
-        try:
-            return app.state.store.rename_session(session_id, request.title).model_dump(
-                mode="json"
-            )
-        except FileNotFoundError as exc:
-            raise HTTPException(404, "Session not found") from exc
-        except ValueError as exc:
-            raise HTTPException(422, str(exc)) from exc
-
-    @api.get("/sessions/{session_id}")
-    def session(session_id: str) -> dict:
-        try:
-            metadata = app.state.store.session(session_id).model_dump(mode="json")
-            return {
-                **metadata,
-                "messages": app.state.store.transcript(session_id),
-                "archives": app.state.store.archives(session_id),
-                "context_started_at": app.state.store.context_started_at(session_id),
-            }
-        except (FileNotFoundError, ValueError) as exc:
-            raise HTTPException(404, "Session not found") from exc
-
-    @api.post("/sessions/{session_id}/compact")
-    async def compact_session(session_id: str) -> dict:
-        try:
-            safe_id(session_id)
-        except ValueError as exc:
-            raise HTTPException(404, "Session not found") from exc
-        try:
-            return await app.state.execution.compact_session(session_id)
-        except FileNotFoundError as exc:
-            raise HTTPException(404, "Session not found") from exc
-        except (ValueError, ContextLimit) as exc:
-            raise HTTPException(409, str(exc)) from exc
-        except OSError as exc:
-            raise HTTPException(
-                503, "Compaction storage failure; inspect and restart for recovery"
-            ) from exc
-
-    @api.post("/sessions/{session_id}/archive")
-    async def archive_session(session_id: str) -> dict:
-        try:
-            safe_id(session_id)
-        except ValueError as exc:
-            raise HTTPException(404, "Session not found") from exc
-        try:
-            return await app.state.execution.archive_session(session_id)
-        except FileNotFoundError as exc:
-            raise HTTPException(404, "Session not found") from exc
-        except ValueError as exc:
-            raise HTTPException(409, str(exc)) from exc
-        except OSError as exc:
-            raise HTTPException(
-                503, "Archival could not finish; check storage and restart for recovery"
-            ) from exc
-
-    @api.post("/sessions/{session_id}/messages")
-    async def message(
-        session_id: str, request: RunRequest, wait: bool = True, stream: bool = False
-    ):
-        try:
-            pending = await app.state.execution.enqueue(
-                session_id,
-                request.message,
-                profile=request.profile,
-                origin=Origin(channel="api", channel_id=session_id),
-                stream=stream,
-            )
-            if not wait:
-                return JSONResponse(
-                    pending.run.model_dump(mode="json"), status_code=202
-                )
-            run = await asyncio.shield(pending.future)
-            return await asyncio.to_thread(app.state.store.run, run.id)
-        except SessionArchived as exc:
-            raise HTTPException(409, str(exc)) from exc
-        except FileNotFoundError as exc:
-            raise HTTPException(404, "Session not found") from exc
-        except ValueError as exc:
-            raise HTTPException(422, str(exc)) from exc
-
-    @api.get("/runs")
-    def runs(
-        session_id: str | None = None, include_archived: bool = False
-    ) -> list[dict]:
-        return app.state.store.list_runs(session_id, include_archived)
-
-    @api.get("/runs/{run_id}")
-    async def run_record(
-        run_id: str, live: bool = False, view: bool = False, messages: bool = True
-    ) -> dict:
-        try:
-            record = await asyncio.to_thread(
-                app.state.store.run, run_id, view=view, include_messages=messages
-            )
-            if live:
-                pending = app.state.execution.pending.get(run_id)
-                preview = pending.preview if pending else None
-                record["preview"] = (
-                    {
-                        **preview,
-                        "content": app.state.redactor.preview(preview["content"]),
-                    }
-                    if preview
-                    else None
-                )
-            return record
-        except (FileNotFoundError, ValueError) as exc:
-            raise HTTPException(404, "Run not found") from exc
-
-    @api.get("/sessions/{session_id}/archives/{number}")
-    def archive(session_id: str, number: int) -> list[dict]:
-        if number < 1:
-            raise HTTPException(404, "Archive not found")
-        name = f"{session_id}.jsonl.{number}"
-        try:
-            if name not in app.state.store.archives(session_id):
-                raise FileNotFoundError(name)
-            return app.state.store._read(app.state.store.root / "sessions" / name)
-        except (ValueError, FileNotFoundError) as exc:
-            raise HTTPException(404, "Archive not found") from exc
-
-    @api.post("/runs/{run_id}/memory/refresh")
-    async def refresh_memory(run_id: str) -> dict:
-        try:
-            run = await refresh_run(app.state.execution, run_id)
-            return run.model_dump(mode="json")
-        except FileNotFoundError as exc:
-            raise HTTPException(404, "Run not found") from exc
-        except (ValueError, MemoryUnavailable) as exc:
-            raise HTTPException(409, str(exc)) from exc
-
-    @api.post("/memory/probe")
-    async def memory_probe(request: MemoryProbeRequest) -> dict:
-        try:
-            return await probe(
-                app.state.execution, request.fact, request.query, request.expected
-            )
-        except (ValueError, MemoryUnavailable) as exc:
-            raise HTTPException(409, str(exc)) from exc
-
-    @api.post("/runs/{run_id}/cancel")
-    async def cancel(run_id: str) -> dict:
-        try:
-            await asyncio.to_thread(app.state.store.run, run_id)
-        except (FileNotFoundError, ValueError) as exc:
-            raise HTTPException(404, "Run not found") from exc
-        await app.state.execution.cancel(run_id)
-        return await asyncio.to_thread(app.state.store.run, run_id)
-
+    for resource in (inspection, jobs, sessions, runs):
+        api.include_router(resource.router)
     app.include_router(api)
     app.state.ui_sessions = ui_sessions
     app.include_router(

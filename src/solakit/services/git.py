@@ -1,20 +1,23 @@
 """Alias-bound Git services with literal paths, bounded output and write checks."""
 
+from __future__ import annotations
+
 import asyncio
 import os
 import threading
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from solakit.services.process import execute
-from solakit.tools import ToolError, ToolResult
+from solakit.tools import ToolContext, ToolError, ToolResult
 
-_LOCKS = {}
+_LOCKS: dict[Path, threading.Lock] = {}
 _LOCKS_GUARD = threading.Lock()
 
 
 @asynccontextmanager
-async def repository_lock(root):
+async def repository_lock(root: Path) -> AsyncIterator[None]:
     # Also serialize service users in sync packs that run their own event loop.
     # Nonblocking acquisition avoids stranded background-thread acquisitions on
     # cancellation. Keys are configured repository roots, never model paths.
@@ -29,7 +32,9 @@ async def repository_lock(root):
 
 
 class Git:
-    def __init__(self, ctx, repository: str, *, collection: str | None = None):
+    def __init__(
+        self, ctx: ToolContext, repository: str, *, collection: str | None = None
+    ) -> None:
         self.ctx, self.alias, self.collection = ctx, repository, collection
         configured = ctx.config.repositories.get(repository)
         if configured is None:
@@ -45,7 +50,7 @@ class Git:
                 raise ToolError("Collection directory escapes repository")
         ctx.path(str(self.directory))
 
-    async def _run(self, *arguments) -> ToolResult:
+    async def _run(self, *arguments: str) -> ToolResult:
         limit = max(
             65536, self.ctx.config.profiles[self.ctx.profile].tool_output_max_chars * 4
         )
@@ -101,29 +106,29 @@ class Git:
             content=result["stdout"], content_complete=result["stdout_complete"]
         )
 
-    async def _text(self, *arguments) -> str:
+    async def _text(self, *arguments: str) -> str:
         result = await self._run(*arguments)
         if not result.content_complete:
             raise ToolError("Git metadata exceeded the output limit")
         return result.content.removesuffix("\n")
 
-    async def _ready(self):
+    async def _ready(self) -> None:
         actual = await self._text("rev-parse", "--show-toplevel")
         if Path(actual).resolve() != self.root:
             raise ToolError("Repository alias must name the Git worktree root")
         self.ctx.path(str(self.directory))
 
-    def _view(self):
+    def _view(self) -> list[str]:
         return (
             []
             if self.collection is None
             else [str(self.directory.relative_to(self.root))]
         )
 
-    def _write_access(self):
+    def _write_access(self) -> None:
         self.ctx.path(str(self.directory), write=True)
 
-    def _write_paths(self, paths):
+    def _write_paths(self, paths: list[str]) -> list[str]:
         self._write_access()
         if not paths or len(paths) > 100:
             raise ToolError("Name between 1 and 100 files")
@@ -182,12 +187,12 @@ class Git:
                 raise ToolError("Pull requires a clean worktree and index")
             return await self._run("pull", "--ff-only", "--no-rebase")
 
-    def _publish_access(self):
+    def _publish_access(self) -> None:
         self._write_access()
         if "push" not in self.ctx.config.profiles[self.ctx.profile].effects:
             raise ToolError("Missing effect: push")
 
-    async def _upstream(self):
+    async def _upstream(self) -> tuple[str, str]:
         branch = await self._text("branch", "--show-current")
         if not branch:
             raise ToolError("Publishing requires a checked-out branch")
@@ -197,7 +202,7 @@ class Git:
             raise ToolError("Publishing requires a configured upstream branch")
         return remote, merge
 
-    async def _commit(self, paths, message):
+    async def _commit(self, paths: list[str], message: str) -> str:
         paths = self._write_paths(paths)
         if not message.strip() or len(message) > 2000 or "\x00" in message:
             raise ToolError(
@@ -215,7 +220,7 @@ class Git:
         async with repository_lock(self.root):
             return await self._commit(paths, message)
 
-    async def _push(self, commit):
+    async def _push(self, commit: str) -> ToolResult:
         self._publish_access()
         await self._ready()
         if commit != await self._text("rev-parse", "HEAD"):
@@ -264,7 +269,7 @@ class Git:
         return paths
 
     @asynccontextmanager
-    async def publication(self):
+    async def publication(self) -> AsyncIterator[Publication]:
         """Hold publishing admission and the repository lock across preparation.
 
         Trusted callers may create and validate files inside this transaction,
@@ -297,9 +302,9 @@ class Git:
 class Publication:
     """Single-commit publisher valid only while its owning transaction is open."""
 
-    def __init__(self, git):
+    def __init__(self, git: Git) -> None:
         self.git = git
-        self.commit_id = None
+        self.commit_id: str | None = None
         self.active = True
 
     async def commit(self, paths: list[str], message: str) -> str:

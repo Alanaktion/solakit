@@ -15,7 +15,7 @@ import json
 import os
 import sqlite3
 import threading
-from contextlib import closing
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
@@ -38,10 +38,11 @@ from solakit.core.store_base import (  # noqa: F401 (re-exported)
     sync_directory,
 )
 from solakit.core.store_index import IndexMixin
+from solakit.core.store_offsets import OffsetMixin, file_signature
 from solakit.core.store_sidecars import SidecarMixin
 
 
-class Store(IndexMixin, SidecarMixin):
+class Store(IndexMixin, SidecarMixin, OffsetMixin):
     def __init__(
         self, root: Path, redactor: Redactor | None = None, exclusive: bool = False
     ):
@@ -59,6 +60,7 @@ class Store(IndexMixin, SidecarMixin):
             self.root / "jobs",
         ):
             directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+        self._db: sqlite3.Connection | None = None
         self.ownership = None
         if exclusive:
             self.ownership = (self.root / ".runtime.lock").open("a")
@@ -77,7 +79,22 @@ class Store(IndexMixin, SidecarMixin):
             self.close()
             raise
 
+    @contextmanager
+    def _database(self):
+        """Serialize access to the reusable derived-index connection."""
+        with self.lock:
+            if self._db is None:
+                self._db = sqlite3.connect(
+                    self.root / "app.db", check_same_thread=False
+                )
+            with self._db:
+                yield self._db
+
     def close(self) -> None:
+        with self.lock:
+            if self._db is not None:
+                self._db.close()
+                self._db = None
         if self.ownership is not None:
             self.ownership.close()
             self.ownership = None
@@ -291,6 +308,7 @@ class Store(IndexMixin, SidecarMixin):
             path = self._path("sessions", session_id, ".jsonl")
             record = message.model_dump(mode="json")
             before = path.stat() if path.exists() else None
+            before_signature = file_signature(path) if before else None
             fingerprint = (
                 (before.st_ino, before.st_size, before.st_mtime_ns) if before else None
             )
@@ -308,13 +326,15 @@ class Store(IndexMixin, SidecarMixin):
                     (after.st_ino, after.st_size, after.st_mtime_ns),
                     line_no,
                 )
+                self._append_offset(session_id, path, before_signature, message.run_id)
                 self._insert_search_message(
                     self._message_search_row(session_id, "active", line_no, record)
                 )
             except (sqlite3.Error, OSError) as exc:
                 self._search_write_failed(session_id, exc)
 
-    def transcript(self, session_id: str) -> list[dict]:
+    def check_transcript(self, session_id: str) -> None:
+        """Validate rotation state and active-file presence without reading history."""
         with self.lock:
             self.session(session_id)
             self.context_started_at(session_id)
@@ -324,6 +344,11 @@ class Store(IndexMixin, SidecarMixin):
             manual = self._path("sessions", session_id, ".archive.json")
             if not path.exists() and (manifest.exists() or manual.exists()):
                 raise self._corruption(path, "missing_active_transcript")
+
+    def transcript(self, session_id: str) -> list[dict]:
+        with self.lock:
+            self.check_transcript(session_id)
+            path = self._path("sessions", session_id, ".jsonl")
             records = self._read(path)
             try:
                 for record in records:
@@ -334,10 +359,21 @@ class Store(IndexMixin, SidecarMixin):
 
     def archives(self, session_id: str) -> list[str]:
         self.session(session_id)
-        paths = (self.root / "sessions").glob(f"{safe_id(session_id)}.jsonl.[0-9]*")
+        candidates = (self.root / "sessions").glob(
+            f"{safe_id(session_id)}.jsonl.[0-9]*"
+        )
         prefix = f"{session_id}.jsonl."
-        paths = [p for p in paths if p.name.removeprefix(prefix).isdigit()]
+        paths = [p for p in candidates if p.name.removeprefix(prefix).isdigit()]
         return [p.name for p in sorted(paths, key=lambda p: int(p.suffix[1:]))]
+
+    def archive(self, session_id: str, number: int) -> list[dict]:
+        """Read an existing immutable transcript archive."""
+        safe_id(session_id)
+        name = f"{session_id}.jsonl.{number}"
+        with self.lock:
+            if number < 1 or name not in self.archives(session_id):
+                raise FileNotFoundError(name)
+            return self._read(self.root / "sessions" / name)
 
     def all_messages(self, session_id: str) -> list[dict]:
         with self.lock:
@@ -353,10 +389,21 @@ class Store(IndexMixin, SidecarMixin):
             atomic_write(
                 self._path("runs", run.id, ".json"), json.dumps(record).encode()
             )
-            self._index("runs", run.id, record)
-            # Recovery/observation may finish ancient imported runs today. Only
-            # request admission and actual message timestamps count as activity.
-            self._touch_session(run.session, run.created_at)
+            with self._database() as db:
+                db.execute(
+                    "INSERT OR REPLACE INTO runs VALUES (?, ?)",
+                    (run.id, json.dumps(record)),
+                )
+                # Recovery may finish ancient runs today. Admission time alone
+                # counts as activity; activity cache damage cannot fail a save.
+                try:
+                    self._activity(
+                        db, run.session, self._activity_timestamp(run.created_at)
+                    )
+                except sqlite3.Error:
+                    self._issue(
+                        self.root / "app.db", "session_activity_index_unavailable"
+                    )
 
     def update_run(self, run_id: str, updates: dict) -> Run:
         """Patch finalized-run observations without overwriting concurrent fields."""
@@ -369,7 +416,7 @@ class Store(IndexMixin, SidecarMixin):
             return run
 
     def pending_memory(self) -> list[dict]:
-        with self.lock, closing(sqlite3.connect(self.root / "app.db")) as db, db:
+        with self._database() as db:
             rows = db.execute(
                 "SELECT payload FROM runs WHERE "
                 "json_extract(payload, '$.memory_status') IN "
@@ -434,9 +481,9 @@ class Store(IndexMixin, SidecarMixin):
             if hashlib.sha256(payload).hexdigest() != record["tool_catalog_sha256"]:
                 raise self._corruption(catalog, "tool_catalog_hash_mismatch")
             record["tool_catalog"] = json.loads(payload)
-        record["messages"] = [
-            m for m in self.all_messages(record["session"]) if m["run_id"] == run_id
-        ]
+        record["messages"] = (
+            self.run_messages(record["session"], run_id) if include_messages else []
+        )
         record["memory_events"] = self.memory_events(run_id)
         record["memory_notes"] = self.memory_notes(run_id)
         record["tools"] = self._read(self._path("runs", run_id, ".tools.jsonl"))
@@ -461,7 +508,8 @@ class Store(IndexMixin, SidecarMixin):
             path = self._path("sessions", run["session"], ".jsonl")
             if not path.exists():
                 return []
-            result, remainder = [], b""
+            result: list[dict] = []
+            remainder = b""
             with path.open("rb") as stream:
                 position = stream.seek(0, os.SEEK_END)
                 end = total = position

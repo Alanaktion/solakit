@@ -13,7 +13,8 @@ Read `SPEC.md` for behavioral contracts, `README.md` for an introduction,
 ## Architecture
 
 - `src/solakit/main.py`: FastAPI app factory/lifespan, shared authentication,
-  authenticated `/api` routes, health and startup diagnostics, UI/static mounts.
+  shared API authorization, health and startup diagnostics, UI/static mounts.
+  `api/` holds resource routers with typed FastAPI runtime dependencies.
   `sola serve` runs one uvicorn worker on `127.0.0.1:8382` by default. Model
   requests default to `http://127.0.0.1:8000/v1`.
 - `core/config.py`, `core/startup.py`: strict Pydantic/TOML configuration,
@@ -48,6 +49,11 @@ Read `SPEC.md` for behavioral contracts, `README.md` for an introduction,
   The derived session_activity table uses messages and run admission times, not
   import/recovery bookkeeping dates. Bulk operations protect live bindings/work
   under scheduler-then-execution locks; restore is explicit before new work.
+  `core/store_offsets.py` indexes run-message byte addresses across active/archive
+  evidence. Keep offsets fingerprinted and rebuildable; index failures never fail
+  evidence appends. Run lists default to 100, maximum 1,000; consumers needing all
+  records must page explicitly. Store owns a lock-serialized SQLite connection.
+  `core/contracts.py` declares Store/Execution mixin dependencies.
   `core/search.py` queries standalone trigram FTS in the same `app.db`;
   physical archive/active line addresses survive rebuild, and failed indexing
   never fails an evidence append. Offline `sola search` reads the index without
@@ -116,6 +122,8 @@ Read `SPEC.md` for behavioral contracts, `README.md` for an introduction,
   diagnostic key redaction; UI masks resolved values before JSON encoding.
 - `ui/`: Jinja2 pages, packaged local HTMX/CSS/vanilla JS, opaque persistent login
   sessions, API-only presentation routes and escaped/redacted transcript views.
+  Route modules use the explicit UIContext; the lifespan-owned ASGI client must
+  never retain authentication cookies or headers between requests.
   No Node build or CDN. Chat fills the viewport with a desktop session sidebar;
   colors follow `prefers-color-scheme`. `/tools` shows loaded versus granted tools.
   Use grid when both axes have designed tracks (chat/sidebar, job fields, record
@@ -192,6 +200,7 @@ Python 3.12+ and uv are required. From the repository root:
 uv sync --frozen --all-packages
 uv run sola check
 uv run pytest tests packs/*/tests -q
+uv run mypy
 uv run ruff check .
 uv run ruff format --check .
 uv build

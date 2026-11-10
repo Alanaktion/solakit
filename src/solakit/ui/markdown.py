@@ -43,6 +43,7 @@ def preview_text(value: str) -> str:
     if not roots:
         return ""
     tail = roots[-1]
+    assert tail.map is not None
     start = tail.map[0]
     if tail.type == "fence":
         closing = re.compile(

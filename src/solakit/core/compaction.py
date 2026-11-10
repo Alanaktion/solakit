@@ -193,10 +193,11 @@ class Compactor:
         self.store, self.memory = store, memory
         self.model, self.config = model, config
 
-    def strategy(self, session: Session) -> str:
+    def strategy(self, session: Session, *, memory=False) -> str:
+        memory = self.memory if memory is False else memory
         configured = self.config.strategy if self.config else "openviking"
         if configured == "auto":
-            shared = self.memory is not None and session.memory_scope == "shared"
+            shared = memory is not None and session.memory_scope == "shared"
             return "openviking" if shared else "local"
         return configured
 
@@ -229,10 +230,11 @@ class Compactor:
             raise ContextLimit("Local compaction produced no complete summary")
         return summary
 
-    async def compact(self, session: Session) -> dict:
-        strategy = self.strategy(session)
+    async def compact(self, session: Session, *, memory=False) -> dict:
+        memory = self.memory if memory is False else memory
+        strategy = self.strategy(session, memory=memory)
         if strategy == "openviking" and (
-            self.memory is None or session.memory_scope != "shared"
+            memory is None or session.memory_scope != "shared"
         ):
             raise ContextLimit(
                 "Context exceeds budget; shared OpenViking is required for "
@@ -269,7 +271,7 @@ class Compactor:
         else:
             source = None
             try:
-                summary, uri = await self.memory.scoped(session).summary(
+                summary, uri = await memory.scoped(session).summary(
                     self.store, operation, history
                 )
             except MemoryUnavailable as exc:

@@ -14,7 +14,7 @@ channel/API/job ──► Execution.enqueue (admission: durable run, session FIF
                       → system prompt (stable) + turn block (time/origin/recall/
                         notes/job playbook) → budget check / compaction
                       ▼
-                 StepLoopMixin._loop, per step:
+                 StepLoopMixin._loop + per-run StepState, per step:
                    request = aged(messages)            (optional tool-result aging)
                    ModelClient.complete(request, schemas, sampling/thinking params)
                      ├─ reasoning → runs/<id>.reasoning.jsonl (never resent)
@@ -47,7 +47,12 @@ channel/API/job ──► Execution.enqueue (admission: durable run, session FIF
 
 | Module | Responsibility |
 |---|---|
-| `src/solakit/main.py` | app factory, API routes, startup diagnostics |
+| `src/solakit/main.py` | app factory, shared authentication, lifespan, startup diagnostics |
+| `src/solakit/api/dependencies.py` | typed runtime dependency for resource routers |
+| `src/solakit/api/sessions.py` | session API and transcript operations |
+| `src/solakit/api/runs.py` | bounded run catalog and run inspection/control |
+| `src/solakit/api/jobs.py` | managed job API |
+| `src/solakit/api/inspection.py` | prompt, tools, search, health evidence and memory probe API |
 | `src/solakit/cli.py` | `sola` commands (check, doctor, eval, init, config, tools, search) |
 | `src/solakit/core/loop.py` | Execution facade: admission, queues, nesting, run lifecycle |
 | `src/solakit/core/step_loop.py` | per-run step loop: requests, dispatch, notices, wrap-up (mixin) |
@@ -71,6 +76,8 @@ channel/API/job ──► Execution.enqueue (admission: durable run, session FIF
 | `src/solakit/core/store.py` | Store facade: sessions, transcripts, runs, append/recovery |
 | `src/solakit/core/store_base.py` | identifiers, corruption error, durable/atomic writes |
 | `src/solakit/core/store_index.py` | rebuildable SQLite indexes, activity, search (mixin) |
+| `src/solakit/core/contracts.py` | explicit Store and Execution mixin host contracts |
+| `src/solakit/core/store_offsets.py` | fingerprinted run-message byte addresses and evidence reads |
 | `src/solakit/core/store_sidecars.py` | run/session sidecar evidence and calibration (mixin) |
 | `src/solakit/core/config.py` | configuration models |
 | `src/solakit/tools/__init__.py` | registry, dispatch, rendering, `tool_json` |
@@ -81,8 +88,23 @@ channel/API/job ──► Execution.enqueue (admission: durable run, session FIF
 | `src/solakit/services/fs.py` | scope-checked filesystem (windows, grep, find) |
 | `src/solakit/jobs/__init__.py` | scheduler, chaining |
 | `src/solakit/channels/__init__.py` | delivery and channel posts |
+| `src/solakit/ui/context.py` | explicit UI route context and cookie-free shared ASGI client |
 | `src/solakit/ui/routes.py` | UI router: auth, rendering/API helpers, login, conversation views |
 | `src/solakit/ui/routes_sessions.py` | session list, chat, lifecycle, archive/compact, streaming events |
 | `src/solakit/ui/routes_runs.py` | prompt inspector, runs, model health, tools, status chips |
 | `src/solakit/ui/routes_jobs.py` | operations page and job forms/actions |
 | `packs/email/src/sola_packs/email.py` | example external pack (uses only `solakit.sdk`) |
+
+Store serializes its reusable SQLite connection through its existing reentrant
+lock and closes it on shutdown. Run index and admission activity updates share a
+transaction; JSONL appends and atomic snapshots retain their durable checkpoints.
+Each prepared step request is measured once for budget checks and calibration.
+Compaction receives operation-local memory rather than mutating shared state.
+
+UI helpers share one lifespan-owned ASGI client. Authorization and Cookie headers
+are supplied per request; response cookies are never retained. The UI still
+accesses application data through authenticated API routes.
+
+`uv run mypy` checks the refactored API, UI, storage, execution, jobs and services
+with explicit mixin contracts and unannotated-body checking. Imports outside this
+initial boundary are followed silently; third-party libraries may lack stubs.

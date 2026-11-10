@@ -4,10 +4,22 @@ Definitions are authoritative SQLite records, with one-time TOML import.
 Scheduling cursors remain JSONL evidence with a rebuildable SQLite index.
 """
 
+from __future__ import annotations
+
 import asyncio
 import hashlib
 import logging
+from collections.abc import Callable, Coroutine
 from datetime import datetime, timedelta
+from typing import TYPE_CHECKING, Any, TypeVar
+
+from solakit.core.config import Config
+from solakit.tools.disclosure import ToolView
+
+if TYPE_CHECKING:
+    from solakit.channels import Channels
+    from solakit.core.loop import Execution
+
 from string import Formatter
 from zoneinfo import ZoneInfo
 
@@ -22,6 +34,8 @@ from solakit.core.schemas import Origin, Run, RunStatus, Session, now
 from solakit.core.store import safe_id
 from solakit.jobs.definitions import Definitions
 from solakit.jobs.schemas import JobToolsError, JobUpdate
+
+T = TypeVar("T")
 
 
 def render_task(job: Job, at: datetime) -> str:
@@ -52,20 +66,27 @@ class JobState(BaseModel):
     consumed: bool = False
 
 
-def schedule_key(job):
+def schedule_key(job: Job) -> str:
     # Keep existing cron keys stable across upgrades.
     value = f"once:{job.run_at}" if job.run_at else f"{job.cron}:{job.timezone}"
     return hashlib.sha256(value.encode()).hexdigest()
 
 
-def trigger_for(job):
+def trigger_for(job: Job) -> CronTrigger | DateTrigger:
     if job.run_at:
         return DateTrigger(run_date=datetime.fromisoformat(job.run_at))
+    assert job.cron is not None
     return CronTrigger.from_crontab(job.cron, timezone=job.timezone)
 
 
 class Jobs:
-    def __init__(self, config, execution, channels, clock=now):
+    def __init__(
+        self,
+        config: Config,
+        execution: Execution,
+        channels: Channels,
+        clock: Callable[[], datetime] = now,
+    ) -> None:
         self.config, self.execution, self.channels, self.clock = (
             config,
             execution,
@@ -75,14 +96,14 @@ class Jobs:
         self.definitions = Definitions(execution.store)
         self.jobs: dict[str, Job] = {}
         self.states: dict[str, JobState] = {}
-        self.triggers = {}
-        self.tasks: dict[str, asyncio.Task] = {}
-        self.admissions: dict[str, asyncio.Future] = {}
+        self.triggers: dict[str, CronTrigger | DateTrigger] = {}
+        self.tasks: dict[str, asyncio.Task[Run]] = {}
+        self.admissions: dict[str, asyncio.Future[dict]] = {}
         self.lock = asyncio.Lock()
-        self.scheduler = None
+        self.scheduler: AsyncIOScheduler | None = None
         self.closing = False
 
-    async def initialize(self):
+    async def initialize(self) -> None:
         loaded = await durable(
             self.definitions.load, self.config.jobs, validate=self.validate_job
         )
@@ -120,15 +141,15 @@ class Jobs:
                 )
             await self._save(state)
 
-    def _next(self, job, at):
+    def _next(self, job: Job, at: datetime) -> datetime | None:
         return self.triggers[job.id].get_next_fire_time(None, at)
 
-    async def _save(self, state):
+    async def _save(self, state: JobState) -> None:
         await durable(
             self.execution.store.save_job, state.id, state.model_dump(mode="json")
         )
 
-    async def start(self):
+    async def start(self) -> None:
         await self.initialize()
         self.scheduler = AsyncIOScheduler()
         self.scheduler.add_job(
@@ -142,16 +163,16 @@ class Jobs:
         self.scheduler.start()
         await self.tick()
 
-    async def stop_admission(self):
+    async def stop_admission(self) -> None:
         async with self.lock:
             self.closing = True
             if self.scheduler and self.scheduler.running:
                 self.scheduler.shutdown(wait=False)
 
-    async def drain(self):
+    async def drain(self) -> None:
         await asyncio.gather(*self.tasks.values(), return_exceptions=True)
 
-    async def _session(self, job):
+    async def _session(self, job: Job) -> Session:
         parent = await self._bound_session(job)
         if not job.sub_session:
             return parent
@@ -166,7 +187,7 @@ class Jobs:
             ),
         )
 
-    async def _bound_session(self, job):
+    async def _bound_session(self, job: Job) -> Session:
         channel = next(
             (c for c in self.config.channels if c.id == job.bind_session), None
         )
@@ -189,7 +210,9 @@ class Jobs:
             Session(id=job.bind_session, source="cron", default_profile=job.profile),
         )
 
-    async def _missed(self, job, state, at, reason):
+    async def _missed(
+        self, job: Job, state: JobState, at: datetime, reason: str
+    ) -> None:
         session = await self._session(job)
         view = self.tool_view(job)
         run = Run(
@@ -207,7 +230,7 @@ class Jobs:
         await durable(self.execution.store.save_run, run)
         state.last_run, state.last_status = run.id, "missed"
 
-    async def tick(self):
+    async def tick(self) -> None:
         async with self.lock:
             if self.closing:
                 return
@@ -256,7 +279,9 @@ class Jobs:
                         )
                     await self._launch(job, state, due)
 
-    async def _launch(self, job, state, at):
+    async def _launch(
+        self, job: Job, state: JobState, at: datetime
+    ) -> asyncio.Task[Run]:
         if state.active:
             raise ValueError("Job already queued/running")
         if job.run_at:
@@ -267,7 +292,7 @@ class Jobs:
             state.consumed, state.next_fire = True, None
         state.active, state.last_status = True, "queued"
         await self._save(state)  # Persist cursor/intent before creating accepted work.
-        admitted = asyncio.get_running_loop().create_future()
+        admitted: asyncio.Future[dict] = asyncio.get_running_loop().create_future()
         # Consume unobserved failures; trigger_run may also await this receipt.
         admitted.add_done_callback(
             lambda receipt: receipt.exception() if not receipt.cancelled() else None
@@ -278,17 +303,20 @@ class Jobs:
         task.add_done_callback(lambda completed: self._ended(job.id, completed))
         return task
 
-    def _ended(self, job_id, task):
+    def _ended(self, job_id: str, task: asyncio.Task[Run]) -> None:
         if not task.cancelled() and task.exception() is not None:
             exc = task.exception()
+            assert exc is not None
             logging.getLogger(__name__).error(
                 "Job %s dispatch failed",
                 job_id,
                 exc_info=(type(exc), exc, exc.__traceback__),
             )
 
-    async def _execute(self, job, state, at, admitted):
-        run = None
+    async def _execute(
+        self, job: Job, state: JobState, at: datetime, admitted: asyncio.Future[dict]
+    ) -> Run:
+        run: Run | None = None
         try:
             session = await self._session(job)
             if self.closing:
@@ -348,16 +376,19 @@ class Jobs:
                     state.last_status = "failed"
                 await self._save(state)
 
-    async def _chain(self, job):
+    async def _chain(self, job: Job) -> None:
         """Queue the follow-up job once; a missing/disabled/busy target is logged."""
         try:
+            assert job.then is not None
             await self.trigger(job.then)
         except (KeyError, ValueError, RuntimeError) as exc:
             logging.getLogger(__name__).warning(
                 "Job %s: follow-up %s not started: %s", job.id, job.then, exc
             )
 
-    async def _accept(self, job_id, authorize=None):
+    async def _accept(
+        self, job_id: str, authorize: Callable[[Job], None] | None = None
+    ) -> tuple[asyncio.Task[Run], dict, asyncio.Future[dict]]:
         async with self.lock:
             job = self.job(job_id)
             if authorize:
@@ -369,11 +400,13 @@ class Jobs:
             accepted = self.get(job_id)
         return task, accepted, self.admissions[job_id]
 
-    async def trigger(self, job_id, *, authorize=None):
+    async def trigger(
+        self, job_id: str, *, authorize: Callable[[Job], None] | None = None
+    ) -> dict:
         _, accepted, _ = await self._complete(self._accept(job_id, authorize))
         return accepted
 
-    async def trigger_run(self, job_id):
+    async def trigger_run(self, job_id: str) -> dict:
         """Return the durable run receipt without waiting for generation/delivery."""
 
         async def accept():
@@ -382,11 +415,17 @@ class Jobs:
 
         return await self._complete(accept())
 
-    async def run_now(self, job_id):
+    async def run_now(self, job_id: str) -> Run:
         task, _, _ = await self._complete(self._accept(job_id))
         return await asyncio.shield(task)
 
-    async def pause(self, job_id, paused, *, authorize=None):
+    async def pause(
+        self,
+        job_id: str,
+        paused: bool,
+        *,
+        authorize: Callable[[Job], None] | None = None,
+    ) -> None:
         async with self.lock:
             if self.closing:
                 raise ValueError("Scheduler is shutting down")
@@ -404,17 +443,17 @@ class Jobs:
                 )
             await self._save(state)
 
-    def job(self, job_id):
+    def job(self, job_id: str) -> Job:
         if job_id not in self.jobs:
             raise KeyError("Job not found")
         return self.jobs[job_id]
 
-    def tool_view(self, job):
+    def tool_view(self, job: Job) -> ToolView:
         return self.execution.registry.view(
             job.profile, job.tools, job.tool_disclosure, job.tool_resident, strict=False
         )
 
-    def get(self, job_id):
+    def get(self, job_id: str) -> dict:
         job = self.job(job_id)
         effective = self.execution.registry.effective_tools(job.profile, job.tools)
         return {
@@ -430,7 +469,7 @@ class Jobs:
             "unavailable_tools": sorted(set(job.tools or []) - set(effective)),
         }
 
-    def status(self, *, definitions=False):
+    def status(self, *, definitions: bool = False) -> list[dict]:
         if definitions:
             return [self.get(identity) for identity in self.jobs]
         return [
@@ -444,7 +483,7 @@ class Jobs:
             for job in self.jobs.values()
         ]
 
-    def validate_job(self, job, *, check_tools=True):  # noqa: C901
+    def validate_job(self, job: Job, *, check_tools: bool = True):  # noqa -> None: C901
         safe_id(job.id)
         if not any(c.id == job.bind_session for c in self.config.channels):
             safe_id(job.bind_session)
@@ -478,7 +517,8 @@ class Jobs:
         if job.profile == "maintenance":
             raise ValueError("Maintenance cannot be scheduled")
         if job.then is not None:
-            seen, current = {job.id}, job.then
+            seen = {job.id}
+            current: str | None = job.then
             while current is not None:
                 if current in seen:
                     raise ValueError("Job then-chain forms a cycle")
@@ -503,7 +543,7 @@ class Jobs:
         # Also bound placeholder expansion, not only the source template.
         render_task(job, self.clock())
 
-    async def _check_binding(self, job):
+    async def _check_binding(self, job: Job) -> None:
         if job.bind_session == "ephemeral":
             return
         identity = next(
@@ -519,7 +559,7 @@ class Jobs:
                 "Restore the archived session before scheduling work there"
             )
 
-    async def _complete(self, operation):
+    async def _complete(self, operation: Coroutine[Any, Any, T]) -> T:
         task = asyncio.create_task(operation)
         try:
             return await asyncio.shield(task)
@@ -527,13 +567,23 @@ class Jobs:
             await task
             raise
 
-    async def create(self, job, *, authorize=None):
+    async def create(
+        self, job: Job, *, authorize: Callable[[Job], None] | None = None
+    ) -> dict:
         return await self._complete(self._change(job, create=True, authorize=authorize))
 
-    async def update(self, job_id, changes, *, authorize=None):
+    async def update(
+        self,
+        job_id: str,
+        changes: dict,
+        *,
+        authorize: Callable[[Job], None] | None = None,
+    ) -> dict:
         return await self._complete(self._update(job_id, changes, authorize))
 
-    async def _update(self, job_id, changes, authorize):
+    async def _update(
+        self, job_id: str, changes: dict, authorize: Callable[[Job], None] | None
+    ) -> dict:
         async with self.lock:
             old = self.job(job_id)
             if authorize:
@@ -542,11 +592,15 @@ class Jobs:
             job = Job.model_validate({**old.model_dump(), **patch})
             return await self._change_locked(job, create=False, authorize=authorize)
 
-    async def _change(self, job, *, create, authorize):
+    async def _change(
+        self, job: Job, *, create: bool, authorize: Callable[[Job], None] | None
+    ) -> dict:
         async with self.lock:
             return await self._change_locked(job, create=create, authorize=authorize)
 
-    async def _change_locked(self, job, *, create, authorize):
+    async def _change_locked(
+        self, job: Job, *, create: bool, authorize: Callable[[Job], None] | None
+    ) -> dict:
         if self.closing:
             raise ValueError("Scheduler is shutting down")
         self.validate_job(job)
@@ -561,7 +615,7 @@ class Jobs:
         old = self.jobs.get(job.id)
         state = self.states.get(job.id)
         changed = state is None or state.schedule != schedule
-        if job.enabled and (changed or not state.consumed):
+        if job.enabled and (state is None or changed or not state.consumed):
             await self._check_binding(job)
         if (
             changed
@@ -575,7 +629,7 @@ class Jobs:
             state = state.model_copy(deep=True)
         if changed:
             state.consumed = False
-        if changed or old.enabled != job.enabled:
+        if changed or old is None or old.enabled != job.enabled:
             state.schedule = schedule
             state.next_fire = (
                 trigger.get_next_fire_time(
@@ -590,10 +644,14 @@ class Jobs:
         await self._save(state)
         return self.get(job.id)
 
-    async def delete(self, job_id, *, authorize=None):
+    async def delete(
+        self, job_id: str, *, authorize: Callable[[Job], None] | None = None
+    ) -> dict:
         return await self._complete(self._delete(job_id, authorize))
 
-    async def _delete(self, job_id, authorize):
+    async def _delete(
+        self, job_id: str, authorize: Callable[[Job], None] | None
+    ) -> dict:
         async with self.lock:
             if self.closing:
                 raise ValueError("Scheduler is shutting down")

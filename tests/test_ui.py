@@ -648,7 +648,7 @@ def test_lost_memory_has_explicit_refresh_action(config, mock_model, monkeypatch
         calls.append(identity)
         return execution.store.update_run(identity, {"memory_status": "completed"})
 
-    monkeypatch.setattr("solakit.main.refresh_run", refresh)
+    monkeypatch.setattr("solakit.api.runs.refresh_run", refresh)
     with TestClient(app) as client:
         app.state.store.create_session(Session(id="lost"))
         run = Run(

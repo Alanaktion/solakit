@@ -37,7 +37,7 @@ def model_stats(store, window: int = 100) -> dict:
         except (TypeError, ValueError):
             pass
         try:
-            logs = store._read(store._path("runs", run["id"], ".tools.jsonl"))
+            logs = store.tool_log(run["id"])
         except (OSError, ValueError):
             logs = []
         failed = False

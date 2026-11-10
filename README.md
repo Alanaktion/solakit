@@ -5,7 +5,8 @@ one pinned OpenAI-compatible local model to operator-owned prompts, external
 OpenViking memory, and explicitly granted tools.
 
 The moonlight-themed web UI provides streaming chat, session history, prompt and
-run inspection, conversation archival and compaction, and scheduled job management.
+run inspection, conversation archival and compaction, and scheduled job management. Run inspection uses bounded catalog pages and
+indexed reads across active and archived evidence.
 Optional Discord channels share the same session execution. Tool packs add journal
 publishing, Astro blog posts and dreams, letters, email, thermal printing, calendar
 reads, and image workflows.

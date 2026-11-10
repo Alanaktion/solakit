@@ -12,3 +12,5 @@ config.toml
 # Evaluation results contain prompts and model output
 evals/results/*
 !evals/results/baseline.json
+
+.mypy_cache/

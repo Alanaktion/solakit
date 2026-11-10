@@ -3,11 +3,19 @@
 import asyncio
 import os
 import signal
+from pathlib import Path
 
 DRAIN_GRACE_S = 5
 
 
-async def execute(argv, directory, timeout, limit, *, environment=None):
+async def execute(
+    argv: list[str],
+    directory: Path,
+    timeout: float,
+    limit: int,
+    *,
+    environment: dict[str, str] | None = None,
+) -> dict:
     # Deliberately avoid inheriting backend/API credentials. This is hygiene,
     # not isolation: host-user shell commands can still access host files.
     environment = (

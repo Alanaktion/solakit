@@ -8,13 +8,14 @@ import stat
 import tempfile
 import threading
 import time
+from collections.abc import Iterator
 from pathlib import Path
 
 import regex as bounded_regex
 
 from solakit.core.io import durable
 from solakit.core.store import sync_directory
-from solakit.tools import ToolError, ToolResult
+from solakit.tools import ToolContext, ToolError, ToolResult
 
 # Serialize read/modify/replace operations within the one-worker runtime.
 _LOCK = threading.RLock()
@@ -22,7 +23,7 @@ _EDIT_LIMIT = 4_000_000
 
 
 class _SearchMatcher:
-    def __init__(self, query: str, regex: bool):
+    def __init__(self, query: str, regex: bool) -> None:
         try:
             self.pattern = bounded_regex.compile(
                 query if regex else bounded_regex.escape(query),
@@ -45,10 +46,10 @@ class _SearchMatcher:
 
 
 class Filesystem:
-    def __init__(self, ctx):
+    def __init__(self, ctx: ToolContext) -> None:
         self.ctx = ctx
 
-    def _read(self, path, limit):
+    def _read(self, path: str | Path, limit: int) -> tuple[str, os.stat_result]:
         target = self.ctx.path(str(path))
         descriptor = os.open(target, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
         try:
@@ -62,7 +63,9 @@ class Filesystem:
         finally:
             os.close(descriptor)
 
-    async def read(self, path, *, max_chars: int | None = None) -> ToolResult:
+    async def read(
+        self, path: str | Path, *, max_chars: int | None = None
+    ) -> ToolResult:
         limit = (
             self.ctx.config.profiles[self.ctx.profile].tool_output_max_chars
             if max_chars is None
@@ -78,7 +81,7 @@ class Filesystem:
             raise ToolError("Cannot read requested file") from exc
         return ToolResult(content=content, content_complete=len(content) <= limit)
 
-    async def exists(self, path) -> bool:
+    async def exists(self, path: str | Path) -> bool:
         def check():
             return self.ctx.path(str(path), write=True).exists()
 
@@ -87,7 +90,9 @@ class Filesystem:
         except (OSError, ToolError):
             return False
 
-    async def window(self, path, offset: int = 1, limit: int | None = None) -> dict:
+    async def window(
+        self, path: str | Path, offset: int = 1, limit: int | None = None
+    ) -> dict:
         """Line window of a UTF-8 file: numbered lines plus position facts."""
         try:
             content, _ = await asyncio.to_thread(self._read, path, _EDIT_LIMIT)
@@ -101,7 +106,8 @@ class Filesystem:
             raise ToolError(f"Offset is past the end of the file ({total} lines)")
         budget = self.ctx.config.profiles[self.ctx.profile].tool_output_max_chars
         budget = max(64, budget - 160)  # Leave room for the footer.
-        shown, used, cut = [], 0, False
+        shown: list[str] = []
+        used, cut = 0, False
         for number in range(offset, total + 1):
             if limit is not None and len(shown) >= limit:
                 break
@@ -121,7 +127,9 @@ class Filesystem:
             "cut": cut,
         }
 
-    async def write(self, path, content: str, *, overwrite: bool = False) -> Path:
+    async def write(
+        self, path: str | Path, content: str, *, overwrite: bool = False
+    ) -> Path:
         def create():
             with _LOCK:
                 target = self.ctx.path(str(path), write=True)
@@ -159,7 +167,9 @@ class Filesystem:
                 "overwrite=true to replace it)"
             ) from exc
 
-    async def edit(self, path, old: str, new: str, *, report=None) -> Path:
+    async def edit(
+        self, path: str | Path, old: str, new: str, *, report: dict | None = None
+    ) -> Path:
         if not old:
             raise ToolError("Replacement text must be nonempty")
 
@@ -210,7 +220,7 @@ class Filesystem:
         except (OSError, UnicodeError) as exc:
             raise ToolError("Cannot edit requested file") from exc
 
-    async def append(self, path, content: str) -> Path:
+    async def append(self, path: str | Path, content: str) -> Path:
         def append_text():
             with _LOCK:
                 target = self.ctx.path(str(path), write=True)
@@ -236,7 +246,12 @@ class Filesystem:
             raise ToolError("Cannot append to requested file") from exc
 
     async def entries(
-        self, path, limit: int = 100, *, newest: bool = False, pattern: str = "*"
+        self,
+        path: str | Path,
+        limit: int = 100,
+        *,
+        newest: bool = False,
+        pattern: str = "*",
     ) -> tuple[list[dict], bool]:
         if not 1 <= limit <= 500:
             raise ToolError("Directory limit must be between 1 and 500")
@@ -283,7 +298,13 @@ class Filesystem:
         finally:
             stopped.set()
 
-    def _walk(self, path, max_files=5000, *, stopped=None):
+    def _walk(
+        self,
+        path: str | Path,
+        max_files: int = 5000,
+        *,
+        stopped: threading.Event | None = None,
+    ) -> Iterator[tuple[Path | None, str | None]]:
         """Scope-checked regular files below path; symlinks are never followed."""
         root = self.ctx.path(str(path))
         if root.is_file():
@@ -310,15 +331,17 @@ class Filesystem:
                     return
                 yield candidate, str(candidate.relative_to(root))
 
-    async def find(self, pattern: str, path=".", limit: int = 50) -> dict:
+    async def find(self, pattern: str, path: str | Path = ".", limit: int = 50) -> dict:
         stopped = threading.Event()
 
         def search():
-            matches, more = [], False
+            matches: list[dict] = []
+            more = False
             for file, relative in self._walk(path, stopped=stopped):
                 if file is None:
                     more = True
                     break
+                assert relative is not None
                 target = relative if "/" in pattern else file.name
                 # "**/" also matches zero directories, as in shell globstar.
                 if fnmatch.fnmatch(target, pattern) or (
@@ -348,7 +371,7 @@ class Filesystem:
     async def grep(  # noqa: C901
         self,
         query: str,
-        path=".",
+        path: str | Path = ".",
         *,
         glob: str | None = None,
         regex: bool = False,
@@ -359,11 +382,13 @@ class Filesystem:
 
         def search():
             matcher = _SearchMatcher(query, regex)
-            hits, lines_out, more = 0, [], False
+            hits, more = 0, False
+            lines_out: list[str] = []
             for file, relative in self._walk(path, stopped=stopped):
                 if file is None:
                     more = True
                     break
+                assert relative is not None
                 if glob and not fnmatch.fnmatch(
                     relative if "/" in glob else file.name, glob
                 ):
@@ -408,7 +433,7 @@ class Filesystem:
         finally:
             stopped.set()
 
-    async def mkdir(self, path) -> Path:
+    async def mkdir(self, path: str | Path) -> Path:
         def create():
             with _LOCK:
                 target = self.ctx.path(str(path), write=True)

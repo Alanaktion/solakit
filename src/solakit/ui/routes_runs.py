@@ -4,7 +4,7 @@ import asyncio
 from pathlib import Path
 from urllib.parse import quote, urlencode
 
-from fastapi import Request
+from fastapi import APIRouter, Request
 from fastapi.responses import (
     HTMLResponse,
     RedirectResponse,
@@ -12,8 +12,10 @@ from fastapi.responses import (
 )
 from fastapi.templating import Jinja2Templates
 
+from solakit.core.schemas import RunStatus
+from solakit.ui.context import UIContext
 from solakit.ui.markdown import markdown
-from solakit.ui.view import timestamp, turns
+from solakit.ui.view import turns
 
 TURN_WINDOW = 20
 ROOT = Path(__file__).parent
@@ -21,7 +23,7 @@ TEMPLATES = Jinja2Templates(directory=str(ROOT / "templates"))
 TEMPLATES.env.filters["markdown"] = markdown
 
 
-def register(router, ns):  # noqa: C901
+def register(router: APIRouter, ns: UIContext) -> None:  # noqa: C901
     from solakit.ui.routes import (  # noqa: F401
         HEADERS,
         APIError,
@@ -114,30 +116,43 @@ def register(router, ns):  # noqa: C901
         if not logged_in(request):
             return login_redirect(request)
         try:
-            records, state = await asyncio.gather(
-                api(request, "GET", "/api/runs"),
-                health(request),
-            )
             session_filter = request.query_params.get("session", "")
             status_filter = request.query_params.get("status", "")
+            try:
+                offset = int(request.query_params.get("offset", "0"))
+                if offset < 0:
+                    raise ValueError
+            except ValueError:
+                raise APIError(422, "Offset must be nonnegative.") from None
+            params = {"limit": 101, "offset": offset, "descending": "true"}
+            if session_filter:
+                params["session_id"] = session_filter
+            if status_filter:
+                params["status"] = status_filter
+            records, state = await asyncio.gather(
+                api(request, "GET", "/api/runs?" + urlencode(params)),
+                health(request),
+            )
             statuses = sorted(
-                {record["status"] for record in records}
+                {value.value for value in RunStatus}
                 | ({status_filter} if status_filter else set())
             )
-            records = [
-                record
-                for record in records
-                if (not session_filter or record["session"] == session_filter)
-                and (not status_filter or record["status"] == status_filter)
-            ]
-            records.sort(
-                key=lambda record: timestamp(record["created_at"]), reverse=True
-            )
+
+            def page_url(at):
+                return "/runs?" + urlencode(
+                    {"session": session_filter, "status": status_filter, "offset": at}
+                )
+
+            previous = page_url(max(0, offset - 100)) if offset else None
+            following = page_url(offset + 100) if len(records) > 100 else None
+            records = records[:100]
             return render(
                 request,
                 "runs.html",
                 {
                     "runs": records,
+                    "previous": previous,
+                    "next": following,
                     "statuses": statuses,
                     "health": state,
                     "session_filter": session_filter,

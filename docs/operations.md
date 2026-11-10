@@ -43,6 +43,13 @@ reversible metadata archival, bulk cleanup and undo for imported history. Messag
 search includes archived sessions; default run listings exclude their runs unless
 `include_archived=true` is requested.
 Inspect `/api/sessions`, `/api/sessions/{id}`, `/api/runs`, and `/api/runs/{id}`.
+`GET /api/runs` keeps its array response and defaults to 100 records. Use
+`limit=1..1000` and a nonnegative `offset` to page through it; continue until a
+page is shorter than the requested limit. Optional `session_id` and `status`
+filters apply before pagination. Default order follows index insertion order;
+`descending=true` sorts by creation time and ID, newest first. Pages reflect live
+state, not a frozen snapshot. The Runs UI provides filtered pages of 100 records.
+
 Run inspection includes prompt, messages, tool calls, diagnostics, memory and
 send evidence. Session inspection lists numbered archives, available through
 `GET /api/sessions/{id}/archives/{number}`. The old scaffold routes are retired.
@@ -202,6 +209,11 @@ history. It scans source file metadata once and refreshes only changed sessions,
 run journals and job cursors. Title and lifecycle-only edits reuse the indexed
 transcript. Archived history stays searchable without loading its messages.
 Startup logs the refresh mode, changed/reused source counts and index time.
+Run-message byte addresses are also derived in `app.db`: full run inspection reads
+matching active/archive evidence without scanning unrelated historical messages.
+Changed file fingerprints reconcile stale addresses; explicit rebuild revalidates
+all evidence. If the offset index is unavailable, run inspection falls back to a
+validated history scan and reports degraded storage health.
 
 The first start after this upgrade (or with missing/incompatible derived tables)
 performs a full rebuild. Later starts compare file size, nanosecond modification

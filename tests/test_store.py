@@ -234,11 +234,16 @@ def test_store_closes_connections_on_success_and_error(config, monkeypatch):
     monkeypatch.setattr(sqlite3, "connect", tracked)
     store = Store(config.paths.data)
     store.create_session(Session(id="closed"))
-    assert opened and all(db.closed for db in opened)
+    assert opened and sum(not db.closed for db in opened) == 1
+    connection = store._db
     try:
         store._index("invalid_table", "x", {})
     except sqlite3.Error:
         pass
+    assert store._db is connection
+    assert not connection.in_transaction
+    store.create_session(Session(id="after-error"))
+    store.close()
     assert all(db.closed for db in opened)
 
 

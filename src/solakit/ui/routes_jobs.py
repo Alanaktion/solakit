@@ -4,12 +4,13 @@ import asyncio
 from pathlib import Path
 from urllib.parse import quote
 
-from fastapi import Request
+from fastapi import APIRouter, Request
 from fastapi.responses import (
     RedirectResponse,
 )
 from fastapi.templating import Jinja2Templates
 
+from solakit.ui.context import UIContext
 from solakit.ui.markdown import markdown
 
 TURN_WINDOW = 20
@@ -18,7 +19,7 @@ TEMPLATES = Jinja2Templates(directory=str(ROOT / "templates"))
 TEMPLATES.env.filters["markdown"] = markdown
 
 
-def register(router, ns):  # noqa: C901
+def register(router: APIRouter, ns: UIContext) -> None:  # noqa: C901
     from solakit.ui.routes import (  # noqa: F401
         HEADERS,
         APIError,

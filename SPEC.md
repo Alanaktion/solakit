@@ -1067,6 +1067,12 @@ The P1 operator UI is a thin server-rendered API client. Shared app contracts:
 | `GET /api/channels` | channel configs + adapter status (connected since, last message) |
 | `POST /api/runs/{id}/cancel` | stop a queued/running run |
 
+- **Run catalog:** `GET /api/runs` returns an array, default `limit=100`, maximum
+  1,000, with nonnegative `offset`. `session_id`, `status` and archival filters
+  apply before pagination. Default order is index insertion order;
+  `descending=true` orders by creation time then ID descending. Run detail retains
+  active and archived messages; `messages=false` omits them. Derived byte offsets
+  never replace JSONL authority or weaken corruption/recovery checks.
 - **Streaming:** `POST …/messages` returns the completed run by default.
   `?wait=false` accepts once and returns HTTP 202 with the queued run ID;
   `?stream=true` enables live previews. Model requests always use OpenAI SSE

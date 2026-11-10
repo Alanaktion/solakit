@@ -3,13 +3,14 @@
 import asyncio
 import hashlib
 import json
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 from urllib.parse import parse_qs, quote, urlencode, urlsplit
 from zoneinfo import ZoneInfo
 
-import httpx
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, FastAPI, Request
 from fastapi.responses import (
     RedirectResponse,
     Response,
@@ -17,6 +18,7 @@ from fastapi.responses import (
 from fastapi.templating import Jinja2Templates
 
 from solakit.ui.auth import COOKIE, LIFETIME, UISessions
+from solakit.ui.context import UIContext
 from solakit.ui.markdown import markdown
 from solakit.ui.view import timestamp, turns
 
@@ -26,15 +28,15 @@ TEMPLATES = Jinja2Templates(directory=str(ROOT / "templates"))
 TEMPLATES.env.filters["markdown"] = markdown
 
 
-def display_time(value):
+def display_time(value: str | None) -> str:
     try:
-        date = datetime.fromisoformat(value).astimezone(UTC)
+        date = datetime.fromisoformat(value or "").astimezone(UTC)
         return date.strftime("%b %-d, %Y · %H:%M:%S UTC")
     except (TypeError, ValueError):
         return value or "—"
 
 
-def status_digest(health):
+def status_digest(health: dict) -> str:
     visible = {
         key: (health or {}).get(key, "unknown")
         for key in ("status", "model", "storage", "memory")
@@ -57,7 +59,7 @@ HEADERS = {
 
 
 class APIError(Exception):
-    def __init__(self, status: int, detail):
+    def __init__(self, status: int, detail: Any) -> None:
         self.status = status
         if isinstance(detail, list):
             self.detail = "\n".join(
@@ -69,7 +71,7 @@ class APIError(Exception):
             self.detail = str(detail)
 
 
-def job_local_time(job):
+def job_local_time(job: dict) -> str:
     return (
         datetime.fromisoformat(job["run_at"])
         .astimezone(ZoneInfo(job["timezone"]))
@@ -78,7 +80,7 @@ def job_local_time(job):
     )
 
 
-def same_job_local_time(job, value):
+def same_job_local_time(job: dict, value: str) -> bool:
     try:
         return datetime.fromisoformat(job_local_time(job)) == datetime.fromisoformat(
             value
@@ -87,17 +89,22 @@ def same_job_local_time(job, value):
         return False
 
 
-def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRouter:  # noqa: C901
+def build_ui_router(  # noqa: C901
+    app: FastAPI,
+    sessions: UISessions,
+    operator_token: Callable[[], str],
+    redact: Callable[[Any], Any],
+) -> APIRouter:
     router = APIRouter(include_in_schema=False)
 
-    def logged_in(request):
+    def logged_in(request: Request) -> bool:
         return sessions.authorized(
             request.headers.get("authorization"),
             request.cookies.get(COOKIE),
             operator_token(),
         )
 
-    def return_path(value):
+    def return_path(value: str | None) -> str:
         # Reject browser URL normalization tricks as well as external origins.
         if (
             not value
@@ -110,7 +117,7 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
             return "/"
         return value
 
-    def login_redirect(request):
+    def login_redirect(request: Request) -> Response:
         target = "/"
         current = request.headers.get("HX-Current-URL") or request.headers.get(
             "referer"
@@ -135,7 +142,13 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
             return Response(headers={**HEADERS, "HX-Redirect": destination})
         return RedirectResponse(destination, status_code=303, headers=HEADERS)
 
-    def render(request, template, context=None, status=200, headers=None):
+    def render(
+        request: Request,
+        template: str,
+        context: dict | None = None,
+        status: int = 200,
+        headers: dict[str, str] | None = None,
+    ) -> Response:
         # API transcripts are deliberately verbatim. UI presentation additionally
         # masks resolved credentials, without changing API/history/prompt bytes.
         return TEMPLATES.TemplateResponse(
@@ -146,7 +159,12 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
             headers=HEADERS | (headers or {}),
         )
 
-    async def form(request, limit=512000, max_fields=8, multiple=()):
+    async def form(
+        request: Request,
+        limit: int = 512000,
+        max_fields: int = 8,
+        multiple: tuple[str, ...] = (),
+    ) -> dict:
         if (
             request.headers.get("content-type", "").split(";", 1)[0]
             != "application/x-www-form-urlencoded"
@@ -168,20 +186,16 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
             for key, entries in values.items()
         }
 
-    async def api(request, method, path, payload=None):
+    async def api(request: Request, method: str, path: str, payload: Any = None) -> Any:
         headers = {}
         if request.headers.get("authorization"):
             headers["Authorization"] = request.headers["authorization"]
         identity = request.cookies.get(COOKIE)
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app),
-            base_url="http://solakit.internal",
-            timeout=None,
-            trust_env=False,
-            headers=headers,
-            cookies={COOKIE: identity} if identity else {},
-        ) as client:
-            response = await client.request(method, path, json=payload)
+        if identity:
+            headers["Cookie"] = f"{COOKIE}={identity}"
+        response = await app.state.ui_client.request(
+            method, path, json=payload, headers=headers
+        )
         try:
             data = response.json()
         except ValueError:
@@ -197,7 +211,20 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
             )
         return data
 
-    def schema_views(schemas):
+    async def all_runs(request: Request, path: str) -> list[dict]:
+        records = []
+        offset = 0
+        while True:
+            separator = "&" if "?" in path else "?"
+            page = await api(
+                request, "GET", f"{path}{separator}limit=1000&offset={offset}"
+            )
+            records.extend(page)
+            if len(page) < 1000:
+                return records
+            offset += len(page)
+
+    def schema_views(schemas: list[dict]) -> list[dict]:
         # Schema property names are definitions, not diagnostic credential keys.
         # Mask resolved values before JSON encoding (including escaped secrets).
         def masked(value):
@@ -215,14 +242,19 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
             for schema in schemas
         ]
 
-    async def health(request):
+    async def health(request: Request) -> dict:
         return await api(request, "GET", "/health")
 
     @router.get("/favicon.ico")
     async def favicon():
         return RedirectResponse("/static/moon.svg", headers=HEADERS)
 
-    async def session_page(request, error=None, values=None, status=200):
+    async def session_page(
+        request: Request,
+        error: Any = None,
+        values: dict | None = None,
+        status: int = 200,
+    ) -> Response:
         filters = {
             key: request.query_params.get(key, default)
             for key, default in (
@@ -267,12 +299,13 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
             status,
         )
 
-    async def conversation(request, identity, number=None):  # noqa: C901
+    async def conversation(  # noqa: C901
+        request: Request, identity: str, number: int | None = None
+    ) -> tuple[dict, list[dict]]:
         # Read run state first: a terminal run's transcript is already durable
         # before the following session read (avoids ending a stream on stale text).
-        records = await api(
+        records = await all_runs(
             request,
-            "GET",
             "/api/runs?"
             + urlencode({"session_id": identity, "include_archived": "true"}),
         )
@@ -315,6 +348,7 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
             data = {**data, "messages": messages}
             grouped = turns(data, records, {}, include_empty_runs=number is None)
             for index, (segment, entries) in enumerate(segments[:-1]):
+                assert segment is not None
                 newer = segments[index + 1][1]
                 if not any(
                     m.get("kind") == "compaction"
@@ -476,7 +510,9 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
             t if t.get("boundary") else indexed[t["timeline_id"]] for t in selected
         ]
 
-    async def chat_context(request, data, history, error=None):
+    async def chat_context(
+        request: Request, data: dict, history: list[dict], error: Any = None
+    ) -> dict:
         all_sessions, state, catalog, children = await asyncio.gather(
             api(request, "GET", "/api/sessions?roots_only=true&exclude_source=cron"),
             health(request),
@@ -577,11 +613,21 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
         except APIError as exc:
             return render(request, "error.html", {"error": exc.detail}, exc.status)
 
-    from types import SimpleNamespace
-
     from solakit.ui import routes_jobs, routes_runs, routes_sessions
 
-    ns = SimpleNamespace(**{k: v for k, v in locals().items() if k != "ns"})
+    context = UIContext(
+        logged_in=logged_in,
+        login_redirect=login_redirect,
+        render=render,
+        form=form,
+        api=api,
+        all_runs=all_runs,
+        health=health,
+        schema_views=schema_views,
+        session_page=session_page,
+        conversation=conversation,
+        chat_context=chat_context,
+    )
     for module in (routes_sessions, routes_runs, routes_jobs):
-        module.register(router, ns)
+        module.register(router, context)
     return router

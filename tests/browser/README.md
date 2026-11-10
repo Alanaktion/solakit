@@ -130,3 +130,8 @@ Session sources: run `node tests/browser/session-sources.cjs` against the scratc
 server to verify default cron exclusion, explicit inclusion, and filter layout at
 390/1440px in light/dark themes. Optional `SOLA_CHROMIUM_PATH` selects an installed
 Chromium executable; `SOLA_BROWSER_ARTIFACTS` selects the screenshot directory.
+
+Run pagination: run `check.cjs runs` for 500-run session fixtures, server-side
+session/status filtering, next/previous navigation and empty-result controls in
+light/dark desktop/mobile. Evidence phase 11 scopes prompt/hash/schema selectors
+to their panels so multiple saved inputs and tools remain inspectable.

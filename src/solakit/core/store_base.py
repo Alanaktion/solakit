@@ -6,7 +6,7 @@ import tempfile
 from pathlib import Path
 
 # Bump when derived schemas or evidence projection semantics change.
-INDEX_VERSION = "1"
+INDEX_VERSION = "2"
 IDENTIFIER = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}\Z")
 
 

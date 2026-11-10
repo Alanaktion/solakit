@@ -40,7 +40,7 @@ from solakit.tools.disclosure import ToolView
 class Pending:
     run: Run
     text: str
-    future: asyncio.Future
+    future: asyncio.Future[Run]
     task: asyncio.Task | None = None
     cancellation: asyncio.Task | None = None
     stream: bool = False
@@ -248,6 +248,7 @@ class Execution(RuntimeOps, StepLoopMixin):
     ) -> Run:
         """Run a private child serially inside the calling run's inference slot."""
         caller = asyncio.current_task()
+        assert caller is not None
         parent = self.performing.get(caller)
         if parent is None or parent.run.status != RunStatus.running:
             raise ValueError("Nested execution requires a running tool call")
@@ -285,11 +286,15 @@ class Execution(RuntimeOps, StepLoopMixin):
                 await durable(self.store.save_run, pending.run)
                 # Explicit child cancellation can return a failure report to its
                 # parent. Parent/shutdown cancellation must keep propagating.
-                ancestor = parent
+                ancestor: Pending | None = parent
                 ancestors_cancelled = False
                 while ancestor is not None:
                     ancestors_cancelled |= ancestor.cancellation is not None
-                    ancestor = self.pending.get(ancestor.parent_run)
+                    ancestor = (
+                        self.pending.get(ancestor.parent_run)
+                        if ancestor.parent_run
+                        else None
+                    )
                 if pending.cancellation is not None and not ancestors_cancelled:
                     caller.uncancel()
                     return pending.run
@@ -364,6 +369,7 @@ class Execution(RuntimeOps, StepLoopMixin):
     async def _perform_locked(self, pending: Pending) -> None:  # noqa: C901
         run = pending.run
         task = asyncio.current_task()
+        assert task is not None
         previous = self.performing.get(task)
         self.performing[task] = pending
         try:
@@ -372,6 +378,7 @@ class Execution(RuntimeOps, StepLoopMixin):
             run.effective_tools = self.registry.effective_tools(
                 run.profile, run.effective_tools
             )
+            assert pending.tool_view is not None
             pending.tool_view = self.registry.view(
                 run.profile,
                 run.effective_tools,
@@ -509,8 +516,8 @@ class Execution(RuntimeOps, StepLoopMixin):
                 if run.status not in (RunStatus.completed, RunStatus.cancelled):
                     try:
                         logs = await durable(
-                            self.store._read,
-                            self.store._path("runs", run.id, ".tools.jsonl"),
+                            self.store.tool_log,
+                            run.id,
                         )
                     except (OSError, ValueError):
                         logs = []
