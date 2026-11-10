@@ -112,6 +112,9 @@ mid_run_compaction = false
 # tool_result_aging = "auto"    # stub old large tool results in requests
 # context_tokens = 100000       # calibrated token budget beside context_budget
 tools = []
+# Empty workspace grants configured repositories only, never runtime data.
+# Runtime data access needs an explicit path naming paths.data or a descendant;
+# parent paths and anywhere alone do not grant it. Keep evidence grants narrow.
 read = "workspace"
 write = "none"
 effects = []

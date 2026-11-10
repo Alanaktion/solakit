@@ -266,6 +266,24 @@ def create_app(  # noqa: C901
     async def refresh_ui_cookie(request: Request, call_next):
         identity = request.cookies.get(COOKIE)
         valid = ui_sessions.valid(identity)
+        if (
+            valid
+            and request.method not in {"GET", "HEAD", "OPTIONS"}
+            and not ui_sessions.authorized(
+                request.headers.get("authorization"), None, app.state.operator_token
+            )
+            and (
+                request.headers.get("sec-fetch-site", "same-origin") != "same-origin"
+                or (
+                    "origin" in request.headers
+                    and request.headers["origin"]
+                    != f"{request.url.scheme}://{request.url.netloc}"
+                )
+            )
+        ):
+            return JSONResponse(
+                status_code=403, content={"detail": "Origin not allowed"}
+            )
         response = await call_next(request)
         if valid and request.url.path not in {"/login", "/logout"}:
             response.set_cookie(

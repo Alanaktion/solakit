@@ -22,6 +22,8 @@ from solakit.core.search import (
     FTS_SCHEMA,
     SearchUnavailable,
     search_index,
+    sqlite_retry,
+    sqlite_transient,
     timestamp,
 )
 from solakit.core.store_base import (  # noqa: F401,E501
@@ -148,6 +150,7 @@ class IndexMixin:
                     incremental = False
             if not incremental:
                 self._issues.clear()
+                self._fts_dirty_sessions.clear()
                 cached = {}
             changed = {
                 key
@@ -576,6 +579,26 @@ class IndexMixin:
 
         return rows
 
+    def _insert_search_message(self, row) -> None:
+        def insert():
+            with closing(sqlite3.connect(self.root / "app.db")) as db, db:
+                db.execute(FTS_INSERT, row)
+
+        sqlite_retry(insert)
+
+    def _search_write_failed(self, session_id: str, exc: BaseException) -> None:
+        issue = self._issues.get(("app.db", None))
+        if sqlite_transient(exc) and (issue is None or self._fts_dirty_sessions):
+            self._fts_dirty_sessions.add(session_id)
+        else:
+            # A structural error must remain visible until explicit repair.
+            self._fts_dirty_sessions.clear()
+        self._issue(self.root / "app.db", "fts_index_unavailable")
+
+    def _repair_search_writes(self) -> None:
+        for session_id in list(self._fts_dirty_sessions):
+            self.reindex_messages(session_id)
+
     def reindex_messages(self, session_id: str) -> None:
         """Refresh addresses after durable rotation; index failures lose no evidence."""
         with self.lock:
@@ -584,13 +607,22 @@ class IndexMixin:
                 dates = [row[7] for row in rows if row[7] is not None]
                 if dates:
                     self._touch_session(session_id, datetime.fromisoformat(max(dates)))
-                with closing(sqlite3.connect(self.root / "app.db")) as db, db:
-                    db.execute(
-                        "DELETE FROM messages_fts WHERE session_id = ?", (session_id,)
-                    )
-                    db.executemany(FTS_INSERT, rows)
-            except (sqlite3.Error, OSError, StorageCorruption):
-                self._issue(self.root / "app.db", "fts_index_unavailable")
+
+                def replace_rows():
+                    with closing(sqlite3.connect(self.root / "app.db")) as db, db:
+                        db.execute(
+                            "DELETE FROM messages_fts WHERE session_id = ?",
+                            (session_id,),
+                        )
+                        db.executemany(FTS_INSERT, rows)
+
+                sqlite_retry(replace_rows)
+                was_dirty = session_id in self._fts_dirty_sessions
+                self._fts_dirty_sessions.discard(session_id)
+                if was_dirty and not self._fts_dirty_sessions:
+                    self._issues.pop(("app.db", None), None)
+            except (sqlite3.Error, OSError, StorageCorruption) as exc:
+                self._search_write_failed(session_id, exc)
 
     def search(
         self,
@@ -604,6 +636,7 @@ class IndexMixin:
         limit: int = 50,
     ) -> list[dict]:
         with self.lock:
+            self._repair_search_writes()
             if any(i["kind"] == "fts_index_unavailable" for i in self._issues.values()):
                 raise SearchUnavailable(
                     "Search index unavailable; rebuild app.db from evidence"
@@ -620,8 +653,10 @@ class IndexMixin:
                     limit=limit,
                     redactor=self.redactor,
                 )
-            except SearchUnavailable:
-                self._issue(self.root / "app.db", "fts_index_unavailable")
+            except SearchUnavailable as exc:
+                if not sqlite_transient(exc.__cause__):
+                    self._fts_dirty_sessions.clear()
+                    self._issue(self.root / "app.db", "fts_index_unavailable")
                 raise
 
     def list_records(self, kind: str) -> list[dict]:

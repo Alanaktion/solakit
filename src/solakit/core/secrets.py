@@ -11,7 +11,7 @@ SENSITIVE = re.compile(r"(?:KEY|TOKEN|SECRET|PASSWORD)$", re.IGNORECASE)
 
 class Redactor:
     def __init__(self, values: list[str] = ()) -> None:
-        self.values = tuple(v for v in values if v)
+        self.values = tuple(sorted({v for v in values if v}, key=len, reverse=True))
 
     def preview(self, value: str) -> str:
         """Mask full secrets and withhold an unfinished secret at the live edge."""

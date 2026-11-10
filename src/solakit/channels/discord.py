@@ -46,7 +46,7 @@ def chunks(text: str, limit=2000) -> list[str] | None:
             current = ""
     if current:
         result.append(current)
-    return result
+    return [part for part in result if part.strip()]
 
 
 class DiscordAdapter:
@@ -137,7 +137,7 @@ class DiscordAdapter:
             # No request logger, credentials or redirects expose signed URLs.
             async with aiohttp.ClientSession(
                 timeout=aiohttp.ClientTimeout(total=15),
-                trust_env=True,
+                trust_env=False,
                 auto_decompress=False,
             ) as client:
                 async with client.get(

@@ -768,11 +768,16 @@ implicit disclosure. Job lists expand then intersect profile grants and cannot
 raise authority. Unknown names/families and partial globs are errors.
 
 `read` defaults to `"workspace"`; `write` defaults to `"none"`. Each accepts
-`"none"`, `"workspace"`, or `"anywhere"`. An empty `workspace` uses the data
-directory plus configured repositories; an explicit list replaces those roots.
+`"none"`, `"workspace"`, or `"anywhere"`. An empty `workspace` uses only
+configured repositories; an explicit list replaces those roots.
 Entries use `repo:alias`, `collection:alias`, or `path:/absolute/path`.
 `write_workspace`, when set, replaces workspace roots for writes. Writes are also
-readable. Symlink resolution precedes containment checks. Anywhere means `/`.
+readable. Symlink resolution precedes containment checks. Anywhere means `/`,
+except runtime data: access beneath `paths.data` requires an explicit `path:` grant
+naming that directory or a descendant in the applicable read/write workspace.
+A parent-directory grant or `anywhere` alone never grants runtime data access.
+Filesystem tools reject writes through `.git` components in either requested or
+resolved paths; Git services own metadata changes.
 
 `effects` is a closed list: `push`, `send`, `print`, `shell`, `operate`.
 `operate` authorizes job mutations/triggers and cross-profile/cross-session runtime
@@ -1036,8 +1041,11 @@ The P1 operator UI is a thin server-rendered API client. Shared app contracts:
   Login returns to the requested local page via a validated `next` parameter.
   Five wrong attempts
   produce a 60-second local lockout. Cookies authorize the same API dependency.
-  State-changing UI actions are POST-only, with no cross-origin CORS. Discord
-  has its own bot token. The model API key is separate from the operator token.
+  State-changing UI actions are POST-only, with no cross-origin CORS. Unsafe
+  cookie-authenticated requests reject non-same-origin `Sec-Fetch-Site` and
+  mismatched `Origin` (including port). Requests without either header remain
+  compatible; valid Bearer authentication is independent of cookie origin checks.
+  Discord has its own bot token. The model API key is separate from the operator token.
 - **Request validation:** session creation uses `default_profile`; message posts
   may select `profile`. Unknown or misplaced request fields are rejected with
   HTTP 422, never accepted and ignored. Offline configuration errors name the

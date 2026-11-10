@@ -12,7 +12,6 @@ def test_tier_roots_defaults_overrides_and_write_read_union(config, tmp_path):
     config.repositories = {"site": tmp_path / "site"}
     profile = Profile()
     assert tier_roots(profile, config, write=False) == [
-        config.paths.data.resolve(),
         (tmp_path / "site").resolve(),
     ]
     assert tier_roots(profile, config, write=True) == []

@@ -1,12 +1,16 @@
 """Scope-checked text filesystem operations shared by built-ins and packs."""
 
+import asyncio
 import fnmatch
 import heapq
 import os
 import stat
 import tempfile
 import threading
+import time
 from pathlib import Path
+
+import regex as bounded_regex
 
 from solakit.core.io import durable
 from solakit.core.store import sync_directory
@@ -15,6 +19,29 @@ from solakit.tools import ToolError, ToolResult
 # Serialize read/modify/replace operations within the one-worker runtime.
 _LOCK = threading.RLock()
 _EDIT_LIMIT = 4_000_000
+
+
+class _SearchMatcher:
+    def __init__(self, query: str, regex: bool):
+        try:
+            self.pattern = bounded_regex.compile(
+                query if regex else bounded_regex.escape(query),
+                bounded_regex.I | bounded_regex.V0,
+            )
+        except bounded_regex.error as exc:
+            raise ToolError("Invalid regular expression") from exc
+        self.remaining = 0.1
+
+    def matches(self, line: str) -> bool:
+        started = time.monotonic()
+        try:
+            result = self.pattern.search(line, timeout=max(self.remaining, 0.000001))
+        except TimeoutError as exc:
+            raise ToolError("Regex search exceeded its matching time budget") from exc
+        self.remaining -= time.monotonic() - started
+        if self.remaining <= 0:
+            raise ToolError("Regex search exceeded its matching time budget")
+        return result is not None
 
 
 class Filesystem:
@@ -46,7 +73,7 @@ class Filesystem:
         ):
             raise ToolError("Read limit must be between 1 and 4000000 characters")
         try:
-            content, _ = await durable(self._read, path, limit)
+            content, _ = await asyncio.to_thread(self._read, path, limit)
         except (OSError, UnicodeError) as exc:
             raise ToolError("Cannot read requested file") from exc
         return ToolResult(content=content, content_complete=len(content) <= limit)
@@ -56,14 +83,14 @@ class Filesystem:
             return self.ctx.path(str(path), write=True).exists()
 
         try:
-            return await durable(check)
+            return await asyncio.to_thread(check)
         except (OSError, ToolError):
             return False
 
     async def window(self, path, offset: int = 1, limit: int | None = None) -> dict:
         """Line window of a UTF-8 file: numbered lines plus position facts."""
         try:
-            content, _ = await durable(self._read, path, _EDIT_LIMIT)
+            content, _ = await asyncio.to_thread(self._read, path, _EDIT_LIMIT)
         except (OSError, UnicodeError) as exc:
             raise ToolError("Cannot read requested file") from exc
         if len(content) > _EDIT_LIMIT:
@@ -214,11 +241,15 @@ class Filesystem:
         if not 1 <= limit <= 500:
             raise ToolError("Directory limit must be between 1 and 500")
 
+        stopped = threading.Event()
+
         def listing():
             directory = self.ctx.path(str(path))
 
             def permitted(children):
                 for child in children:
+                    if stopped.is_set():
+                        return
                     if not fnmatch.fnmatchcase(child.name, pattern):
                         continue
                     try:
@@ -246,11 +277,13 @@ class Filesystem:
             return entries[:limit], len(entries) > limit
 
         try:
-            return await durable(listing)
+            return await asyncio.to_thread(listing)
         except OSError as exc:
             raise ToolError("Cannot list requested directory") from exc
+        finally:
+            stopped.set()
 
-    def _walk(self, path, max_files=5000):
+    def _walk(self, path, max_files=5000, *, stopped=None):
         """Scope-checked regular files below path; symlinks are never followed."""
         root = self.ctx.path(str(path))
         if root.is_file():
@@ -258,10 +291,14 @@ class Filesystem:
             return
         seen = 0
         for directory, dirs, files in os.walk(root, followlinks=False):
+            if stopped is not None and stopped.is_set():
+                return
             dirs[:] = sorted(d for d in dirs if not d.startswith("."))
             for name in sorted(files):
+                if stopped is not None and stopped.is_set():
+                    return
                 candidate = Path(directory) / name
-                if candidate.is_symlink():
+                if candidate.is_symlink() or not candidate.is_file():
                     continue
                 try:
                     self.ctx.path(str(candidate))
@@ -274,9 +311,11 @@ class Filesystem:
                 yield candidate, str(candidate.relative_to(root))
 
     async def find(self, pattern: str, path=".", limit: int = 50) -> dict:
+        stopped = threading.Event()
+
         def search():
             matches, more = [], False
-            for file, relative in self._walk(path):
+            for file, relative in self._walk(path, stopped=stopped):
                 if file is None:
                     more = True
                     break
@@ -300,9 +339,11 @@ class Filesystem:
             return {"matches": matches, "more": more}
 
         try:
-            return await durable(search)
+            return await asyncio.to_thread(search)
         except OSError as exc:
             raise ToolError("Cannot search requested directory") from exc
+        finally:
+            stopped.set()
 
     async def grep(  # noqa: C901
         self,
@@ -314,16 +355,12 @@ class Filesystem:
         context: int = 2,
         limit: int = 30,
     ) -> dict:
-        import re
-
-        try:
-            matcher = re.compile(query if regex else re.escape(query), re.I)
-        except re.error as exc:
-            raise ToolError("Invalid regular expression") from exc
+        stopped = threading.Event()
 
         def search():
+            matcher = _SearchMatcher(query, regex)
             hits, lines_out, more = 0, [], False
-            for file, relative in self._walk(path):
+            for file, relative in self._walk(path, stopped=stopped):
                 if file is None:
                     more = True
                     break
@@ -334,18 +371,20 @@ class Filesystem:
                 try:
                     if file.stat().st_size > 2_000_000:
                         continue
-                    raw = file.read_bytes()
-                except OSError:
+                    text, _ = self._read(file, 2_000_000)
+                except (OSError, UnicodeError, ToolError):
                     continue
-                if b"\0" in raw[:4096]:
+                if "\0" in text[:4096]:
                     continue
-                try:
-                    lines = raw.decode("utf-8").splitlines()
-                except UnicodeDecodeError:
-                    continue
+                lines = text.splitlines()
                 shown = set()
                 for index, line in enumerate(lines):
-                    if not matcher.search(line):
+                    if stopped.is_set():
+                        return {"lines": lines_out, "matches": hits, "more": True}
+                    if len(line) > 4096:
+                        more = True
+                        continue
+                    if not matcher.matches(line):
                         continue
                     if hits >= limit:
                         return {"lines": lines_out, "matches": hits, "more": True}
@@ -363,9 +402,11 @@ class Filesystem:
             return {"lines": lines_out, "matches": hits, "more": more}
 
         try:
-            return await durable(search)
+            return await asyncio.to_thread(search)
         except OSError as exc:
             raise ToolError("Cannot search requested directory") from exc
+        finally:
+            stopped.set()
 
     async def mkdir(self, path) -> Path:
         def create():

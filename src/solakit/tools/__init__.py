@@ -175,12 +175,60 @@ class ToolContext:
         candidate = Path(path).expanduser()
         if not candidate.is_absolute() and self.config.server.cwd is not None:
             candidate = self.config.server.cwd.expanduser() / candidate
+        if write and any(part.casefold() == ".git" for part in candidate.parts):
+            raise ToolError("Git metadata cannot be written through filesystem tools")
         candidate = candidate.resolve()
+        if write and any(part.casefold() == ".git" for part in candidate.parts):
+            raise ToolError("Git metadata cannot be written through filesystem tools")
         profile = self.config.profiles[self.profile]
         roots = tier_roots(profile, self.config, write=write)
+        data = self.config.paths.data.expanduser().resolve()
+        data_candidate = _runtime_data_path(candidate, data)
+        if data_candidate is not None:
+            candidate = data_candidate
+            roots = [_runtime_data_path(root, data) or root for root in roots]
+            # Broad roots never implicitly expose private runtime evidence.
+            writes = (
+                (
+                    profile.write_workspace
+                    if profile.write_workspace is not None
+                    else profile.workspace
+                )
+                if profile.write != "none"
+                else []
+            )
+            entries = (
+                writes
+                if write
+                else ((profile.workspace if profile.read != "none" else []) + writes)
+            )
+            explicit = [
+                _runtime_data_path(scope_root(entry, self.config), data)
+                for entry in entries
+                if entry.startswith("path:")
+            ]
+            if not any(
+                root is not None and candidate.is_relative_to(root) for root in explicit
+            ):
+                raise ToolError(
+                    "Runtime data requires an explicit filesystem path grant"
+                )
         if not any(root and candidate.is_relative_to(root) for root in roots):
             raise ToolError("Path is outside profile filesystem scopes")
         return candidate
+
+
+def _runtime_data_path(path: Path, data: Path) -> Path | None:
+    """Recognize filesystem identity even on case-insensitive volumes."""
+    if path.is_relative_to(data):
+        return path
+    for ancestor in (path, *path.parents):
+        try:
+            if ancestor.samefile(data):
+                return data / path.relative_to(ancestor)
+        except OSError:
+            continue
+    return None
 
 
 def error_class(exc: Exception, *, known: bool, before: bool) -> str:
@@ -238,7 +286,6 @@ def tier_roots(profile: Profile, config: Config, *, write: bool) -> list[Path]:
             entries = profile.workspace
         if not entries and default_workspace:
             return [
-                config.paths.data.expanduser().resolve(),
                 *(p.expanduser().resolve() for p in config.repositories.values()),
             ]
         result = []

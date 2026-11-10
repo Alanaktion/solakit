@@ -199,6 +199,9 @@ def test_fifo_global_limit_cancellation_and_shutdown(config):
         await execution.close()
         assert (await shutdown_run).status == "cancelled"
         assert execution.model.client.is_closed
+        assert not execution.queues
+        assert not execution.workers
+        assert not execution.session_locks
 
     asyncio.run(exercise())
 

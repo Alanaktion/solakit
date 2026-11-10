@@ -543,8 +543,7 @@ def build_ui_router(app, sessions: UISessions, operator_token, redact) -> APIRou
         response = RedirectResponse(
             return_path(values.get("next")), 303, headers=HEADERS
         )
-        # Single operator, localhost/tailnet: SameSite=Lax plus POST-only mutations.
-        # No cross-origin CORS or GET mutations; no separate CSRF framework in v1.
+        # Unsafe cookie requests also pass the shared origin check middleware.
         response.set_cookie(
             COOKIE,
             identity,

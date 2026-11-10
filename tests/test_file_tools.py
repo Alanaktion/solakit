@@ -127,5 +127,7 @@ def test_find_and_grep(files, tmp_path):
     assert call("files.grep", query="nothing", path=str(root)).content == "No matches."
     assert call("files.grep", query="(", regex=True, path=str(root)).error
     limited = call("files.grep", query="=", path=str(root), context=0, limit=1)
-    assert limited.content.endswith("[more matches not shown; narrow the search]")
+    assert limited.content.endswith(
+        "[search incomplete; narrow the search or inspect skipped long lines]"
+    )
     assert call("files.find", pattern="*.toml", path=str(tmp_path)).error

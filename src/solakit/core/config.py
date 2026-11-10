@@ -690,6 +690,10 @@ def load_config(path: Path | None = None) -> Config:
         for name, p in config.repositories.items()
     }
     for reference in (
+        config.operator_token,
+        config.model.api_key,
+        config.memory.api_key,
+        config.discord_token,
         config.tool_apis.brave_api_key,
         config.tool_apis.cloudflare_api_token,
         config.tool_apis.github_token,

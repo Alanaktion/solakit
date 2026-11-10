@@ -28,9 +28,6 @@ from solakit.core.schemas import (
     SessionArchived,
     now,
 )
-from solakit.core.search import (
-    FTS_INSERT,
-)
 from solakit.core.secrets import Redactor
 from solakit.core.store_base import (  # noqa: F401 (re-exported)
     IDENTIFIER,
@@ -51,6 +48,7 @@ class Store(IndexMixin, SidecarMixin):
         self.root = root.expanduser().resolve()
         self.redactor = redactor or Redactor()
         self.lock = threading.RLock()
+        self._fts_dirty_sessions: set[str] = set()
         self._line_counts: dict[str, tuple[tuple, int]] = {}
         self._issues: dict[tuple[str, int | None], dict] = {}
         for directory in (
@@ -310,13 +308,11 @@ class Store(IndexMixin, SidecarMixin):
                     (after.st_ino, after.st_size, after.st_mtime_ns),
                     line_no,
                 )
-                with closing(sqlite3.connect(self.root / "app.db")) as db, db:
-                    db.execute(
-                        FTS_INSERT,
-                        self._message_search_row(session_id, "active", line_no, record),
-                    )
-            except (sqlite3.Error, OSError):
-                self._issue(self.root / "app.db", "fts_index_unavailable")
+                self._insert_search_message(
+                    self._message_search_row(session_id, "active", line_no, record)
+                )
+            except (sqlite3.Error, OSError) as exc:
+                self._search_write_failed(session_id, exc)
 
     def transcript(self, session_id: str) -> list[dict]:
         with self.lock:

@@ -321,7 +321,8 @@ Search file contents for text, with line context
 - `limit`: Maximum matches.
 
 Search text files recursively; lines read path:line: text (matches) and
-path-line- text (context). Binary files and symlinks are skipped.
+path-line- text (context). Skips binary files, symlinks and lines over 4096
+characters; matching has a 100 ms cumulative budget.
 
 ### `files.list`
 

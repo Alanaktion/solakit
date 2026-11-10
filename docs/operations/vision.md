@@ -77,3 +77,7 @@ follow-up history and outbound replies with controlled gateway/CDN/model fixture
 They decode the submitted image bytes and check its pixels. Those checks validate
 transport and persistence; live Discord gateway access and real VLM recognition
 require the operator's connected services.
+
+Discord attachment downloads ignore proxy environment variables, matching the
+default model and memory client policy. CDN URLs remain validated and redirects
+are refused.

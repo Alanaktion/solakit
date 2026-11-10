@@ -127,7 +127,18 @@ times. `files.grep(query, path=".", glob=None, regex=False, context=2, limit=30)
 searches text case-insensitively and returns `path:line: text` matches with
 `path-line- text` context. Both skip hidden directories, symlinks, binary files and
 anything outside the profile's read roots; they need no shell, so read-only
-profiles can use them.
+profiles can use them. Grep skips lines longer than 4,096 characters before
+matching and marks results incomplete even when no matches remain. Matching has
+a cumulative 100 ms budget per call, including regex mode; exhaustion returns a
+tool error. Read-only filesystem calls release the run on cancellation; traversal
+and search loops stop cooperatively. Writes still finish durably before cancellation
+propagates.
+
+An empty workspace grants configured repositories only. Runtime data is excluded
+unless an applicable explicit `path:` grant names `paths.data` or a descendant;
+broad parent roots and `anywhere` alone do not grant access. Existing profiles that
+relied on implicit evidence access must add a deliberate narrow grant. Filesystem
+writes through `.git` paths or aliases are refused.
 
 `files.write(..., overwrite=false)` refuses existing files unless `overwrite` is
 true (atomic replace, mode preserved). `files.edit` prefers an exact unique match;

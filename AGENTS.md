@@ -80,9 +80,9 @@ Read `SPEC.md` for behavioral contracts, `README.md` for an introduction,
   `sessions.search` reads indexed active/archive evidence for the calling session;
   cross-session or all-session search additionally requires the `operate` effect.
   Return masked snippets as historical data and never rewrite the evidence.
-- `packs/`: independently packaged journal, letters and email
-  extensions (`sola_packs.*`), plus `solakit-packs-common` support. Core distributions
-  exclude packs; install and test them separately. Letters/mailbox schemas live
+- `packs/`: independently packaged journal, letters, email, blog, calendar, image
+  and printer extensions (`sola_packs.*`), plus `solakit-packs-common` support.
+  Core distributions exclude packs; install and test them separately. Letters/mailbox schemas live
   in the pack-owned `SOLA_PACKS_CONFIG` sidecar. Resolved pack credentials register
   with the existing redactor before network access. Collections remain named repo
   subdirectories; `collection:<alias>` grants only that directory.

@@ -66,6 +66,24 @@ contents. Startup performs the same readability checks; the curated front-page s
 is enforced only by `sola check`. Model unavailability leaves the app
 up with degraded health; runs use the exact pinned model or fail without fallback.
 Run uvicorn with one worker; a data ownership lock prevents concurrent recovery.
+
+When TLS terminates at a trusted reverse proxy, launch Uvicorn with proxy headers
+and restrict trust to the proxy's actual connection address. For a local IPv4
+proxy (including a locally configured `tailscale serve` backend), for example:
+
+```sh
+uv run uvicorn solakit.main:app --host 127.0.0.1 --port 8382 \
+  --workers 1 --proxy-headers --forwarded-allow-ips 127.0.0.1
+```
+
+Use `::1` instead if that is the proxy peer; never trust arbitrary forwarded
+headers with `*`. Configure the proxy to preserve the public Host and forward
+`X-Forwarded-Proto` and `X-Forwarded-For`. These determine HTTPS cookie security
+and the client address used by the login rate limit. Without trusted forwarding,
+a TLS-terminating proxy can produce non-Secure cookies and put all clients in
+one login failure bucket. `sola serve` uses Uvicorn's default proxy trust settings;
+use the explicit invocation above when configuring a proxy.
+
 Startup logs summarize model readiness, authenticated read-only access to every
 configured memory root, loaded tool modules/names, effective profile grants,
 storage status and configured integration counts. Memory failures warn without
@@ -101,6 +119,16 @@ Login returns to the originally requested local page. Five failed attempts lock
 login for 60 seconds. `/api` accepts either
 this cookie or the existing `Authorization: Bearer <operator-token>` header.
 The token is never placed in page content or browser storage.
+Unsafe cookie-authenticated requests require `Sec-Fetch-Site: same-origin` when
+that header is present, and an `Origin` matching the public request origin
+(including port) when supplied. This rejects forms from another port on the same
+host. Clients without both headers remain supported. Valid Bearer-authenticated
+API requests do not depend on this cookie-origin policy.
+
+Secret values are redacted longest-first in diagnostics and UI presentation.
+Matching covers exact resolved values, not base64, URL-encoded or other transformed
+representations; never intentionally expose transformed credentials in tool output.
+
 
 Chat streams assistant text as an explicitly unsaved preview, then replaces it
 with the stored turn and redacted tool evidence. The composer stays disabled with

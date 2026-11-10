@@ -2,6 +2,7 @@
 
 import re
 import sqlite3
+import time
 from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path
@@ -14,6 +15,22 @@ FTS_SCHEMA = """CREATE VIRTUAL TABLE messages_fts USING fts5(
     ts UNINDEXED, run_id UNINDEXED, tokenize = 'trigram'
 )"""
 FTS_INSERT = "INSERT INTO messages_fts VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+
+
+def sqlite_transient(exc: BaseException | None) -> bool:
+    code = getattr(exc, "sqlite_errorcode", 0)
+    return (code & 255) in {sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED}
+
+
+def sqlite_retry(operation):
+    """Retry only lock contention; never replay uncertain external operations."""
+    try:
+        return operation()
+    except sqlite3.Error as exc:
+        if not sqlite_transient(exc):
+            raise
+        time.sleep(0.01)
+        return operation()
 
 
 class SearchUnavailable(RuntimeError):
@@ -128,13 +145,17 @@ def search_index(
     try:
         # Offline callers never create a database or recover/finalize runs.
         uri = (root.expanduser().resolve() / "app.db").as_uri() + "?mode=ro"
-        with closing(sqlite3.connect(uri, uri=True)) as db, db:
-            db.row_factory = sqlite3.Row
-            rows = db.execute(sql, parameters).fetchall()
-    except sqlite3.Error:
+
+        def query_rows():
+            with closing(sqlite3.connect(uri, uri=True)) as db, db:
+                db.row_factory = sqlite3.Row
+                return db.execute(sql, parameters).fetchall()
+
+        rows = sqlite_retry(query_rows)
+    except sqlite3.Error as exc:
         raise SearchUnavailable(
             "Search index unavailable; rebuild app.db from evidence"
-        ) from None
+        ) from exc
     masker = redactor or Redactor()
     results = []
     for row in rows:

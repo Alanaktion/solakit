@@ -227,11 +227,12 @@ async def grep(
     limit: Annotated[int, Field(ge=1, le=100, description="Maximum matches.")] = 30,
 ) -> ToolResult:
     """Search text files recursively; lines read path:line: text (matches) and
-    path-line- text (context). Binary files and symlinks are skipped."""
+    path-line- text (context). Skips binary files, symlinks and lines over 4096
+    characters; matching has a 100 ms cumulative budget."""
     result = await ctx.fs.grep(
         query, path, glob=glob, regex=regex, context=context, limit=limit
     )
-    if not result["lines"]:
-        return ToolResult(content="No matches.")
-    tail = "\n[more matches not shown; narrow the search]" if result["more"] else ""
-    return ToolResult(content="\n".join(result["lines"]) + tail)
+    text = "\n".join(result["lines"]) or "No matches."
+    if result["more"]:
+        text += "\n[search incomplete; narrow the search or inspect skipped long lines]"
+    return ToolResult(content=text)

@@ -2,6 +2,8 @@
 
 import hashlib
 import json
+import logging
+import math
 import secrets
 import time
 from collections.abc import Callable
@@ -29,14 +31,34 @@ class UISessions:
         self.path = path
         self.token_hash = hashlib.sha256(token.encode()).hexdigest()
         self.clear()
-        if path.exists():
+        try:
             data = json.loads(path.read_text())
+            if not isinstance(data, dict) or not isinstance(
+                data.get("token_hash"), str
+            ):
+                raise ValueError("Invalid login session structure")
+            saved = data.get("sessions")
+            if not isinstance(saved, dict) or any(
+                not isinstance(key, str)
+                or len(key) != 64
+                or any(char not in "0123456789abcdef" for char in key)
+                or type(expiry) not in (int, float)
+                or (isinstance(expiry, float) and not math.isfinite(expiry))
+                for key, expiry in saved.items()
+            ):
+                raise ValueError("Invalid login session structure")
             if data["token_hash"] == self.token_hash:
                 self.sessions = {
                     key: expiry
-                    for key, expiry in data["sessions"].items()
+                    for key, expiry in saved.items()
                     if expiry > self.clock()
                 }
+        except FileNotFoundError:
+            pass
+        except (OSError, UnicodeError, ValueError):
+            logging.getLogger(__name__).warning(
+                "Saved UI sessions could not be loaded; browser login required"
+            )
         self.save()
 
     def save(self):

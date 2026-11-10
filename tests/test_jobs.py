@@ -323,6 +323,9 @@ def test_sub_sessions_keep_memory_and_deliver_only_final(config, silent):
                 "Shared remembered fact" in execution.store.run(run.id)["turn_context"]
             )
         assert execution.store.all_messages(parent.id) == before
+        assert not execution.queues
+        assert not execution.workers
+        assert not execution.session_locks
         assert len(adapter.sent) == (0 if silent else 2)
         if not silent:
             assert all(

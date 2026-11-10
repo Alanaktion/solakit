@@ -161,10 +161,7 @@ class Execution(RuntimeOps, StepLoopMixin):
                     and profile not in self.config.delegation.allowed_profiles
                 ):
                     raise ValueError("Profile is not allowed for delegation")
-                if any(
-                    p.run.session == session_id and not p.future.done()
-                    for p in self.pending.values()
-                ):
+                if any(p.run.session == session_id for p in self.pending.values()):
                     raise ValueError("Child session has queued or running work")
             view = self.registry.view(
                 profile, tools, tool_disclosure, tool_resident, strict=False
@@ -208,7 +205,9 @@ class Execution(RuntimeOps, StepLoopMixin):
             queue = self.queues.setdefault(session_id, asyncio.Queue())
             queue.put_nowait(pending)
             if session_id not in self.workers:
-                self.workers[session_id] = asyncio.create_task(self._worker(queue))
+                self.workers[session_id] = asyncio.create_task(
+                    self._worker(session_id, queue)
+                )
         return pending
 
     async def submit(
@@ -301,34 +300,52 @@ class Execution(RuntimeOps, StepLoopMixin):
             raise
         finally:
             if pending is not None:
-                if not pending.future.done():
-                    pending.future.set_result(pending.run)
-                self.pending.pop(pending.run.id, None)
-                self.session_locks[session_id].release()
+                async with self.submit_lock:
+                    if not pending.future.done():
+                        pending.future.set_result(pending.run)
+                    self.pending.pop(pending.run.id, None)
+                    self.session_locks[session_id].release()
+                    self._release_session_lock(session_id)
 
-    async def _worker(self, queue: asyncio.Queue) -> None:
+    def _release_session_lock(self, session_id: str) -> None:
+        if session_id not in self.queues and not any(
+            pending.run.session == session_id for pending in self.pending.values()
+        ):
+            self.session_locks.pop(session_id, None)
+
+    async def _work_pending(self, pending: Pending) -> None:
+        if pending.cancellation is not None:
+            await asyncio.shield(pending.future)
+            return
+        pending.task = asyncio.create_task(self._perform(pending))
+        try:
+            await pending.task
+        except asyncio.CancelledError:
+            # Cancellation before _perform's first instruction still finalizes.
+            pending.run.status = RunStatus.cancelled
+            pending.run.finished_at = now()
+            await durable(self.store.save_run, pending.run)
+        if not pending.future.done():
+            pending.future.set_result(pending.run)
+
+    async def _worker(self, session_id: str, queue: asyncio.Queue) -> None:
         while True:
             pending = await queue.get()
             try:
-                if pending.cancellation is not None:
-                    await asyncio.shield(pending.future)
-                    continue
-                pending.task = asyncio.create_task(self._perform(pending))
-                try:
-                    await pending.task
-                except asyncio.CancelledError:
-                    # Cancellation before _perform's first instruction still finalizes.
-                    pending.run.status = RunStatus.cancelled
-                    pending.run.finished_at = now()
-                    await durable(self.store.save_run, pending.run)
-                if not pending.future.done():
-                    pending.future.set_result(pending.run)
+                await self._work_pending(pending)
             except Exception as exc:
                 if not pending.future.done():
                     pending.future.set_exception(exc)
             finally:
-                self.pending.pop(pending.run.id, None)
-                queue.task_done()
+                async with self.submit_lock:
+                    self.pending.pop(pending.run.id, None)
+                    queue.task_done()
+                    if queue.empty():
+                        self.queues.pop(session_id, None)
+                        self.workers.pop(session_id, None)
+                        self._release_session_lock(session_id)
+            if queue.empty():
+                return
 
     async def _perform(self, pending: Pending) -> None:
         try:
@@ -549,7 +566,7 @@ class Execution(RuntimeOps, StepLoopMixin):
             outcomes = await asyncio.gather(
                 *(self.cancel(run_id) for run_id in accepted), return_exceptions=True
             )
-            for queue in self.queues.values():
+            for queue in list(self.queues.values()):
                 await queue.join()
             failures = [
                 outcome for outcome in outcomes if isinstance(outcome, Exception)
