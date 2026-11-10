@@ -317,7 +317,8 @@ def test_pre_turn_summary_is_rendered_before_new_message_and_excludes_it(
             headers={"HX-Request": "true"},
         )
         assert response.status_code == 200
-        assert response.text.index("Context compacted ·") < response.text.index(
+        history = response.text.split('id="conversation"', 1)[1]
+        assert history.index("Context compacted ·") < history.index(
             "NEW MESSAGE AFTER SUMMARY"
         )
         assert "Hello back" in response.text

@@ -18,11 +18,19 @@ from solakit.main import create_app
 
 def test_evidence_and_operations_require_auth(config, mock_model):
     with TestClient(create_app(config=config, model=mock_model)) as client:
-        for path in ("/prompt", "/runs", "/runs/unknown", "/operations"):
+        for path in (
+            "/settings/evidence/prompt",
+            "/settings/evidence/runs",
+            "/settings/evidence/runs/unknown",
+            "/settings/jobs",
+        ):
             assert client.get(path, follow_redirects=False).headers[
                 "location"
             ] == "/login?next=" + quote(path, safe="")
-        for path in ("/runs/unknown/cancel", "/operations/jobs/job/run"):
+        for path in (
+            "/settings/evidence/runs/unknown/cancel",
+            "/settings/jobs/job/run",
+        ):
             assert (
                 client.post(path, follow_redirects=False).headers["location"]
                 == "/login?next=%2F"
@@ -40,7 +48,7 @@ def test_prompt_ui_api_hash_parity_and_masking(config, mock_model):
     with TestClient(create_app(config=config, model=mock_model)) as client:
         sign_in(client)
         api = client.get("/api/prompt", params=query).json()
-        page = client.get("/prompt", params=query)
+        page = client.get("/settings/evidence/prompt", params=query)
         assert page.status_code == 200
         assert api["sha256"] == hashlib.sha256(api["prompt"].encode()).hexdigest()
         assert api["sha256"] in page.text
@@ -54,16 +62,23 @@ def test_prompt_ui_api_hash_parity_and_masking(config, mock_model):
         assert "Not measured" in page.text
         assert client.get("/api/runs").json() == []
         config.paths.soul.write_text("Credential operator-test-token")
-        page = client.get("/prompt", params=query)
+        page = client.get("/settings/evidence/prompt", params=query)
         assert "operator-test-token" not in page.text
         assert "[redacted]" in page.text
         assert (
             "operator-test-token"
             in client.get("/api/prompt", params=query).json()["prompt"]
         )
-        assert client.get("/prompt", params={"profile": "unknown"}).status_code == 422
         assert (
-            client.get("/prompt", params={"at": "<script>bad</script>"}).status_code
+            client.get(
+                "/settings/evidence/prompt", params={"profile": "unknown"}
+            ).status_code
+            == 422
+        )
+        assert (
+            client.get(
+                "/settings/evidence/prompt", params={"at": "<script>bad</script>"}
+            ).status_code
             == 422
         )
 
@@ -117,7 +132,7 @@ def test_run_view_uses_redacted_logs_and_links(config, mock_model):
                 "result": {"content": "<script>safe text</script>", "error": False},
             },
         )
-        page = client.get(f"/runs/{run.id}")
+        page = client.get(f"/settings/evidence/runs/{run.id}")
         assert page.status_code == 200
         for value in (
             "raw-secret",
@@ -128,11 +143,22 @@ def test_run_view_uses_redacted_logs_and_links(config, mock_model):
             assert value not in page.text
         assert "&lt;script&gt;safe text&lt;/script&gt;" in page.text
         assert "[redacted]" in page.text
-        assert f'action="/runs/{run.id}/cancel"' not in page.text
-        assert run.id in client.get("/runs", params={"session": "evening"}).text
-        assert run.id not in client.get("/runs", params={"status": "failed"}).text
-        assert f'href="/runs/{run.id}"' in client.get("/sessions/evening").text
-        assert client.get("/runs/missing").status_code == 404
+        assert f'action="/settings/evidence/runs/{run.id}/cancel"' not in page.text
+        assert (
+            run.id
+            in client.get("/settings/evidence/runs", params={"session": "evening"}).text
+        )
+        assert (
+            run.id
+            not in client.get(
+                "/settings/evidence/runs", params={"status": "failed"}
+            ).text
+        )
+        assert (
+            f'href="/settings/evidence/runs/{run.id}"'
+            in client.get("/sessions/evening").text
+        )
+        assert client.get("/settings/evidence/runs/missing").status_code == 404
 
 
 def test_run_cancellation_uses_existing_durable_operation(config):
@@ -162,10 +188,12 @@ def test_run_cancellation_uses_existing_durable_operation(config):
             try:
                 assert entered.wait(2)
                 identity = client.get("/api/runs").json()[0]["id"]
-                page = client.get(f"/runs/{identity}")
-                assert f'action="/runs/{identity}/cancel"' in page.text
+                page = client.get(f"/settings/evidence/runs/{identity}")
+                assert (
+                    f'action="/settings/evidence/runs/{identity}/cancel"' in page.text
+                )
                 cancelled = client.post(
-                    f"/runs/{identity}/cancel", follow_redirects=False
+                    f"/settings/evidence/runs/{identity}/cancel", follow_redirects=False
                 )
                 assert cancelled.status_code == 303
                 assert future.result(timeout=2).json()["status"] == "cancelled"
@@ -198,27 +226,27 @@ def test_operations_controls_enabled_and_disabled_jobs(config, mock_model):
     ]
     with TestClient(create_app(config=config, model=mock_model)) as client:
         sign_in(client)
-        page = client.get("/operations")
+        page = client.get("/settings/jobs")
         assert page.status_code == 200
         assert "offline" in page.text and "disabled" in page.text
         assert "America/Denver" in page.text and "sample" in page.text
         assert (
             client.post(
-                "/operations/jobs/sample/pause", follow_redirects=False
+                "/settings/jobs/sample/pause", follow_redirects=False
             ).status_code
             == 303
         )
         assert client.get("/api/jobs").json()[0]["paused"]
         assert (
             client.post(
-                "/operations/jobs/sample/resume", follow_redirects=False
+                "/settings/jobs/sample/resume", follow_redirects=False
             ).status_code
             == 303
         )
         assert not client.get("/api/jobs").json()[0]["paused"]
-        result = client.post("/operations/jobs/sample/run", follow_redirects=False)
+        result = client.post("/settings/jobs/sample/run", follow_redirects=False)
         assert result.status_code == 303 and result.headers["location"].startswith(
-            "/runs/"
+            "/settings/evidence/runs/"
         )
         assert client.get(result.headers["location"]).status_code == 200
         run = client.get(
@@ -228,14 +256,14 @@ def test_operations_controls_enabled_and_disabled_jobs(config, mock_model):
         assert (
             client.patch("/api/jobs/sample", json={"enabled": False}).status_code == 200
         )
-        failed = client.post("/operations/jobs/sample/run")
+        failed = client.post("/settings/jobs/sample/run")
         assert failed.status_code == 409 and "disabled" in failed.text
-        assert client.get("/operations/jobs/sample/delete").status_code == 200
+        assert client.get("/settings/jobs/sample/delete").status_code == 200
         assert (
             client.post(
-                "/operations/jobs/sample/delete", follow_redirects=False
+                "/settings/jobs/sample/delete", follow_redirects=False
             ).status_code
             == 303
         )
         assert client.get("/api/jobs").json() == []
-        assert client.post("/operations/jobs/missing/run").status_code == 404
+        assert client.post("/settings/jobs/missing/run").status_code == 404

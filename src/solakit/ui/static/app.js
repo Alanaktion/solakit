@@ -5,7 +5,7 @@
   let events;
   const form = () => document.getElementById("composer");
   const baseTitle = document.title;
-  const menus = ".archive-menu, .session-menu, .chat-health";
+  const menus = ".session-menu";
   // Popup disclosures close on outside clicks and Escape, like native menus.
   document.addEventListener("click", event => {
     document.querySelectorAll(menus).forEach(menu => {
@@ -120,10 +120,16 @@
     composer.setAttribute("aria-busy", String(active));
     composer.querySelectorAll('button[type="submit"]').forEach((node) => { node.disabled = active; });
     pending.hidden = !active;
+    const topic = document.querySelector?.('.conversation-link[aria-current="page"]');
+    if (topic) {
+      const spinner = topic.querySelector(".topic-running");
+      if (spinner) spinner.hidden = !active;
+      if (active) { const failed = topic.querySelector(".topic-failed"); if (failed) failed.hidden = true; }
+    }
     document.title = (active ? "… " : "") + baseTitle;
     const stop = document.getElementById("stop-run");
     if (stop) {
-      if (runId) stop.action = "/runs/" + encodeURIComponent(runId) + "/cancel?return_to_session=true";
+      if (runId) stop.action = "/settings/evidence/runs/" + encodeURIComponent(runId) + "/cancel?return_to_session=true";
       if (!active) stop.removeAttribute("action");
       stop.querySelector('button[type="submit"]').disabled = !active || !stop.getAttribute("action");
     }
@@ -238,6 +244,8 @@
       }
       if (nearBottom) scrollConversation(); else jumpVisibility();
       if (!snapshot.pending) {
+        const failed = document.querySelector?.('.conversation-link[aria-current="page"] .topic-failed');
+        if (failed && incoming?.dataset.runStatus) failed.hidden = ["completed", "cancelled"].includes(incoming.dataset.runStatus);
         source.close();
         events = null;
         waiting(false);
@@ -375,4 +383,106 @@
   jobSchedule();
   jobTools();
   if (!globalThis.location?.hash) scrollConversation();
+})();
+
+// Navigation panels do not participate in transcript or streaming reconciliation.
+(() => {
+  let previousFocus;
+  const panel = id => document.getElementById(id);
+  const mobile = () => globalThis.matchMedia?.("(max-width: 900px)").matches;
+  function close(id) {
+    const node = panel(id);
+    if (!node) return;
+    if (id === "chat-sidebar") node.classList.remove("is-open");
+    else node.hidden = true;
+    document.querySelector(`[data-drawer-toggle="${id}"]`)?.setAttribute("aria-expanded", "false");
+    node.removeAttribute("role");
+    node.removeAttribute("aria-modal");
+    previousFocus?.focus();
+  }
+  async function refreshDetails(node) {
+    try {
+      const response = await fetch(node.dataset.detailsUrl);
+      if (response.status === 401) { window.location.assign("/login?next=" + encodeURIComponent(location.pathname + location.search + location.hash)); return; }
+      if (!response.ok) throw new Error("Details unavailable");
+      const template = document.createElement("template");
+      template.innerHTML = await response.text(); // Authenticated, escaped UI fragment.
+      const fresh = template.content.querySelector("#topic-details");
+      if (fresh) node.replaceChildren(...fresh.childNodes);
+    } catch {
+      const status = node.querySelector("[data-details-status]");
+      if (status) { status.hidden = false; status.textContent = "Could not refresh Details. Reopen to retry."; }
+    }
+  }
+  function open(id, trigger) {
+    const node = panel(id);
+    if (!node) return;
+    document.querySelectorAll('[data-drawer-toggle][aria-expanded="true"]').forEach(other => close(other.dataset.drawerToggle));
+    previousFocus = trigger;
+    if (id === "chat-sidebar") node.classList.add("is-open");
+    else node.hidden = false;
+    trigger.setAttribute("aria-expanded", "true");
+    if (mobile()) { node.setAttribute("role", "dialog"); node.setAttribute("aria-modal", "true"); }
+    node.focus();
+    if (node.dataset.detailsUrl) refreshDetails(node);
+  }
+  document.addEventListener("click", event => {
+    const trigger = event.target.closest?.("[data-drawer-toggle]");
+    const closer = event.target.closest?.("[data-drawer-close]");
+    if (trigger) {
+      if (trigger.getAttribute("aria-expanded") === "true") close(trigger.dataset.drawerToggle);
+      else open(trigger.dataset.drawerToggle, trigger);
+    } else if (closer) close(closer.dataset.drawerClose);
+  });
+  document.addEventListener("keydown", event => {
+    const trigger = document.querySelector?.('[data-drawer-toggle][aria-expanded="true"]');
+    if (!trigger) return;
+    if (event.key === "Escape") { close(trigger.dataset.drawerToggle); return; }
+    if (event.key !== "Tab" || !mobile()) return;
+    const node = panel(trigger.dataset.drawerToggle);
+    const stops = [...node.querySelectorAll('a[href], button, input, summary, [tabindex="0"]')].filter(el => el.getClientRects().length && !el.disabled);
+    const first = stops[0], last = stops[stops.length - 1];
+    if (!first) { event.preventDefault(); return; }
+    if (event.shiftKey && (document.activeElement === first || document.activeElement === node)) { event.preventDefault(); last.focus(); }
+    else if (!event.shiftKey && (document.activeElement === last || document.activeElement === node)) { event.preventDefault(); first.focus(); }
+  });
+  document.addEventListener("input", event => {
+    if (event.target.id !== "topic-filter") return;
+    const query = event.target.value.trim().toLocaleLowerCase();
+    document.querySelectorAll("[data-topic-title]").forEach(link => {
+      link.hidden = !link.dataset.topicTitle.includes(query);
+      if (link.nextElementSibling?.classList.contains("topic-children")) link.nextElementSibling.hidden = link.hidden;
+    });
+  });
+  document.addEventListener("DOMContentLoaded", () => {
+    const dot = panel("health-indicator");
+    if (dot) {
+      let stopped = false;
+      let polling;
+      async function update() {
+        try {
+          const response = await fetch("/ui/health", {headers: {Accept: "application/json"}});
+          if (response.status === 401) { stopped = true; return; }
+          if (!response.ok) throw new Error("Health unavailable");
+          const state = await response.json();
+          dot.className = "health-indicator health-" + state.color;
+          dot.title = state.label;
+          dot.setAttribute("aria-label", "System: " + state.label);
+        } catch {
+          dot.className = "health-indicator health-amber";
+          dot.title = "System health unavailable";
+          dot.setAttribute("aria-label", dot.title);
+        } finally { if (!stopped) polling = setTimeout(update, 15000); }
+      }
+      update();
+      globalThis.addEventListener?.("pagehide", () => { stopped = true; clearTimeout(polling); });
+      globalThis.addEventListener?.("pageshow", event => { if (event.persisted) { stopped = false; update(); } });
+    }
+    document.querySelectorAll("[data-relative-time]").forEach(node => {
+      const elapsed = Math.max(0, Date.now() - Date.parse(node.dateTime));
+      if (!Number.isFinite(elapsed)) return;
+      const minutes = Math.floor(elapsed / 60000), hours = Math.floor(minutes / 60), days = Math.floor(hours / 24);
+      node.textContent = days ? `${days}d ago` : hours ? `${hours}h ago` : minutes ? `${minutes}m ago` : "Just now";
+    });
+  });
 })();

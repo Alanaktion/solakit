@@ -60,7 +60,7 @@ def test_stats_api_and_page(config, auth, mock_model):
         assert data["offending_runs"][0]["id"] == failed.id
         assert client.get("/api/stats/model?window=0", headers=auth).status_code == 422
         client.post("/login", data={"token": "operator-test-token"})
-        page = client.get("/model-health")
+        page = client.get("/settings/system")
         assert page.status_code == 200 and failed.id[:8] in page.text
 
 

@@ -37,7 +37,7 @@ def register(router: APIRouter, ns: UIContext) -> None:  # noqa: C901
     schema_views = ns.schema_views
     health = ns.health
 
-    @router.get("/prompt")
+    @router.get("/settings/evidence/prompt")
     async def prompt_page(request: Request):
         if not logged_in(request):
             return login_redirect(request)
@@ -111,7 +111,7 @@ def register(router: APIRouter, ns: UIContext) -> None:  # noqa: C901
             status,
         )
 
-    @router.get("/runs")
+    @router.get("/settings/evidence/runs")
     async def runs_page(request: Request):
         if not logged_in(request):
             return login_redirect(request)
@@ -139,7 +139,7 @@ def register(router: APIRouter, ns: UIContext) -> None:  # noqa: C901
             )
 
             def page_url(at):
-                return "/runs?" + urlencode(
+                return "/settings/evidence/runs?" + urlencode(
                     {"session": session_filter, "status": status_filter, "offset": at}
                 )
 
@@ -162,7 +162,7 @@ def register(router: APIRouter, ns: UIContext) -> None:  # noqa: C901
         except APIError as exc:
             return render(request, "error.html", {"error": exc.detail}, exc.status)
 
-    @router.get("/runs/{identity}")
+    @router.get("/settings/evidence/runs/{identity}")
     async def run_page(request: Request, identity: str):
         if not logged_in(request):
             return login_redirect(request)
@@ -194,7 +194,7 @@ def register(router: APIRouter, ns: UIContext) -> None:  # noqa: C901
         except APIError as exc:
             return render(request, "error.html", {"error": exc.detail}, exc.status)
 
-    @router.post("/runs/{identity}/memory/refresh")
+    @router.post("/settings/evidence/runs/{identity}/memory/refresh")
     async def refresh_memory(request: Request, identity: str):
         if not logged_in(request):
             return login_redirect(request)
@@ -203,17 +203,19 @@ def register(router: APIRouter, ns: UIContext) -> None:  # noqa: C901
                 request, "POST", f"/api/runs/{quote(identity, safe='')}/memory/refresh"
             )
             return RedirectResponse(
-                f"/runs/{quote(identity, safe='')}", 303, headers=HEADERS
+                f"/settings/evidence/runs/{quote(identity, safe='')}",
+                303,
+                headers=HEADERS,
             )
         except APIError as exc:
             return render(request, "error.html", {"error": exc.detail}, exc.status)
 
-    @router.post("/runs/{identity}/cancel")
+    @router.post("/settings/evidence/runs/{identity}/cancel")
     async def cancel_run(request: Request, identity: str):
         if not logged_in(request):
             return login_redirect(request)
         try:
-            target = f"/runs/{quote(identity, safe='')}"
+            target = f"/settings/evidence/runs/{quote(identity, safe='')}"
             if request.query_params.get("return_to_session") == "true":
                 record = await api(
                     request, "GET", f"/api/runs/{quote(identity, safe='')}"
@@ -224,7 +226,7 @@ def register(router: APIRouter, ns: UIContext) -> None:  # noqa: C901
         except APIError as exc:
             return render(request, "error.html", {"error": exc.detail}, exc.status)
 
-    @router.get("/model-health")
+    @router.get("/settings/system")
     async def model_health(request: Request):
         if not logged_in(request):
             return login_redirect(request)
@@ -235,9 +237,13 @@ def register(router: APIRouter, ns: UIContext) -> None:  # noqa: C901
             stats = await api(request, "GET", f"/api/stats/model?window={window}")
         except APIError as exc:
             return render(request, "error.html", {"error": exc.detail}, exc.status)
-        return render(request, "model_health.html", {"stats": stats})
+        return render(
+            request,
+            "model_health.html",
+            {"stats": stats, "health": await health(request)},
+        )
 
-    @router.get("/tools")
+    @router.get("/settings/tools")
     async def tools_page(request: Request):
         if not logged_in(request):
             return login_redirect(request)

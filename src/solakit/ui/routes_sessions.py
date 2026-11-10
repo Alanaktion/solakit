@@ -42,7 +42,7 @@ def register(router: APIRouter, ns: UIContext) -> None:  # noqa: C901
     conversation = ns.conversation
     chat_context = ns.chat_context
 
-    @router.get("/search")
+    @router.get("/settings/search")
     async def search_sessions(request: Request):
         if not logged_in(request):
             return login_redirect(request)
@@ -70,7 +70,7 @@ def register(router: APIRouter, ns: UIContext) -> None:  # noqa: C901
                     results = catalog["sessions"]
 
                     def page_url(offset):
-                        return "/search?" + urlencode(
+                        return "/settings/search?" + urlencode(
                             {
                                 "q": query,
                                 "mode": mode,
@@ -98,14 +98,16 @@ def register(router: APIRouter, ns: UIContext) -> None:  # noqa: C901
                     )
                     for hit in results:
                         target = "/sessions/" + quote(hit["session_id"], safe="")
+                        anchor = f"message-{hit['line_no']}"
                         if hit["archive"] != "active":
                             number = hit["archive"].rsplit(".", 1)[-1]
-                            target += "/archives/" + quote(number, safe="")
+                            anchor = f"message-archive-{number}-{hit['line_no']}"
                         hit["url"] = (
                             target
                             + "?"
-                            + urlencode({"turn": hit["run_id"]})
-                            + f"#message-{hit['line_no']}"
+                            + urlencode({"turn": hit["run_id"], "anchor": anchor})
+                            + "#"
+                            + anchor
                         )
         except APIError as exc:
             error, status = exc.detail, exc.status
@@ -138,6 +140,7 @@ def register(router: APIRouter, ns: UIContext) -> None:  # noqa: C901
                 {
                     "id": values.get("id", ""),
                     "source": "web",
+                    "title": values.get("title", ""),
                     "default_profile": values.get("default_profile", ""),
                     "memory_scope": values.get("memory_scope", "shared"),
                 },
@@ -172,10 +175,15 @@ def register(router: APIRouter, ns: UIContext) -> None:  # noqa: C901
                 {"archived": operation == "archive"},
             )
             target = (
-                "/?status=archived"
+                "/settings/sessions?status=archived"
                 if operation == "archive"
                 else f"/sessions/{quote(identity, safe='')}"
             )
+            if (
+                operation == "archive"
+                and request.query_params.get("return_to") == "chat"
+            ):
+                target = "/"
             return RedirectResponse(target, 303, headers=HEADERS)
         except APIError as exc:
             return render(request, "error.html", {"error": exc.detail}, exc.status)

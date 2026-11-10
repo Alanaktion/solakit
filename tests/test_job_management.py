@@ -289,28 +289,26 @@ def test_chat_tools_create_edit_trigger_same_session_and_scope_grants(config):
 
 def test_ui_create_edit_validation_and_delete_are_api_backed(config, mock_model):
     with TestClient(create_app(config=config, model=mock_model)) as client:
+        assert client.get("/settings/jobs/new").status_code == 200  # redirects to login
         assert (
-            client.get("/operations/jobs/new").status_code == 200
-        )  # redirects to login
-        assert (
-            client.post("/operations/jobs", data={})
+            client.post("/settings/jobs", data={})
             .headers.get("content-type", "")
             .startswith("text/html")
         )
         client.post("/login", data={"token": "operator-test-token"})
-        page = client.get("/operations")
-        assert 'href="/operations/jobs/new"' in page.text
-        assert client.get("/operations/jobs/new").status_code == 200
+        page = client.get("/settings/jobs")
+        assert 'href="/settings/jobs/new"' in page.text
+        assert client.get("/settings/jobs/new").status_code == 200
         values = {**definition(), "delivery_mode": "automatic"}
-        invalid = client.post("/operations/jobs", data={**values, "cron": "bad"})
+        invalid = client.post("/settings/jobs", data={**values, "cron": "bad"})
         assert invalid.status_code == 422 and "Reflect on {date}" in invalid.text
         assert client.get("/api/jobs").json() == []
-        response = client.post("/operations/jobs", data=values, follow_redirects=False)
+        response = client.post("/settings/jobs", data=values, follow_redirects=False)
         assert response.status_code == 303, response.text
-        edit = client.get("/operations/jobs/daily/edit")
+        edit = client.get("/settings/jobs/daily/edit")
         assert 'value="daily"' in edit.text and "Reflect on {date}" in edit.text
         response = client.post(
-            "/operations/jobs/daily/edit",
+            "/settings/jobs/daily/edit",
             data={**values, "task": "Updated <script> text", "enabled": "on"},
             follow_redirects=False,
         )
@@ -318,13 +316,13 @@ def test_ui_create_edit_validation_and_delete_are_api_backed(config, mock_model)
         assert client.get("/api/jobs/daily").json()["task"] == "Updated <script> text"
         assert (
             "Updated &lt;script&gt; text"
-            in client.get("/operations/jobs/daily/edit").text
+            in client.get("/settings/jobs/daily/edit").text
         )
-        assert client.get("/operations/jobs/daily/delete").status_code == 200
+        assert client.get("/settings/jobs/daily/delete").status_code == 200
         assert client.get("/api/jobs/daily").status_code == 200
         assert (
             client.post(
-                "/operations/jobs/daily/delete", follow_redirects=False
+                "/settings/jobs/daily/delete", follow_redirects=False
             ).status_code
             == 303
         )

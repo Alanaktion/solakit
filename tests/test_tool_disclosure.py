@@ -310,9 +310,9 @@ def test_job_modes_residents_and_initial_prompt_inspection(
         record = client.post("/api/jobs/narrow/run", headers=auth).json()
         assert record["status"] == "completed"
         assert names(bodies[0]["tools"]) == names(preview["tools"])
-        assert client.get("/prompt?job=narrow").status_code == 200
-        assert client.get("/tools").status_code == 200
-        assert client.get(f"/runs/{record['id']}").status_code == 200
+        assert client.get("/settings/evidence/prompt?job=narrow").status_code == 200
+        assert client.get("/settings/tools").status_code == 200
+        assert client.get(f"/settings/evidence/runs/{record['id']}").status_code == 200
         historical = client.get(
             "/api/prompt", params={"run_id": record["id"]}, headers=auth
         ).json()
@@ -641,12 +641,12 @@ def test_job_disclosure_form_roundtrip_validation_and_profile_update(config, aut
             "tool_resident": "files.read",
             "tools_mode": "inherit",
         }
-        response = client.post("/operations/jobs", data=payload, follow_redirects=False)
+        response = client.post("/settings/jobs", data=payload, follow_redirects=False)
         assert response.status_code == 303
         record = client.get("/api/jobs/form", headers=auth).json()
         assert record["tool_disclosure"] == "deferred"
         assert record["tool_resident"] == ["files.read"]
-        page = client.get("/operations/jobs/form/edit")
+        page = client.get("/settings/jobs/form/edit")
         assert 'value="files.read"' in page.text
         assert 'value="deferred" selected' in page.text
         invalid = client.patch(
@@ -660,7 +660,7 @@ def test_job_disclosure_form_roundtrip_validation_and_profile_update(config, aut
         payload.update(resident_mode="selected", tool_resident="", profile="status")
         assert (
             client.post(
-                "/operations/jobs/form/edit", data=payload, follow_redirects=False
+                "/settings/jobs/form/edit", data=payload, follow_redirects=False
             ).status_code
             == 303
         )
@@ -668,7 +668,7 @@ def test_job_disclosure_form_roundtrip_validation_and_profile_update(config, aut
         payload["resident_mode"] = "inherit"
         assert (
             client.post(
-                "/operations/jobs/form/edit", data=payload, follow_redirects=False
+                "/settings/jobs/form/edit", data=payload, follow_redirects=False
             ).status_code
             == 303
         )

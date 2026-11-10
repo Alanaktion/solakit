@@ -323,8 +323,8 @@ def test_ui_archive_view_cleanup_undo_and_restore(config, mock_model):
         assert "needle old" in client.get("/sessions/old").text
         assert 'id="composer"' not in client.get("/sessions/old").text
         assert "Restore session" in client.get("/sessions/old").text
-        assert "/sessions/old" not in client.get("/").text
-        assert "/sessions/old" in client.get("/?status=archived").text
+        assert "/sessions/old" not in client.get("/settings/sessions").text
+        assert "/sessions/old" in client.get("/settings/sessions?status=archived").text
         assert (
             client.post(
                 "/sessions/cleanup/apply",

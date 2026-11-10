@@ -189,9 +189,12 @@ def test_run_pagination_filters_before_limit_and_uses_indexes(config, mock_model
                 "'status_unavailable', rowid LIMIT 100"
             ).fetchall()
             assert any("INDEX" in row[-1] for row in pending)
-        page = client.get("/runs", headers=auth)
+        page = client.get("/settings/evidence/runs", headers=auth)
         assert "offset=100" in page.text and "run-104" in page.text
-        assert "run-000" in client.get("/runs?offset=100", headers=auth).text
+        assert (
+            "run-000"
+            in client.get("/settings/evidence/runs?offset=100", headers=auth).text
+        )
 
 
 def test_internal_client_never_retains_request_authentication():
@@ -236,8 +239,8 @@ def test_app_reuses_and_closes_internal_client(config, mock_model):
     with TestClient(create_app(config, mock_model)) as client:
         shared = client.app.state.ui_client
         client.post("/login", data={"token": "operator-test-token"})
-        assert client.get("/tools").status_code == 200
-        assert client.get("/runs").status_code == 200
+        assert client.get("/settings/tools").status_code == 200
+        assert client.get("/settings/evidence/runs").status_code == 200
         assert client.app.state.ui_client is shared
         assert not list(shared.cookies.jar)
         response = client.portal.call(shared.get, "/api/profiles")

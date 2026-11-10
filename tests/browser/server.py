@@ -346,6 +346,13 @@ def disconnect_scratch_observer(identity: str):
     return {"disconnecting": True}
 
 
+@app.post("/qa/model/{available}")
+def scratch_model_health(available: bool):
+    # QA-only health control; never mounted by the production app.
+    app.state.model.available = available
+    return {"available": available}
+
+
 @app.post("/qa/expire")
 def expire_scratch_sessions():
     # QA-only route in this isolated fixture, never mounted by the application.

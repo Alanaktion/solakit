@@ -2,10 +2,10 @@
 {% from "macros/icons.html" import icon %}
 {% block title %}Model health · Solakit{% endblock %}
 {% block content %}
-<div class="operations-page model-health">
+<div class="operations-page model-health"><h1>System</h1>{% include "fragments/status.html" %}
   <section class="page-heading">
     <div><span class="section-label">MODEL OBSERVATORY</span><h1>Model health</h1><p class="intro">A closer look at the latest {{ stats.window }} runs. Open a run to inspect its evidence.</p></div>
-    <div class="health-window"><span class="operation-label">Run window</span><div class="action-group" aria-label="Run window">{% for size in [50, 100, 500] %}<a class="secondary-button" href="/model-health?window={{ size }}" {% if request.query_params.get('window', '100') == size|string %}aria-current="page"{% endif %}>{{ size }} runs</a>{% endfor %}</div></div>
+    <div class="health-window"><span class="operation-label">Run window</span><div class="action-group" aria-label="Run window">{% for size in [50, 100, 500] %}<a class="secondary-button" href="/settings/system?window={{ size }}" {% if request.query_params.get('window', '100') == size|string %}aria-current="page"{% endif %}>{{ size }} runs</a>{% endfor %}</div></div>
   </section>
   <section class="operations-panel panel" aria-labelledby="mix-heading">
     <header class="operations-section-heading"><div><h2 id="mix-heading">Outcomes</h2><p class="muted">Run quality, recovery signals, and average model usage.</p></div><div class="operation-tags">{% for status, count in stats.status.items() %}<span class="profile-tag">{{ status|replace('_', ' ') }} · {{ count }}</span>{% else %}<span class="muted">No runs recorded</span>{% endfor %}</div></header>
@@ -27,7 +27,7 @@
   <div class="health-diagnostics">
     <section class="operations-panel panel" aria-labelledby="runs-heading">
       <header class="operations-section-heading"><div><h2 id="runs-heading">Runs to inspect <span class="count-label">{{ stats.offending_runs|length }}</span></h2><p class="muted">Runs with failures or tool errors in this window.</p></div></header>
-      <ul class="health-records">{% for run in stats.offending_runs %}<li><div class="health-record-heading"><a class="text-link operation-run-link" href="/runs/{{ run.id|urlencode }}">{{ run.id[:8] }} {{ icon("arrow-up-right") }}</a><span class="subtle-tag">{{ run.status|replace('_', ' ') }}</span></div><span class="operation-meta">{{ run.profile }}</span>{% if run.error %}<p class="health-record-detail">{{ run.error }}</p>{% endif %}</li>{% else %}<li class="muted health-empty">Nothing failed in this window.</li>{% endfor %}</ul>
+      <ul class="health-records">{% for run in stats.offending_runs %}<li><div class="health-record-heading"><a class="text-link operation-run-link" href="/settings/evidence/runs/{{ run.id|urlencode }}">{{ run.id[:8] }} {{ icon("arrow-up-right") }}</a><span class="subtle-tag">{{ run.status|replace('_', ' ') }}</span></div><span class="operation-meta">{{ run.profile }}</span>{% if run.error %}<p class="health-record-detail">{{ run.error }}</p>{% endif %}</li>{% else %}<li class="muted health-empty">Nothing failed in this window.</li>{% endfor %}</ul>
     </section>
     <section class="operations-panel panel" aria-labelledby="doctor-heading">
       <header class="operations-section-heading"><div><h2 id="doctor-heading">Live diagnostics</h2><p class="muted">Run <code>sola doctor</code> to refresh live probes.</p>{% if stats.doctor %}<span class="operation-meta">Last checked · {{ stats.doctor.checked_at }}</span>{% endif %}</div></header>

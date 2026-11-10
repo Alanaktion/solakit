@@ -46,7 +46,8 @@ def test_api_web_creation_and_default_ui_filter(config, mock_model, auth):
         assert 'href="/sessions/scheduled-hidden"' not in page
         assert 'href="/sessions/web-created"' in page
         assert (
-            'href="/sessions/scheduled-hidden"' in client.get("/?exclude_source=").text
+            'href="/sessions/scheduled-hidden"'
+            in client.get("/settings/sessions?exclude_source=").text
         )
         assert len(client.get("/api/sessions").json()) == 3
         assert len(client.get("/api/sessions?exclude_source=cron").json()) == 2
@@ -56,7 +57,7 @@ def test_api_web_creation_and_default_ui_filter(config, mock_model, auth):
         assert 'rel="next"' not in client.get("/").text
         assert (
             "exclude_source=&amp;q=&amp;profile=&amp;offset=50"
-            in client.get("/?exclude_source=").text
+            in client.get("/settings/sessions?exclude_source=").text
         )
 
 
@@ -147,19 +148,22 @@ def test_children_live_with_parent_in_ui(config, mock_model):
             )
         )
         sign_in(client)
-        assert 'href="/sessions/child-' not in client.get("/?exclude_source=").text
-        page = client.get("/sessions/parent").text
-        assert "Sub-sessions (52)" in page
-        assert "Next sub-sessions" in page
         assert (
-            "Previous sub-sessions"
-            in client.get("/sessions/parent?child_offset=50").text
+            'href="/sessions/child-'
+            not in client.get("/settings/sessions?exclude_source=").text
         )
+        page = client.get("/sessions/parent").text
+        assert "Delegated topics" in page
+        assert "Next" in page
+        assert "Previous" in client.get("/sessions/parent?child_offset=50").text
         child = client.get("/sessions/child-00").text
         assert 'href="/sessions/parent">' in child
-        assert " Parent session</a>" in child
+        assert " Parent topic</a>" in child
         assert "/static/vendor/lucide.svg#arrow-left" in child
-        assert 'href="/sessions/child-00"' not in child.split("</aside>")[0]
+        root_topics = child.split('class="conversation-list"', 1)[1].split("</nav>", 1)[
+            0
+        ]
+        assert 'href="/sessions/child-00"' not in root_topics
         assert (
             client.get(
                 "/api/sessions?parent_session=parent&page=true&status=all"

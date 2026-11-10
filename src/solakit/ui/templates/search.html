@@ -4,7 +4,7 @@
 {% block content %}
 <div class="session-search">
   <section class="page-heading"><div><span class="section-label">CONVERSATION LIBRARY</span><h1>Search sessions</h1><p class="intro">Find active and archived sessions, or look inside conversations and numbered transcript archives.</p></div></section>
-  <form class="panel search-form" action="/search" method="get" aria-label="Search sessions">
+  <form class="panel search-form" action="/settings/search" method="get" aria-label="Search sessions">
     <div class="search-inputs">
       <div class="form-field"><label for="search-mode">Search in</label><select id="search-mode" name="mode"><option value="sessions" {% if mode == 'sessions' %}selected{% endif %}>Session name or ID</option><option value="text" {% if mode == 'text' %}selected{% endif %}>Full text</option></select></div>
       <div class="form-field"><label for="search-query">Search query</label><input id="search-query" name="q" value="{{ query }}" maxlength="2000" aria-describedby="search-help" required></div>

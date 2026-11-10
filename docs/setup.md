@@ -97,17 +97,22 @@ its silver/violet palette and soft ambient details from
 and a near-black dark mode. It supports system light/dark preference, session
 creation, sanitized assistant Markdown, collapsed tool evidence,
 and reported health. UI icons use packaged local Lucide SVG symbols; they need
-no network access, JavaScript initialization, or additional configuration. The Tools page lists loaded tools, argument schemas, write
-requirements, and effective profile grants. Chat links to its profile’s tools
-and shows calls as expandable redacted argument/result cards. Chat fills the viewport with a desktop session sidebar that excludes cron sessions,
-compact navigation, Markdown assistant replies, user bubbles, and a bottom-anchored composer; on mobile, the conversation takes
-the full width with a back link to sessions. Sessions use their configured default
-profile for chat. Session management uses compact rows and a collapsible creation
-form; evidence and operations views share the denser spacing.
-The Prompt inspector shows API-assembled text, its original SHA and tool schemas.
-Runs lists recorded outcomes and opens stored prompts, messages, redacted tools,
-diagnostics, memory/delivery events and cancellation for active runs. Operations
-shows adapter state and lets you create, edit, delete, run, pause and resume jobs.
+no network access, JavaScript initialization, or additional configuration.
+Opening `/` selects the latest active topic or shows New topic. Chat fills the
+viewport with a topic sidebar, Markdown assistant replies, user bubbles and a
+bottom-anchored composer. On mobile, Topics opens a drawer. The sidebar excludes
+cron sessions and offers title filtering, pinned channels and archived topics.
+Sessions use their configured default profile for chat. Details refreshes recent
+runs and exposes prompt/history links, recorded metrics and session metadata;
+Actions contains rename, compaction, transcript rotation and topic archival.
+
+Settings contains System, Jobs, Tools & profiles, Sessions, Evidence and Search.
+Tools & profiles lists loaded tools, argument schemas, write requirements and
+profile grants. Sessions holds administrative filters, bulk actions and advanced
+creation. Evidence preserves API-assembled prompts, original hashes, stored
+messages, redacted tools, diagnostics, memory/delivery events and cancellation.
+Jobs shows adapter state and lets you create, edit, delete, run, pause and resume
+jobs. The status dot links to System; old navigation URLs permanently redirect.
 Press Enter to send in chat, Shift+Enter for a newline (IME composition is preserved).
 
 Login exchanges the token for an opaque, HttpOnly, SameSite=Lax cookie valid for

@@ -21,18 +21,21 @@
     <div class="header-inner">
       <a class="brand" href="/"><span class="moon" aria-hidden="true">🌙</span><span>Solakit</span></a>
       {% block header_actions %}
-      <nav class="nav" aria-label="Main navigation">
-        {% for href, label in [('/', 'Sessions'), ('/search', 'Search'), ('/prompt', 'Prompt'), ('/runs', 'Runs'), ('/operations', 'Operations'), ('/tools', 'Tools'), ('/model-health', 'Model')] %}
-        <a href="{{ href }}" class="nav-link" {% if request.url.path == href or (href == '/' and request.url.path.startswith('/sessions/')) or (href == '/runs' and request.url.path.startswith('/runs/')) %}aria-current="page"{% endif %}>{{ label }}</a>
-        {% endfor %}
+      {% if not settings_page %}<button type="button" class="topics-toggle quiet-button" data-drawer-toggle="chat-sidebar" aria-controls="chat-sidebar" aria-expanded="false">Topics</button>{% endif %}
+      <nav class="nav main-nav" aria-label="Main navigation">
+        {% set indicator = (health or {})|health_indicator %}
+        <a id="health-indicator" class="health-indicator health-{{ indicator.color }}" href="/settings/system" title="{{ indicator.label }}" aria-label="System: {{ indicator.label }}"><span aria-hidden="true"></span></a>
+        <a href="/settings/search" class="nav-link">Search</a>
+        <a href="/settings/system" class="nav-link" {% if settings_page %}aria-current="page"{% endif %}>Settings</a>
       </nav>
-      <form method="post" action="/logout"><button class="quiet-button" type="submit">Sign out {{ icon("arrow-up-right") }}</button></form>
       {% endblock %}
     </div>
-    {% block status %}<div class="header-status">{% include 'fragments/status.html' %}</div>{% endblock %}
+    {% block status %}{% endblock %}
   </header>
   <main id="main" class="page {% block page_class %}{% endblock %}">
+    {% if settings_page %}<div class="settings-layout"><aside class="settings-sidebar" aria-label="Settings"><a class="back-link" href="/">{{ icon("arrow-left") }} Back to chat</a><h2>Settings</h2><nav aria-label="Settings sections">{% for href, label in settings_sections %}<a href="{{ href }}" {% if request.url.path.startswith(href) or (label == 'Evidence' and '/evidence/' in request.url.path) %}aria-current="page"{% endif %}>{{ label }}</a>{% if label == 'Evidence' %}<a href="/settings/evidence/prompt">Prompt inspector</a>{% endif %}{% endfor %}</nav><form method="post" action="/logout"><button class="quiet-button" type="submit">Sign out</button></form></aside><div class="settings-content">{% endif %}
     {% block content %}{% endblock %}
+    {% if settings_page %}</div></div>{% endif %}
   </main>
   {% block footer %}{% endblock %}
 </body>

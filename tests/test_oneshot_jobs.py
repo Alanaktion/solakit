@@ -296,10 +296,10 @@ def test_ui_one_time_editor_preserves_exact_ambiguous_instant(
         )
         assert response.status_code == 201
         original = response.json()["run_at"]
-        editor = client.get("/operations/jobs/tomorrow/edit")
+        editor = client.get("/settings/jobs/tomorrow/edit")
         assert f'value="2027-11-07T01:30:00{fraction}"' in editor.text
         response = client.post(
-            "/operations/jobs/tomorrow/edit",
+            "/settings/jobs/tomorrow/edit",
             data={
                 "id": "tomorrow",
                 "schedule_type": "once",

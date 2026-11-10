@@ -135,3 +135,10 @@ Run pagination: run `check.cjs runs` for 500-run session fixtures, server-side
 session/status filtering, next/previous navigation and empty-result controls in
 light/dark desktop/mobile. Evidence phase 11 scopes prompt/hash/schema selectors
 to their panels so multiple saved inputs and tools remain inspectable.
+
+Chat-first UI: run `NODE_PATH=/private/tmp/solakit-browser-qa/node_modules node
+tests/browser/chat-first.cjs` against the same scratch server. It covers latest-topic
+landing, title filtering, mobile drawers and focus restoration, streaming submission,
+Details/run evidence, Settings/job execution, topic archive/restore, model health
+changes, viewport/composer containment and screenshots in light/dark at 1440×1000
+and 390×844. QA-only model availability controls exist solely in the fixture.

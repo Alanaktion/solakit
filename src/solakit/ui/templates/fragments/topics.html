@@ -1,0 +1,27 @@
+{% from "macros/icons.html" import icon %}
+{% macro children_tree() %}
+{% if children.total %}
+<details class="topic-children" open><summary>Delegated topics</summary><ul>{% for child in children.sessions %}<li><a href="/sessions/{{ child.id|urlencode }}">{{ child.title or child.id }}</a></li>{% endfor %}</ul><div class="action-group">{% if children.offset %}<a href="?child_offset={{ [0, children.offset - children.limit]|max }}">Previous</a>{% endif %}{% if children.offset + children.limit < children.total %}<a href="?child_offset={{ children.offset + children.limit }}">Next</a>{% endif %}</div></details>
+{% endif %}
+{% endmacro %}
+{% macro topic_link(item) %}
+<a class="conversation-link {% if session is defined and item.id == session.id %}is-current{% endif %}" data-topic-title="{{ item.topic_title|lower }}" href="/sessions/{{ item.id|urlencode }}" {% if session is defined and item.id == session.id %}aria-current="page"{% endif %}>
+  <span class="thread-label"><strong>{{ item.topic_title }}</strong><time data-relative-time datetime="{{ item.last_activity_at }}">{{ item.last_activity_at|display_time }}</time></span>
+  {% if item.channel_names %}<span class="channel-badge" title="{{ item.channel_names|join(', ') }}">Channel</span>{% endif %}
+  <span class="topic-running" role="img" aria-label="Run active" {% if item.last_run_status not in ['queued', 'running'] %}hidden{% endif %}>◌</span><span class="topic-failed" role="img" aria-label="Last run failed" {% if not item.last_run_status or item.last_run_status in ['completed', 'cancelled', 'queued', 'running'] %}hidden{% endif %}>•</span>
+</a>
+{% if session is defined and item.id == session.id %}{{ children_tree() }}{% endif %}
+{% endmacro %}
+<aside class="chat-sidebar" id="chat-sidebar" aria-label="Topics" tabindex="-1">
+  <div class="sidebar-heading"><h2>Topics</h2><button class="quiet-button drawer-close" type="button" data-drawer-close="chat-sidebar" aria-label="Close topics">×</button></div>
+  <a href="/?new=1" class="primary-button">{{ icon("plus") }} New topic</a>
+  <label class="visually-hidden" for="topic-filter">Filter topics by title</label><input id="topic-filter" type="search" placeholder="Find a topic" autocomplete="off">
+  <div class="topic-scroll">
+    {% if sessions|selectattr('channel_names')|list %}<h3>Pinned</h3><nav aria-label="Pinned topics">{% for item in sessions if item.channel_names %}{{ topic_link(item) }}{% endfor %}</nav>{% endif %}
+    <h3>Topics</h3><nav class="conversation-list" aria-label="Topics">{% for item in sessions if not item.channel_names %}{{ topic_link(item) }}{% else %}<p class="muted">No topics on this page.</p>{% endfor %}</nav>
+    <nav class="action-group" aria-label="Topic pages">{% if topic_previous %}<a href="{{ topic_previous }}">Previous topics</a>{% endif %}{% if topic_next %}<a href="{{ topic_next }}">More topics</a>{% endif %}</nav>
+    {% if session is defined and session.parent_session %}<a class="text-link" href="/sessions/{{ session.parent_session|urlencode }}">{{ icon("arrow-left") }} Parent topic</a><div class="topic-children"><a class="text-link" href="/sessions/{{ session.id|urlencode }}" aria-current="page">{{ session.title or session.id }}</a>{{ children_tree() }}</div>{% endif %}
+    <details class="archived-topics" {% if request.query_params.get('archived_offset') or (session is defined and session.archived_at) %}open{% endif %}><summary>Archived</summary><nav aria-label="Archived topics">{% for item in archived_topics %}{{ topic_link(item) }}{% else %}<p class="muted">No archived topics.</p>{% endfor %}</nav><div class="action-group">{% if archived_previous %}<a href="{{ archived_previous }}">Previous archived</a>{% endif %}{% if archived_next %}<a href="{{ archived_next }}">More archived</a>{% endif %}</div></details>
+  </div>
+  <a class="sidebar-manage" href="/settings/search?mode=text">Search all messages</a>
+</aside>

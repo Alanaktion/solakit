@@ -20,6 +20,7 @@ from fastapi.templating import Jinja2Templates
 from solakit.ui.auth import COOKIE, LIFETIME, UISessions
 from solakit.ui.context import UIContext
 from solakit.ui.markdown import markdown
+from solakit.ui.navigation import SECTIONS, health_indicator, run_duration
 from solakit.ui.view import timestamp, turns
 
 TURN_WINDOW = 20
@@ -46,6 +47,10 @@ def status_digest(health: dict) -> str:
 
 TEMPLATES.env.filters["display_time"] = display_time
 TEMPLATES.env.filters["status_digest"] = status_digest
+
+TEMPLATES.env.globals["settings_sections"] = SECTIONS
+TEMPLATES.env.filters["health_indicator"] = health_indicator
+TEMPLATES.env.filters["run_duration"] = run_duration
 HEADERS = {
     "Cache-Control": "no-store",
     "Vary": "Cookie",
@@ -154,7 +159,13 @@ def build_ui_router(  # noqa: C901
         return TEMPLATES.TemplateResponse(
             request=request,
             name=template,
-            context=redact(context or {}),
+            context=redact(
+                {
+                    "settings_page": template
+                    not in {"chat.html", "new_topic.html", "login.html"},
+                    **(context or {}),
+                }
+            ),
             status_code=status,
             headers=HEADERS | (headers or {}),
         )
@@ -276,7 +287,7 @@ def build_ui_router(  # noqa: C901
         )
 
         def page_url(offset):
-            return "/?" + urlencode({**filters, "offset": offset})
+            return "/settings/sessions?" + urlencode({**filters, "offset": offset})
 
         return render(
             request,
@@ -513,10 +524,11 @@ def build_ui_router(  # noqa: C901
     async def chat_context(
         request: Request, data: dict, history: list[dict], error: Any = None
     ) -> dict:
-        all_sessions, state, catalog, children = await asyncio.gather(
-            api(request, "GET", "/api/sessions?roots_only=true&exclude_source=cron"),
+        from solakit.ui.navigation import topic_context
+
+        sidebar, state, children, recent = await asyncio.gather(
+            topic_context(request, api),
             health(request),
-            api(request, "GET", "/api/tools"),
             api(
                 request,
                 "GET",
@@ -530,13 +542,26 @@ def build_ui_router(  # noqa: C901
                     }
                 ),
             ),
+            api(
+                request,
+                "GET",
+                "/api/runs?"
+                + urlencode(
+                    {
+                        "session_id": data["id"],
+                        "descending": "true",
+                        "limit": 10,
+                        "include_archived": "true",
+                    }
+                ),
+            ),
         )
         return {
+            **sidebar,
             "children": children,
             "session": data,
             "turns": history,
-            "sessions": all_sessions,
-            "tool_count": len(catalog["profiles"].get(data["default_profile"], [])),
+            "recent_runs": recent,
             "health": state,
             "error": error,
         }
@@ -609,7 +634,38 @@ def build_ui_router(  # noqa: C901
         if not logged_in(request):
             return login_redirect(request)
         try:
-            return await session_page(request)
+            if request.query_params.get("new") == "1":
+                from solakit.ui.navigation import topic_context
+
+                sidebar, profiles, state = await asyncio.gather(
+                    topic_context(request, api),
+                    api(request, "GET", "/api/profiles"),
+                    health(request),
+                )
+                from uuid import uuid4
+
+                request.state.topic_id = uuid4().hex[:16]
+                return render(
+                    request,
+                    "new_topic.html",
+                    {
+                        **sidebar,
+                        "profiles": profiles,
+                        "health": state,
+                    },
+                )
+            catalog = await api(
+                request,
+                "GET",
+                "/api/sessions?roots_only=true&exclude_source=cron&limit=1",
+            )
+            if catalog:
+                return RedirectResponse(
+                    "/sessions/" + quote(catalog[0]["id"], safe=""),
+                    303,
+                    headers=HEADERS,
+                )
+            return RedirectResponse("/?new=1", 303, headers=HEADERS)
         except APIError as exc:
             return render(request, "error.html", {"error": exc.detail}, exc.status)
 
@@ -630,4 +686,7 @@ def build_ui_router(  # noqa: C901
     )
     for module in (routes_sessions, routes_runs, routes_jobs):
         module.register(router, context)
+    from solakit.ui.navigation import register_navigation
+
+    register_navigation(router, context)
     return router

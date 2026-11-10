@@ -89,10 +89,13 @@ def test_job_schema_exposure_and_immutable_run_inspection(config, selected, expe
         assert (
             client.get("/api/prompt", params={"run_id": record["id"]}).json() == before
         )
-        assert client.get(f"/prompt?run_id={record['id']}").status_code == 200
+        assert (
+            client.get(f"/settings/evidence/prompt?run_id={record['id']}").status_code
+            == 200
+        )
         assert (
             "Recorded prompt and tool schemas"
-            in client.get(f"/prompt?run_id={record['id']}").text
+            in client.get(f"/settings/evidence/prompt?run_id={record['id']}").text
         )
         assert client.get("/api/prompt?run_id=missing").status_code == 404
         path.write_bytes(path.read_bytes() + b" ")
@@ -175,7 +178,7 @@ def test_profile_trim_survives_restart_warns_and_shrinks_future_run(config, mock
         assert saved["unavailable_tools"] == ["files.read"]
         assert (
             "No longer granted by profile (excluded): files.read"
-            in client.get("/operations").text
+            in client.get("/settings/jobs").text
         )
         result = client.post("/api/jobs/narrow/run").json()
         assert result["effective_tools"] == ["runtime.status"]
@@ -371,7 +374,10 @@ def test_old_runs_do_not_invent_a_tool_snapshot(config, mock_model):
             )
         )
         assert client.get("/api/prompt?run_id=legacy").status_code == 409
-        assert "Not recorded for this run" in client.get("/runs/legacy").text
+        assert (
+            "Not recorded for this run"
+            in client.get("/settings/evidence/runs/legacy").text
+        )
 
 
 def test_chat_job_tools_preserve_empty_and_null_and_report_invalid_names(
@@ -506,7 +512,7 @@ def test_job_tool_form_preserves_tri_state_and_rejects_invalid_selection(
         }
         assert (
             client.post(
-                "/operations/jobs",
+                "/settings/jobs",
                 data={**fields, "tools_mode": "none"},
                 follow_redirects=False,
             ).status_code
@@ -514,7 +520,7 @@ def test_job_tool_form_preserves_tri_state_and_rejects_invalid_selection(
         )
         assert client.get("/api/jobs/ui-tools").json()["tools"] == []
         selected = client.post(
-            "/operations/jobs/ui-tools/edit",
+            "/settings/jobs/ui-tools/edit",
             data={**fields, "tools_mode": "selected", "tools": "runtime.status"},
             follow_redirects=False,
         )
@@ -522,15 +528,15 @@ def test_job_tool_form_preserves_tri_state_and_rejects_invalid_selection(
         assert client.get("/api/jobs/ui-tools").json()["tools"] == ["runtime.status"]
         # An old tab submitting the former form must not restore inheritance.
         old_form = client.post(
-            "/operations/jobs/ui-tools/edit", data=fields, follow_redirects=False
+            "/settings/jobs/ui-tools/edit", data=fields, follow_redirects=False
         )
         assert old_form.status_code == 303
         assert (
-            client.post("/operations/jobs/missing/edit", data=fields).status_code == 404
+            client.post("/settings/jobs/missing/edit", data=fields).status_code == 404
         )
         assert client.get("/api/jobs/ui-tools").json()["tools"] == ["runtime.status"]
         invalid = client.post(
-            "/operations/jobs/ui-tools/edit",
+            "/settings/jobs/ui-tools/edit",
             data={**fields, "tools_mode": "selected", "tools": "shell.exec"},
         )
         assert invalid.status_code == 422
@@ -540,7 +546,7 @@ def test_job_tool_form_preserves_tri_state_and_rejects_invalid_selection(
         )
         assert 'value="shell.exec" checked' in invalid.text
         restored = client.post(
-            "/operations/jobs/ui-tools/edit",
+            "/settings/jobs/ui-tools/edit",
             data={**fields, "tools_mode": "inherit"},
             follow_redirects=False,
         )
@@ -565,7 +571,7 @@ def test_recorded_schema_ui_masks_values_without_losing_property_definitions(
         config.profiles["interactive"].tools = ["secret-parameter"]
         client.post("/api/jobs", json=job(tools=["secret-parameter"]))
         record = client.post("/api/jobs/narrow/run").json()
-        page = client.get("/prompt", params={"run_id": record["id"]})
+        page = client.get("/settings/evidence/prompt", params={"run_id": record["id"]})
         assert page.status_code == 200
         assert "operator-test-token" not in page.text
         assert '"api_key": {' in html.unescape(page.text)

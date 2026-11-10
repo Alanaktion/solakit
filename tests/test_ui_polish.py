@@ -12,13 +12,13 @@ def test_run_status_tones_and_stacked_runs_table(config, mock_model):
     with TestClient(app) as client:
         sign_in(client)
         seed(app.state.store, "toned", 2)
-        page = client.get("/runs")
+        page = client.get("/settings/evidence/runs")
         assert 'class="run-status run-status-good">completed</span>' in page.text
         assert 'class="data-table stacked-table runs-table"' in page.text
         assert 'data-label="Status"' in page.text
-        detail = client.get("/runs/turn-0001")
+        detail = client.get("/settings/evidence/runs/turn-0001")
         assert "run-status-good" in detail.text
-        empty = client.get("/runs?status=failed")
+        empty = client.get("/settings/evidence/runs?status=failed")
         assert "Clear filters" in empty.text
 
 
@@ -28,8 +28,8 @@ def test_chat_actions_have_compact_menu_and_jump_control(config, mock_model):
         sign_in(client)
         seed(app.state.store, "menu", 1)
         page = client.get("/sessions/menu")
-        # Same links inline (desktop) and inside the narrow-screen Actions menu.
-        assert page.text.count('href="/sessions/menu/rename"') == 2
+        # One Actions menu serves desktop and mobile.
+        assert page.text.count('href="/sessions/menu/rename"') == 1
         assert 'class="session-menu"' in page.text
         assert 'id="jump-latest"' in page.text
-        assert page.text.count('href="/sessions/menu/compact"') == 2
+        assert page.text.count('href="/sessions/menu/compact"') == 1

@@ -118,7 +118,7 @@ def test_login_lockout_http(config, mock_model):
 def test_session_create_chat_and_api_parity(config, mock_model):
     with TestClient(create_app(config=config, model=mock_model)) as client:
         sign_in(client)
-        assert "No conversations yet" in client.get("/").text
+        assert "Start a new topic" in client.get("/").text
         new_session(client)
         page = client.get("/sessions/evening")
         assert page.status_code == 200
@@ -179,7 +179,7 @@ def test_backend_down_honest_failure(config):
         sign_in(client)
         page = client.get("/")
         assert page.status_code == 200
-        assert "degraded" in page.text and "unavailable" in page.text
+        assert "health-red" in page.text and "unavailable" in page.text
         new_session(client)
         response = send_and_observe(
             client,
@@ -289,8 +289,13 @@ def test_local_assets_theme_and_navigation(config, mock_model):
         assert "prefers-color-scheme: dark" in client.get("/static/app.css").text
         sign_in(client)
         page = client.get("/")
-        for path in ("/prompt", "/runs", "/operations", "/tools"):
-            assert f'href="{path}"' in page.text
+        for path in (
+            "/settings/evidence/prompt",
+            "/settings/evidence/runs",
+            "/settings/jobs",
+            "/settings/tools",
+        ):
+            assert f'href="{path}"' in client.get("/settings/system").text
             assert client.get(path).status_code == 200
 
 
@@ -300,8 +305,8 @@ def test_tools_catalog_distinguishes_loaded_from_granted(config, mock_model):
     with TestClient(create_app(config=config, model=mock_model)) as client:
         assert client.get("/api/tools").status_code == 401
         assert (
-            client.get("/tools", follow_redirects=False).headers["location"]
-            == "/login?next=%2Ftools"
+            client.get("/settings/tools", follow_redirects=False).headers["location"]
+            == "/login?next=%2Fsettings%2Ftools"
         )
         sign_in(client)
         catalog = client.get("/api/tools").json()
@@ -312,18 +317,18 @@ def test_tools_catalog_distinguishes_loaded_from_granted(config, mock_model):
         assert read["profiles"] == ["interactive"]
         assert write["profiles"] == []
         assert "path" in read["parameters"]["properties"]
-        page = client.get("/tools")
+        page = client.get("/settings/tools")
         assert page.status_code == 200
         assert "files.read" in page.text and "files.write" in page.text
         assert "No description provided" not in page.text
         new_session(client)
-        assert "1 tool" in client.get("/sessions/evening").text
+        assert "1 tool" not in client.get("/sessions/evening").text
 
 
 def test_empty_tools_page(config, mock_model):
     with TestClient(create_app(config=config, model=mock_model)) as client:
         sign_in(client)
-        response = client.get("/tools")
+        response = client.get("/settings/tools")
         assert response.status_code == 200
         assert "No tools loaded." in response.text
         assert "No tools granted" in response.text
@@ -526,7 +531,7 @@ def test_session_patch_and_rename_ui_preserve_identity_evidence(config, mock_mod
             == 404
         )
         page = client.get("/sessions/old")
-        assert "Rename session" in page.text
+        assert "Rename topic" in page.text
         page = client.get("/sessions/old/rename")
         assert 'value="Moonlight &amp; notes"' in page.text
         bad = client.post("/sessions/old/rename", data={"title": "x" * 201})
@@ -581,19 +586,27 @@ def test_persistent_session_sliding_expiry_and_revocation(tmp_path):
 
 def test_login_return_url(config, mock_model):
     with TestClient(create_app(config=config, model=mock_model)) as client:
-        response = client.get("/runs?session=evening", follow_redirects=False)
-        assert response.headers["location"] == "/login?next=%2Fruns%3Fsession%3Devening"
-        page = client.get(response.headers["location"])
-        assert 'name="next" value="/runs?session=evening"' in page.text
-        bad = client.post(
-            "/login", data={"token": "bad", "next": "/runs?session=evening"}
+        response = client.get(
+            "/settings/evidence/runs?session=evening", follow_redirects=False
         )
-        assert 'name="next" value="/runs?session=evening"' in bad.text
+        assert (
+            response.headers["location"]
+            == "/login?next=%2Fsettings%2Fevidence%2Fruns%3Fsession%3Devening"
+        )
+        page = client.get(response.headers["location"])
+        assert (
+            'name="next" value="/settings/evidence/runs?session=evening"' in page.text
+        )
+        bad = client.post(
+            "/login",
+            data={"token": "bad", "next": "/settings/evidence/runs?session=evening"},
+        )
+        assert 'name="next" value="/settings/evidence/runs?session=evening"' in bad.text
         fragment = client.get(
             "/ui/status",
             headers={
                 "HX-Request": "true",
-                "HX-Current-URL": "http://testserver/runs?session=evening",
+                "HX-Current-URL": "http://testserver/settings/evidence/runs?session=evening",
             },
         )
         assert fragment.headers["hx-redirect"] == response.headers["location"]
@@ -601,11 +614,11 @@ def test_login_return_url(config, mock_model):
             "/login",
             data={
                 "token": "operator-test-token",
-                "next": "/runs?session=evening",
+                "next": "/settings/evidence/runs?session=evening",
             },
             follow_redirects=False,
         )
-        assert good.headers["location"] == "/runs?session=evening"
+        assert good.headers["location"] == "/settings/evidence/runs?session=evening"
         client.post("/logout")
         for target in ("https://evil.test", "//evil.test", "/\\evil.test", "/login"):
             good = client.post(
@@ -660,9 +673,11 @@ def test_lost_memory_has_explicit_refresh_action(config, mock_model, monkeypatch
         )
         app.state.store.save_run(run)
         sign_in(client)
-        page = client.get(f"/runs/{run.id}")
+        page = client.get(f"/settings/evidence/runs/{run.id}")
         assert "Refresh memory status" in page.text
         assert calls == []
-        result = client.post(f"/runs/{run.id}/memory/refresh", follow_redirects=False)
+        result = client.post(
+            f"/settings/evidence/runs/{run.id}/memory/refresh", follow_redirects=False
+        )
         assert result.status_code == 303
         assert calls == [run.id]

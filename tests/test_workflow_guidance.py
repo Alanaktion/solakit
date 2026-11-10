@@ -269,5 +269,5 @@ def test_playbooks_api_and_operations_page(config, auth, mock_model):
         assert data[1]["profiles"] == ["interactive"]
         assert data[0]["error"]
         client.post("/login", data={"token": "operator-test-token"})
-        page = client.get("/operations")
+        page = client.get("/settings/jobs")
         assert page.status_code == 200 and "triage" in page.text

@@ -54,7 +54,7 @@ def register(router: APIRouter, ns: UIContext) -> None:  # noqa: C901
             status,
         )
 
-    @router.get("/operations")
+    @router.get("/settings/jobs")
     async def operations(request: Request):
         if not logged_in(request):
             return login_redirect(request)
@@ -127,7 +127,7 @@ def register(router: APIRouter, ns: UIContext) -> None:  # noqa: C901
             status,
         )
 
-    @router.get("/operations/jobs/new")
+    @router.get("/settings/jobs/new")
     async def job_new(request: Request):
         if not logged_in(request):
             return login_redirect(request)
@@ -136,7 +136,7 @@ def register(router: APIRouter, ns: UIContext) -> None:  # noqa: C901
         except APIError as exc:
             return render(request, "error.html", {"error": exc.detail}, exc.status)
 
-    @router.get("/operations/jobs/{identity}/edit")
+    @router.get("/settings/jobs/{identity}/edit")
     async def job_edit(request: Request, identity: str):
         if not logged_in(request):
             return login_redirect(request)
@@ -245,7 +245,7 @@ def register(router: APIRouter, ns: UIContext) -> None:  # noqa: C901
                     "/api/jobs",
                     {"id": values.get("id", ""), **payload},
                 )
-            return RedirectResponse("/operations", 303, headers=HEADERS)
+            return RedirectResponse("/settings/jobs", 303, headers=HEADERS)
         except APIError as exc:
             message = (
                 exc.detail
@@ -257,19 +257,19 @@ def register(router: APIRouter, ns: UIContext) -> None:  # noqa: C901
             )
             return await job_form_page(request, identity, values, message, exc.status)
 
-    @router.post("/operations/jobs")
+    @router.post("/settings/jobs")
     async def job_create_form(request: Request):
         if not logged_in(request):
             return login_redirect(request)
         return await save_job_form(request)
 
-    @router.post("/operations/jobs/{identity}/edit")
+    @router.post("/settings/jobs/{identity}/edit")
     async def job_update_form(request: Request, identity: str):
         if not logged_in(request):
             return login_redirect(request)
         return await save_job_form(request, identity)
 
-    @router.get("/operations/jobs/{identity}/delete")
+    @router.get("/settings/jobs/{identity}/delete")
     async def job_delete_confirm(request: Request, identity: str):
         if not logged_in(request):
             return login_redirect(request)
@@ -286,7 +286,7 @@ def register(router: APIRouter, ns: UIContext) -> None:  # noqa: C901
         except APIError as exc:
             return render(request, "error.html", {"error": exc.detail}, exc.status)
 
-    @router.post("/operations/jobs/{identity}/{operation}")
+    @router.post("/settings/jobs/{identity}/{operation}")
     async def job_action(request: Request, identity: str, operation: str):
         if not logged_in(request):
             return login_redirect(request)
@@ -303,9 +303,9 @@ def register(router: APIRouter, ns: UIContext) -> None:  # noqa: C901
                 + ("?admission=true" if operation == "run" else ""),
             )
             target = (
-                f"/runs/{quote(record['id'], safe='')}"
+                f"/settings/evidence/runs/{quote(record['id'], safe='')}"
                 if operation == "run"
-                else "/operations"
+                else "/settings/jobs"
             )
             return RedirectResponse(target, 303, headers=HEADERS)
         except APIError as exc:

@@ -339,7 +339,7 @@ def test_note_evidence_in_api_and_web_ui_is_escaped(config, mock_model, auth):
         assert response.status_code == 200
         assert response.json()["memory_notes"][0]["text"] == text
         client.post("/login", data={"token": "operator-test-token"})
-        page = client.get(f"/runs/{run.id}")
+        page = client.get(f"/settings/evidence/runs/{run.id}")
         assert page.status_code == 200
         assert "Staged memory notes" in page.text and "Recall" in page.text
         assert "<original & deliberate>" not in page.text

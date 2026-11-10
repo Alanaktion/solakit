@@ -1,6 +1,7 @@
 """FTS addresses evidence, never owns it; all query syntax is constructed locally."""
 
 import json
+import re
 import sqlite3
 from datetime import UTC, datetime, timedelta
 
@@ -342,8 +343,8 @@ def test_web_search_names_ids_archived_text_links_and_errors(config, mock_model)
     app = create_app(config=config, model=mock_model)
     with TestClient(app) as client:
         assert (
-            client.get("/search", follow_redirects=False).headers["location"]
-            == "/login?next=%2Fsearch"
+            client.get("/settings/search", follow_redirects=False).headers["location"]
+            == "/login?next=%2Fsettings%2Fsearch"
         )
         client.post("/login", data={"token": "operator-test-token"})
         store = app.state.store
@@ -357,23 +358,33 @@ def test_web_search_names_ids_archived_text_links_and_errors(config, mock_model)
         archive_session(store, "old")
         append(store, "Moonstone active evidence", session="old")
         store.set_session_archived("old", True)
-        assert 'href="/search"' in client.get("/").text
-        assert "Search sessions" in client.get("/search").text
-        page = client.get("/search", params={"q": "Imported note"})
+        assert 'href="/settings/search"' in client.get("/").text
+        assert "Search sessions" in client.get("/settings/search").text
+        page = client.get("/settings/search", params={"q": "Imported note"})
         assert page.status_code == 200
         assert page.text.count('class="panel search-result"') == 50
         assert 'rel="next">Next <svg' in page.text
         assert "/static/vendor/lucide.svg#arrow-right" in page.text
-        page = client.get("/search", params={"q": "Imported note", "offset": 50})
+        page = client.get(
+            "/settings/search", params={"q": "Imported note", "offset": 50}
+        )
         assert page.text.count('class="panel search-result"') == 5
         assert " Previous</a>" in page.text
         assert 'rel="prev">' in page.text
         assert "/static/vendor/lucide.svg#arrow-left" in page.text
-        page = client.get("/search", params={"q": "old"})
+        page = client.get("/settings/search", params={"q": "old"})
         assert "Archived" in page.text and 'href="/sessions/old"' in page.text
-        page = client.get("/search", params={"mode": "text", "q": "Moonstone"})
+        page = client.get("/settings/search", params={"mode": "text", "q": "Moonstone"})
         assert page.status_code == 200
-        assert 'href="/sessions/old/archives/1?turn=' in page.text
+        assert "anchor=message-archive-1-" in page.text
+        from html import unescape
+
+        archived_url = unescape(
+            re.search(r'href="([^"]*anchor=message-archive-1-[^"]*)"', page.text)[1]
+        )
+        matched = client.get(archived_url)
+        assert matched.status_code == 200
+        assert 'id="message-archive-1-' in matched.text
         assert 'href="/sessions/old?turn=' in page.text
         assert "operator-test-token" not in page.text
         assert "<script>alert" not in page.text
@@ -381,20 +392,22 @@ def test_web_search_names_ids_archived_text_links_and_errors(config, mock_model)
         assert "Moonstone" in client.get("/sessions/old/archives/1").text
         assert (
             "No matching sessions or messages"
-            in client.get("/search", params={"q": "nonexistent"}).text
+            in client.get("/settings/search", params={"q": "nonexistent"}).text
         )
         for params in (
             {"mode": "bad"},
             {"mode": "text", "q": '"unclosed'},
             {"q": "import", "offset": -1},
         ):
-            response = client.get("/search", params=params)
+            response = client.get("/settings/search", params=params)
             assert response.status_code == 422
             assert 'role="alert"' in response.text
         with sqlite3.connect(store.root / "app.db") as db:
             db.execute("DROP TABLE messages_fts")
         assert (
-            client.get("/search", params={"mode": "text", "q": "Moonstone"}).status_code
+            client.get(
+                "/settings/search", params={"mode": "text", "q": "Moonstone"}
+            ).status_code
             == 503
         )
 

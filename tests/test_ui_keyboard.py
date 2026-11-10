@@ -19,7 +19,7 @@ const handlers = {};
 let submitted = 0, busy = false;
 const composer = { getAttribute: () => String(busy), requestSubmit: () => submitted++ };
 const document = {
-  addEventListener: (name, handler) => handlers[name] = handler,
+  addEventListener: (name, handler) => (handlers[name] ??= []).push(handler),
   querySelectorAll: () => [],
   getElementById: (id) => id === 'composer' ? composer : null,
 };
@@ -30,7 +30,7 @@ function check(overrides, sends, prevents, waiting = false) {
   const event = {target: {id:'message'}, key:'Enter', shiftKey:false,
     isComposing:false, keyCode:13, repeat:false,
     preventDefault: () => prevented = true, ...overrides};
-  handlers.keydown(event);
+  handlers.keydown.forEach(handler => handler(event));
   assert.equal(submitted, sends);
   assert.equal(prevented, prevents);
 }
@@ -98,7 +98,7 @@ const vm = require('node:vm');
   await submit();
   assert.equal(posts,1); assert.equal(field.value,'');
   assert.equal(field.disabled,false); assert.equal(button.disabled,true);
-  assert.equal(stop.action,'/runs/r/cancel?return_to_session=true');
+  assert.equal(stop.action,'/settings/evidence/runs/r/cancel?return_to_session=true');
   assert.equal(stopButton.disabled,false);
   assert.match(nodes.elapsed.textContent,/1:0[5-9]/);
   field.value="next draft";

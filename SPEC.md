@@ -627,7 +627,7 @@ validate the complete resulting definition, with `deliver: null` clearing delive
 `POST /api/jobs/{id}/run` waits for completion; `?wait=false` returns HTTP 202 and
 accepted job state immediately. `?admission=true` returns HTTP 202 with the durable
 queued run record as soon as execution admits it; the UI uses this receipt to
-redirect immediately to `/runs/{id}`. Generation and delivery continue independently.
+redirect immediately to `/settings/evidence/runs/{id}`. Generation and delivery continue independently.
 `POST /api/jobs/{id}/pause|resume` affects future
 firings. Invalid definitions return 422, missing jobs 404, duplicate IDs and busy
 edits/deletions/triggers 409. Maintenance profiles cannot be scheduled. Creation
@@ -1006,9 +1006,10 @@ The P1 operator UI is a thin server-rendered API client. Shared app contracts:
   Presentation-only enhancements (copy buttons on settled code/evidence blocks,
   a jump-to-latest control, dismissible menus and a busy tab-title marker) copy
   or reveal displayed, credential-masked text only and never touch evidence.
-  A read-only `/tools` page lists loaded tools and effective profile grants.
-  `/prompt` displays API-assembled prompt text, original hash and schemas; `/runs`
-  and `/runs/{id}` show evidence with POST cancellation. `/operations` displays
+  A read-only `/settings/tools` page lists loaded tools and effective profile grants.
+  `/settings/evidence/prompt` displays API-assembled prompt text, original hash and schemas;
+  `/settings/evidence/runs` and its run pages show evidence with POST cancellation.
+  `/settings/jobs` displays
   reported channels and full job management, including creation/edit forms, enable
   controls, run/pause/resume and deletion confirmation. These UI operations use
   the same authenticated APIs; channel/profile configuration stays in files. Chat Enter sends, Shift+Enter adds a newline;
@@ -1021,7 +1022,27 @@ The P1 operator UI is a thin server-rendered API client. Shared app contracts:
   draft mechanism. Storage-disabled browsers
   retain ordinary editing but cannot recover drafts after navigation.
   `/ui/status?known=<visible-state-digest>` returns 204 when chips are unchanged.
-  Chat exposes system status in a toolbar disclosure; mobile omits global nav.
+  This legacy status endpoint remains available without driving header swaps.
+  `/` selects the most recently active non-archived, non-cron root session,
+  independent of channel pinning, or shows an explicit New topic state. GET never
+  creates a session. The UI calls sessions Topics without renaming API/storage
+  concepts. Chat has a topic sidebar, thread and composer; mobile Topics opens a
+  keyboard-accessible drawer. The header contains brand/topics access, one status
+  dot, Search and Settings. Details exposes read-only recent runs, recorded metrics,
+  prompt/archive links and session metadata through existing APIs. Actions retains
+  rename, compaction, transcript rotation and session lifecycle controls.
+  Settings sub-pages group System, Jobs, Tools & profiles, Sessions, Evidence and
+  Search. `/settings/sessions` owns the administrative table and advanced creation.
+  Permanent legacy GET redirects preserve query strings and subordinate pages;
+  legacy POST handlers remain callable. All old operator capabilities stay reachable.
+  `/ui/health` returns presentation-only dot color/description via authenticated API
+  reads; JavaScript updates attributes every 15 seconds without replacing markup.
+  Model/storage failure is red; unknown/degraded health is amber; healthy model and
+  storage with ready/disabled memory is green. Failed last job outcomes or failed/
+  lost extraction, and accepted/pending extraction older than five minutes in the
+  newest 100 runs, turn green to amber. Memory connectivity remains a startup fact.
+  Full-text results target the aggregated topic using segment-specific anchors;
+  numbered archive views remain separately reachable in Details.
   Presentation escapes plain text and masks resolved credentials; tool details
   come only from redacted run logs. Light/dark follows the system preference.
 - **Activation:** integrations stay disabled by default and activate through each
@@ -1211,11 +1232,11 @@ Accepted metadata operations complete before cancellation propagates. There is
 no automatic archive policy or deletion. See
 [the operator workflow and API](docs/operations/session-archive.md).
 
-The authenticated web UI `/search` offers session name/ID lookup across active
+The authenticated web UI `/settings/search` offers session name/ID lookup across active
 and archived sessions, plus full-text `/api/search` results. Name/ID results are
 paginated. Full text shows up to 100 relevance-ranked, masked and escaped message
-snippets linked to their current transcript or numbered archive using `?turn=<run-id>`
-and physical `#message-<line>` anchors. The containing window renders first; the
+snippets linked to the aggregated topic using `?turn=<run-id>&anchor=<message-id>`
+and physical `#message-<line>` or `#message-archive-<number>-<line>` anchors. The containing window renders first; the
 match is outlined and history scrolls to it without moving the chat shell. Bare
 message/turn fragments can also fetch the containing window in the browser.
 
@@ -1560,7 +1581,7 @@ runs also write a full immutable, hash-verified tool catalog for historical step
 inspection. Prompt hashes cover the static index. Missing older metadata means
 historical eager behavior. /api/prompt accepts job for initial job inspection and
 run_id plus optional step for saved schema evidence, independent of current grants.
-/tools and sola check expose per-profile/job counts and byte diagnostics, warning
+/settings/tools and sola check expose per-profile/job counts and byte diagnostics, warning
 above 25% context budget for deferred initial payload or 50% for eager schemas.
 Warnings neither switch modes nor impose hard limits. See
 [operator guidance](docs/operations/tool-disclosure.md) for the live pinned-model

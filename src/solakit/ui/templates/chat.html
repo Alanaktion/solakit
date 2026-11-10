@@ -6,43 +6,20 @@
 {% block footer %}{% endblock %}
 {% block page_class %}chat-page{% endblock %}
 {% block content %}
-<aside class="chat-sidebar" id="chat-sidebar" aria-label="Sessions">
-  <div class="sidebar-heading"><h2>Conversations</h2><a href="/?new=1#session-id" class="new-chat" aria-label="Create a session">{{ icon("plus") }}</a></div>
-  <nav class="conversation-list" aria-label="Conversations">
-    {% for item in sessions %}
-    <a class="conversation-link {% if item.id == session.id %}is-current{% endif %}" href="/sessions/{{ item.id|urlencode }}" {% if item.id == session.id %}aria-current="page"{% endif %}>
-      <span class="thread-avatar" aria-hidden="true">{{ icon("moon") }}</span>
-      <span class="thread-label"><strong>{{ item.title or item.id }}</strong><small>{{ item.default_profile }} · {{ item.memory_scope }}</small></span>
-    </a>
-    {% endfor %}
-  </nav>
-  <a class="sidebar-manage" href="/">Manage sessions {{ icon("arrow-up-right") }}</a>
-</aside>
+{% include 'fragments/topics.html' %}
 <section class="conversation-shell" aria-label="Conversation">
+  {% set topic = (sessions + archived_topics)|selectattr('id', 'equalto', session.id)|first %}
   <header class="chat-toolbar">
-    <a class="mobile-sessions" href="/" aria-label="All sessions">{{ icon("arrow-left") }}</a>
-    <span class="thread-avatar" aria-hidden="true">{{ icon("moon") }}</span>
-    <div class="chat-title"><h1>{{ session.title or session.id }}</h1><p>Sola · {{ session.default_profile }}</p></div>
-    <div class="session-badges"><a class="subtle-tag" href="/tools#profile-{{ session.default_profile|urlencode }}">{{ tool_count }} tool{% if tool_count != 1 %}s{% endif %}</a><span class="subtle-tag">{{ session.memory_scope }} memory</span>{% if session.bound_channel %}<span class="subtle-tag">{{ session.bound_channel }}</span>{% endif %}</div>
-  <details class="chat-health"><summary>System status</summary>{% include 'fragments/status.html' %}</details>
+    <div class="chat-title"><h1>{{ topic.topic_title if topic else (session.title or session.id) }}</h1></div>
+    <div class="action-group">
+      <button type="button" class="quiet-button" data-drawer-toggle="topic-details" aria-controls="topic-details" aria-expanded="false">Details</button>
+      <details class="session-menu"><summary>Actions {{ icon("chevron-down") }}</summary><nav aria-label="Topic actions">
+        <a href="/sessions/{{ session.id|urlencode }}/rename">Rename topic</a>
+        {% if session.archived_at %}<form method="post" action="/sessions/{{ session.id|urlencode }}/lifecycle/restore"><button class="quiet-button" type="submit">Restore topic</button></form>
+        {% elif not archive_number %}<a href="/sessions/{{ session.id|urlencode }}/compact">Compact conversation</a><a href="/sessions/{{ session.id|urlencode }}/archive">Archive conversation</a><a href="/sessions/{{ session.id|urlencode }}/lifecycle/archive?return_to=chat">Archive topic</a>{% endif %}
+      </nav></details>
+    </div>
   </header>
-  <div class="archive-toolbar">
-    <details class="archive-menu"><summary>{% if archive_number %}Archive {{ archive_number }} · read only{% else %}Current conversation{% endif %} {{ icon("chevron-down") }}</summary>
-      <nav aria-label="Conversation history">
-        <a href="/sessions/{{ session.id|urlencode }}" {% if not archive_number %}aria-current="page"{% endif %}>Current conversation</a>
-        {% for archive in session.archives %}{% set n = archive.rsplit('.', 1)[1] %}<a href="/sessions/{{ session.id|urlencode }}/archives/{{ n }}" {% if archive_number|string == n %}aria-current="page"{% endif %}>Archive {{ n }}</a>{% endfor %}
-      </nav>
-    </details>
-    {% set session_actions %}<a class="archive-action" href="/sessions/{{ session.id|urlencode }}/rename">Rename session</a>
-    {% if not archive_number and not session.archived_at %}<a class="archive-action" href="/sessions/{{ session.id|urlencode }}/compact">Compact conversation</a><a class="archive-action" href="/sessions/{{ session.id|urlencode }}/archive">Archive conversation {{ icon("arrow-up-right") }}</a>{% endif %}{% endset %}
-    <nav class="archive-actions" aria-label="Session actions">{{ session_actions }}</nav>
-    <details class="session-menu"><summary>Actions {{ icon("chevron-down") }}</summary><nav aria-label="Session actions menu">{{ session_actions }}</nav></details>
-  </div>
-  {% if session.parent_session %}<p class="subsession-navigation"><a class="text-link" href="/sessions/{{ session.parent_session|urlencode }}">{{ icon("arrow-left") }} Parent session</a></p>{% endif %}
-  {% if children.total %}<details class="panel subsession-navigation" {% if request.query_params.get("child_offset") %}open{% endif %}><summary>Sub-sessions ({{ children.total }})</summary>
-    <ul>{% for child in children.sessions %}<li><a class="text-link" href="/sessions/{{ child.id|urlencode }}">{{ child.title or child.id }}</a> <small>{{ child.source }} · {{ child.default_profile }}{% if child.archived_at %} · archived{% endif %}</small></li>{% endfor %}</ul>
-    <nav class="action-group" aria-label="Sub-session pages">{% if children.offset %}<a class="text-link" href="?child_offset={{ [0, children.offset - children.limit]|max }}">{{ icon("arrow-left") }} Previous sub-sessions</a>{% endif %}{% if children.offset + children.limit < children.total %}<a class="text-link" href="?child_offset={{ children.offset + children.limit }}">Next sub-sessions {{ icon("arrow-right") }}</a>{% endif %}</nav>
-  </details>{% endif %}
   <div id="conversation" class="conversation" {% if session.pending_run %}data-active-run="{{ session.pending_run.id }}" data-active-created-at="{{ session.pending_run.created_at }}"{% endif %} data-history-url="/sessions/{{ session.id|urlencode }}/earlier{% if archive_number %}?archive={{ archive_number }}{% endif %}" role="log" aria-label="Message history" aria-live="polite" aria-relevant="additions text" {% if not archive_number and not session.archived_at %}data-events-url="/sessions/{{ session.id|urlencode }}/events"{% endif %}>{% if session.earlier %}<a class="secondary-button load-earlier" data-before="{{ session.earlier }}" data-url="/sessions/{{ session.id|urlencode }}/earlier{% if archive_number %}?archive={{ archive_number }}{% endif %}" href="?before={{ session.earlier|urlencode }}">Load earlier messages</a>{% endif %}{% include 'fragments/message_tail.html' %}{% if session.later %}<a class="text-link" href="{{ request.url.path }}">Return to latest messages</a>{% endif %}</div>
   <button type="button" id="jump-latest" class="jump-latest" hidden>Latest messages {{ icon("arrow-down") }}</button>
   {% if session.archived_at %}
@@ -52,7 +29,7 @@
   {% else %}
   <div class="composer-wrap">
     <p id="connection-error" class="notice notice-error" role="alert" hidden>The request could not finish. Reload to check the run before sending again.</p>
-    <div id="pending" class="pending" {% if not session.pending_run %}hidden{% endif %}><span role="status"><span class="thinking-dot" aria-hidden="true"></span>Waiting for Sola <span id="elapsed" aria-live="off">0:00</span></span><div class="action-group"><form id="stop-run" method="post"{% if session.pending_run %} action="/runs/{{ session.pending_run.id|urlencode }}/cancel?return_to_session=true"{% endif %}><button class="secondary-button stop-button" type="submit"{% if not session.pending_run %} disabled{% endif %}>Stop</button></form></div><noscript><a href="{{ request.url.path }}">Reload to check progress</a></noscript></div>
+    <div id="pending" class="pending" {% if not session.pending_run %}hidden{% endif %}><span role="status"><span class="thinking-dot" aria-hidden="true"></span>Waiting for Sola <span id="elapsed" aria-live="off">0:00</span></span><div class="action-group"><form id="stop-run" method="post"{% if session.pending_run %} action="/settings/evidence/runs/{{ session.pending_run.id|urlencode }}/cancel?return_to_session=true"{% endif %}><button class="secondary-button stop-button" type="submit"{% if not session.pending_run %} disabled{% endif %}>Stop</button></form></div><noscript><a href="{{ request.url.path }}">Reload to check progress</a></noscript></div>
     <form id="composer" action="/sessions/{{ session.id|urlencode }}/messages" method="post" data-draft-key="solakit-draft:{{ session.id }}">
       <label class="visually-hidden" for="message">Message to Sola</label>
       <div class="composer-input"><textarea id="message" name="message" placeholder="What’s on your mind?" maxlength="32000" rows="2" required aria-describedby="composer-hint"></textarea>
@@ -62,4 +39,5 @@
   </div>
   {% endif %}
 </section>
+{% include 'fragments/topic_details.html' %}
 {% endblock %}

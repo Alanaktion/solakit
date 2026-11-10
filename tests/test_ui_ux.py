@@ -134,10 +134,9 @@ def test_status_poll_unchanged_and_recovers_on_success(config, mock_model):
     with TestClient(app) as client:
         sign_in(client)
         app.state.model.available = False
-        down = client.get("/ui/status")
-        known = re.search(r'"known":"([^"]+)"', down.text)[1]
-        assert "unavailable" in down.text
-        assert client.get("/ui/status?known=" + known).status_code == 204
+        down = client.get("/ui/health").json()
+        assert down["color"] == "red"
+        assert "unavailable" in down["label"]
         # A successful preflight/completion clears stale failure state immediately.
         client.post(
             "/api/sessions", json={"id": "recovery", "memory_scope": "ephemeral"}
@@ -146,10 +145,11 @@ def test_status_poll_unchanged_and_recovers_on_success(config, mock_model):
             "/api/sessions/recovery/messages", json={"message": "hello"}
         )
         assert result.json()["status"] == "completed"
-        recovered = client.get("/ui/status?known=" + known)
+        recovered = client.get("/ui/health")
         assert recovered.status_code == 200
         assert "unavailable" not in recovered.text
         assert "ready" in recovered.text
+        assert recovered.json()["color"] == "green"
         assert client.get("/favicon.ico").status_code == 200
 
 
@@ -159,7 +159,9 @@ def test_archive_selection_requires_review(config, mock_model):
         sign_in(client)
         seed(app.state.store, "review", 1)
         listing = client.get("/")
-        assert 'href="/sessions/review/lifecycle/archive"' in listing.text
+        assert (
+            'href="/sessions/review/lifecycle/archive?return_to=chat"' in listing.text
+        )
         confirmation = client.get("/sessions/review/lifecycle/archive")
         assert "restore it afterwards" in confirmation.text
         review = client.post("/sessions/cleanup/review", data={"session_ids": "review"})
@@ -213,19 +215,21 @@ def test_job_run_now_redirects_before_generation_finishes(config, stop):
         sign_in(client)
         try:
             response = client.post(
-                "/operations/jobs/background/run", follow_redirects=False
+                "/settings/jobs/background/run", follow_redirects=False
             )
             assert response.status_code == 303
             assert entered.wait(2)
             assert not release.is_set()
             location = response.headers["location"]
-            run = client.get("/api" + location).json()
+            run = client.get(
+                "/api" + location.removeprefix("/settings/evidence")
+            ).json()
             assert run["status"] in {"queued", "running"}
             page = client.get(location)
             assert "Refresh run status" in page.text
             assert (
                 client.post(
-                    "/operations/jobs/background/run", follow_redirects=False
+                    "/settings/jobs/background/run", follow_redirects=False
                 ).status_code
                 == 409
             )
@@ -241,14 +245,19 @@ def test_job_run_now_redirects_before_generation_finishes(config, stop):
                 response = client.post(stop_url, follow_redirects=False)
                 assert response.status_code == 303
                 assert response.headers["location"] == session_url
-                assert client.get("/api" + location).json()["status"] == "cancelled"
+                assert (
+                    client.get(
+                        "/api" + location.removeprefix("/settings/evidence")
+                    ).json()["status"]
+                    == "cancelled"
+                )
                 assert f'action="{stop_url}"' not in client.get(session_url).text
         finally:
             release.set()
         client.get(f"/sessions/{run['session']}/events")
-        assert client.get("/api" + location).json()["status"] == (
-            "cancelled" if stop else "completed"
-        )
+        assert client.get("/api" + location.removeprefix("/settings/evidence")).json()[
+            "status"
+        ] == ("cancelled" if stop else "completed")
 
 
 def test_run_view_reads_only_contiguous_tail_and_handles_split_utf8(config, mock_model):
@@ -766,7 +775,7 @@ def test_channel_sessions_pinned_before_pagination(config, mock_model):
         for index in range(51):
             store.create_session(Session(id=f"recent-{index:02}"))
         store.create_session(Session(id="stale-binding", bound_channel="removed"))
-        page = client.get("/")
+        page = client.get("/settings/sessions")
         assert page.status_code == 200
         assert page.text.index('href="/sessions/pinned"') < page.text.index(
             'href="/sessions/recent-'
@@ -777,7 +786,7 @@ def test_channel_sessions_pinned_before_pagination(config, mock_model):
         assert first["sessions"][0]["channel_names"] == ["moon-room", "second-room"]
         second = client.get("/api/sessions?pin_channels=true&limit=1&offset=1").json()
         assert second[0]["id"] != "pinned"
-        filtered = client.get("/?q=recent")
+        filtered = client.get("/settings/sessions?q=recent")
         assert 'href="/sessions/pinned"' not in filtered.text
 
 

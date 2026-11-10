@@ -1,13 +1,13 @@
 {% extends 'base.html' %}
 {% from "macros/icons.html" import icon %}
-{% block title %}Operations · Solakit{% endblock %}
+{% block title %}Jobs · Solakit{% endblock %}
 {% block page_class %}operations-page{% endblock %}
 {% block content %}
-<section class="page-heading"><div><h1>Operations</h1><p class="intro">Manage scheduled work and check channel connections.</p></div><div class="action-group"><a class="secondary-button" href="/operations">Refresh {{ icon("rotate-cw") }}</a></div></section>
+<section class="page-heading"><div><h1>Jobs</h1><p class="intro">Manage scheduled work and check channel connections.</p></div><div class="action-group"><a class="secondary-button" href="/settings/jobs">Refresh {{ icon("rotate-cw") }}</a></div></section>
 {% if error %}<div class="notice notice-error" role="alert">{{ error }}</div>{% endif %}
 <div class="operations-layout">
 <section class="operations-panel panel" aria-labelledby="jobs-heading">
-  <header class="operations-section-heading"><div><h2 id="jobs-heading">Scheduled jobs <span class="count-label">{{ jobs|length }}</span></h2><p class="muted">Times are shown in your browser’s timezone. Schedule timezones are listed separately.</p></div><div class="action-group"><a class="primary-button" href="/operations/jobs/new">New job</a></div></header>
+  <header class="operations-section-heading"><div><h2 id="jobs-heading">Scheduled jobs <span class="count-label">{{ jobs|length }}</span></h2><p class="muted">Times are shown in your browser’s timezone. Schedule timezones are listed separately.</p></div><div class="action-group"><a class="primary-button" href="/settings/jobs/new">New job</a></div></header>
   <div class="table-scroll"><table class="data-table operations-table jobs-table"><thead><tr><th scope="col">Job / schedule</th><th scope="col">State</th><th scope="col">Timing / last run</th><th scope="col">Actions</th></tr></thead><tbody>
   {% for job in jobs %}
     <tr>
@@ -30,9 +30,9 @@
       <td data-label="Timing / last run">
         <span class="operation-label">Next scheduled run</span>
         {% if job.next_fire %}<time datetime="{{ job.next_fire }}" data-time>{{ job.next_fire|display_time }}</time>{% else %}<span class="operation-meta">{% if job.consumed %}One-time run attempted{% elif not job.enabled %}Job disabled{% elif job.paused %}Schedule paused{% else %}Not scheduled{% endif %}</span>{% endif %}
-        <div class="operation-last-run"><span class="operation-label">Last run</span>{% if job.last_run %}<a class="text-link operation-run-link" href="/runs/{{ job.last_run|urlencode }}">{{ job.last_run }}</a><span class="operation-meta">{{ job.last_status }}</span>{% else %}<span class="operation-meta">No recorded run</span>{% endif %}</div>
+        <div class="operation-last-run"><span class="operation-label">Last run</span>{% if job.last_run %}<a class="text-link operation-run-link" href="/settings/evidence/runs/{{ job.last_run|urlencode }}">{{ job.last_run }}</a><span class="operation-meta">{{ job.last_status }}</span>{% else %}<span class="operation-meta">No recorded run</span>{% endif %}</div>
       </td>
-      <td data-label="Actions"><div class="action-group"><form method="post" action="/operations/jobs/{{ job.id|urlencode }}/run"><button class="primary-button" type="submit" {% if not job.enabled or job.active or job.consumed %}disabled{% endif %}>Run now</button></form><form method="post" action="/operations/jobs/{{ job.id|urlencode }}/{{ 'resume' if job.paused else 'pause' }}"><button class="secondary-button" type="submit" {% if not job.enabled %}disabled{% endif %}>{{ 'Resume' if job.paused else 'Pause' }}</button></form><a class="text-link" href="/operations/jobs/{{ job.id|urlencode }}/edit">Edit</a><a class="text-link danger-link" href="/operations/jobs/{{ job.id|urlencode }}/delete">Delete</a></div></td>
+      <td data-label="Actions"><div class="action-group"><form method="post" action="/settings/jobs/{{ job.id|urlencode }}/run"><button class="primary-button" type="submit" {% if not job.enabled or job.active or job.consumed %}disabled{% endif %}>Run now</button></form><form method="post" action="/settings/jobs/{{ job.id|urlencode }}/{{ 'resume' if job.paused else 'pause' }}"><button class="secondary-button" type="submit" {% if not job.enabled %}disabled{% endif %}>{{ 'Resume' if job.paused else 'Pause' }}</button></form><a class="text-link" href="/settings/jobs/{{ job.id|urlencode }}/edit">Edit</a><a class="text-link danger-link" href="/settings/jobs/{{ job.id|urlencode }}/delete">Delete</a></div></td>
     </tr>
   {% else %}<tr><td colspan="4" class="operations-empty"><h3>No scheduled jobs</h3><p>Create a job to schedule work or run it on demand.</p></td></tr>{% endfor %}
   </tbody></table></div>

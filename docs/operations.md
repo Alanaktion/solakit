@@ -23,11 +23,48 @@ previews; indicators stop when the run settles and respect reduced motion.
 
 ## API and execution
 
+The web UI opens `/` into the most recently active, non-archived root topic,
+excluding scheduled sessions. With no topics it shows New topic; visiting a page
+never creates a session. “Topic” is UI language for the existing session concept.
+The sidebar pins configured channel topics, lists other topics by activity, and
+keeps archived topics in a collapsed section. Its title filter covers the rendered
+page; More topics and More archived page through older records. Untitled topics
+use the first run's user text where available, otherwise their session ID.
+Delegated topics appear beneath their parent. On phones, Topics opens a drawer.
+
+Use **Details** (refreshed when opened) for recent runs, duration/tokens when recorded, prompt inspection,
+numbered archives, memory scope/status and session metadata. **Actions** holds
+rename, compact, transcript rotation, and topic archive/restore. Archived topics
+remain read-only until restored. Transcript rotation and topic archival remain
+different operations. Full-text search opens the aggregated topic at the matching
+message, including messages in numbered archives.
+
+**Settings** contains System, Jobs, Tools & profiles, Sessions, Evidence and
+Search. Evidence includes runs and the prompt inspector. The Sessions table,
+filters, bulk archival and cleanup live at `/settings/sessions`; advanced session
+creation still exposes profile and memory controls there. Sign out lives in the
+Settings sidebar. Back to chat returns to the latest topic. Old `/operations`,
+`/tools`, `/prompt`, `/runs`, `/model-health` and `/search` URLs permanently redirect
+to their Settings pages, preserving query parameters and subordinate pages;
+existing POST action URLs remain usable.
+
+The header status dot links to System. Green means model/storage healthy and
+memory ready or disabled; red means model unavailable or a reported storage fault;
+amber means unknown/degraded health, a job whose last outcome failed, or delayed
+memory extraction. A read-only check every 15 seconds changes the dot and its
+accessible description without replacing header markup. Extraction checks sample
+the latest 100 runs, including archived sessions: failed/lost extraction states,
+or accepted/pending states older than five minutes, produce amber. This is a
+bounded diagnostic, not proof of successful memory writes; memory connectivity
+still describes the startup check. Details does not report an exact lifetime
+compaction count because the existing API does not expose one independently of
+loading all transcript archives.
+
 Create `POST /api/sessions` with `{"id":"web-main","default_profile":"interactive"}`.
 Post `{"message":"Hello"}` to `/api/sessions/web-main/messages`; optional `profile`
 selects that run's profile. Unknown/misplaced fields are rejected, not ignored.
 Inspect `/api/tools` for loaded tools and effective profile grants. The UI’s
-`/tools` page groups tools by family, shows profile grants on each row, and
+`/settings/tools` page groups tools by family, shows profile grants on each row, and
 uses compact rows with descriptions and argument schemas available on demand.
 Profile access separates tool grants, read/write tiers and roots, effects,
 resources, and available tools into labeled rows. Expand Profile access
@@ -430,7 +467,7 @@ resources = ["channel:discord-blog"]
 ```
 
 APScheduler 3 supplies wake-ups and cron calculations. Job definitions live in
-SQLite and can be managed through **Operations → New job**, the API, or chat tools.
+SQLite and can be managed through **Settings → Jobs → New job**, the API, or chat tools.
 Existing TOML jobs import once per ID; later file edits do not overwrite managed
 jobs, and deleted jobs cannot be resurrected by stale TOML. JSONL cursors indexed
 in SQLite persist next fire, pause, active dispatch and last result.
@@ -623,7 +660,7 @@ reasoning evidence, the `<tool_call>` fallback, calibrated token budgets,
 
 ## Model health and configuration review
 
-The **Model** page (`/model-health`, API `GET /api/stats/model?window=100`) shows
+The **System** page (`/settings/system`, API `GET /api/stats/model?window=100`) shows
 the latest runs' outcome mix, repair/unknown-tool/length-stop/empty-completion
 rates, normalizations applied, repeated calls, reasoning retries and wrap-ups,
 average tokens/steps/seconds per step, the most used and most failing tools, the

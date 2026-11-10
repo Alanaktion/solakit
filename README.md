@@ -4,8 +4,10 @@ Solakit is Sola’s small, single-operator personal assistant runtime. It connec
 one pinned OpenAI-compatible local model to operator-owned prompts, external
 OpenViking memory, and explicitly granted tools.
 
-The moonlight-themed web UI provides streaming chat, session history, prompt and
-run inspection, conversation archival and compaction, and scheduled job management. Run inspection uses bounded catalog pages and
+The moonlight-themed web UI opens into your latest topic, with streaming chat and
+a topic sidebar. Topic Details holds conversation history and recent runs; Settings
+holds system health, jobs, tools and profiles, session management, search, and
+verbatim prompt/run inspection. Run inspection uses bounded catalog pages and
 indexed reads across active and archived evidence.
 Optional Discord channels share the same session execution. Tool packs add journal
 publishing, Astro blog posts and dreams, letters, email, thermal printing, calendar
