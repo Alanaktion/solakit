@@ -116,6 +116,12 @@ and is not automatically replayed. Run again returns 409 after consumption.
 To schedule another attempt, set a **new future `run_at`**. Task edits, changing
 timezone without moving the instant, and enable/pause toggles do not repeat it.
 
+When a TOML or API job omits `timezone`, creation resolves it from the configured
+`timezone` before interpreting cron or a local `run_at`. An explicit job timezone
+wins. The resolved zone is persisted: later configuration changes and task-only
+edits do not move existing jobs. The existing configuration and model defaults
+remain unchanged.
+
 Tasks accept `{date}`, `{time}`, `{timezone}` and `{job_id}`; double literal
 braces as `{{` / `}}`. The cron has five fields; use weekday names to avoid
 numbering ambiguity. Times use the job's IANA timezone. `bind_session` can name a

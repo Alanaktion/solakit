@@ -1067,6 +1067,10 @@ The P1 operator UI is a thin server-rendered API client. Shared app contracts:
 | `GET /api/channels` | channel configs + adapter status (connected since, last message) |
 | `POST /api/runs/{id}/cancel` | stop a queued/running run |
 
+- **Job timezone inheritance:** omitted TOML/API job timezones resolve from
+  Config.timezone before schedule validation and local-time conversion. Explicit
+  timezones and persisted definitions remain fixed across later config changes.
+
 - **Run catalog:** `GET /api/runs` returns an array, default `limit=100`, maximum
   1,000, with nonnegative `offset`. `session_id`, `status` and archival filters
   apply before pagination. Default order is index insertion order;

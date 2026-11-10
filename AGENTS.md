@@ -103,7 +103,9 @@ Read `SPEC.md` for behavioral contracts, `README.md` for an introduction,
   cursors and opt-in APScheduler dispatch using shared execution/delivery.
   Built-in `jobs` tools use the injected scheduler; jobs.run queues without waiting
   to avoid same-chat deadlock. Capability/scope checks happen under the job lock.
-  Jobs choose either cron or a one-time run_at instant. Persist consumed state
+  Jobs choose either cron or a one-time run_at instant. Omitted creation timezones
+  inherit Config.timezone before local-time validation; persist the resolved zone.
+  Persist consumed state
   before one-time dispatch; restart/enable/task edits must never replay it.
   Only a changed future run_at rearms it. Unattempted overdue jobs catch up once.
   Job tools=None inherits profile grants; an exact list (including []) narrows

@@ -194,6 +194,12 @@ return 404 and invalid/unsupported fields return 422. The route uses the same
 Cookie/Bearer operator authentication as other API routes. Renaming changes only
 the title, preserving IDs, history, bindings, archive state and importer metadata.
 
+`files.find` applies patterns without `/` to basenames at any depth. Patterns
+containing `/` are relative to the search directory: `docs/*.md` matches direct
+children, and `docs/**/*.md` includes nested directories. `*`, `?` and bracket
+classes match within a path component; a complete `**` component spans zero or
+more directories. Hidden-directory and symlink exclusions still apply.
+
 ## Storage and recovery
 
 Runtime data lives outside the code tree. Authoritative JSONL transcripts, run

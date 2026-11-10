@@ -104,6 +104,6 @@ The first start with derived-index version 2 revalidates historical evidence and
 preserves authoritative managed job definitions. Back up app.db along with the
 evidence tree. Run-list clients relying on an unlimited array must now paginate;
 default ordering and array shape remain compatible. Offset pagination observes
-live state rather than a database snapshot across requests. D9–D12 and unrelated
-CI projects remain deferred. No deployment, integration activation or Hermes
+live state rather than a database snapshot across requests. D9–D12 were subsequently addressed in [the follow-up report](refactor-details.md);
+unrelated CI projects remain deferred. No deployment, integration activation or Hermes
 changes were performed.

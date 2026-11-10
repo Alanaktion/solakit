@@ -530,6 +530,21 @@ class Config(StrictModel):
         if not isinstance(values, dict):
             return values
         values = dict(values)
+        timezone = values.get("timezone", cls.model_fields["timezone"].default)
+        if isinstance(values.get("jobs"), list):
+            values["jobs"] = [
+                {
+                    "timezone": timezone,
+                    **(
+                        job.model_dump(exclude_unset=True)
+                        if isinstance(job, Job)
+                        else job
+                    ),
+                }
+                if isinstance(job, (dict, Job))
+                else job
+                for job in values["jobs"]
+            ]
         profile_defaults = values.get("profile_defaults", {})
         channel_defaults = values.get("channel_defaults", {})
 
@@ -658,6 +673,22 @@ class Config(StrictModel):
         return self
 
 
+def code_roots(module_file: Path | None = None) -> tuple[Path, ...]:
+    """Protect the installed package, plus a verified source checkout if present."""
+    package = (module_file or Path(__file__)).resolve().parent.parent
+    candidate = package.parent.parent
+    if package.parent.name == "src":
+        try:
+            project = tomllib.loads((candidate / "pyproject.toml").read_text())
+        except (OSError, UnicodeError, tomllib.TOMLDecodeError):
+            pass
+        else:
+            metadata = project.get("project")
+            if isinstance(metadata, dict) and metadata.get("name") == "solakit":
+                return (candidate,)
+    return (package,)
+
+
 def load_config(path: Path | None = None) -> Config:
     """Resolve relative paths against the configuration directory."""
     path = path or Path(os.environ.get("SOLA_CONFIG", "config.toml"))
@@ -701,8 +732,7 @@ def load_config(path: Path | None = None) -> Config:
         if reference is not None and reference.file is not None:
             value = reference.file.expanduser()
             reference.file = value if value.is_absolute() else base / value
-    code_root = Path(__file__).resolve().parents[3]
-    if config.paths.data.resolve().is_relative_to(code_root):
+    if any(config.paths.data.resolve().is_relative_to(root) for root in code_roots()):
         raise ConfigLoadError(
             "Runtime data directory must live outside the code tree: "
             f"{config.paths.data}"

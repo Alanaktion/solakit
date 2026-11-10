@@ -189,3 +189,8 @@ Prefer async tools for effects; inspect state or receipts before retrying.
 
 `GET /health` remains public. The active `GET /health/model` probe requires the
 operator Bearer token or a logged-in UI cookie.
+
+Runtime data must remain outside the source checkout when running from source.
+Installed wheels protect their own `solakit` package directory; the interpreter's
+entire library directory is not treated as the Solakit code tree. Symlink-resolved
+data paths receive the same check.

@@ -300,14 +300,15 @@ trailing whitespace and line endings. Zero or multiple matches fail.
 
 Find files by name pattern below a directory
 
-- `pattern` (required): Glob such as *.toml or docs/*.md (matched on names).
+- `pattern` (required): Basename glob anywhere (e.g. *.toml), or root-relative path glob (e.g. docs/*.md). * and ? stay within a directory; ** spans directories.
 - `path`: Directory to search below.
 - `limit`: Maximum results.
 
 Find files recursively by glob, returning relative paths and sizes.
 
-Hidden directories and symlinks are skipped. Use files.grep to search
-contents and files.read to open a result.
+Path patterns are relative to path: docs/*.md matches direct files only;
+docs/**/*.md includes nested files. Hidden directories and symlinks are skipped.
+Use files.grep to search contents and files.read to open a result.
 
 ### `files.grep`
 

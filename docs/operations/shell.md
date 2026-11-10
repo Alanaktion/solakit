@@ -55,3 +55,9 @@ and remove `solakit-packs-shell` from deployment dependencies. Tool names,
 effect/write-tier grants and arguments are unchanged. The former maintenance-only
 restriction is removed; profile tool grants now determine access. The
 retired pack is no longer maintained; there is no core dependency on it.
+
+Process output caps count decoded Unicode characters independently for stdout and
+stderr. UTF-8 decoding spans read boundaries, so truncation never splits a valid
+multibyte character. The `stdout_complete` and `stderr_complete` flags report
+whether the entire stream fit. Caller-provided environment mappings are copied
+before the service supplies its default PATH.

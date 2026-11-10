@@ -568,8 +568,10 @@ class Jobs:
             raise
 
     async def create(
-        self, job: Job, *, authorize: Callable[[Job], None] | None = None
+        self, job: Job | dict, *, authorize: Callable[[Job], None] | None = None
     ) -> dict:
+        values = job.model_dump(exclude_unset=True) if isinstance(job, Job) else job
+        job = Job.model_validate({"timezone": self.config.timezone, **values})
         return await self._complete(self._change(job, create=True, authorize=authorize))
 
     async def update(

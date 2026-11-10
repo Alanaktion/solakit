@@ -1,6 +1,7 @@
 """Bounded POSIX process execution for built-in low-level tools and trusted packs."""
 
 import asyncio
+import codecs
 import os
 import signal
 from pathlib import Path
@@ -19,7 +20,7 @@ async def execute(
     # Deliberately avoid inheriting backend/API credentials. This is hygiene,
     # not isolation: host-user shell commands can still access host files.
     environment = (
-        environment
+        dict(environment)
         if environment is not None
         else {
             name: value
@@ -39,14 +40,21 @@ async def execute(
         stderr=asyncio.subprocess.PIPE,
     )
 
-    captured = {"stdout": bytearray(), "stderr": bytearray()}
+    captured: dict[str, list[str]] = {"stdout": [], "stderr": []}
 
     async def drain(name, stream):
-        kept, size = captured[name], 0
-        while chunk := await stream.read(65536):
-            size += len(chunk)
-            kept.extend(chunk[: max(0, limit - len(kept))])
-        return kept.decode("utf-8", errors="replace"), size <= limit
+        decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+        kept, size, retained = captured[name], 0, 0
+        while True:
+            chunk = await stream.read(65536)
+            text = decoder.decode(chunk, final=not chunk)
+            size += len(text)
+            prefix = text[: max(0, limit - retained)]
+            if prefix:
+                kept.append(prefix)
+                retained += len(prefix)
+            if not chunk:
+                return "".join(kept), size <= limit
 
     async def settle():
         # A descendant that left the killed process group can keep the pipes
@@ -59,10 +67,7 @@ async def execute(
             for task in (stdout, stderr):
                 task.cancel()
             await asyncio.gather(stdout, stderr, return_exceptions=True)
-            return [
-                (captured[name].decode("utf-8", errors="replace"), False)
-                for name in ("stdout", "stderr")
-            ]
+            return [("".join(captured[name]), False) for name in ("stdout", "stderr")]
 
     stdout = asyncio.create_task(drain("stdout", process.stdout))
     stderr = asyncio.create_task(drain("stderr", process.stderr))

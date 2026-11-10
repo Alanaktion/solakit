@@ -45,6 +45,26 @@ class _SearchMatcher:
         return result is not None
 
 
+def glob_matches(relative: str, pattern: str) -> bool:
+    """Basenames match anywhere; path patterns are rooted and segment-aware."""
+    if "/" not in pattern:
+        return fnmatch.fnmatchcase(relative.rsplit("/", 1)[-1], pattern)
+    names = relative.split("/")
+    positions = {0}
+    for part in pattern.split("/"):
+        if not positions:
+            return False
+        if part == "**":
+            positions = set(range(min(positions), len(names) + 1))
+        else:
+            positions = {
+                at + 1
+                for at in positions
+                if at < len(names) and fnmatch.fnmatchcase(names[at], part)
+            }
+    return len(names) in positions
+
+
 class Filesystem:
     def __init__(self, ctx: ToolContext) -> None:
         self.ctx = ctx
@@ -342,12 +362,7 @@ class Filesystem:
                     more = True
                     break
                 assert relative is not None
-                target = relative if "/" in pattern else file.name
-                # "**/" also matches zero directories, as in shell globstar.
-                if fnmatch.fnmatch(target, pattern) or (
-                    "**/" in pattern
-                    and fnmatch.fnmatch(target, pattern.replace("**/", ""))
-                ):
+                if glob_matches(relative, pattern):
                     if len(matches) >= limit:
                         more = True
                         break

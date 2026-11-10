@@ -191,15 +191,23 @@ async def list_files(
 async def find(
     ctx: ToolContext,
     pattern: Annotated[
-        str, Field(description="Glob such as *.toml or docs/*.md (matched on names).")
+        str,
+        Field(
+            description=(
+                "Basename glob anywhere (e.g. *.toml), or root-relative path glob "
+                "(e.g. docs/*.md). * and ? stay within a directory; "
+                "** spans directories."
+            )
+        ),
     ],
     path: Annotated[str, Field(description="Directory to search below.")] = ".",
     limit: Annotated[int, Field(ge=1, le=200, description="Maximum results.")] = 50,
 ) -> ToolResult:
     """Find files recursively by glob, returning relative paths and sizes.
 
-    Hidden directories and symlinks are skipped. Use files.grep to search
-    contents and files.read to open a result."""
+    Path patterns are relative to path: docs/*.md matches direct files only;
+    docs/**/*.md includes nested files. Hidden directories and symlinks are skipped.
+    Use files.grep to search contents and files.read to open a result."""
     result = await ctx.fs.find(pattern, path, limit)
     return ToolResult(content=json.dumps(result, ensure_ascii=False))
 

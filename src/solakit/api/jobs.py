@@ -6,8 +6,7 @@ from fastapi import APIRouter, HTTPException
 from starlette.responses import JSONResponse
 
 from solakit.api.dependencies import RuntimeDep
-from solakit.core.config import Job
-from solakit.jobs.schemas import JobUpdate
+from solakit.jobs.schemas import JobCreate, JobUpdate
 
 router = APIRouter()
 
@@ -41,9 +40,9 @@ def job_error(exc, runtime):
 
 
 @router.post("/jobs", status_code=201)
-async def job_create(runtime: RuntimeDep, job: Job) -> dict:
+async def job_create(runtime: RuntimeDep, job: JobCreate) -> dict:
     try:
-        return await runtime.jobs.create(job)
+        return await runtime.jobs.create(job.model_dump(exclude_unset=True))
     except (ValueError, KeyError, FileExistsError, RuntimeError) as exc:
         raise job_error(exc, runtime) from exc
 

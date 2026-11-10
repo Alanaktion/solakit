@@ -1,4 +1,4 @@
-"""Partial edits use the same strict field types and final Job validation."""
+"""Request field shapes; timezone-aware Job validation runs in the manager."""
 
 from typing import TYPE_CHECKING, Any
 
@@ -22,14 +22,28 @@ _fields: dict[str, Any] = {
     if name != "id"
 }
 
+_create_fields: dict[str, Any] = {
+    name: (field.annotation, field) for name, field in Job.model_fields.items()
+}
+
+# A factory omits a misleading static timezone default from the HTTP schema.
+# The manager resolves omission before validating local one-time schedule inputs.
+_create_fields["timezone"] = (
+    str,
+    Field(
+        default_factory=lambda: Job.model_fields["timezone"].default,
+        description="IANA timezone; omit to inherit the configured timezone.",
+    ),
+)
+
 if TYPE_CHECKING:
-    # The generated subclass adds optional Job fields; consumers use BaseModel's
-    # validation/dump interface, while FastAPI sees the full runtime model.
+    # Request shapes use BaseModel validation/dump methods. Scheduling validation
+    # runs after the manager injects the configured timezone into omitted fields.
+    class JobCreate(StrictUpdate):
+        pass
+
     class JobUpdate(StrictUpdate):
         pass
 else:
-    JobUpdate = create_model(
-        "JobUpdate",
-        __base__=StrictUpdate,
-        **_fields,
-    )
+    JobCreate = create_model("JobCreate", __base__=StrictUpdate, **_create_fields)
+    JobUpdate = create_model("JobUpdate", __base__=StrictUpdate, **_fields)
