@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Read-only named ICS calendar tools for Solakit"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = ["solakit>=0.1.0,<0.2", "solakit-packs-common>=0.1.0,<0.2", "icalendar>=6,<7", "recurring-ical-events>=3,<4"]
+dependencies = ["solakit>=0.1.0,<0.2", "solakit-packs-common>=0.1.0,<0.2", "icalendar>=6,<8", "recurring-ical-events>=3,<4"]
 
 [build-system]
 requires = ["hatchling>=1.27,<2"]
