@@ -112,7 +112,7 @@ def test_nonoverlap_includes_queued_jobs_and_channel_continuity(config):
         await jobs.initialize()
         await execution.semaphore.acquire()
         first = asyncio.create_task(jobs.run_now("scheduled"))
-        while not execution.pending:
+        while not execution.pending:  # noqa: ASYNC110 - observe asynchronous test state
             await asyncio.sleep(0)
         assert jobs.states["scheduled"].active
         with pytest.raises(ValueError, match="already queued/running"):
@@ -373,5 +373,44 @@ def test_scheduled_task_uses_due_time_instead_of_tick(config, monkeypatch):
         assert captured[0].endswith(":00")
         await jobs.stop_admission()
         await execution.close()
+
+    asyncio.run(exercise())
+
+
+def test_scheduled_ephemeral_firings_release_execution_state(config):
+    configured(config)
+    config.jobs[0].bind_session = "ephemeral"
+    clock = [datetime.fromisoformat("2026-11-04T19:01:00+00:00")]
+
+    def model(request):
+        return (
+            model_list(config)
+            if request.url.path.endswith("/models")
+            else completion(config, "scheduled result")
+        )
+
+    async def exercise():
+        execution = setup(config, model)
+        jobs = Jobs(
+            config, execution, Channels(config, execution, {}), lambda: clock[0]
+        )
+        try:
+            await jobs.initialize()
+            for _ in range(3):
+                clock[0] = jobs.states["scheduled"].next_fire
+                await jobs.tick()
+                await jobs.drain()
+                async with execution.submit_lock:
+                    assert not execution.queues
+                    assert not execution.workers
+                    assert not execution.session_locks
+            runs = execution.store.list_runs()
+            assert len(runs) == 3
+            assert all(run["status"] == "completed" for run in runs)
+            assert len({run["session"] for run in runs}) == 3
+        finally:
+            await jobs.stop_admission()
+            await jobs.drain()
+            await execution.close()
 
     asyncio.run(exercise())

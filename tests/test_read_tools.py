@@ -86,7 +86,7 @@ def test_registry_metadata_and_grants(config):
     config.enabled_tools = ["web", "feeds", "github", "wiki", "datetime", "math"]
     registry = Registry(config)
     assert len(registry.tools) == 11
-    for name, item in registry.tools.items():
+    for _name, item in registry.tools.items():
         assert item.manifest.summary and item.manifest.keywords
         assert item.schema()["function"]["parameters"]["type"] == "object"
     assert registry.schemas("interactive") == []

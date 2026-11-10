@@ -174,7 +174,7 @@ def test_cancellation_kills_process_group_before_return(fixture):
             )
         )
         async with asyncio.timeout(2):
-            while not (directory / "started.txt").exists():
+            while not (directory / "started.txt").exists():  # noqa: ASYNC110 - observe asynchronous test state
                 await asyncio.sleep(0.01)
         task.cancel()
         with pytest.raises(asyncio.CancelledError):

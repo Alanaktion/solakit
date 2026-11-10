@@ -139,7 +139,7 @@ def test_ambiguous_commit_refuses_replay_and_scope_checks(config):
     scoped = client.scoped(Session(id="s"))
 
     async def exercise():
-        for attempt in range(2):
+        for _attempt in range(2):
             with pytest.raises(MemoryUnavailable):
                 await scoped.commit(
                     store, "run1", [{"role": "user", "content": "fact"}]

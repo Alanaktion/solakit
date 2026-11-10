@@ -6,6 +6,8 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  schedule:
+    - cron: "23 8 * * 1"
 
 permissions:
   contents: read
@@ -16,13 +18,19 @@ concurrency:
 
 jobs:
   test:
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.13"]
+    env:
+      UV_PYTHON: ${{ matrix.python }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
         with:
           enable-cache: true
 
@@ -41,7 +49,15 @@ jobs:
         run: uv run mypy
 
       - name: Test (core + packs)
-        run: uv run pytest tests packs/*/tests -q
+        run: uv run pytest tests packs/*/tests -q --cov --cov-report=term-missing --cov-report=xml:coverage.xml
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: coverage-python-${{ matrix.python }}
+          path: coverage.xml
+          if-no-files-found: warn
 
       - name: Build all distributions
         run: uv build --all-packages
@@ -60,3 +76,22 @@ jobs:
               "pack dependency leaked into core metadata"
           print("core wheel clean:", wheel)
           EOF
+
+  audit:
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.13"]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      UV_PYTHON: ${{ matrix.python }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+      - name: Sync workspace from the lockfile
+        run: uv sync --frozen --all-packages
+      - name: Audit locked production dependencies
+        run: |
+          uv export --frozen --all-packages --no-dev --no-emit-workspace --no-hashes --output-file /tmp/solakit-requirements.txt
+          uv run pip-audit --no-deps --disable-pip -r /tmp/solakit-requirements.txt

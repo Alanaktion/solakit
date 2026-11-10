@@ -12,7 +12,7 @@ DRAIN_GRACE_S = 5
 async def execute(
     argv: list[str],
     directory: Path,
-    timeout: float,
+    timeout: float,  # noqa: ASYNC109 - bounds and kills the process group
     limit: int,
     *,
     environment: dict[str, str] | None = None,

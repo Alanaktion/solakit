@@ -27,6 +27,8 @@ dev = [
     "httpx>=0.28,<1",
     "mypy>=1.15,<2",
     "pytest>=8,<10",
+    "pytest-cov>=6,<8",
+    "pip-audit>=2.9,<3",
     "ruff>=0.11,<1",
 ]
 
@@ -41,7 +43,7 @@ testpaths = ["tests"]
 target-version = "py312"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "C901"]
+select = ["E", "F", "I", "UP", "C901", "B", "ASYNC"]
 
 [tool.ruff.lint.mccabe]
 # Complexity budget: existing offenders carry `# noqa: C901` (an allowlist that
@@ -79,3 +81,10 @@ files = [
 check_untyped_defs = true
 follow_imports = "silent"
 ignore_missing_imports = true
+
+[tool.coverage.run]
+source = ["src/solakit", "packs/common/src", "packs/journal/src", "packs/letters/src", "packs/email/src", "packs/blog/src", "packs/calendar/src", "packs/image/src", "packs/printer/src"]
+relative_files = true
+
+[tool.coverage.report]
+show_missing = true

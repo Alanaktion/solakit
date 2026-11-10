@@ -838,7 +838,7 @@ async def send_email(
     cc: Annotated[
         list[str],
         Field(max_length=10, description="Optional permitted Cc addresses."),
-    ] = [],
+    ] = [],  # noqa: B006 - immutable tool schema default
 ) -> ToolResult:
     """Compose and send a new message; use email.reply to answer existing mail.
 

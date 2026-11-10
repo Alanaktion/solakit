@@ -14,3 +14,7 @@ evals/results/*
 !evals/results/baseline.json
 
 .mypy_cache/
+
+.coverage
+coverage.xml
+htmlcov/

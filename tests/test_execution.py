@@ -171,7 +171,7 @@ def test_fifo_global_limit_cancellation_and_shutdown(config):
         second = asyncio.create_task(execution.submit("s", "second"))
         third = asyncio.create_task(execution.submit("other", "third"))
         # Wait for acceptance, using task progress rather than a wall-clock sleep.
-        while len(execution.pending) < 3:
+        while len(execution.pending) < 3:  # noqa: ASYNC110 - observe asynchronous test state
             await asyncio.sleep(0)
         second_id = next(
             p.run.id for p in execution.pending.values() if p.text == "second"
@@ -224,10 +224,10 @@ def test_successful_fifo_and_history(config):
         first = asyncio.create_task(execution.submit("s", "first"))
         await entered.wait()
         second = asyncio.create_task(execution.submit("s", "second"))
-        while len(execution.pending) != 2:
+        while len(execution.pending) != 2:  # noqa: ASYNC110 - observe asynchronous test state
             await asyncio.sleep(0)
         third = asyncio.create_task(execution.submit("s", "third"))
-        while len(execution.pending) != 3:
+        while len(execution.pending) != 3:  # noqa: ASYNC110 - observe asynchronous test state
             await asyncio.sleep(0)
         release.set()
         await asyncio.gather(first, second, third)
@@ -300,7 +300,7 @@ def test_concurrent_cancellations_share_one_operation(config, queued):
         second = None
         if queued:
             second = asyncio.create_task(execution.submit("s", "second"))
-            while len(execution.pending) < 2:
+            while len(execution.pending) < 2:  # noqa: ASYNC110 - observe asynchronous test state
                 await asyncio.sleep(0)
         selected = "second" if queued else "first"
         run_id = next(
@@ -349,7 +349,7 @@ def test_cancel_request_disconnect_does_not_interrupt_finalization(config, monke
         await model_entered.wait()
         run_id = next(iter(execution.pending))
         request = asyncio.create_task(execution.cancel(run_id))
-        while not finalizing.is_set():
+        while not finalizing.is_set():  # noqa: ASYNC110 - observe asynchronous test state
             await asyncio.sleep(0)
         request.cancel()
         with pytest.raises(asyncio.CancelledError):
@@ -388,10 +388,10 @@ def test_shutdown_waits_for_inflight_acceptance_and_rejects_new_work(
 
         monkeypatch.setattr(execution.store, "save_run", delayed_save)
         submission = asyncio.create_task(execution.submit("s", "during shutdown"))
-        while not accepting.is_set():
+        while not accepting.is_set():  # noqa: ASYNC110 - observe asynchronous test state
             await asyncio.sleep(0)
         closing = asyncio.create_task(execution.close())
-        while execution._close_task is None:
+        while execution._close_task is None:  # noqa: ASYNC110 - observe asynchronous test state
             await asyncio.sleep(0)
         assert not closing.done()
         assert not execution.model.client.is_closed
@@ -493,7 +493,7 @@ def test_shutdown_finishes_other_runs_when_one_finalization_fails(config, monkey
         second = asyncio.create_task(execution.submit("other", "second"))
         await both_running.wait()
         closing = asyncio.create_task(execution.close())
-        while not (first_failed.is_set() and second_finishing.is_set()):
+        while not (first_failed.is_set() and second_finishing.is_set()):  # noqa: ASYNC110 - observe asynchronous test state
             await asyncio.sleep(0)
         assert not closing.done()
         assert not execution.model.client.is_closed

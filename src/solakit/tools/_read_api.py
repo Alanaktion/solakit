@@ -20,19 +20,19 @@ def encode_result(result: dict, cap: int) -> str:
             return encoded
         choices = []
 
-        def visit(value):
+        def visit(value, choices):
             if isinstance(value, dict):
                 for key, item in list(value.items()):
                     if isinstance(item, str) and len(item) > 64:
                         choices.append((len(json.dumps(item)), value, key, item))
                     elif isinstance(item, list) and item:
                         choices.append((len(json.dumps(item)), value, key, item))
-                    visit(item)
+                    visit(item, choices)
             elif isinstance(value, list):
                 for item in value:
-                    visit(item)
+                    visit(item, choices)
 
-        visit(result)
+        visit(result, choices)
         if not choices:
             raise ToolError("Output cap too small")
         _, parent, key, item = max(choices, key=lambda choice: choice[0])

@@ -23,7 +23,8 @@ async def repository_lock(root: Path) -> AsyncIterator[None]:
     # cancellation. Keys are configured repository roots, never model paths.
     with _LOCKS_GUARD:
         lock = _LOCKS.setdefault(root, threading.Lock())
-    while not lock.acquire(blocking=False):
+    # The lock is shared across event loops; an asyncio.Event cannot represent it.
+    while not lock.acquire(blocking=False):  # noqa: ASYNC110
         await asyncio.sleep(0.01)
     try:
         yield
@@ -114,7 +115,7 @@ class Git:
 
     async def _ready(self) -> None:
         actual = await self._text("rev-parse", "--show-toplevel")
-        if Path(actual).resolve() != self.root:
+        if await asyncio.to_thread(Path(actual).resolve) != self.root:
             raise ToolError("Repository alias must name the Git worktree root")
         self.ctx.path(str(self.directory))
 

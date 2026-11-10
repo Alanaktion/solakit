@@ -189,7 +189,7 @@ def create_app(  # noqa: C901
                     provider["distribution"] or "unpackaged",
                     provider["version"] or "unknown",
                 )
-            for profile, names in catalog["profiles"].items():
+            for profile, _names in catalog["profiles"].items():
                 runtime_logger.info(
                     "Profile %s: %s", profile, catalog["summaries"][profile]
                 )

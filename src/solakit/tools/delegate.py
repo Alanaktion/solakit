@@ -146,7 +146,7 @@ async def map_items(
     return tool_json(ctx, {"results": reports}, "delegate")
 
 
-async def delegate(ctx, task, profile, session, *, timeout=None) -> ToolResult:
+async def delegate(ctx, task, profile, session, *, timeout=None) -> ToolResult:  # noqa: ASYNC109 - tool timeout argument
     """Child sees its own history, not this conversation; the receipt carries
     child session/run IDs, status and only the final report on success."""
     if not task.strip():

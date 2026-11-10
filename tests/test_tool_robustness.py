@@ -21,9 +21,9 @@ def registry_with(config):
     @tool(name="read.items", profiles=["*"], summary="Read items")
     async def read_items(
         ctx: ToolContext,
-        tags: Annotated[list[str], Field(description="Tags")] = [],
+        tags: Annotated[list[str], Field(description="Tags")] = [],  # noqa: B006 - immutable tool schema default
         limit: Annotated[int, Field(description="Limit")] = 10,
-        options: Annotated[dict[str, int], Field(description="Options")] = {},
+        options: Annotated[dict[str, int], Field(description="Options")] = {},  # noqa: B006 - immutable tool schema default
     ) -> ToolResult:
         """Read items."""
         return ToolResult(content=json.dumps({"tags": tags, "limit": limit}))

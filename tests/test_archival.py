@@ -163,7 +163,7 @@ def test_archive_rejects_running_and_queued_turns(config):
         await asyncio.wait_for(entered.wait(), 2)
         second = asyncio.create_task(execution.submit("s", "two"))
         async with asyncio.timeout(2):
-            while len(execution.pending) < 2:
+            while len(execution.pending) < 2:  # noqa: ASYNC110 - observe asynchronous test state
                 await asyncio.sleep(0)
         with pytest.raises(ValueError, match="queued or running"):
             await execution.archive_session("s")

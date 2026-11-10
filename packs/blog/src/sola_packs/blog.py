@@ -458,7 +458,7 @@ async def write_post(
     description: str,
     body: str,
     date: str | None = None,
-    tags: list[str] = [],
+    tags: list[str] = [],  # noqa: B006 - immutable tool schema default
     draft: bool = False,
     cover: Cover | None = None,
     publish: bool = True,

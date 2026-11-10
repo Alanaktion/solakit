@@ -113,13 +113,15 @@ def create_session(
                 if session.archived_at is not None:
                     raise ValueError(
                         "Use the session lifecycle endpoint to archive a session"
-                    )
+                    ) from None
                 if session.default_profile not in runtime.config.profiles:
-                    raise ValueError("Unknown profile")
+                    raise ValueError("Unknown profile") from None
                 if session.memory_scope == "isolated":
-                    raise ValueError("Isolated memory is not implemented")
+                    raise ValueError("Isolated memory is not implemented") from None
                 if session.bound_channel is not None:
-                    raise ValueError("Channel bindings are controlled by configuration")
+                    raise ValueError(
+                        "Channel bindings are controlled by configuration"
+                    ) from None
                 return store.create_session(session).model_dump(mode="json")
             exclude = (
                 set() if "created_at" in session.model_fields_set else {"created_at"}

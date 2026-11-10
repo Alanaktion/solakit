@@ -208,6 +208,22 @@ uv run ruff format --check .
 uv build
 ```
 
+CI runs the full workspace checks on Python 3.12 and 3.13. Ruff includes `B`
+and `ASYNC`; intentional exceptions must stay narrow and documented. Mypy checks
+its configured subsystem list. Coverage reports include core and every pack,
+with no minimum gate:
+
+```sh
+uv run pytest tests packs/*/tests -q --cov --cov-report=term-missing --cov-report=xml:coverage.xml
+uv export --frozen --all-packages --no-dev --no-emit-workspace --no-hashes --output-file /tmp/solakit-requirements.txt
+uv run pip-audit --no-deps --disable-pip -r /tmp/solakit-requirements.txt
+```
+
+CI audits locked production dependencies on pushes, pull requests, manual runs and
+a weekly schedule. Audit errors and vulnerabilities fail the job. Dependabot
+checks uv and GitHub Actions weekly; action references use full commit SHAs.
+Coverage artifacts are reports, not live-service verification.
+
 `sola check` needs operator-owned configuration, secrets and referenced prompt
 files; automated tests supply isolated fixtures. Before running `sola check`,
 you can source `.env` to supply operator secrets (`set -a; source .env; set +a`).

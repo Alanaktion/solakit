@@ -40,7 +40,7 @@ def explain(config: Config, registry: Registry, profile: str) -> dict:
 def grant_view(config: Config) -> dict:
     registry = Registry(config)
     result = {}
-    for name, cfg in config.profiles.items():
+    for name, _cfg in config.profiles.items():
         access = registry.access_summary(name)
         result[name] = {
             "tools": set(access["tools"]),
