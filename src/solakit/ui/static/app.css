@@ -181,7 +181,7 @@ pre { overflow-x: auto; font-size: 11px; line-height: 1.55; color: var(--ink); }
 @media (max-width: 640px) {
   .header-inner { min-height: 48px; gap: 12px; }
   .brand { font-size: 17px; gap: 8px; }
-  .moon { width: 28px; height: 28px; font-size: 23px; }
+  .moon { width: 28px; height: 28px; font-size: 23px; line-height: 1; }
   .header-inner, .header-status, .page { padding-left: 18px; padding-right: 18px; }
   .new-session { order: -1; }
   .page { padding-top: 16px; padding-bottom: 24px; }
@@ -696,9 +696,6 @@ pre { overflow-x: auto; font-size: 11px; line-height: 1.55; color: var(--ink); }
 .topic-running { color: var(--accent); animation: topic-spin 1.4s linear infinite; }
 @keyframes topic-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .topic-running { animation: none; } }
-.topic-children { padding-left: 18px; font-size: 12px; }
-.topic-children ul { padding-left: 16px; }
-.topic-children a { display: inline-block; padding-block: 8px; overflow-wrap: anywhere; }
 .archived-topics { margin-top: 20px; border-top: 1px solid var(--line); }
 .archived-topics > summary { padding-inline: 12px; color: var(--muted); }
 .topic-scroll .action-group { padding: 6px 12px; font-size: 11px; }
@@ -841,3 +838,7 @@ input::placeholder, textarea::placeholder { opacity: 1; }
   .composer-wrap { padding-left: max(14px, env(safe-area-inset-left)); padding-right: max(14px, env(safe-area-inset-right)); }
 }
 .details-topic-title { overflow-wrap: anywhere; line-height: 1.6; font-size: 14px; }
+
+.delegated-topics ul { list-style: none; padding: 0; margin: 0; }
+.delegated-topics li { padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+.delegated-topics a { display: inline-flex; align-items: center; min-height: 44px; overflow-wrap: anywhere; }

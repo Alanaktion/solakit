@@ -127,7 +127,7 @@ def test_job_creates_channel_binding_with_cron_source(config):
     asyncio.run(exercise())
 
 
-def test_children_live_with_parent_in_ui(config, mock_model):
+def test_children_live_in_parent_details(config, mock_model):
     app = create_app(config=config, model=mock_model)
     with TestClient(app) as client:
         store = app.state.store
@@ -153,9 +153,22 @@ def test_children_live_with_parent_in_ui(config, mock_model):
             not in client.get("/settings/sessions?exclude_source=").text
         )
         page = client.get("/sessions/parent").text
+        sidebar = page.split('<section class="chat-sidebar"', 1)[1].split(
+            "</section>", 1
+        )[0]
+        assert "Delegated topics" not in sidebar
+        assert 'href="/sessions/child-' not in sidebar
         assert "Delegated topics" in page
-        assert "Next" in page
-        assert "Previous" in client.get("/sessions/parent?child_offset=50").text
+        first = client.get("/sessions/parent/details").text
+        assert "Next delegated topics" in first
+        assert "Archived" in first
+        following = client.get("/sessions/parent/details?child_offset=50").text
+        assert "Previous delegated topics" in following
+        assert "Next delegated topics" not in following
+        assert (
+            'data-details-page="/sessions/parent/details?child_offset=0"' in following
+        )
+        assert client.get("/sessions/parent/details?child_offset=-1").status_code == 422
         child = client.get("/sessions/child-00").text
         assert 'href="/sessions/parent">' in child
         assert " Parent topic</a>" in child

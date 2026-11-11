@@ -42,7 +42,7 @@ const output = process.env.SOLA_BROWSER_ARTIFACTS || '/private/tmp/solakit-acces
       await page.keyboard.press('Enter');
       assert.equal(await page.locator('#main').evaluate(el=>el===document.activeElement),true);
       // Delay Details to exercise focus preservation during asynchronous refresh.
-      await page.route('**/sessions/*/details',async route=>{
+      await page.route('**/sessions/*/details*',async route=>{
         await new Promise(resolve=>setTimeout(resolve,250));
         await route.continue();
       });

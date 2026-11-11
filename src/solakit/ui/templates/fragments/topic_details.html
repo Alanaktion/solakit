@@ -1,8 +1,19 @@
 {% from "macros/icons.html" import icon %}
-<section class="topic-details" id="topic-details" data-details-url="/sessions/{{ session.id|urlencode }}/details{% if archive_number %}?archive={{ archive_number }}{% endif %}" aria-labelledby="topic-details-heading" tabindex="-1" hidden>
+<section class="topic-details" id="topic-details" data-details-url="/sessions/{{ session.id|urlencode }}/details?child_offset={{ children.offset }}{% if archive_number %}&amp;archive={{ archive_number }}{% endif %}" aria-labelledby="topic-details-heading" tabindex="-1" hidden>
   <header class="action-group"><h2 id="topic-details-heading">Topic Details</h2><button type="button" class="quiet-button" data-drawer-close="topic-details" aria-label="Close details">×</button></header>
   {% if session.title %}<p class="details-topic-title">{{ session.title }}</p>{% endif %}
   <p data-details-status role="status" hidden></p>
+  {% if session.parent_session %}<a class="text-link" href="/sessions/{{ session.parent_session|urlencode }}">{{ icon("arrow-left") }} Parent topic</a>{% endif %}
+  {% if children.total %}
+  <section class="delegated-topics" aria-labelledby="delegated-topics-heading">
+    <h3 id="delegated-topics-heading">Delegated topics</h3>
+    <ul>{% for child in children.sessions %}<li><a class="text-link" href="/sessions/{{ child.id|urlencode }}">{{ child.title or child.id }}</a>{% if child.archived_at %}<small>Archived</small>{% endif %}</li>{% endfor %}</ul>
+    <nav class="action-group" aria-label="Delegated topic pages">
+      {% if children.offset %}{% set previous = [0, children.offset - children.limit]|max %}<a class="text-link" href="/sessions/{{ session.id|urlencode }}{% if archive_number %}/archives/{{ archive_number }}{% endif %}?child_offset={{ previous }}" data-details-page="/sessions/{{ session.id|urlencode }}/details?child_offset={{ previous }}{% if archive_number %}&amp;archive={{ archive_number }}{% endif %}">Previous delegated topics</a>{% endif %}
+      {% if children.offset + children.limit < children.total %}{% set following = children.offset + children.limit %}<a class="text-link" href="/sessions/{{ session.id|urlencode }}{% if archive_number %}/archives/{{ archive_number }}{% endif %}?child_offset={{ following }}" data-details-page="/sessions/{{ session.id|urlencode }}/details?child_offset={{ following }}{% if archive_number %}&amp;archive={{ archive_number }}{% endif %}">Next delegated topics</a>{% endif %}
+    </nav>
+  </section>
+  {% endif %}
   <h3>Recent runs</h3>
   <ul class="topic-runs">{% for run in recent_runs %}<li><a class="text-link" href="/settings/evidence/runs/{{ run.id|urlencode }}">{{ run.status }} · {{ run.profile }}</a><small><time datetime="{{ run.created_at }}" data-time>{{ run.created_at|display_time }}</time> · {{ run|run_duration }}{% if run.tokens %} · tokens {{ run.tokens|tojson }}{% endif %}</small>{% if run.memory_status %}<small>Memory: {{ run.memory_status }}</small>{% endif %}</li>{% else %}<li>No runs yet.</li>{% endfor %}</ul>
   <a class="text-link" href="/settings/evidence/runs?session={{ session.id|urlencode }}">All topic runs</a>

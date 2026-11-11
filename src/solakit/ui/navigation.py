@@ -206,7 +206,7 @@ def register_navigation(router: APIRouter, ns: UIContext) -> None:
         if not ns.logged_in(request):
             return JSONResponse({"detail": "Sign in again."}, 401, headers=HEADERS)
         try:
-            session, recent = await asyncio.gather(
+            session, recent, children = await asyncio.gather(
                 ns.api(request, "GET", f"/api/sessions/{quote(identity, safe='')}"),
                 ns.api(
                     request,
@@ -221,6 +221,19 @@ def register_navigation(router: APIRouter, ns: UIContext) -> None:
                         }
                     ),
                 ),
+                ns.api(
+                    request,
+                    "GET",
+                    "/api/sessions?"
+                    + urlencode(
+                        {
+                            "parent_session": identity,
+                            "status": "all",
+                            "page": "true",
+                            "offset": request.query_params.get("child_offset", "0"),
+                        }
+                    ),
+                ),
             )
             return ns.render(
                 request,
@@ -228,6 +241,7 @@ def register_navigation(router: APIRouter, ns: UIContext) -> None:
                 {
                     "session": session,
                     "recent_runs": recent,
+                    "children": children,
                     "archive_number": request.query_params.get("archive"),
                 },
             )

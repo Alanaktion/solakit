@@ -1036,7 +1036,9 @@ The P1 operator UI is a thin server-rendered API client. Shared app contracts:
   insets, reduced-motion and forced-color preferences are respected.
   The header contains brand/topics access, one status
   dot, Search and Settings. Details exposes read-only recent runs, recorded metrics,
-  prompt/archive links and session metadata through existing APIs. Actions retains
+  prompt/archive links, paginated delegated topics, parent navigation and session
+  metadata through existing APIs. Delegated topics do not expand in the sidebar;
+  their pagination refreshes Details in place. Actions retains
   rename, compaction, transcript rotation and session lifecycle controls.
   Settings sub-pages group System, Jobs, Tools & profiles, Sessions, Evidence and
   Search. `/settings/sessions` owns the administrative table and advanced creation.
@@ -1705,8 +1707,8 @@ paths are unaffected.
 
 New sessions created by scheduled jobs use source `cron`, including channel-bound
 sessions; existing bindings retain their original source. The web session catalog
-and chat sidebar list parent sessions. Open a parent to browse its paginated
-sub-sessions, including archived children and scheduled children; each child links
+and chat sidebar list parent sessions. Open a parent’s Details panel to browse its
+paginated delegated topics, including archived children and scheduled children; each child links
 back to its parent. API listings remain flat by default; `roots_only=true` selects
 parents and `parent_session=<id>` selects direct children before pagination.
 

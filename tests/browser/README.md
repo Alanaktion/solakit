@@ -159,3 +159,9 @@ Details responses, filtering feedback and overflow. Reduced motion is enabled.
 JSON findings and screenshots go to `/private/tmp/solakit-accessibility-qa`;
 `SOLA_BROWSER_ARTIFACTS` overrides that path. Automated scans complement visual
 and keyboard QA; they do not establish full WCAG or screen-reader conformance.
+
+Delegated topics: run `NODE_PATH=/private/tmp/solakit-browser-qa/node_modules node
+tests/browser/delegated-topics.cjs` against the scratch server. It checks that the
+sidebar stays limited to top-level topics, delegated pagination refreshes Details
+in place, and child-to-parent navigation works at desktop and mobile sizes. It
+also scans the populated Details panel using the optional axe dependency above.

@@ -444,7 +444,7 @@
       if (Number.isFinite(date.getTime())) node.textContent = formatter.format(date);
     });
   }
-  async function refreshDetails(node) {
+  async function refreshDetails(node, url = node.dataset.detailsUrl) {
     detailsRequest?.abort();
     const controller = new AbortController();
     detailsRequest = controller;
@@ -452,7 +452,7 @@
     const status = node.querySelector("[data-details-status]");
     if (status) { status.hidden = false; status.textContent = "Refreshing details…"; }
     try {
-      const response = await fetch(node.dataset.detailsUrl, {signal: controller.signal});
+      const response = await fetch(url, {signal: controller.signal});
       if (response.status === 401) { window.location.assign("/login?next=" + encodeURIComponent(location.pathname + location.search + location.hash)); return; }
       if (!response.ok) throw new Error("Details unavailable");
       const template = document.createElement("template");
@@ -465,6 +465,7 @@
       const focused = node.contains(document.activeElement) ? document.activeElement : null;
       const href = focused?.getAttribute("href");
       const closing = focused?.hasAttribute("data-drawer-close");
+      node.dataset.detailsUrl = fresh.dataset.detailsUrl;
       node.replaceChildren(...fresh.childNodes);
       localDates(node);
       if (focused && focused !== node) {
@@ -504,7 +505,11 @@
   document.addEventListener("click", event => {
     const trigger = event.target.closest?.("[data-drawer-toggle]");
     const closer = event.target.closest?.("[data-drawer-close]");
-    if (trigger) {
+    const page = event.target.closest?.("[data-details-page]");
+    if (page && activePanel?.id === "topic-details" && !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey && event.button === 0) {
+      event.preventDefault();
+      refreshDetails(activePanel, page.dataset.detailsPage);
+    } else if (trigger) {
       if (trigger.getAttribute("aria-expanded") === "true") close(trigger.dataset.drawerToggle);
       else open(trigger.dataset.drawerToggle, trigger);
     } else if (closer) close(closer.dataset.drawerClose);
@@ -530,7 +535,6 @@
     document.querySelectorAll("[data-topic-title]").forEach(link => {
       link.hidden = !link.dataset.topicTitle.includes(query);
       if (!link.hidden) matching++;
-      if (link.nextElementSibling?.classList.contains("topic-children")) link.nextElementSibling.hidden = link.hidden;
     });
     const archived = document.querySelector(".archived-topics");
     if (archived) {
