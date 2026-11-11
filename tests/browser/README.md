@@ -142,3 +142,20 @@ landing, title filtering, mobile drawers and focus restoration, streaming submis
 Details/run evidence, Settings/job execution, topic archive/restore, model health
 changes, viewport/composer containment and screenshots in light/dark at 1440×1000
 and 390×844. QA-only model availability controls exist solely in the fixture.
+
+Accessibility and visual polish: install the optional QA dependency outside the
+checkout with `npm install --prefix /private/tmp/solakit-browser-qa
+@axe-core/playwright`, then run:
+
+```sh
+NODE_PATH=/private/tmp/solakit-browser-qa/node_modules node tests/browser/accessibility.cjs
+```
+
+This scans login, new topic, chat, Details, the mobile Topics drawer and all
+Settings sections with axe's WCAG 2 A/AA, WCAG 2.1/2.2 AA and best-practice rules.
+It tests both themes at 1440, 390 and 320 CSS pixels, keyboard skip navigation,
+focus trapping/restoration, background inertness, resize transitions, delayed
+Details responses, filtering feedback and overflow. Reduced motion is enabled.
+JSON findings and screenshots go to `/private/tmp/solakit-accessibility-qa`;
+`SOLA_BROWSER_ARTIFACTS` overrides that path. Automated scans complement visual
+and keyboard QA; they do not establish full WCAG or screen-reader conformance.

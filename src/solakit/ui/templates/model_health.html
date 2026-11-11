@@ -4,7 +4,7 @@
 {% block content %}
 <div class="operations-page model-health"><h1>System</h1>{% include "fragments/status.html" %}
   <section class="page-heading">
-    <div><span class="section-label">MODEL OBSERVATORY</span><h1>Model health</h1><p class="intro">A closer look at the latest {{ stats.window }} runs. Open a run to inspect its evidence.</p></div>
+    <div><span class="section-label">MODEL OBSERVATORY</span><h2>Model health</h2><p class="intro">A closer look at the latest {{ stats.window }} runs. Open a run to inspect its evidence.</p></div>
     <div class="health-window"><span class="operation-label">Run window</span><div class="action-group" aria-label="Run window">{% for size in [50, 100, 500] %}<a class="secondary-button" href="/settings/system?window={{ size }}" {% if request.query_params.get('window', '100') == size|string %}aria-current="page"{% endif %}>{{ size }} runs</a>{% endfor %}</div></div>
   </section>
   <section class="operations-panel panel" aria-labelledby="mix-heading">

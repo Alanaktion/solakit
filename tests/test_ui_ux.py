@@ -799,8 +799,8 @@ def test_chat_sidebar_excludes_cron_sessions(config, mock_model):
         for identity in ("conversation", "scheduled"):
             page = client.get(f"/sessions/{identity}")
             assert page.status_code == 200
-            sidebar = page.text.split('<aside class="chat-sidebar"', 1)[1].split(
-                "</aside>", 1
+            sidebar = page.text.split('<section class="chat-sidebar"', 1)[1].split(
+                "</section>", 1
             )[0]
             assert 'href="/sessions/conversation"' in sidebar
             assert 'href="/sessions/scheduled"' not in sidebar

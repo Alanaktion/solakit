@@ -3,7 +3,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="light dark">
   <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f6f5fa">
   <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#08080d">
@@ -19,7 +19,7 @@
   <a class="skip-link" href="#main">Skip to content</a>
   <header class="site-header">
     <div class="header-inner">
-      <a class="brand" href="/"><span class="moon" aria-hidden="true">🌙</span><span>Solakit</span></a>
+      <a class="brand" href="/" aria-label="Solakit home" translate="no"><span class="moon" aria-hidden="true">🌙</span><span>Solakit</span></a>
       {% block header_actions %}
       {% if not settings_page %}<button type="button" class="topics-toggle quiet-button" data-drawer-toggle="chat-sidebar" aria-controls="chat-sidebar" aria-expanded="false">Topics</button>{% endif %}
       <nav class="nav main-nav" aria-label="Main navigation">
@@ -32,8 +32,9 @@
     </div>
     {% block status %}{% endblock %}
   </header>
-  <main id="main" class="page {% block page_class %}{% endblock %}">
-    {% if settings_page %}<div class="settings-layout"><aside class="settings-sidebar" aria-label="Settings"><a class="back-link" href="/">{{ icon("arrow-left") }} Back to chat</a><h2>Settings</h2><nav aria-label="Settings sections">{% for href, label in settings_sections %}<a href="{{ href }}" {% if request.url.path.startswith(href) or (label == 'Evidence' and '/evidence/' in request.url.path) %}aria-current="page"{% endif %}>{{ label }}</a>{% if label == 'Evidence' %}<a href="/settings/evidence/prompt">Prompt inspector</a>{% endif %}{% endfor %}</nav><form method="post" action="/logout"><button class="quiet-button" type="submit">Sign out</button></form></aside><div class="settings-content">{% endif %}
+  <main id="main" tabindex="-1" class="page {% block page_class %}{% endblock %}">
+    <p id="copy-status" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></p>
+    {% if settings_page %}<div class="settings-layout"><aside class="settings-sidebar" aria-label="Settings"><a class="back-link" href="/">{{ icon("arrow-left") }} Back to chat</a><h2>Settings</h2><nav aria-label="Settings sections">{% for href, label in settings_sections %}<a href="{{ href }}" {% if request.url.path == href or request.url.path.startswith(href + '/') %}aria-current="page"{% endif %}>{{ label }}</a>{% if label == 'Evidence' %}<a href="/settings/evidence/prompt" {% if request.url.path == '/settings/evidence/prompt' %}aria-current="page"{% endif %}>Prompt inspector</a>{% endif %}{% endfor %}</nav><form method="post" action="/logout"><button class="quiet-button" type="submit">Sign out</button></form></aside><div class="settings-content">{% endif %}
     {% block content %}{% endblock %}
     {% if settings_page %}</div></div>{% endif %}
   </main>

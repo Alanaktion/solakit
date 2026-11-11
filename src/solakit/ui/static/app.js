@@ -24,6 +24,7 @@
     root.querySelectorAll(".markdown-content pre, .evidence-text, .tool-details pre").forEach(pre => {
       if (pre.parentElement.classList.contains("code-block")) return;
       if (pre.closest('[data-run-status="queued"], [data-run-status="running"], .live-preview')) return;
+      pre.setAttribute("tabindex", "0");
       const wrap = document.createElement("div");
       wrap.className = "code-block";
       pre.replaceWith(wrap);
@@ -43,7 +44,13 @@
       await navigator.clipboard.writeText(button.parentElement.querySelector("pre").textContent);
       button.textContent = "Copied";
       button.dataset.copied = "";
-    } catch { button.textContent = "Select to copy"; }
+      const status = document.getElementById("copy-status");
+      if (status) status.textContent = "Text copied.";
+    } catch {
+      button.textContent = "Select to copy";
+      const status = document.getElementById("copy-status");
+      if (status) status.textContent = "Copy unavailable. Select the text to copy it.";
+    }
     setTimeout(() => { button.textContent = "Copy"; delete button.dataset.copied; }, 1600);
   });
   function jumpVisibility() {
@@ -387,45 +394,113 @@
 
 // Navigation panels do not participate in transcript or streaming reconciliation.
 (() => {
+  let activePanel;
   let previousFocus;
+  let detailsRequest;
+  const inertBefore = new Map();
+  const viewport = globalThis.matchMedia?.("(max-width: 900px)");
   const panel = id => document.getElementById(id);
-  const mobile = () => globalThis.matchMedia?.("(max-width: 900px)").matches;
-  function close(id) {
+  const mobile = () => Boolean(viewport?.matches);
+  function restoreBackground() {
+    inertBefore.forEach((wasInert, node) => { node.inert = wasInert; });
+    inertBefore.clear();
+    document.body?.classList.remove("panel-modal-open");
+  }
+  function syncModality() {
+    restoreBackground();
+    if (!activePanel) return;
+    activePanel.removeAttribute("role");
+    activePanel.removeAttribute("aria-modal");
+    if (!mobile()) return;
+    activePanel.setAttribute("role", "dialog");
+    activePanel.setAttribute("aria-modal", "true");
+    // Inert siblings at every ancestor level, never the dialog's ancestors.
+    for (let node = activePanel; node?.parentElement && node !== document.body; node = node.parentElement) {
+      [...node.parentElement.children].filter(sibling => sibling !== node).forEach(sibling => {
+        inertBefore.set(sibling, sibling.inert);
+        sibling.inert = true;
+      });
+    }
+    document.body.classList.add("panel-modal-open");
+    if (!activePanel.contains(document.activeElement)) activePanel.focus();
+  }
+  function close(id, returnFocus = true) {
     const node = panel(id);
     if (!node) return;
+    if (id === "topic-details") detailsRequest?.abort();
+    restoreBackground();
     if (id === "chat-sidebar") node.classList.remove("is-open");
     else node.hidden = true;
     document.querySelector(`[data-drawer-toggle="${id}"]`)?.setAttribute("aria-expanded", "false");
     node.removeAttribute("role");
     node.removeAttribute("aria-modal");
-    previousFocus?.focus();
+    activePanel = null;
+    if (returnFocus && previousFocus?.isConnected && previousFocus.getClientRects().length) previousFocus.focus();
+  }
+  function localDates(root) {
+    const formatter = new Intl.DateTimeFormat(undefined, {dateStyle: "medium", timeStyle: "short"});
+    root.querySelectorAll("time[data-time]").forEach(node => {
+      const date = new Date(node.dateTime);
+      if (Number.isFinite(date.getTime())) node.textContent = formatter.format(date);
+    });
   }
   async function refreshDetails(node) {
+    detailsRequest?.abort();
+    const controller = new AbortController();
+    detailsRequest = controller;
+    node.setAttribute("aria-busy", "true");
+    const status = node.querySelector("[data-details-status]");
+    if (status) { status.hidden = false; status.textContent = "Refreshing details…"; }
     try {
-      const response = await fetch(node.dataset.detailsUrl);
+      const response = await fetch(node.dataset.detailsUrl, {signal: controller.signal});
       if (response.status === 401) { window.location.assign("/login?next=" + encodeURIComponent(location.pathname + location.search + location.hash)); return; }
       if (!response.ok) throw new Error("Details unavailable");
       const template = document.createElement("template");
       template.innerHTML = await response.text(); // Authenticated, escaped UI fragment.
+      if (controller.signal.aborted) return;
       const fresh = template.content.querySelector("#topic-details");
-      if (fresh) node.replaceChildren(...fresh.childNodes);
-    } catch {
-      const status = node.querySelector("[data-details-status]");
-      if (status) { status.hidden = false; status.textContent = "Could not refresh Details. Reopen to retry."; }
+      if (!fresh) throw new Error("Details unavailable");
+      // A delayed response must not strand focus on the body or steal it back
+      // from the composer. Preserve the control the operator is using now.
+      const focused = node.contains(document.activeElement) ? document.activeElement : null;
+      const href = focused?.getAttribute("href");
+      const closing = focused?.hasAttribute("data-drawer-close");
+      node.replaceChildren(...fresh.childNodes);
+      localDates(node);
+      if (focused && focused !== node) {
+        const replacement = closing ? node.querySelector("[data-drawer-close]") :
+          [...node.querySelectorAll("a[href]")].find(link => link.getAttribute("href") === href);
+        (replacement || node).focus();
+      }
+    } catch (error) {
+      if (error.name === "AbortError") return;
+      const notice = node.querySelector("[data-details-status]");
+      if (notice) { notice.hidden = false; notice.textContent = "Could not refresh Details. Reopen to retry."; }
+    } finally {
+      if (detailsRequest === controller) node.removeAttribute("aria-busy");
     }
   }
   function open(id, trigger) {
     const node = panel(id);
     if (!node) return;
-    document.querySelectorAll('[data-drawer-toggle][aria-expanded="true"]').forEach(other => close(other.dataset.drawerToggle));
+    if (activePanel) close(activePanel.id, false);
     previousFocus = trigger;
     if (id === "chat-sidebar") node.classList.add("is-open");
     else node.hidden = false;
     trigger.setAttribute("aria-expanded", "true");
-    if (mobile()) { node.setAttribute("role", "dialog"); node.setAttribute("aria-modal", "true"); }
+    activePanel = node;
+    syncModality();
     node.focus();
     if (node.dataset.detailsUrl) refreshDetails(node);
   }
+  viewport?.addEventListener("change", () => {
+    if (activePanel?.id === "chat-sidebar" && !mobile()) {
+      const focusInPanel = activePanel.contains(document.activeElement);
+      close(activePanel.id, false);
+      if (focusInPanel) panel("chat-sidebar").querySelector("a[aria-current], a")?.focus();
+    } else syncModality();
+  });
+  globalThis.addEventListener?.("pagehide", () => { detailsRequest?.abort(); });
   document.addEventListener("click", event => {
     const trigger = event.target.closest?.("[data-drawer-toggle]");
     const closer = event.target.closest?.("[data-drawer-close]");
@@ -433,26 +508,42 @@
       if (trigger.getAttribute("aria-expanded") === "true") close(trigger.dataset.drawerToggle);
       else open(trigger.dataset.drawerToggle, trigger);
     } else if (closer) close(closer.dataset.drawerClose);
+    else if (activePanel && mobile() && !activePanel.contains(event.target)) close(activePanel.id);
+  });
+  document.addEventListener("focusin", event => {
+    if (activePanel && mobile() && !activePanel.contains(event.target)) activePanel.focus();
   });
   document.addEventListener("keydown", event => {
-    const trigger = document.querySelector?.('[data-drawer-toggle][aria-expanded="true"]');
-    if (!trigger) return;
-    if (event.key === "Escape") { close(trigger.dataset.drawerToggle); return; }
+    if (!activePanel) return;
+    if (event.key === "Escape") { event.preventDefault(); close(activePanel.id); return; }
     if (event.key !== "Tab" || !mobile()) return;
-    const node = panel(trigger.dataset.drawerToggle);
-    const stops = [...node.querySelectorAll('a[href], button, input, summary, [tabindex="0"]')].filter(el => el.getClientRects().length && !el.disabled);
+    const stops = [...activePanel.querySelectorAll('a[href], button, input, select, textarea, summary, [tabindex="0"]')].filter(el => el.getClientRects().length && !el.disabled && !el.closest("[inert]"));
     const first = stops[0], last = stops[stops.length - 1];
     if (!first) { event.preventDefault(); return; }
-    if (event.shiftKey && (document.activeElement === first || document.activeElement === node)) { event.preventDefault(); last.focus(); }
-    else if (!event.shiftKey && (document.activeElement === last || document.activeElement === node)) { event.preventDefault(); first.focus(); }
+    if (event.shiftKey && (document.activeElement === first || document.activeElement === activePanel)) { event.preventDefault(); last.focus(); }
+    else if (!event.shiftKey && (document.activeElement === last || document.activeElement === activePanel)) { event.preventDefault(); first.focus(); }
   });
   document.addEventListener("input", event => {
     if (event.target.id !== "topic-filter") return;
     const query = event.target.value.trim().toLocaleLowerCase();
+    let matching = 0;
     document.querySelectorAll("[data-topic-title]").forEach(link => {
       link.hidden = !link.dataset.topicTitle.includes(query);
+      if (!link.hidden) matching++;
       if (link.nextElementSibling?.classList.contains("topic-children")) link.nextElementSibling.hidden = link.hidden;
     });
+    const archived = document.querySelector(".archived-topics");
+    if (archived) {
+      if (query) {
+        if (!("filterWasOpen" in archived.dataset)) archived.dataset.filterWasOpen = String(archived.open);
+        archived.open = [...archived.querySelectorAll("[data-topic-title]")].some(link => !link.hidden);
+      } else if ("filterWasOpen" in archived.dataset) {
+        archived.open = archived.dataset.filterWasOpen === "true";
+        delete archived.dataset.filterWasOpen;
+      }
+    }
+    const status = panel("topic-filter-status");
+    if (status) status.textContent = query ? (matching ? `${matching} matching ${matching === 1 ? "topic" : "topics"} on this page` : "No matching topics on this page. Try another title.") : "";
   });
   document.addEventListener("DOMContentLoaded", () => {
     const dot = panel("health-indicator");
@@ -478,11 +569,15 @@
       globalThis.addEventListener?.("pagehide", () => { stopped = true; clearTimeout(polling); });
       globalThis.addEventListener?.("pageshow", event => { if (event.persisted) { stopped = false; update(); } });
     }
+    const relative = new Intl.RelativeTimeFormat(undefined, {numeric: "auto"});
+    const absolute = new Intl.DateTimeFormat(undefined, {dateStyle: "medium", timeStyle: "short"});
     document.querySelectorAll("[data-relative-time]").forEach(node => {
-      const elapsed = Math.max(0, Date.now() - Date.parse(node.dateTime));
-      if (!Number.isFinite(elapsed)) return;
-      const minutes = Math.floor(elapsed / 60000), hours = Math.floor(minutes / 60), days = Math.floor(hours / 24);
-      node.textContent = days ? `${days}d ago` : hours ? `${hours}h ago` : minutes ? `${minutes}m ago` : "Just now";
+      const date = new Date(node.dateTime);
+      if (!Number.isFinite(date.getTime())) return;
+      const seconds = Math.min(0, (date.getTime() - Date.now()) / 1000);
+      const [value, unit] = Math.abs(seconds) >= 86400 ? [seconds / 86400, "day"] : Math.abs(seconds) >= 3600 ? [seconds / 3600, "hour"] : [seconds / 60, "minute"];
+      node.textContent = relative.format(Math.ceil(value), unit);
+      node.title = absolute.format(date);
     });
   });
 })();

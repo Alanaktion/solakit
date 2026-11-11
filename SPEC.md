@@ -1027,7 +1027,14 @@ The P1 operator UI is a thin server-rendered API client. Shared app contracts:
   independent of channel pinning, or shows an explicit New topic state. GET never
   creates a session. The UI calls sessions Topics without renaming API/storage
   concepts. Chat has a topic sidebar, thread and composer; mobile Topics opens a
-  keyboard-accessible drawer. The header contains brand/topics access, one status
+  keyboard-accessible drawer. Mobile panels use valid dialog semantics, isolate
+  background controls with inert, trap keyboard focus and restore it on Escape.
+  Responsive transitions release or establish modal state without stranding focus;
+  asynchronous Details refreshes preserve the focused control. Skip navigation
+  targets focusable main content, title-filter and Copy feedback use polite live
+  regions, and settled code/evidence blocks support keyboard scrolling. Safe-area
+  insets, reduced-motion and forced-color preferences are respected.
+  The header contains brand/topics access, one status
   dot, Search and Settings. Details exposes read-only recent runs, recorded metrics,
   prompt/archive links and session metadata through existing APIs. Actions retains
   rename, compaction, transcript rotation and session lifecycle controls.

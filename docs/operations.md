@@ -30,7 +30,13 @@ The sidebar pins configured channel topics, lists other topics by activity, and
 keeps archived topics in a collapsed section. Its title filter covers the rendered
 page; More topics and More archived page through older records. Untitled topics
 use the first run's user text where available, otherwise their session ID.
-Delegated topics appear beneath their parent. On phones, Topics opens a drawer.
+Delegated topics appear beneath their parent. On phones, Topics opens a modal
+drawer: background controls become inert, Tab stays inside, and Escape restores
+focus to its opener. Resizing to desktop releases the modal state. Details uses
+the same keyboard behavior and preserves focus when its contents refresh.
+Filtering announces matches (or no matches) and reveals matching archived topics.
+Code/evidence blocks support keyboard scrolling; Copy results are announced.
+Relative dates use the browser locale; the full timestamp is available on hover.
 
 Use **Details** (refreshed when opened) for recent runs, duration/tokens when recorded, prompt inspection,
 numbered archives, memory scope/status and session metadata. **Actions** holds
