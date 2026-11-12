@@ -171,6 +171,10 @@ resources = []
 # resources = []
 # max_steps = 40
 # context_budget = 64000
+# Session isolation for tool calls, one switch per direction (a profile always
+# reads its own sessions; ownership is the writing run's profile):
+# sessions_private = false      # true: other profiles' tools cannot read my sessions
+# sessions_read_others = true   # false: my tools cannot read other profiles' sessions
 
 # Opt-in OpenViking integration. Set the existing server's URL and canonical
 # shared-memory roots; confirm its API version before enabling.

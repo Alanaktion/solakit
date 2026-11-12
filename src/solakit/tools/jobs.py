@@ -4,7 +4,7 @@ from typing import Annotated, Any
 
 from pydantic import Field
 
-from solakit.core.config import Job
+from solakit.core.config import Job, session_readable
 from solakit.jobs.schemas import JobToolsError
 from solakit.tools import ToolContext, ToolError, ToolResult, tool, tool_json
 
@@ -15,7 +15,18 @@ def manager(ctx):
     return ctx.job_manager
 
 
+def session_isolated(ctx, job) -> bool:
+    """A job's profile reads its bound session's history, so isolation applies."""
+    try:
+        owner = ctx.store.session(job.bind_session).default_profile
+    except (FileNotFoundError, ValueError):
+        return False
+    return not session_readable(ctx.config.profiles, job.profile, owner)
+
+
 def permitted(ctx, job):
+    if session_isolated(ctx, job):
+        return False
     if "operate" in ctx.config.profiles[ctx.profile].effects:
         return True
     return (
@@ -26,15 +37,19 @@ def permitted(ctx, job):
     )
 
 
+def denied(ctx, job) -> ToolError:
+    if session_isolated(ctx, job):
+        return ToolError("Session isolation forbids this profile on that session")
+    return ToolError("Other profiles, sessions or delivery require the operate effect")
+
+
 def existing(ctx, identity):
     try:
         job = manager(ctx).job(identity)
     except KeyError as exc:
         raise ToolError("Job not found or outside this chat's grants") from exc
     if not permitted(ctx, job):
-        raise ToolError(
-            "Other profiles, sessions or delivery require the operate effect"
-        )
+        raise denied(ctx, job)
     return job
 
 
@@ -177,9 +192,7 @@ async def schedule(
     except ValueError as exc:
         raise invalid(exc) from exc
     if not permitted(ctx, job):
-        raise ToolError(
-            "Other profiles, sessions or delivery require the operate effect"
-        )
+        raise denied(ctx, job)
     return await operation(ctx, "create", job)
 
 
@@ -356,9 +369,7 @@ async def create(
     except ValueError as exc:
         raise invalid(exc) from exc
     if not permitted(ctx, job):
-        raise ToolError(
-            "Other profiles, sessions or delivery require the operate effect"
-        )
+        raise denied(ctx, job)
     return await operation(ctx, "create", job)
 
 
@@ -406,9 +417,7 @@ async def update(
     except ValueError as exc:
         raise invalid(exc, "Invalid job changes") from exc
     if not permitted(ctx, proposed):
-        raise ToolError(
-            "Other profiles, sessions or delivery require the operate effect"
-        )
+        raise denied(ctx, proposed)
     return await operation(ctx, "update", id, patch)
 
 

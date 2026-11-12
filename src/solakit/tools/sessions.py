@@ -6,12 +6,16 @@ from typing import Annotated, Literal
 
 from pydantic import Field
 
+from solakit.core.config import session_owner_filter
 from solakit.core.search import SearchUnavailable
 from solakit.core.store import safe_id
 from solakit.tools import ToolContext, ToolError, ToolResult, tool
 
 
-async def _search(ctx, query, target, **filters) -> ToolResult:
+async def _search(ctx, query, target, *, isolate=False, **filters) -> ToolResult:
+    if isolate:
+        allow, deny = session_owner_filter(ctx.config.profiles, ctx.profile)
+        filters.update(owner_allow=allow, owner_deny=deny)
     try:
         matches = await asyncio.to_thread(
             ctx.store.search, query, session_id=target, **filters
@@ -122,6 +126,7 @@ async def search_all(
         ctx,
         query,
         session_id,
+        isolate=True,
         role=role,
         kind=kind,
         after=after,

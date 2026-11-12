@@ -434,6 +434,18 @@ values in `[channel_defaults]` are inherited by every `[[channels]]` entry.
 Entry-specific values take precedence. Lists replace their inherited value; they
 are not appended. Defaults are validated even when there are no matching entries.
 
+Profiles isolate session access from tool calls in two independent directions:
+`sessions_private = true` hides that profile's sessions from every other profile's
+tools, and `sessions_read_others = false` stops that profile's tools reading any
+other profile's sessions (both default to open access). A message's owner is the
+profile of the run that wrote it, or the session's default profile when it has no
+run, so a private run inside a shared session stays hidden. The rules apply to
+`sessions.search_all` (hidden matches are filtered in the index query, so they do
+not consume the limit, and targeting a hidden session returns nothing) and to
+`jobs.*` tools, which refuse a job whose profile may not read the bound session.
+They do not limit `sessions.search` on the current conversation, delegated
+children, or the operator API/UI.
+
 Optional `[memory].user` sends the verified server's user hint and checks the
 created session URI before appending messages; it must match the server identity.
 A profile may isolate its memory with `[profiles.<name>.memory]` (`user` plus

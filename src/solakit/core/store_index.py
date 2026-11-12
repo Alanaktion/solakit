@@ -688,6 +688,8 @@ class IndexMixin(StoreServices):
         after: str | datetime | None = None,
         before: str | datetime | None = None,
         limit: int = 50,
+        owner_allow: list[str] | None = None,
+        owner_deny: list[str] | None = None,
     ) -> list[dict]:
         with self.lock:
             self._repair_search_writes()
@@ -706,6 +708,8 @@ class IndexMixin(StoreServices):
                     before=before,
                     limit=limit,
                     redactor=self.redactor,
+                    owner_allow=owner_allow,
+                    owner_deny=owner_deny,
                 )
             except SearchUnavailable as exc:
                 if not sqlite_transient(exc.__cause__):

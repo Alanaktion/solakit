@@ -230,6 +230,25 @@ class MemoryConfig(StrictModel):
         return self
 
 
+def session_owner_filter(
+    profiles: dict[str, "Profile"], reader: str
+) -> tuple[list[str] | None, list[str]]:
+    """Owner profiles a reader's tools may see: (allow-list or None, deny-list)."""
+    mine = profiles.get(reader)
+    allow = [reader] if mine is not None and not mine.sessions_read_others else None
+    deny = [
+        name
+        for name, profile in profiles.items()
+        if name != reader and profile.sessions_private
+    ]
+    return allow, deny
+
+
+def session_readable(profiles: dict[str, "Profile"], reader: str, owner: str) -> bool:
+    allow, deny = session_owner_filter(profiles, reader)
+    return owner == reader or ((allow is None or owner in allow) and owner not in deny)
+
+
 class PathsConfig(StrictModel):
     data: Path = Path("~/sola-data")
     soul: Path = Path("SOUL.md")
@@ -325,6 +344,14 @@ class Profile(StrictModel):
     prompt_layout: Literal["stable", "legacy"] = "stable"
     # Optional isolated memory user/roots; None uses the global [memory] section.
     memory: ProfileMemory | None = None
+    # Session isolation for tool calls, one switch per direction. Sessions are
+    # owned by the profile of the run that wrote them (default profile for
+    # messages with no run).
+    # sessions_private: other profiles' tools cannot read this profile's sessions.
+    # sessions_read_others: false stops this profile's tools reading any other
+    # profile's sessions. A profile always reads its own.
+    sessions_private: bool = False
+    sessions_read_others: bool = True
     model: ProfileModel = Field(default_factory=ProfileModel)
     # Operator playbooks indexed in this profile's prompt (fragments/playbooks).
     playbooks: list[str] = Field(default_factory=list)

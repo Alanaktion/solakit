@@ -108,6 +108,8 @@ def search_index(
     before: str | datetime | None = None,
     limit: int = 50,
     redactor: Redactor | None = None,
+    owner_allow: list[str] | None = None,
+    owner_deny: list[str] | None = None,
 ) -> list[dict]:
     match = match_query(query)
     if type(limit) is not int or not 1 <= limit <= 200:
@@ -133,6 +135,19 @@ def search_index(
         if value is not None:
             clauses.append(f"{column} {comparison} ?")
             parameters.append(value)
+    # Owner is the writing run's profile, else the session's default profile.
+    owner = (
+        "COALESCE((SELECT json_extract(payload, '$.profile') FROM runs "
+        "WHERE runs.id = messages_fts.run_id), "
+        "(SELECT json_extract(payload, '$.default_profile') FROM sessions "
+        "WHERE sessions.id = messages_fts.session_id), '')"
+    )
+    if owner_allow is not None:
+        clauses.append(f"{owner} IN ({','.join('?' * len(owner_allow))})")
+        parameters.extend(owner_allow)
+    if owner_deny:
+        clauses.append(f"{owner} NOT IN ({','.join('?' * len(owner_deny))})")
+        parameters.extend(owner_deny)
     parameters.append(limit)
     sql = (
         "SELECT session_id, archive, line_no, ts, run_id, role, kind, channel, "
