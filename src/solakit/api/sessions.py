@@ -9,6 +9,7 @@ from starlette.responses import JSONResponse, Response
 from solakit.api.dependencies import RuntimeDep
 from solakit.api.schemas import (
     CreateSessionRequest,
+    PinRequest,
     RunRequest,
     UpdateSessionRequest,
 )
@@ -47,7 +48,11 @@ def sessions(
     offset: int = 0,
     page: bool = False,
     pin_channels: bool = False,
+    pinned: bool | None = None,
 ):
+    """pin_channels=true lists pinned sessions first; pinned=true|false filters.
+
+    Channel-bound sessions are pinned unless the operator unpinned them."""
     channel_names: dict[str, list[str]] = {}
     for channel in runtime.config.channels:
         channel_names.setdefault(channel.session, []).append(channel.id)
@@ -60,7 +65,9 @@ def sessions(
             exclude_source=exclude_source,
             roots_only=roots_only,
             parent_session=parent_session,
-            pinned_ids=tuple(channel_names) if pin_channels else (),
+            pinned_ids=tuple(channel_names),
+            pinned=pinned,
+            pin_first=pin_channels,
             limit=limit,
             offset=offset,
         )
@@ -69,6 +76,23 @@ def sessions(
         return result if page else result["sessions"]
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
+
+
+@router.post("/sessions/{session_id}/pin")
+def pin_session(runtime: RuntimeDep, session_id: str, request: PinRequest) -> dict:
+    """Pin or unpin a session; null returns it to its default (channel-bound pinned)."""
+    channels = [c.id for c in runtime.config.channels if c.session == session_id]
+    try:
+        safe_id(session_id)
+        updated = runtime.store.set_session_pinned(session_id, request.pinned)
+    except FileNotFoundError as exc:
+        raise HTTPException(404, "Session not found") from exc
+    except ValueError as exc:
+        raise HTTPException(404, "Session not found") from exc
+    result = updated.model_dump(mode="json")
+    result["pinned"] = bool(channels) if updated.pinned is None else updated.pinned
+    result["channel_names"] = channels
+    return result
 
 
 @router.post("/sessions/archive-batch")
@@ -155,9 +179,13 @@ def update_session(
 @router.get("/sessions/{session_id}")
 def session(runtime: RuntimeDep, session_id: str) -> dict:
     try:
-        metadata = runtime.store.session(session_id).model_dump(mode="json")
+        loaded = runtime.store.session(session_id)
+        metadata = loaded.model_dump(mode="json")
+        channels = [c.id for c in runtime.config.channels if c.session == session_id]
         return {
             **metadata,
+            "pinned": bool(channels) if loaded.pinned is None else loaded.pinned,
+            "channel_names": channels,
             "messages": runtime.store.transcript(session_id),
             "archives": runtime.store.archives(session_id),
             "context_started_at": runtime.store.context_started_at(session_id),

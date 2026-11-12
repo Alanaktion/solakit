@@ -1,10 +1,10 @@
 {% from "macros/icons.html" import icon %}
 {% extends 'base.html' %}
-{% block title %}New topic · Solakit{% endblock %}
+{% block title %}New chat · Solakit{% endblock %}
 {% block body_class %}chat-app{% endblock %}
 {% block page_class %}chat-page{% endblock %}
 {% block content %}
 {% include 'fragments/topics.html' %}
-<section class="conversation-shell new-topic-shell" aria-label="New topic"><div class="new-topic-card"><span class="moon" aria-hidden="true">🌙</span><h1>Start a new topic</h1><p>What’s on your mind?</p>
-<form action="/sessions" method="post" class="edit-form"><input type="hidden" name="id" value="topic-{{ request.state.topic_id }}"><div class="form-field"><label for="topic-title">Topic name <span class="muted">(optional)</span></label><input id="topic-title" name="title" maxlength="200" autocomplete="off" placeholder="For example, weekend plans…"></div><input type="hidden" name="default_profile" value="{{ 'interactive' if 'interactive' in profiles else profiles[0] }}"><input type="hidden" name="memory_scope" value="shared"><button class="primary-button" type="submit">Start topic</button></form><p class="field-note">Profiles and memory controls are available in <a class="text-link" href="/settings/sessions?new=1">Settings {{ icon("arrow-right") }} Sessions</a>.</p></div></section>
+<section class="conversation-shell new-topic-shell" aria-label="New chat"><button type="button" class="topics-toggle icon-button new-topic-menu" data-drawer-toggle="chat-sidebar" aria-controls="chat-sidebar" aria-expanded="false" aria-label="Chats">{{ icon("menu") }}</button><div class="new-topic-card"><span class="moon" aria-hidden="true">🌙</span><h1>Start a new chat</h1><p>What’s on your mind?</p>
+<form action="/sessions" method="post" class="edit-form"><input type="hidden" name="id" value="topic-{{ request.state.topic_id }}"><div class="form-field"><label for="topic-title">Chat name <span class="muted">(optional)</span></label><input id="topic-title" name="title" maxlength="200" autocomplete="off" placeholder="For example, weekend plans…"></div><input type="hidden" name="default_profile" value="{{ 'interactive' if 'interactive' in profiles else profiles[0] }}"><input type="hidden" name="memory_scope" value="shared"><button class="primary-button" type="submit">Start chat</button></form><p class="field-note">Profiles and memory controls are available in <a class="text-link" href="/settings/sessions?new=1">Settings {{ icon("arrow-right") }} Sessions</a>.</p></div></section>
 {% endblock %}

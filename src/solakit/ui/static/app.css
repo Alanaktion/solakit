@@ -316,7 +316,6 @@ pre { overflow-x: auto; font-size: 11px; line-height: 1.55; color: var(--ink); }
 .session-name strong { font-size: 14px; font-weight: 600; }
 .session-name small { display: block; font-size: 11px; color: var(--muted); margin-top: 3px; }
 .session-row-facts, .session-row time, .row-arrow { color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
-.chat-sidebar .thread-avatar, .chat-sidebar .thread-label small { display: none; }
 .chat-page .message-author { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .composer-input { position: relative; }
 .composer-input:focus-within textarea { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
@@ -842,3 +841,84 @@ input::placeholder, textarea::placeholder { opacity: 1; }
 .delegated-topics ul { list-style: none; padding: 0; margin: 0; }
 .delegated-topics li { padding-bottom: 8px; border-bottom: 1px solid var(--line); }
 .delegated-topics a { display: inline-flex; align-items: center; min-height: 44px; overflow-wrap: anywhere; }
+
+/* Messenger-style chat list: avatars, previews, pinned section, hover pin. */
+.chat-page { grid-template-columns: 320px minmax(0, 1fr); }
+.chat-page:has(.topic-details:not([hidden])) { grid-template-columns: 320px minmax(0, 1fr) 320px; }
+.sidebar-heading { padding: 16px 16px 8px; }
+.sidebar-heading h2 { font-size: 22px; font-weight: 700; letter-spacing: -.4px; }
+.sidebar-heading .action-group { gap: 4px; flex-wrap: nowrap; }
+.icon-button { display: inline-grid; place-items: center; width: 40px; height: 40px; min-height: 40px; padding: 0; border-radius: 50%; background: transparent; color: var(--ink); font-size: 18px; transition: background-color .15s, color .15s; }
+.icon-button:hover { background: var(--hover); }
+.icon-button .icon { width: 18px; height: 18px; }
+.sidebar-heading .icon-button { background: var(--surface-soft); }
+.sidebar-search { position: relative; margin: 0 16px 8px; }
+.sidebar-search input { width: 100%; margin: 0; min-height: 40px; padding: 8px 14px 8px 38px; border: 1px solid transparent; border-radius: 20px; background: var(--surface-soft); color: var(--ink); font-size: 14px; }
+.sidebar-search input:focus { outline: none; border-color: var(--accent); background: var(--surface); box-shadow: 0 0 0 3px var(--accent-soft); }
+.sidebar-search .search-icon { position: absolute; left: 14px; top: 50%; translate: 0 -50%; color: var(--muted); pointer-events: none; }
+.chat-sidebar > .filter-status { margin: 0 20px; min-height: 0; color: var(--muted); font-size: 12px; }
+.chat-sidebar > .filter-status:not(:empty) { margin-bottom: 6px; }
+.topic-scroll { padding: 0 8px 8px; }
+.topic-scroll h3 { margin: 14px 12px 4px; font-size: 12px; text-transform: none; letter-spacing: 0; font-weight: 600; color: var(--muted); }
+.chat-row { position: relative; margin-bottom: 2px; border-radius: 12px; transition: background-color .15s; }
+.chat-row:hover { background: var(--hover); }
+.chat-row.is-current { background: var(--accent-soft); }
+.chat-row .conversation-link { min-height: 68px; gap: 12px; padding: 8px 40px 8px 10px; margin: 0; border: 0; border-radius: 12px; box-shadow: none; background: transparent; }
+.chat-row .conversation-link.is-current { background: transparent; box-shadow: none; }
+.chat-row .thread-avatar { position: relative; display: grid; width: 48px; height: 48px; font: 600 19px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: var(--accent-ink); background: linear-gradient(135deg, var(--accent), var(--secondary)); border: 0; }
+.chat-row .thread-avatar.is-channel { background: linear-gradient(135deg, var(--secondary), var(--accent)); box-shadow: inset 0 0 0 2px var(--surface); }
+.chat-row .thread-label { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.thread-top { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.thread-top strong { flex: 1; min-width: 0; font-size: 14px; font-weight: 600; }
+.thread-top time { flex: none; margin: 0; font-size: 11px; color: var(--muted); }
+.thread-preview { display: block; color: var(--muted); font-size: 13px; line-height: 1.35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-row .channel-badge { display: inline; padding: 0; border: 0; font-size: 12px; color: var(--secondary); font-weight: 500; }
+.chat-row .channel-badge::after { content: " ·"; color: var(--muted); }
+.topic-running { position: absolute; right: -1px; bottom: -1px; width: 14px; height: 14px; border-radius: 50%; background: var(--good); border: 2px solid var(--surface); animation: topic-pulse 1.6s ease-in-out infinite; }
+.topic-failed { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--warning); }
+@keyframes topic-pulse { 50% { opacity: .45; } }
+@media (prefers-reduced-motion: reduce) { .topic-running { animation: none; } }
+.pin-form { margin: 0; }
+.chat-row .pin-form { position: absolute; right: 6px; top: 50%; translate: 0 -50%; }
+.pin-button { display: inline-grid; place-items: center; width: 32px; height: 32px; padding: 0; border-radius: 50%; background: var(--surface); color: var(--muted); border: 1px solid var(--line); opacity: 0; transition: opacity .15s, color .15s, background-color .15s; }
+.chat-row:hover .pin-button, .chat-row:focus-within .pin-button, .pin-button.is-pinned:focus-visible { opacity: 1; }
+.pin-button:hover { color: var(--accent); }
+.pin-button.is-pinned { color: var(--accent); }
+.pin-button.is-pinned .icon { fill: currentColor; }
+.chat-toolbar .pin-button { opacity: 1; width: 40px; height: 40px; border: 0; background: transparent; }
+.chat-toolbar .pin-button:hover { background: var(--hover); }
+@media (hover: none) { .chat-row .pin-button { opacity: 1; width: 28px; height: 28px; border-color: transparent; background: transparent; } .chat-row:not(:has(.is-pinned)) .pin-button { opacity: .5; } }
+.archived-topics { margin: 16px 4px 0; }
+.chat-row .pin-form:has(.pin-button) { z-index: 1; }
+.sidebar-manage { padding: 0 16px; }
+
+/* Conversation header and bubbles. */
+.chat-toolbar { gap: 12px; padding: 8px 16px; min-height: 64px; }
+.chat-toolbar .thread-avatar { display: grid; width: 40px; height: 40px; border: 0; color: var(--accent-ink); background: linear-gradient(135deg, var(--accent), var(--secondary)); font: 600 16px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+.chat-toolbar .thread-avatar.is-channel { background: linear-gradient(135deg, var(--secondary), var(--accent)); }
+.chat-toolbar .action-group { flex-wrap: nowrap; gap: 2px; align-items: center; }
+.chat-title h1 { font-size: 16px; font-weight: 600; line-height: 1.3; }
+.chat-subtitle { margin: 0; font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.session-menu nav form { display: contents; }
+.session-menu nav form .quiet-button { text-align: left; min-height: 44px; padding: 0 11px; border-radius: 5px; width: 100%; }
+.session-menu nav form .quiet-button:hover { color: var(--accent); background: var(--hover); }
+.message-assistant .message-content { max-width: min(85%, 720px); padding: 8px 14px; background: var(--surface-soft); border: 1px solid var(--line); border-radius: 14px 14px 14px 4px; }
+.message-user .message-content { background: var(--accent); color: var(--accent-ink); border: 0; }
+.message-user .message-content a { color: inherit; text-decoration: underline; }
+.topics-toggle { display: none; }
+.new-topic-menu { position: absolute; top: 8px; left: 8px; }
+.new-topic-shell { position: relative; }
+
+@media (max-width: 900px) {
+  .chat-page, .chat-page:has(.topic-details:not([hidden])) { grid-template-columns: minmax(0, 1fr); }
+  .topics-toggle { display: inline-grid; }
+  .chat-toolbar { padding: 4px 8px; gap: 8px; }
+  .chat-toolbar .thread-avatar { display: none; }
+  .chat-sidebar.is-open { width: min(360px, 92vw); }
+  .message-assistant .message-content { max-width: 94%; }
+}
+@media (forced-colors: active) {
+  .message-user .message-content { border: 1px solid CanvasText; }
+  .chat-row.is-current { outline: 2px solid Highlight; }
+  .topic-running, .topic-failed { forced-color-adjust: none; }
+}

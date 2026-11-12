@@ -21,8 +21,7 @@
     <div class="header-inner">
       <a class="brand" href="/" aria-label="Solakit home" translate="no"><span class="moon" aria-hidden="true">🌙</span><span>Solakit</span></a>
       {% block header_actions %}
-      {% if not settings_page %}<button type="button" class="topics-toggle quiet-button" data-drawer-toggle="chat-sidebar" aria-controls="chat-sidebar" aria-expanded="false">Topics</button>{% endif %}
-      <nav class="nav main-nav" aria-label="Main navigation">
+            <nav class="nav main-nav" aria-label="Main navigation">
         {% set indicator = (health or {})|health_indicator %}
         <a id="health-indicator" class="health-indicator health-{{ indicator.color }}" href="/settings/system" title="{{ indicator.label }}" aria-label="System: {{ indicator.label }}"><span aria-hidden="true"></span></a>
         <a href="/settings/search" class="nav-link">Search</a>

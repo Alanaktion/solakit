@@ -66,6 +66,12 @@ def create_app(  # noqa: C901
             MemoryClient(cfg.memory, memory_key) if cfg.memory.enabled else None
         )
         app.state.router = SessionRouter(cfg, app.state.store)
+        # Channel-bound sessions are pinned by default, so they must exist (and
+        # list) before the first inbound message creates them.
+        for channel in cfg.channels:
+            await asyncio.to_thread(
+                app.state.router.channel, channel.type, channel.channel_id
+            )
         app.state.model = (
             model
             if model is not None

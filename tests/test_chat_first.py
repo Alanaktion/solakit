@@ -25,7 +25,11 @@ def test_route_inventory_preserves_old_routes_and_api(config, mock_model):
     )
     after = set(route_table(config, mock_model))
     assert before <= after
-    assert {r for r in before if " /api/" in r} == {r for r in after if " /api/" in r}
+    # The API only grows: existing routes stay, and pinning is the sole addition.
+    api_before = {r for r in before if " /api/" in r}
+    api_after = {r for r in after if " /api/" in r}
+    assert api_after - api_before == {"POST /api/sessions/{session_id}/pin"}
+    assert api_before <= api_after
 
 
 def test_legacy_gets_redirect_with_queries_and_canonical_pages_work(config, mock_model):
@@ -68,12 +72,11 @@ def test_landing_uses_activity_without_pinning_or_get_side_effects(config, mock_
     app = create_app(config=config, model=mock_model)
     with TestClient(app) as client:
         sign_in(client)
-        assert "Start a new topic" in client.get("/").text
-        assert client.get("/api/sessions").json() == []
+        assert "Start a new chat" in client.get("/?new=1").text
+        # Configured channel sessions exist (and are pinned) before any message.
+        listed = client.get("/api/sessions").json()
+        assert [(s["id"], s["pinned"]) for s in listed] == [("pinned", True)]
         store = app.state.store
-        store.create_session(
-            Session(id="pinned", created_at=datetime(2020, 1, 1, tzinfo=UTC))
-        )
         store.create_session(Session(id="recent", source="web"))
         store.create_session(Session(id="scheduled", source="cron"))
         store.create_session(Session(id="child", parent_session="recent"))
@@ -85,6 +88,7 @@ def test_landing_uses_activity_without_pinning_or_get_side_effects(config, mock_
         )
         page = client.get("/sessions/recent").text
         assert "Pinned" in page and 'title="channel"' in page
+        assert 'action="/sessions/pinned/pin"' in page
         assert 'href="/sessions/scheduled"' not in page
         assert "Delegated topics" in page
         assert 'id="topic-details"' in page
@@ -121,7 +125,7 @@ def test_title_fallback_details_and_archived_readonly(config, mock_model):
         client.post("/sessions/topic/lifecycle/archive")
         archived = client.get("/sessions/topic").text
         assert 'id="composer"' not in archived
-        assert "Restore topic" in archived
+        assert "Restore chat" in archived
         client.post("/sessions/topic/lifecycle/restore")
         assert 'id="composer"' in client.get("/sessions/topic").text
 

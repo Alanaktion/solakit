@@ -532,22 +532,27 @@
     if (event.target.id !== "topic-filter") return;
     const query = event.target.value.trim().toLocaleLowerCase();
     let matching = 0;
-    document.querySelectorAll("[data-topic-title]").forEach(link => {
-      link.hidden = !link.dataset.topicTitle.includes(query);
-      if (!link.hidden) matching++;
+    document.querySelectorAll("[data-topic-title]").forEach(row => {
+      row.hidden = !row.dataset.topicTitle.includes(query);
+      if (!row.hidden) matching++;
+    });
+    // Hide section headings whose chats are all filtered out.
+    document.querySelectorAll(".topic-scroll > h3").forEach(heading => {
+      const list = heading.nextElementSibling;
+      heading.hidden = !!query && !!list && !list.querySelector("[data-topic-title]:not([hidden])");
     });
     const archived = document.querySelector(".archived-topics");
     if (archived) {
       if (query) {
         if (!("filterWasOpen" in archived.dataset)) archived.dataset.filterWasOpen = String(archived.open);
-        archived.open = [...archived.querySelectorAll("[data-topic-title]")].some(link => !link.hidden);
+        archived.open = [...archived.querySelectorAll("[data-topic-title]")].some(row => !row.hidden);
       } else if ("filterWasOpen" in archived.dataset) {
         archived.open = archived.dataset.filterWasOpen === "true";
         delete archived.dataset.filterWasOpen;
       }
     }
     const status = panel("topic-filter-status");
-    if (status) status.textContent = query ? (matching ? `${matching} matching ${matching === 1 ? "topic" : "topics"} on this page` : "No matching topics on this page. Try another title.") : "";
+    if (status) status.textContent = query ? `${matching} ${matching === 1 ? "chat" : "chats"} on this page. Press Enter to search all messages.` : "";
   });
   document.addEventListener("DOMContentLoaded", () => {
     const dot = panel("health-indicator");

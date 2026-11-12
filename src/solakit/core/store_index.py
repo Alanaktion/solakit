@@ -420,6 +420,11 @@ class IndexMixin(StoreServices):
         except sqlite3.Error:
             self._issue(self.root / "app.db", "session_activity_index_unavailable")
 
+    @staticmethod
+    def _pinned(payload, default_ids):
+        explicit = payload.get("pinned")
+        return payload.get("id") in default_ids if explicit is None else explicit
+
     def list_sessions(
         self,
         *,
@@ -434,7 +439,11 @@ class IndexMixin(StoreServices):
         offset=0,
         ids=None,
         pinned_ids=(),
+        pinned=None,
+        pin_first=False,
     ):
+        """pinned_ids are sessions pinned by default (channel-bound); an explicit
+        per-session choice in metadata overrides that default."""
         if status not in {"active", "archived", "all"}:
             raise ValueError("Invalid session status")
         if (
@@ -480,13 +489,19 @@ class IndexMixin(StoreServices):
         if profile is not None:
             clauses.append("json_extract(s.payload, '$.default_profile')=?")
             args.append(profile)
-        where = " WHERE " + " AND ".join(clauses) if clauses else ""
-        pin_order = (
-            "CASE WHEN s.id IN (" + ",".join("?" for _ in pinned_ids) + ") "
-            "THEN 0 ELSE 1 END, "
+        pin_sql = (
+            "coalesce(json_extract(s.payload, '$.pinned'), s.id IN ("
+            + ",".join("?" for _ in pinned_ids)
+            + "))"
             if pinned_ids
-            else ""
+            else "coalesce(json_extract(s.payload, '$.pinned'), 0)"
         )
+        if pinned is not None:
+            clauses.append(f"{pin_sql} = ?")
+            args.extend([*pinned_ids, 1 if pinned else 0])
+        where = " WHERE " + " AND ".join(clauses) if clauses else ""
+        pin_order = f"{pin_sql} DESC, " if pin_first else ""
+        pin_args = list(pinned_ids) if pin_first and pinned_ids else []
         with self._database() as db:
             total = db.execute(
                 f"SELECT count(*) FROM {source}" + where, args
@@ -495,7 +510,7 @@ class IndexMixin(StoreServices):
                 f"SELECT s.payload, {at} FROM {source}"
                 + where
                 + f" ORDER BY {pin_order}julianday({at}) DESC, s.id LIMIT ? OFFSET ?",
-                [*args, *pinned_ids, limit, offset],
+                [*args, *pin_args, limit, offset],
             ).fetchall()
             counts = dict(
                 db.execute(
@@ -519,6 +534,7 @@ class IndexMixin(StoreServices):
                 {
                     "source": "api",
                     **json.loads(payload),
+                    "pinned": self._pinned(json.loads(payload), pinned_ids),
                     "last_activity_at": self._activity_timestamp(
                         datetime.fromisoformat(at)
                     ),

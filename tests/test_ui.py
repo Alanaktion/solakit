@@ -118,7 +118,7 @@ def test_login_lockout_http(config, mock_model):
 def test_session_create_chat_and_api_parity(config, mock_model):
     with TestClient(create_app(config=config, model=mock_model)) as client:
         sign_in(client)
-        assert "Start a new topic" in client.get("/").text
+        assert "Start a new chat" in client.get("/").text
         new_session(client)
         page = client.get("/sessions/evening")
         assert page.status_code == 200
@@ -531,7 +531,7 @@ def test_session_patch_and_rename_ui_preserve_identity_evidence(config, mock_mod
             == 404
         )
         page = client.get("/sessions/old")
-        assert "Rename topic" in page.text
+        assert "Rename chat" in page.text
         page = client.get("/sessions/old/rename")
         assert 'value="Moonlight &amp; notes"' in page.text
         bad = client.post("/sessions/old/rename", data={"title": "x" * 201})

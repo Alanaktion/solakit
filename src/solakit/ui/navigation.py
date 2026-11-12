@@ -84,26 +84,41 @@ async def topic_context(request: Request, api) -> dict:
     except ValueError:
         raise APIError(422, "Topic offset must be nonnegative.") from None
 
-    async def catalog(status, at):
+    async def catalog(status, at, **extra):
         return await api(
             request,
             "GET",
             "/api/sessions?"
             + urlencode(
                 {
-                    "roots_only": "true",
-                    "exclude_source": "cron",
                     "page": "true",
-                    "pin_channels": "true",
                     "status": status,
                     "limit": 20,
                     "offset": at,
+                    **extra,
                 }
             ),
         )
 
-    active, archived = await asyncio.gather(
-        catalog("active", offset), catalog("archived", archived_offset)
+    # Pinned chats are fetched on their own so paging recents can never push a
+    # pinned (or channel-bound) session out of the list.
+    pinned, active, archived = await asyncio.gather(
+        api(
+            request,
+            "GET",
+            "/api/sessions?"
+            + urlencode(
+                {"page": "true", "status": "active", "pinned": "true", "limit": 100}
+            ),
+        ),
+        catalog(
+            "active",
+            offset,
+            roots_only="true",
+            exclude_source="cron",
+            pinned="false",
+        ),
+        catalog("archived", archived_offset, roots_only="true", exclude_source="cron"),
     )
     semaphore = asyncio.Semaphore(6)
 
@@ -124,6 +139,14 @@ async def topic_context(request: Request, api) -> dict:
                 ),
             )
             item["last_run_status"] = records[0]["status"] if records else None
+            preview = (
+                records[0].get("rendered_output") or records[0].get("input_message")
+                if records
+                else None
+            )
+            if preview:
+                prefix = "" if records[0].get("rendered_output") else "You: "
+                item["preview"] = prefix + " ".join(preview.split())[:90]
             if item.get("title"):
                 return
             earliest = await api(
@@ -156,7 +179,10 @@ async def topic_context(request: Request, api) -> dict:
                 item["topic_title"] = " ".join(first.split())[:64]
 
     await asyncio.gather(
-        *(hydrate(item) for item in active["sessions"] + archived["sessions"])
+        *(
+            hydrate(item)
+            for item in pinned["sessions"] + active["sessions"] + archived["sessions"]
+        )
     )
 
     def page_url(key, value):
@@ -172,6 +198,7 @@ async def topic_context(request: Request, api) -> dict:
         )
 
     return {
+        "pinned_topics": pinned["sessions"],
         "sessions": active["sessions"],
         "archived_topics": archived["sessions"],
         "topic_previous": page_url("topic_offset", max(0, offset - 20))
@@ -187,6 +214,40 @@ async def topic_context(request: Request, api) -> dict:
         if archived_offset + 20 < archived["total"]
         else None,
     }
+
+
+def register_pin(router: APIRouter, ns: UIContext) -> None:
+    from solakit.ui.routes import HEADERS, APIError
+
+    @router.post("/sessions/{identity}/pin")
+    async def pin_topic(request: Request, identity: str):
+        if not ns.logged_in(request):
+            return ns.login_redirect(request)
+        try:
+            values = await ns.form(request, 4096)
+            if values.get("pinned") not in {"1", "0", "default"}:
+                raise APIError(422, "Choose pin, unpin or default.")
+            await ns.api(
+                request,
+                "POST",
+                f"/api/sessions/{quote(identity, safe='')}/pin",
+                {
+                    "pinned": None
+                    if values["pinned"] == "default"
+                    else values["pinned"] == "1"
+                },
+            )
+        except APIError as exc:
+            return ns.render(request, "error.html", {"error": exc.detail}, exc.status)
+        target = values.get("return_to", "")
+        if (
+            not target.startswith("/")
+            or target.startswith("//")
+            or "\\" in target
+            or any(ord(char) <= 32 for char in target)
+        ):
+            target = f"/sessions/{quote(identity, safe='')}"
+        return RedirectResponse(target, 303, headers=HEADERS)
 
 
 def register_navigation(router: APIRouter, ns: UIContext) -> None:
@@ -284,6 +345,7 @@ def register_navigation(router: APIRouter, ns: UIContext) -> None:
             state = {}
         return JSONResponse(health_indicator(state), headers=HEADERS)
 
+    register_pin(router, ns)
     register_legacy(router, ns)
 
 

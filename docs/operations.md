@@ -76,10 +76,13 @@ Profile access separates tool grants, read/write tiers and roots, effects,
 resources, and available tools into labeled rows. Expand Profile access
 for tool links or Configuration & diagnostics for modules and disclosure details.
 Session listings default to active sessions, paginated and ordered by last activity.
-The Sessions UI pins sessions named in channel configuration first and shows their
-configured channel IDs, including disabled channels. Filters still apply; each
-group is ordered by last activity. API clients can request this ordering with
-`pin_channels=true`.
+Sessions bound to a configured channel (enabled or not) are created at startup and are
+pinned by default; any session can be pinned or unpinned with
+`POST /api/sessions/{id}/pin` and `{"pinned": true|false|null}` (`null` restores the
+default). The choice is persisted in session metadata. Listings and
+`GET /api/sessions/{id}` report the effective `pinned` flag; filter with `pinned=true|false`
+and list pinned sessions first with `pin_channels=true`. The chat sidebar fetches
+pinned chats separately from the paged Recent list, so paging never hides them.
 Use `status=archived|all`, `q`, `profile`, `before`, `limit`, `offset`, and `page=true`
 for the full catalog. [Session archival](operations/session-archive.md) describes
 reversible metadata archival, bulk cleanup and undo for imported history. Message

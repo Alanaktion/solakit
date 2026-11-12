@@ -24,6 +24,11 @@ class UpdateSessionRequest(BaseModel):
     title: Annotated[str, StringConstraints(strip_whitespace=True, max_length=200)]
 
 
+class PinRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    pinned: bool | None
+
+
 class MemoryProbeRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     fact: Annotated[

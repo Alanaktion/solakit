@@ -258,6 +258,20 @@ class Store(IndexMixin, SidecarMixin, OffsetMixin):
             self._index("sessions", session_id, updated.model_dump(mode="json"))
             return updated
 
+    def set_session_pinned(self, session_id: str, pinned: bool | None) -> Session:
+        """Persist an explicit pin choice; None restores the default."""
+        with self.lock:
+            path = self._path("sessions", session_id, ".meta.json")
+            session = self.session(session_id)
+            if session.pinned == pinned:
+                return session
+            metadata = json.loads(path.read_bytes())
+            metadata["pinned"] = pinned
+            atomic_write(path, json.dumps(metadata, ensure_ascii=False).encode())
+            updated = self.session(session_id)
+            self._index("sessions", session_id, updated.model_dump(mode="json"))
+            return updated
+
     def set_session_archived(self, session_id, archived):
         with self.lock:
             path = self._path("sessions", session_id, ".meta.json")

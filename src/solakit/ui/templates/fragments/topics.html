@@ -1,21 +1,32 @@
 {% from "macros/icons.html" import icon %}
-{% macro topic_link(item) %}
-<a class="conversation-link {% if session is defined and item.id == session.id %}is-current{% endif %}" data-topic-title="{{ item.topic_title|lower }}" title="{{ item.topic_title }}" href="/sessions/{{ item.id|urlencode }}" {% if session is defined and item.id == session.id %}aria-current="page"{% endif %}>
-  <span class="thread-label"><strong>{{ item.topic_title }}</strong><time data-relative-time datetime="{{ item.last_activity_at }}">{{ item.last_activity_at|display_time }}</time></span>
-  {% if item.channel_names %}<span class="channel-badge" title="{{ item.channel_names|join(', ') }}">Channel</span>{% endif %}
-  <span class="topic-running" role="img" aria-label="Run active" {% if item.last_run_status not in ['queued', 'running'] %}hidden{% endif %}>◌</span><span class="topic-failed" role="img" aria-label="Last run failed" {% if not item.last_run_status or item.last_run_status in ['completed', 'cancelled', 'queued', 'running'] %}hidden{% endif %}>•</span>
-</a>
+{% macro chat_row(item) %}
+{% set current = session is defined and item.id == session.id %}
+<div class="chat-row{% if current %} is-current{% endif %}" data-topic-title="{{ (item.topic_title ~ ' ' ~ item.channel_names|join(' '))|lower }}">
+  <a class="conversation-link" title="{{ item.topic_title }}" href="/sessions/{{ item.id|urlencode }}" {% if current %}aria-current="page"{% endif %}>
+    <span class="thread-avatar{% if item.channel_names %} is-channel{% endif %}" aria-hidden="true">{{ (item.topic_title or '?')[:1]|upper }}<span class="topic-running" role="img" aria-label="Run active" {% if item.last_run_status not in ['queued', 'running'] %}hidden{% endif %}></span></span>
+    <span class="thread-label">
+      <span class="thread-top"><strong>{{ item.topic_title }}</strong><time data-relative-time datetime="{{ item.last_activity_at }}">{{ item.last_activity_at|display_time }}</time></span>
+      <span class="thread-preview">{% if item.channel_names %}<span class="channel-badge" title="{{ item.channel_names|join(', ') }}">{{ item.channel_names|join(', ') }}</span> {% endif %}{{ item.preview or 'No messages yet' }}</span>
+    </span>
+    <span class="topic-failed" role="img" aria-label="Last run failed" {% if not item.last_run_status or item.last_run_status in ['completed', 'cancelled', 'queued', 'running'] %}hidden{% endif %}></span>
+  </a>
+  <form class="pin-form" method="post" action="/sessions/{{ item.id|urlencode }}/pin"><input type="hidden" name="pinned" value="{{ '0' if item.pinned else '1' }}"><input type="hidden" name="return_to" value="{{ request.url.path }}"><button class="pin-button{% if item.pinned %} is-pinned{% endif %}" type="submit" aria-label="{{ 'Unpin' if item.pinned else 'Pin' }} {{ item.topic_title }}" title="{{ 'Unpin' if item.pinned else 'Pin to top' }}">{{ icon("pin") }}</button></form>
+</div>
 {% endmacro %}
-<section class="chat-sidebar" id="chat-sidebar" aria-label="Topics" tabindex="-1">
-  <div class="sidebar-heading"><h2>Topics</h2><button class="quiet-button drawer-close" type="button" data-drawer-close="chat-sidebar" aria-label="Close topics">×</button></div>
-  <a href="/?new=1" class="primary-button">{{ icon("plus") }} New topic</a>
-  <label class="visually-hidden" for="topic-filter">Filter topics by title</label><input id="topic-filter" type="search" name="topic_filter" placeholder="Find a topic…" autocomplete="off" aria-describedby="topic-filter-status">
+<section class="chat-sidebar" id="chat-sidebar" aria-label="Chats" tabindex="-1">
+  <div class="sidebar-heading"><h2>Chats</h2><div class="action-group"><a href="/?new=1" class="icon-button" aria-label="New chat" title="New chat">{{ icon("plus") }}</a><button class="quiet-button drawer-close" type="button" data-drawer-close="chat-sidebar" aria-label="Close chats">×</button></div></div>
+  <form class="sidebar-search" action="/settings/search" method="get" role="search">
+    <input type="hidden" name="mode" value="text">
+    <span class="search-icon">{{ icon("search") }}</span>
+    <label class="visually-hidden" for="topic-filter">Search chats</label>
+    <input id="topic-filter" type="search" name="q" placeholder="Search chats" autocomplete="off" aria-describedby="topic-filter-status">
+  </form>
   <p id="topic-filter-status" class="filter-status" role="status" aria-live="polite" aria-atomic="true"></p>
   <div class="topic-scroll">
-    {% if sessions|selectattr('channel_names')|list %}<h3>Pinned</h3><nav aria-label="Pinned topics">{% for item in sessions if item.channel_names %}{{ topic_link(item) }}{% endfor %}</nav>{% endif %}
-    <h3>Topics</h3><nav class="conversation-list" aria-label="Topics">{% for item in sessions if not item.channel_names %}{{ topic_link(item) }}{% else %}<p class="muted">No topics on this page.</p>{% endfor %}</nav>
-    <nav class="action-group" aria-label="Topic pages">{% if topic_previous %}<a href="{{ topic_previous }}">Previous topics</a>{% endif %}{% if topic_next %}<a href="{{ topic_next }}">More topics</a>{% endif %}</nav>
-    <details class="archived-topics" {% if request.query_params.get('archived_offset') or (session is defined and session.archived_at) %}open{% endif %}><summary>Archived</summary><nav aria-label="Archived topics">{% for item in archived_topics %}{{ topic_link(item) }}{% else %}<p class="muted">No archived topics.</p>{% endfor %}</nav><div class="action-group">{% if archived_previous %}<a href="{{ archived_previous }}">Previous archived</a>{% endif %}{% if archived_next %}<a href="{{ archived_next }}">More archived</a>{% endif %}</div></details>
+    {% if pinned_topics %}<h3>Pinned</h3><nav class="conversation-list" aria-label="Pinned chats">{% for item in pinned_topics %}{{ chat_row(item) }}{% endfor %}</nav>{% endif %}
+    <h3>Recent</h3><nav class="conversation-list" aria-label="Recent chats">{% for item in sessions %}{{ chat_row(item) }}{% else %}<p class="muted">{% if pinned_topics %}Nothing else yet.{% else %}No chats yet. Start one with +.{% endif %}</p>{% endfor %}</nav>
+    <nav class="action-group" aria-label="Chat pages">{% if topic_previous %}<a href="{{ topic_previous }}">Newer</a>{% endif %}{% if topic_next %}<a href="{{ topic_next }}">Older chats</a>{% endif %}</nav>
+    <details class="archived-topics" {% if request.query_params.get('archived_offset') or (session is defined and session.archived_at) %}open{% endif %}><summary>Archived</summary><nav aria-label="Archived chats">{% for item in archived_topics %}{{ chat_row(item) }}{% else %}<p class="muted">No archived chats.</p>{% endfor %}</nav><div class="action-group">{% if archived_previous %}<a href="{{ archived_previous }}">Newer archived</a>{% endif %}{% if archived_next %}<a href="{{ archived_next }}">Older archived</a>{% endif %}</div></details>
   </div>
-  <a class="sidebar-manage" href="/settings/search?mode=text">Search all messages</a>
+  <a class="sidebar-manage" href="/settings/search?mode=text">Search all messages {{ icon("arrow-right") }}</a>
 </section>

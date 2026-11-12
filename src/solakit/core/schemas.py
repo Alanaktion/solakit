@@ -36,6 +36,9 @@ class Session(BaseModel):
     parent_session: str | None = None
     created_at: datetime = Field(default_factory=now)
     archived_at: datetime | None = None
+    # Operator choice. None follows the default: channel-bound sessions are
+    # pinned, everything else is not.
+    pinned: bool | None = None
 
 
 class Message(BaseModel):

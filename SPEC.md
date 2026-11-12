@@ -1090,6 +1090,7 @@ The P1 operator UI is a thin server-rendered API client. Shared app contracts:
 | `GET /api/sessions` · `GET /api/sessions/{id}` | session list; metadata + transcript |
 | `POST /api/sessions/{id}/compact` | summarize idle shared session without dropping original evidence |
 | `POST /api/sessions/{id}/archive` | operator-only immutable rotation, fresh context, bindings preserved; 409 while busy |
+| `POST /api/sessions/{id}/pin` | pin/unpin a session (`pinned`: true/false/null; null restores the default — channel-bound sessions are pinned) |
 | `POST /api/sessions/{id}/messages` | post a message (the **api channel** — lands in that pinned session and runs) |
 | `GET /api/runs` · `GET /api/runs/{id}` | run records incl. prompt, tool log |
 | `GET /api/prompt?profile=&session=` | the dry-run prompt (§11) as JSON/text |

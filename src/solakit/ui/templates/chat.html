@@ -8,15 +8,19 @@
 {% block content %}
 {% include 'fragments/topics.html' %}
 <section class="conversation-shell" aria-label="Conversation">
-  {% set topic = (sessions + archived_topics)|selectattr('id', 'equalto', session.id)|first %}
+  {% set topic = (pinned_topics + sessions + archived_topics)|selectattr('id', 'equalto', session.id)|first %}
   <header class="chat-toolbar">
-    <div class="chat-title"><h1>{{ topic.topic_title if topic else (session.title or session.id) }}</h1></div>
+    <button type="button" class="topics-toggle icon-button" data-drawer-toggle="chat-sidebar" aria-controls="chat-sidebar" aria-expanded="false" aria-label="Chats">{{ icon("menu") }}</button>
+    <span class="thread-avatar{% if session.channel_names %} is-channel{% endif %}" aria-hidden="true">{{ (topic.topic_title if topic else (session.title or session.id))[:1]|upper }}</span>
+    <div class="chat-title"><h1>{{ topic.topic_title if topic else (session.title or session.id) }}</h1>{% if session.channel_names or session.pinned %}<p class="chat-subtitle">{% if session.channel_names %}{{ session.channel_names|join(', ') }}{% else %}Pinned{% endif %}</p>{% endif %}</div>
     <div class="action-group">
-      <button type="button" class="quiet-button" data-drawer-toggle="topic-details" aria-controls="topic-details" aria-expanded="false">Details</button>
-      <details class="session-menu"><summary>Actions {{ icon("chevron-down") }}</summary><nav aria-label="Topic actions">
-        <a href="/sessions/{{ session.id|urlencode }}/rename">Rename topic</a>
-        {% if session.archived_at %}<form method="post" action="/sessions/{{ session.id|urlencode }}/lifecycle/restore"><button class="quiet-button" type="submit">Restore topic</button></form>
-        {% elif not archive_number %}<a href="/sessions/{{ session.id|urlencode }}/compact">Compact conversation</a><a href="/sessions/{{ session.id|urlencode }}/archive">Archive conversation</a><a href="/sessions/{{ session.id|urlencode }}/lifecycle/archive?return_to=chat">Archive topic</a>{% endif %}
+      <form method="post" action="/sessions/{{ session.id|urlencode }}/pin"><input type="hidden" name="pinned" value="{{ '0' if session.pinned else '1' }}"><input type="hidden" name="return_to" value="{{ request.url.path }}"><button type="submit" class="icon-button pin-button{% if session.pinned %} is-pinned{% endif %}" aria-label="{{ 'Unpin chat' if session.pinned else 'Pin chat' }}" title="{{ 'Unpin chat' if session.pinned else 'Pin to top' }}">{{ icon("pin") }}</button></form>
+      <button type="button" class="icon-button" data-drawer-toggle="topic-details" aria-controls="topic-details" aria-expanded="false" aria-label="Details" title="Details">{{ icon("info") }}</button>
+      <details class="session-menu"><summary aria-label="Chat actions">Actions {{ icon("chevron-down") }}</summary><nav aria-label="Chat actions">
+        <a href="/sessions/{{ session.id|urlencode }}/rename">Rename chat</a>
+        {% if session.channel_names and session.pinned is not none %}<form method="post" action="/sessions/{{ session.id|urlencode }}/pin"><input type="hidden" name="pinned" value="default"><input type="hidden" name="return_to" value="{{ request.url.path }}"><button class="quiet-button" type="submit">Reset pin to default</button></form>{% endif %}
+        {% if session.archived_at %}<form method="post" action="/sessions/{{ session.id|urlencode }}/lifecycle/restore"><button class="quiet-button" type="submit">Restore chat</button></form>
+        {% elif not archive_number %}<a href="/sessions/{{ session.id|urlencode }}/compact">Compact conversation</a><a href="/sessions/{{ session.id|urlencode }}/archive">Archive conversation</a><a href="/sessions/{{ session.id|urlencode }}/lifecycle/archive?return_to=chat">Archive chat</a>{% endif %}
       </nav></details>
     </div>
   </header>
