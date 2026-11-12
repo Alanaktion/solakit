@@ -551,7 +551,7 @@ class StepLoopMixin(ExecutionServices):
             if run.effective_tools is not None
             else None,
             memory_client=(
-                self.memory.scoped(session)
+                self.memory.scoped(session, run.profile)
                 if self.memory and session.memory_scope == "shared"
                 else None
             ),

@@ -71,8 +71,14 @@ class RuntimeOps(ExecutionServices):
                 if self.compactor.strategy(session, memory=self.memory) == "local":
                     # Explicit local compaction uses one inference slot.
                     async with self.semaphore:
-                        return await self.compactor.compact(session, memory=self.memory)
-                return await self.compactor.compact(session, memory=self.memory)
+                        return await self.compactor.compact(
+                            session,
+                            memory=self.memory,
+                            profile=session.default_profile,
+                        )
+                return await self.compactor.compact(
+                    session, memory=self.memory, profile=session.default_profile
+                )
 
             task = asyncio.create_task(compact())
             try:
@@ -88,7 +94,9 @@ class RuntimeOps(ExecutionServices):
         self, run: Run, session: Session, trigger: str, step: int
     ) -> None:
         async def perform():
-            manifest = await self.compactor.compact(session, memory=self.memory)
+            manifest = await self.compactor.compact(
+                session, memory=self.memory, profile=run.profile
+            )
             run.compaction = {**manifest, "trigger": trigger, "step": step}
             # Each rotation is retained in append-only run events.
             await durable(self.store.save_run, run)

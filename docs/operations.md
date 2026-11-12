@@ -436,6 +436,14 @@ are not appended. Defaults are validated even when there are no matching entries
 
 Optional `[memory].user` sends the verified server's user hint and checks the
 created session URI before appending messages; it must match the server identity.
+A profile may isolate its memory with `[profiles.<name>.memory]` (`user` plus
+non-empty canonical `roots`). Every recall, `memory.*` tool call, commit,
+extraction refresh and compaction summary for that profile's runs sends the
+override user and searches/reads only its roots; other profiles keep the global
+`[memory]` values and cannot reach the override's roots. It requires
+`[memory].enabled`, startup preflight also stats the override roots, and
+operator compaction uses the session's default profile. Isolation is by
+OpenViking user/root, so the server must enforce those permissions.
 `sola memory-test --fact ... --query ... --expected ...` writes a real scratch
 fact and verifies actual recall plus the next persisted prompt. Run it deliberately
 when diagnosing memory; never automate it at startup or replay uncertain writes.

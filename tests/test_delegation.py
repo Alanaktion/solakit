@@ -99,7 +99,7 @@ class MemorySpy:
     def __init__(self):
         self.calls = []
 
-    def scoped(self, session):
+    def scoped(self, session, profile=None):
         spy = self
 
         class Scoped:

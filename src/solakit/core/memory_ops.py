@@ -19,7 +19,7 @@ async def refresh_run(execution: Execution, run_id: str, *, wait_s: float = 0) -
     if execution.memory is None:
         raise ValueError("Memory is disabled")
     session = await durable(execution.store.session, run.session)
-    result = await execution.memory.scoped(session).refresh(
+    result = await execution.memory.scoped(session, run.profile).refresh(
         execution.store, run_id, wait_s=wait_s
     )
     run.memory_status = result["status"]

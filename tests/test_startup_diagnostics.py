@@ -48,7 +48,9 @@ def test_read_only_memory_startup_diagnostics(
 
     monkeypatch.setattr(
         "solakit.main.MemoryClient",
-        lambda cfg, key: MemoryClient(cfg, key, transport=httpx.MockTransport(backend)),
+        lambda cfg, key, **kw: MemoryClient(
+            cfg, key, transport=httpx.MockTransport(backend)
+        ),
     )
     with caplog.at_level(logging.INFO):
         with TestClient(create_app(config=config, model=mock_model)) as client:

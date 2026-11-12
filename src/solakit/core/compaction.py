@@ -230,7 +230,9 @@ class Compactor:
             raise ContextLimit("Local compaction produced no complete summary")
         return summary
 
-    async def compact(self, session: Session, *, memory=False) -> dict:
+    async def compact(
+        self, session: Session, *, memory=False, profile: str | None = None
+    ) -> dict:
         memory = self.memory if memory is False else memory
         strategy = self.strategy(session, memory=memory)
         if strategy == "openviking" and (
@@ -271,7 +273,7 @@ class Compactor:
         else:
             source = None
             try:
-                summary, uri = await memory.scoped(session).summary(
+                summary, uri = await memory.scoped(session, profile).summary(
                     self.store, operation, history
                 )
             except MemoryUnavailable as exc:

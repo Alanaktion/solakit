@@ -244,7 +244,7 @@ def memory_app(config, mock_model, monkeypatch):
     (config.paths.fragments / "recall-header.md").write_text("Recall:")
     monkeypatch.setattr(
         "solakit.main.MemoryClient",
-        lambda cfg, key: MemoryClient(
+        lambda cfg, key, **kw: MemoryClient(
             cfg,
             key,
             transport=httpx.MockTransport(

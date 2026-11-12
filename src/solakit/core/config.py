@@ -166,6 +166,32 @@ class ServerConfig(StrictModel):
     log_level: Literal["debug", "info", "warning", "error", "critical"] = "info"
 
 
+def check_memory_roots(roots: list[str]) -> None:
+    for root in roots:
+        if (
+            not root.startswith("viking://")
+            or "~" in root
+            or "%" in root
+            or any(p in {".", ".."} for p in root.split("/"))
+        ):
+            raise ValueError("memory roots must be canonical Viking URIs")
+
+
+class ProfileMemory(StrictModel):
+    """[profiles.<name>.memory]: isolated OpenViking user/roots for one profile.
+
+    Every recall, read, commit and compaction summary from this profile's runs
+    uses this user and these roots instead of the global [memory] ones."""
+
+    user: str = Field(pattern=r"^[A-Za-z0-9_-]+$", max_length=128)
+    roots: list[str] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def valid_roots(self) -> Self:
+        check_memory_roots(self.roots)
+        return self
+
+
 class MemoryConfig(StrictModel):
     front_page_max_chars: int = Field(default=8192, ge=256)
     enabled: bool = False
@@ -200,14 +226,7 @@ class MemoryConfig(StrictModel):
     def valid_endpoint(self) -> Self:
         if self.enabled and (not self.base_url or not self.roots):
             raise ValueError("enabled memory requires base_url and canonical URI roots")
-        for root in self.roots:
-            if (
-                not root.startswith("viking://")
-                or "~" in root
-                or "%" in root
-                or any(p in {".", ".."} for p in root.split("/"))
-            ):
-                raise ValueError("memory roots must be canonical Viking URIs")
+        check_memory_roots(self.roots)
         return self
 
 
@@ -304,6 +323,8 @@ class Profile(StrictModel):
         return values
 
     prompt_layout: Literal["stable", "legacy"] = "stable"
+    # Optional isolated memory user/roots; None uses the global [memory] section.
+    memory: ProfileMemory | None = None
     model: ProfileModel = Field(default_factory=ProfileModel)
     # Operator playbooks indexed in this profile's prompt (fragments/playbooks).
     playbooks: list[str] = Field(default_factory=list)
@@ -615,6 +636,12 @@ class Config(StrictModel):
     def references(self) -> Self:  # noqa: C901
         # Validate partial defaults even when no concrete entry happens to use them.
         Profile.model_validate(self.profile_defaults)
+        if not self.memory.enabled:
+            for name, profile in self.profiles.items():
+                if profile.memory is not None:
+                    raise ValueError(
+                        f"Profile {name} overrides memory but [memory] is disabled"
+                    )
         Channel.model_validate(
             {
                 "id": "defaults-check",

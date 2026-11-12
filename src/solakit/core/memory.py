@@ -11,10 +11,11 @@ import asyncio
 import json
 import re
 import time
+from collections.abc import Mapping
 
 import httpx
 
-from solakit.core.config import MemoryConfig
+from solakit.core.config import MemoryConfig, ProfileMemory
 from solakit.core.io import durable
 from solakit.core.schemas import Session
 from solakit.core.store import Store, safe_id
@@ -25,8 +26,16 @@ class MemoryUnavailable(Exception):
 
 
 class MemoryClient:
-    def __init__(self, config: MemoryConfig, key: str | None = None, transport=None):
+    def __init__(
+        self,
+        config: MemoryConfig,
+        key: str | None = None,
+        transport=None,
+        overrides: Mapping[str, ProfileMemory] | None = None,
+    ):
         self.config = config
+        # Profile name -> isolated memory user/roots; absent profiles use config.
+        self.overrides = dict(overrides or {})
         headers = {"X-API-Key": key} if key else {}
         if config.user:
             headers["X-OpenViking-User"] = config.user
@@ -38,7 +47,12 @@ class MemoryClient:
             trust_env=config.trust_env,
         )
 
-    async def request(self, method: str, path: str, **kwargs):
+    async def request(
+        self, method: str, path: str, *, user: str | None = None, **kwargs
+    ):
+        if user is not None:
+            # Per-request header replaces the client default user hint.
+            kwargs["headers"] = {**kwargs.get("headers", {}), "X-OpenViking-User": user}
         try:
             response = await self.client.request(method, f"api/v1/{path}", **kwargs)
             response.raise_for_status()
@@ -53,17 +67,24 @@ class MemoryClient:
         """Read-only authenticated checks of every configured memory root."""
         try:
             async with asyncio.timeout(min(5, self.config.timeout_s)):
-                for root in self.config.roots:
-                    result = await self.request("GET", "fs/stat", params={"uri": root})
-                    if not isinstance(result, dict):
-                        raise MemoryUnavailable(
-                            "OpenViking returned invalid root metadata"
+                targets = [(None, self.config.roots)] + [
+                    (o.user, o.roots) for o in self.overrides.values()
+                ]
+                for user, roots in targets:
+                    for root in roots:
+                        result = await self.request(
+                            "GET", "fs/stat", params={"uri": root}, user=user
                         )
+                        if not isinstance(result, dict):
+                            raise MemoryUnavailable(
+                                "OpenViking returned invalid root metadata"
+                            )
         except TimeoutError as exc:
             raise MemoryUnavailable("OpenViking startup check timed out") from exc
 
-    def scoped(self, session: Session):
-        return ScopedMemory(self, session)
+    def scoped(self, session: Session, profile: str | None = None):
+        """Facade bound to the session and the profile's memory user/roots."""
+        return ScopedMemory(self, session, self.overrides.get(profile or ""))
 
     async def close(self):
         await self.client.aclose()
@@ -72,9 +93,22 @@ class MemoryClient:
 class ScopedMemory:
     """Tools receive only this facade, never the unrestricted HTTP client."""
 
-    def __init__(self, client: MemoryClient, session: Session):
+    def __init__(
+        self,
+        client: MemoryClient,
+        session: Session,
+        override: ProfileMemory | None = None,
+    ):
         self._client = client
         self.session = session
+        self.user = override.user if override else client.config.user
+        self.roots = override.roots if override else client.config.roots
+        # Only an override needs a per-request header; the client default covers
+        # the global user.
+        self._user_header = override.user if override else None
+
+    def _request(self, method: str, path: str, **kwargs):
+        return self._client.request(method, path, user=self._user_header, **kwargs)
 
     def check(self):
         if self.session.memory_scope != "shared":
@@ -93,7 +127,7 @@ class ScopedMemory:
             or any(p in {".", ".."} for p in uri.split("/"))
         ):
             raise MemoryUnavailable("Noncanonical memory URI")
-        roots = self._client.config.roots
+        roots = self.roots
         if not any(
             uri == root.rstrip("/") or uri.startswith(root.rstrip("/") + "/")
             for root in roots
@@ -102,12 +136,12 @@ class ScopedMemory:
 
     async def search(self, query: str) -> str:
         self.check()
-        result = await self._client.request(
+        result = await self._request(
             "POST",
             "search/find",
             json={
                 "query": query,
-                "target_uri": self._client.config.roots,
+                "target_uri": self.roots,
                 "limit": self._client.config.recall_limit,
             },
         )
@@ -123,7 +157,7 @@ class ScopedMemory:
 
     async def read(self, uri: str) -> str:
         self.check_uri(uri)
-        result = await self._client.request("GET", "content/read", params={"uri": uri})
+        result = await self._request("GET", "content/read", params={"uri": uri})
         if not isinstance(result, str):
             raise MemoryUnavailable("Invalid memory content")
         return result
@@ -154,7 +188,7 @@ class ScopedMemory:
             store.log_memory, run_id, {"stage": "creating", "session": remote}
         )
         if summary_only:
-            created = await self._client.request(
+            created = await self._request(
                 "POST",
                 "sessions",
                 json={
@@ -167,18 +201,18 @@ class ScopedMemory:
                 },
             )
         else:
-            created = await self._client.request(
+            created = await self._request(
                 "GET", f"sessions/{remote}", params={"auto_create": "true"}
             )
-        if self._client.config.user:
-            expected_uri = f"viking://user/{self._client.config.user}/sessions/{remote}"
+        if self.user:
+            expected_uri = f"viking://user/{self.user}/sessions/{remote}"
             uri = created.get("uri") if isinstance(created, dict) else None
             if not isinstance(uri, str) or uri.rstrip("/") != expected_uri:
                 raise MemoryUnavailable(
                     "Remote session user does not match configured memory user"
                 )
         # Disable inherited automatic extraction on this run-owned remote session.
-        await self._client.request(
+        await self._request(
             "PATCH", f"sessions/{remote}/config", json={"auto_commit_policy": None}
         )
         # Parts preserve assistant call/result groups without unsupported tool roles.
@@ -189,7 +223,7 @@ class ScopedMemory:
                 run_id,
                 {"stage": "sending", "offset": start, "session": remote},
             )
-            await self._client.request(
+            await self._request(
                 "POST",
                 f"sessions/{remote}/messages/batch",
                 json={"messages": converted[start : start + 100]},
@@ -197,7 +231,7 @@ class ScopedMemory:
         await durable(
             store.log_memory, run_id, {"stage": "committing", "session": remote}
         )
-        result = await self._client.request(
+        result = await self._request(
             "POST",
             f"sessions/{remote}/commit",
             json={"keep_recent_count": 0},
@@ -232,7 +266,7 @@ class ScopedMemory:
             raise MemoryUnavailable("Invalid extraction task ID") from None
         deadline = time.monotonic() + wait_s
         while True:
-            task = await self._client.request("GET", f"tasks/{task_id}")
+            task = await self._request("GET", f"tasks/{task_id}")
             if not isinstance(task, dict) or task.get("status") not in {
                 "pending",
                 "running",
@@ -303,9 +337,7 @@ class ScopedMemory:
             raise MemoryUnavailable(
                 "Compaction acknowledgment has invalid archive identity"
             )
-        archive = await self._client.request(
-            "GET", f"sessions/{remote}/archives/{match[1]}"
-        )
+        archive = await self._request("GET", f"sessions/{remote}/archives/{match[1]}")
         if (
             not isinstance(archive, dict)
             or archive.get("status", "completed") != "completed"

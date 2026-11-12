@@ -194,6 +194,13 @@ remember_max_chars = 2000 # Over-limit notes are refused whole, never truncated.
 # roots = ["viking://user/sola/memories"]
 # user = "sola"
 # api_key = { env = "OPENVIKING_API_KEY" }
+#
+# Per-profile isolation: a profile may use its own OpenViking user and roots.
+# All recall, memory tools, commits and compaction summaries from that profile's
+# runs use them instead of the global values above. Requires [memory] enabled.
+# [profiles.private.memory]
+# user = "sola-private"
+# roots = ["viking://user/sola-private/memories"]
 
 
 # Optional values inherited by every [[channels]] entry. Identity and binding

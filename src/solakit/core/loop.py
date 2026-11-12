@@ -401,7 +401,9 @@ class Execution(RuntimeOps, StepLoopMixin):
                     run.memory_status = run.recall_status = "recalling"
                     history = await durable(self.store.transcript, session.id)
                     query = recall_query(history, pending.text, self.config.memory)
-                    recall = await self.memory.scoped(session).search(query)
+                    recall = await self.memory.scoped(session, run.profile).search(
+                        query
+                    )
                     run.memory_status = run.recall_status = "recalled"
                     run.recall = recall
             elif session.memory_scope == "ephemeral":
@@ -474,9 +476,9 @@ class Execution(RuntimeOps, StepLoopMixin):
                 )
                 if new_messages:
                     try:
-                        run.memory_commit = await self.memory.scoped(session).commit(
-                            self.store, run.id, new_messages
-                        )
+                        run.memory_commit = await self.memory.scoped(
+                            session, run.profile
+                        ).commit(self.store, run.id, new_messages)
                         run.memory_status = run.memory_commit["status"]
                     except MemoryUnavailable:
                         run.memory_status = "commit_failed_or_uncertain"

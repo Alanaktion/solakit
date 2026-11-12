@@ -63,7 +63,17 @@ def create_app(  # noqa: C901
         )
         ui_sessions.load(app.state.store.root / "ui-sessions.json", token)
         app.state.memory = (
-            MemoryClient(cfg.memory, memory_key) if cfg.memory.enabled else None
+            MemoryClient(
+                cfg.memory,
+                memory_key,
+                overrides={
+                    name: profile.memory
+                    for name, profile in cfg.profiles.items()
+                    if profile.memory is not None
+                },
+            )
+            if cfg.memory.enabled
+            else None
         )
         app.state.router = SessionRouter(cfg, app.state.store)
         # Channel-bound sessions are pinned by default, so they must exist (and
