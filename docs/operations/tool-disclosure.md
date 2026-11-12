@@ -46,6 +46,29 @@ ceilings, effects, filesystem tiers, timeouts and output limits still apply. The
 `tools.*` namespace is reserved for runtime discovery; do not put it in profile
 or job tool/resident lists. Meta-tools never enter wildcard grants.
 
+## Manual pins per profile
+
+Set the disclosure mode and resident list on each profile that needs a hybrid
+view. For example, with these modules loaded and tools already granted:
+
+```toml
+[profiles.interactive]
+tool_disclosure = "deferred"
+tool_resident = ["runtime.status", "memory.search", "sessions.search"]
+```
+
+Those full schemas are available on the first model request alongside discovery.
+Other granted tools remain deferred. Each profile has its own list; setting
+`tool_resident` on a named profile replaces any inherited default list. An empty
+list means discovery only. Eager profiles expose all granted schemas regardless
+of pins. Pinning does not add grants or permit new effects/resources.
+
+Use exact names for a predictable, reviewable starting set. Run `sola check` to
+validate the list and inspect its initial schema size, then restart the service
+to load configuration changes. Inspect `/tools` or the saved run schema evidence
+to confirm the resolved view. Keep the list small and manually revise it from
+usage and live evaluations; suggestions never change the configuration.
+
 ## Job overrides
 
 The job form, API and `jobs.create`/`jobs.update` support:
@@ -118,3 +141,17 @@ profile's `sola check` disclosure diagnostics reports the actual schema bytes
 exposed by that profile. Metadata completeness
 and the golden query tests establish deterministic routing mechanics, not pinned
 model acceptance. Interactive remains eager until that separate live gate passes.
+
+### Manual pin smoke test (2026-11-12)
+
+On Qwen3.6-35B-A3B-mxfp4, isolated `zero-arg-runtime` trials with fake tool
+backends passed 2/2 both with discovery-only deferred schemas and with
+`runtime.status` resident. Pinning reduced model steps from three to two in
+both trials. `sola eval compare` reported a pass-rate difference of zero
+(bootstrap interval [0, 0]); this tiny sample does not establish improved
+reliability on historical long-context failures. Run with:
+
+```sh
+uv run sola eval --only zero-arg-runtime --trials 2 --matrix disclosure=deferred \
+  --matrix 'profile.tool_resident=[],["runtime.status"]'
+```

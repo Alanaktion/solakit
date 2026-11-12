@@ -103,6 +103,9 @@ strategy = "openviking"
 # Disclosure stays eager by default. See docs/operations/tool-disclosure.md.
 # tool_disclosure = "eager" # Opt in per profile to "deferred" after evaluation.
 # tool_resident = [] # Ordered, loaded/granted names; deferred initial full schemas.
+# Per-profile hybrid example (under [profiles.<name>], with matching grants):
+# tool_disclosure = "deferred"
+# tool_resident = ["memory.search", "sessions.search"]
 context_budget = 32000
 mid_run_compaction = false
 # Forgiving calls and repair accounting (SPEC "Tool result and error contracts").
