@@ -111,6 +111,35 @@ def test_session_metadata_is_published_atomically(config, monkeypatch):
     assert target.stat().st_mode & 0o777 == 0o600
 
 
+def test_run_inputs_publish_complete_and_stay_immutable(config, monkeypatch):
+    import json
+    import os
+
+    store = Store(config.paths.data)
+    target = store.root / "runs/live.prompt-fragments.json"
+    original_fsync = os.fsync
+    visible_while_writing = []
+
+    def observe_before_publication(descriptor):
+        # The first fsync is the payload's: live run inspection must never see
+        # a created-but-unwritten input. Later calls sync the directory.
+        if not visible_while_writing:
+            visible_while_writing.append(target.exists())
+        return original_fsync(descriptor)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            "solakit.core.store_sidecars.os.fsync", observe_before_publication
+        )
+        store._write_run_input("live", ".prompt-fragments.json", b'["soul"]')
+    assert visible_while_writing == [False]
+    assert json.loads(target.read_bytes()) == ["soul"]
+    with pytest.raises(FileExistsError):
+        store._write_run_input("live", ".prompt-fragments.json", b"[]")
+    assert json.loads(target.read_bytes()) == ["soul"]
+    assert not list(target.parent.glob(".live.prompt-fragments.json.*.tmp"))
+
+
 def test_torn_metadata_isolated_and_reported(config, auth, mock_model):
     from solakit.core.store import StorageCorruption
 

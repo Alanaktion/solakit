@@ -3,6 +3,7 @@
 import hashlib
 import json
 import os
+import tempfile
 from typing import Any
 
 from solakit.core.contracts import StoreServices
@@ -46,10 +47,21 @@ class SidecarMixin(StoreServices):
         return self._write_run_input(run_id, ".tool-schemas.json", payload)
 
     def _write_run_input(self, run_id: str, suffix: str, payload: bytes) -> str:
-        with self._path("runs", run_id, suffix).open("xb") as stream:
-            stream.write(payload)
-            stream.flush()
-            os.fsync(stream.fileno())
+        # Readers (run inspection while the run is live) must never observe a
+        # created-but-unwritten file, so publish complete bytes with a hard
+        # link. Linking still refuses to replace existing immutable evidence.
+        path = self._path("runs", run_id, suffix)
+        descriptor, name = tempfile.mkstemp(
+            prefix=f".{path.name}.", suffix=".tmp", dir=path.parent
+        )
+        try:
+            with os.fdopen(descriptor, "wb") as stream:
+                stream.write(payload)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.link(name, path)
+        finally:
+            os.unlink(name)
         sync_directory(self.root / "runs")
         return hashlib.sha256(payload).hexdigest()
 
