@@ -359,6 +359,8 @@ class Profile(StrictModel):
     step_notice_at: int = Field(default=0, ge=0)
     wrapup: Literal["off", "status", "answer"] = "off"
     plan_reminder: bool = False
+    completion_check: bool = False
+    completion_check_retries: int = Field(default=1, ge=1, le=3)
     context_tokens: int | None = Field(default=None, ge=256)
     tool_disclosure: Literal["eager", "deferred", "auto"] = "eager"
     tool_resident: list[str] = Field(default_factory=list)

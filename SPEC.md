@@ -1721,3 +1721,13 @@ status notice. Delivery intents prevent replay.
 Session creation returns 201 for a new ID, 200 for an identical existing session,
 and 409 for conflicting fields. An omitted creation timestamp is ignored when
 comparing retries; explicitly supplied timestamps are compared.
+
+### Optional action-announcement completion check
+
+Profile `completion_check` defaults false. When enabled, a short single-line
+English action announcement without tool calls receives a recorded
+`completion_check` continuation notice, bounded by `completion_check_retries`
+(default 1, range 1–3) and the ordinary work-step budget. Repeated announcements
+or no remaining work step produce `failed`, not `completed`. Assistant evidence
+is retained verbatim. This heuristic does not verify general task success,
+change tool authority, or replace structured-output validation.

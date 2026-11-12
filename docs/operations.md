@@ -718,3 +718,25 @@ conversation ("the repo path is X", "prefers UTC"): `notes.set(key, value)`
 turn block (newest first, 2,000-character cap), survive compaction and archival,
 and are never promoted to OpenViking. `GET /api/sessions/{id}/notes` shows them.
 
+
+### Early completion and context tuning
+
+Profiles may opt into `completion_check = true` with
+`completion_check_retries = 1` (range 1–3). A short single-line final reply
+starting with an action announcement (for example, “Let me check…” or
+“Checking tools…”) receives a recorded continuation notice. Retries consume
+normal work steps; repeated announcements or insufficient steps fail honestly.
+Original replies remain verbatim evidence. This English-language heuristic can
+misclassify short reports and does not prove that a task was completed. Disable
+it for profiles where those false positives matter. Structured outputs retain
+their existing validation instead.
+
+`context_tokens` already controls calibrated automatic compaction independently
+of the model's physical context capacity; `context_budget` remains the byte
+backstop, including before token calibration exists. A starting point for this
+Qwen workload is `context_tokens = 32768`, `context_budget = 98304`, and
+`mid_run_compaction = true`. The token guard reserves configured output tokens
+and also triggers above 85% input occupancy. These are working thresholds, not
+measured accuracy limits. The reproduced premature stop occurred around 16.7K
+input tokens, so earlier compaction alone does not address it. Compaction also
+does not refresh stale operator-owned memory fragments in the system prompt.

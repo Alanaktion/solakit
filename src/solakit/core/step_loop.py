@@ -55,6 +55,7 @@ class StepState:
     no_progress: int = 0
     reminded: bool = False
     structured_retries: int = 0
+    completion_retries: int = 0
     usage_complete: bool = True
     run_assistants: int = 0
     escalated: bool = False
@@ -419,6 +420,34 @@ class StepState:
                     + "; ".join(problems[:3])
                 )[:300]
                 return False
+        if self.cfg.completion_check and self.run.output_schema is None:
+            from solakit.core.completion_check import unfinished_action
+
+            if unfinished_action(assistant.content or ""):
+                self.run.tool_view["work_steps"] = self.work_steps + 1
+                if (
+                    self.completion_retries >= self.cfg.completion_check_retries
+                    or self.work_steps + 1 >= self.cfg.max_steps
+                ):
+                    self.run.status = RunStatus.failed
+                    self.run.error = (
+                        "Model stopped after announcing an action "
+                        "without completing it."
+                    )
+                    return False
+                self.completion_retries += 1
+                await self.inject(
+                    "completion_check",
+                    "Your last reply only announced an action. Complete the requested "
+                    "work using granted tools, or explain specifically what you cannot "
+                    "verify with your available capabilities. Do not repeat completed "
+                    "actions. A statement of intent alone is not a final answer.",
+                    as_message=True,
+                )
+                self.work_steps += 1
+                self.step += 1
+                self.run.tool_view["work_steps"] = self.work_steps
+                return True
         if self.cfg.plan_reminder and not self.reminded:
             open_items = [
                 item["text"]

@@ -271,3 +271,9 @@ enabled = false
 # write = "none"
 # effects = []
 # resources = ["mailbox:personal"]
+
+# Optional profile settings (place under the desired [profiles.<name>] section):
+# completion_check = true
+# completion_check_retries = 1  # 1–3, uses normal work steps
+# context_tokens = 32768       # calibrated compaction ceiling, not model capacity
+# context_budget = 98304      # serialized request byte backstop

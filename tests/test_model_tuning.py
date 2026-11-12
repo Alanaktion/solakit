@@ -395,3 +395,41 @@ def test_reasoning_only_reply_retries_with_thinking_off(config):
     assert run.status == "completed"
     assert run.retries == [{"step": 1, "reason": "reasoning_exhausted"}]
     assert bodies[1]["chat_template_kwargs"] == {"enable_thinking": False}
+
+
+@pytest.mark.parametrize("repeat", [False, True])
+def test_completion_check_preserves_evidence_and_bounds_retry(config, repeat):
+    config.profiles["interactive"].completion_check = True
+    bodies = []
+
+    def handler(request):
+        if request.url.path.endswith("/models"):
+            return model_list(config)
+        bodies.append(json.loads(request.content))
+        text = "Checking tools directly rather than guessing at status."
+        if len(bodies) > 1 and not repeat:
+            text = "I cannot inspect runtime status with the granted tools."
+        return sse(config, [{"role": "assistant", "content": text}])
+
+    execution = setup(config, handler)
+
+    async def exercise():
+        run = await execution.submit("s", "Check status")
+        await execution.close()
+        return run
+
+    run = asyncio.run(exercise())
+    assert run.status == ("failed" if repeat else "completed")
+    assert len(bodies) == 2
+    assert any("only announced an action" in str(m) for m in bodies[1]["messages"])
+    assert any(
+        m.get("content") == "Checking tools directly rather than guessing at status."
+        for m in execution.store.transcript("s")
+    )
+
+
+@pytest.mark.parametrize("text", ["Hello!", "I'll check. Here are the results."])
+def test_completion_check_substantive_replies(text):
+    from solakit.core.completion_check import unfinished_action
+
+    assert not unfinished_action(text)
