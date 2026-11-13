@@ -895,7 +895,7 @@ gets a **semantic tool** whose implementation hides the mechanics:
 | `memory.search / memory.read` | OpenViking REST/SDK | scoped by `ctx.session.memory_scope` (§13) |
 | `printer.print_text` | named thermal printer | text in, receipt out |
 | `calendar.events` | named read-only ICS export | bounded agenda with timezone/recurrence handling |
-| `image.generate / image.result` | named ComfyUI API workflow | prompt/seed, width/height (768 default), stable operation ID, receipted submission and output references |
+| `image.generate / image.result` | named ComfyUI API workflow | prompt/seed, optional workflow alias (default `image`), width/height (768 default), stable operation ID, receipted submission and output references; operator-owned workflow files are independent of profile filesystem reach |
 
 Two payoffs: prompts and transcripts stay free of plumbing (she thinks
 in posts and letters, not `git -C … commit -m`), and the fragile

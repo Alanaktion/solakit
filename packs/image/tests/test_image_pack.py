@@ -121,7 +121,7 @@ def test_grants_and_workflow_scope(setup):
     ctx.config.profiles[ctx.profile].resources.append("image:studio")
     ctx.config.profiles[ctx.profile].read = "none"
     ctx.config.profiles[ctx.profile].workspace = []
-    assert "outside profile" in invoke(setup).content and not calls
+    assert not invoke(setup).error and len(calls) == 1
 
 
 def test_torn_receipt_blocks_post_and_result(setup):
@@ -534,3 +534,33 @@ def test_shared_size_node_shorthand(setup):
         "height": 576,
         "batch_size": 1,
     }
+
+
+def test_default_workflow_alias(setup):
+    registry, ctx, calls, graph = setup
+    config = graph.parent / "packs.toml"
+    config.write_text(config.read_text().replace("images.studio", "images.image"))
+    ctx.config.profiles[ctx.profile].resources.append("image:image")
+    for name, args in (
+        ("image.generate", {"prompt": "Moon", "seed": 42, "operation_id": "default"}),
+        ("image.result", {"operation_id": "default"}),
+    ):
+        schema = registry.tools[name].schema()["function"]["parameters"]
+        assert "workflow" not in schema["required"]
+        assert schema["properties"]["workflow"]["default"] == "image"
+        reply = asyncio.run(registry.dispatch(name, json.dumps(args), ctx))
+        assert not reply.error, reply.content
+    assert len(calls) == 2
+
+
+@pytest.mark.parametrize("failure", ["missing", "oversized", "invalid_utf8"])
+def test_configured_workflow_read_failures(setup, failure):
+    _, _, calls, graph = setup
+    if failure == "missing":
+        graph.unlink()
+    elif failure == "oversized":
+        graph.write_bytes(b" " * 1_000_001)
+    else:
+        graph.write_bytes(b"\xff")
+    assert invoke(setup).error
+    assert not calls

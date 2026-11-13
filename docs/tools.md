@@ -397,10 +397,10 @@ Read PR metadata, combined commit status and the first page of CI check runs.
 
 Submit a named image workflow with prompt, seed and dimensions
 
-- `workflow` (required): Configured image workflow alias granted to this profile, not a graph filename.
 - `prompt` (required): Exact text prompt for the workflow; graph/model settings remain operator-owned.
 - `seed` (required): Explicit integer generation seed for reproducible input; do not invent a random seed on retry.
 - `operation_id` (required): Stable unique operation ID; reuse only for the identical request. Uncertain operations never auto-replay.
+- `workflow`: Configured image workflow alias granted to this profile, not a graph filename.
 - `width`: Output width in pixels; defaults to 768.
 - `height`: Output height in pixels; defaults to 768.
 
@@ -414,8 +414,8 @@ their dimensions when both arguments use the defaults.
 
 Inspect an image generation operation without resubmitting
 
-- `workflow` (required): Configured image workflow alias granted to this profile, not a graph filename.
 - `operation_id` (required): Stable unique operation ID; reuse only for the identical request. Uncertain operations never auto-replay.
+- `workflow`: Configured image workflow alias granted to this profile, not a graph filename.
 
 Inspect a receipted generation and return ComfyUI output image references.
 

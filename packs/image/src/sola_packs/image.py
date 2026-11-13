@@ -82,6 +82,18 @@ class Image(Settings):
         return value.rstrip("/")
 
 
+def read_workflow(path: Path) -> bytes:
+    # Operator configuration is independent of the agent's filesystem grants.
+    try:
+        with path.open("rb") as stream:
+            content = stream.read(1_000_001)
+    except OSError as exc:
+        raise ToolError("Cannot read configured workflow") from exc
+    if len(content) > 1_000_000:
+        raise ToolError("Workflow exceeds its byte limit")
+    return content
+
+
 def request(cfg, headers, method, path, body=None):
     # No redirect/retry: credentials stay on the configured endpoint and a POST
     # that loses its acknowledgement remains ambiguous, even on cancellation.
@@ -147,15 +159,6 @@ def submit(ctx, cfg, auth, workflow, workflow_name, operation_id):
 )
 async def generate(
     ctx: ToolContext,
-    workflow: Annotated[
-        str,
-        Field(
-            description=(
-                "Configured image workflow alias granted to this profile, not a "
-                "graph filename."
-            )
-        ),
-    ],
     prompt: Annotated[
         str,
         Field(
@@ -183,6 +186,15 @@ async def generate(
             )
         ),
     ],
+    workflow: Annotated[
+        str,
+        Field(
+            description=(
+                "Configured image workflow alias granted to this profile, not a "
+                "graph filename."
+            )
+        ),
+    ] = "image",
     width: Annotated[
         int,
         Field(
@@ -222,11 +234,9 @@ async def generate(
         raise ToolError("Width and height must be multiples of 8 from 64 to 4096")
     if cfg.width_node is None and (width, height) != (768, 768):
         raise ToolError("Custom dimensions require configured width/height mappings")
-    text = await ctx.fs.read(cfg.workflow, max_chars=1_000_000)
-    if not text.content_complete or len(text.content.encode()) > 1_000_000:
-        raise ToolError("Workflow exceeds its byte limit")
+    text = await durable(read_workflow, cfg.workflow)
     try:
-        graph = json.loads(text.content)
+        graph = json.loads(text)
         if not isinstance(graph, dict) or not 1 <= len(graph) <= 1000:
             raise ValueError("Invalid workflow graph")
         for node in graph.values():
@@ -330,15 +340,6 @@ def outcome(cfg, auth, prompt_id):
 )
 async def result(
     ctx: ToolContext,
-    workflow: Annotated[
-        str,
-        Field(
-            description=(
-                "Configured image workflow alias granted to this profile, not a "
-                "graph filename."
-            )
-        ),
-    ],
     operation_id: Annotated[
         str,
         Field(
@@ -348,6 +349,15 @@ async def result(
             )
         ),
     ],
+    workflow: Annotated[
+        str,
+        Field(
+            description=(
+                "Configured image workflow alias granted to this profile, not a "
+                "graph filename."
+            )
+        ),
+    ] = "image",
 ) -> ToolResult:
     """Inspect a receipted generation and return ComfyUI output image references."""
     cfg = resource(ctx, "images", workflow, Image, "read")

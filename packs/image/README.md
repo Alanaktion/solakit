@@ -27,12 +27,15 @@ max_response_bytes = 1000000
 ```
 
 Grant tools `image.generate`, `image.result`, resource `image:studio`, a
-non-none write tier for generation, and read reach containing the graph.
+non-none write tier for generation. The workflow JSON is operator-owned tool
+configuration and does not need profile workspace/read reach.
 Result-only profiles need only the result tool and resource alias.
 The configured endpoint is operator-trusted; keep ComfyUI private and install
 trusted custom nodes. HTTP redirects and automatic retries are disabled.
 
-`image.generate(workflow, prompt, seed, operation_id, width=768, height=768)`
+`image.generate(prompt, seed, operation_id, workflow="image", width=768, height=768)`
+The optional `workflow` argument defaults to alias `image` (requiring resource
+`image:image`); pass `workflow="studio"` for the example above. Generation
 changes only the configured text/seed/width/height inputs and submits once.
 Dimensions must be integers, multiples of 8, from 64 through 4096 pixels. For a
 landscape cover, use e.g. `width=1024, height=576`. Configure both dimension nodes;
@@ -47,7 +50,7 @@ acknowledgement on identical retry. Changed requests, torn receipts, concurrent
 calls and pending/uncertain submissions fail closed. Accepted filesystem/network
 operations finish before cancellation propagates. A timeout never resubmits work.
 
-`image.result(workflow, operation_id)` reads the receipt then polls history once.
+`image.result(operation_id, workflow="image")` reads the receipt then polls history once.
 It reports pending/missing, failed or completed with output filename/subfolder/type
 references. Empty history is ambiguous (queued, cleared or unknown), not proof of
 failure. Images stay on the configured ComfyUI server; no local file or delivery
