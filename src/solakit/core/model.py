@@ -30,6 +30,10 @@ class ModelUnavailable(Exception):
     """Pinned endpoint is unreachable, invalid, or serving another model."""
 
 
+class EmptyCompletion(ModelUnavailable):
+    """Healthy endpoint stopped without visible text or tool calls."""
+
+
 class ReasoningExhausted(ModelUnavailable):
     """Reasoning reached its cap before any visible answer or tool call.
 
@@ -233,21 +237,19 @@ class ModelClient:
                 raise ReasoningExhausted("Completion contained only reasoning")
             # A stream with neither text nor calls assembles to "". Only a
             # token-limited response may be empty; it is kept as partial evidence.
-            if not calls and (
-                message.get("content") is None
-                or (
-                    not message["content"].strip()
-                    and data["choices"][0].get("finish_reason") != "length"
-                )
+            if (
+                not calls
+                and not (message.get("content") or "").strip()
+                and data["choices"][0].get("finish_reason") != "length"
             ):
-                raise ModelUnavailable("Empty completion")
+                raise EmptyCompletion("Empty completion")
             self.available = True
             LOGGER.debug(
                 "Model completion succeeded: elapsed_ms=%.1f",
                 (time.monotonic() - started) * 1000,
             )
             return data
-        except ReasoningExhausted:
+        except (ReasoningExhausted, EmptyCompletion):
             self.available = True
             raise
         except ModelUnavailable as exc:

@@ -1,0 +1,19 @@
+id = "named-image-workflow"
+family = "disclosure"
+description = "Use a granted workflow alias rather than inventing txt2img."
+prompt = "Test image generation: make a crescent moon with seed 137, operation_id audit-moon, at default dimensions. Use the configured workflow granted to you."
+tools = ["image.generate"]
+expect_calls = [{ name = "image.generate", args_subset = { workflow = "studio", seed = 137, operation_id = "audit-moon" } }]
+expect_final_any = ["submitted", "audit-prompt"]
+max_steps = 4
+
+[overrides]
+"profile.resources" = ["image:studio"]
+
+[[responses."image.generate"]]
+match = { workflow = "studio" }
+content = '{"status":"submitted","prompt_id":"audit-prompt"}'
+
+[[responses."image.generate"]]
+content = "Missing resource: ungranted workflow alias"
+error = true

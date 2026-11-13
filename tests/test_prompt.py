@@ -338,3 +338,20 @@ def test_two_turns_share_byte_identical_request_prefix(config):
     transcript = store.transcript("s")
     assert transcript[0]["content"] == "first"
     assert transcript[0]["turn_context"] == record["turn_context"]
+
+
+def test_prompt_exposes_only_current_profile_resource_aliases(config):
+    config.profiles["interactive"].resources = ["image:studio", "mailbox:personal"]
+    config.profiles["writer"] = config.profiles["interactive"].model_copy(deep=True)
+    config.profiles["writer"].resources = ["image:private"]
+    prompt, _ = read_turn(
+        config,
+        profile="interactive",
+        session="s",
+        origin="api",
+        at=datetime.fromisoformat("2026-11-04T19:00:00+00:00"),
+    )
+    assert "- image:studio" in prompt
+    assert "- mailbox:personal" in prompt
+    assert "image:private" not in prompt
+    assert "not live availability checks" in prompt

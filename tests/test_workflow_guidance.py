@@ -271,3 +271,43 @@ def test_playbooks_api_and_operations_page(config, auth, mock_model):
         client.post("/login", data={"token": "operator-test-token"})
         page = client.get("/settings/jobs")
         assert page.status_code == 200 and "triage" in page.text
+
+
+@pytest.mark.parametrize("valid", [False, True])
+def test_answer_wrapup_validates_structured_output(config, valid):
+    cfg = config.profiles["interactive"]
+    cfg.max_steps, cfg.wrapup = 1, "answer"
+    answer = '{"ok": true}' if valid else "Summary without required JSON."
+    execution, bodies = looping_execution(config, answer=answer)
+
+    async def exercise():
+        pending = await execution.enqueue(
+            "s",
+            "loop",
+            output_schema={
+                "type": "object",
+                "properties": {"ok": {"type": "boolean"}},
+                "required": ["ok"],
+            },
+            output_render="Result: {{ ok }}",
+        )
+        run = await pending.future
+        await execution.close()
+        return run
+
+    run = asyncio.run(exercise())
+    assert run.status == ("completed" if valid else "failed")
+    assert len(bodies) == 2  # Validation cannot reopen the exhausted step budget.
+    assert run.structured_output == ({"ok": True} if valid else None)
+    if valid:
+        assert run.rendered_output == "Result: True"
+
+
+def test_answer_wrapup_rejects_action_only_reply(config):
+    cfg = config.profiles["interactive"]
+    cfg.max_steps, cfg.wrapup, cfg.completion_check = 1, "answer", True
+    execution, bodies = looping_execution(config, answer="I'll check the status.")
+    run = run_once(execution)
+    assert run.status == "failed"
+    assert len(bodies) == 2
+    assert execution.store.transcript("s")[-1]["content"] == "I'll check the status."

@@ -719,6 +719,22 @@ turn block (newest first, 2,000-character cap), survive compaction and archival,
 and are never promoted to OpenViking. `GET /api/sessions/{id}/notes` shows them.
 
 
+### Empty model responses and resource aliases
+
+A normal stop with no visible text or tool calls receives one retry with thinking
+turned off and a recorded `empty_completion` runtime notice. Reasoning-only
+responses retain their separate one-time retry; at most three requests are made
+per step across both recoveries. Repeated empty output fails as
+`model_unavailable`; no user/assistant transcript messages are invented. HTTP,
+interrupted-stream, malformed-envelope and token-limit failures are not retried
+by this recovery. Tool actions already completed in earlier steps are not replayed.
+
+The system prompt includes the current profile's named resource grants, such as
+`image:studio`. Use the alias (`studio`) for a workflow argument. This exposes no
+sidecar credentials and does not establish that the integration is reachable.
+Answer-mode budget wrap-up validates structured output and enabled action-only
+completion checking, with no additional work steps after the budget is exhausted.
+
 ### Early completion and context tuning
 
 Profiles may opt into `completion_check = true` with

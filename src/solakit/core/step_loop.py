@@ -15,7 +15,7 @@ from solakit.core.compaction import (
 from solakit.core.config import Profile
 from solakit.core.contracts import ExecutionServices
 from solakit.core.io import durable
-from solakit.core.model import ModelUnavailable, ReasoningExhausted
+from solakit.core.model import EmptyCompletion, ModelUnavailable, ReasoningExhausted
 from solakit.core.schemas import (
     Message,
     Run,
@@ -238,7 +238,7 @@ class StepState:
 
     async def complete(
         self, request: list[dict], tools: list[dict]
-    ) -> tuple[dict, str | None]:
+    ) -> tuple[dict, str | None, int]:
         preview: Callable[[str], Awaitable[None]] | None
         if self.host.pending[self.run.id].stream:
             baseline = self.run_assistants
@@ -264,36 +264,74 @@ class StepState:
                 "thinking": self.cfg.model.thinking,
                 "max_reasoning_tokens": self.cfg.model.max_reasoning_tokens,
             }
-        try:
-            data = await self.host.model.complete(
-                request,
-                tools,
-                on_text=preview,
-                params=params,
-                max_tokens=self.output_tokens,
-                max_reasoning_chars=(
-                    self.cfg.model.max_reasoning_tokens * 4
-                    if self.cfg.model.max_reasoning_tokens
-                    else None
-                ),
-            )
-        except ReasoningExhausted:
-            # Retry once in the same step with thinking off; recorded.
-            self.run.retries.append(
-                {"step": self.step + 1, "reason": "reasoning_exhausted"}
-            )
-            params = self.host.config.model.request.wire(
-                thinking="off", override=self.cfg.model
-            )
-            data = await self.host.model.complete(
-                request,
-                tools,
-                on_text=preview,
-                params=params,
-                max_tokens=self.output_tokens,
-            )
-
-        return data, thinking
+        reasoning_retried = empty_retried = False
+        while True:
+            try:
+                data = await self.host.model.complete(
+                    request,
+                    tools,
+                    on_text=preview,
+                    params=params,
+                    max_tokens=self.output_tokens,
+                    max_reasoning_chars=(
+                        self.cfg.model.max_reasoning_tokens * 4
+                        if self.cfg.model.max_reasoning_tokens and not reasoning_retried
+                        else None
+                    ),
+                )
+                return (
+                    data,
+                    thinking,
+                    request_bytes(
+                        self.host.config.model.model_id,
+                        request,
+                        tools,
+                        self.output_tokens,
+                    ),
+                )
+            except (ReasoningExhausted, EmptyCompletion) as exc:
+                # No accepted response or tool execution is replayed. Each
+                # recovery is allowed once per step, including reasoning→empty.
+                if isinstance(exc, ReasoningExhausted):
+                    if reasoning_retried:
+                        raise
+                    reasoning_retried = True
+                    reason = "reasoning_exhausted"
+                else:
+                    if empty_retried:
+                        raise
+                    empty_retried = True
+                    reason = "empty_completion"
+                    await self.inject(
+                        "empty_completion",
+                        "The model returned no visible response. Continue the current "
+                        "task: make a granted tool call if needed, or give a visible "
+                        "answer explaining any limitation. Do not repeat actions "
+                        "already completed in the preceding tool results.",
+                        as_message=True,
+                    )
+                    request = self.host._aged(
+                        self.cfg, self.messages, self.run, self.step
+                    )
+                    size = request_bytes(
+                        self.host.config.model.model_id,
+                        request,
+                        tools,
+                        self.output_tokens,
+                    )
+                    if self.host._size_over_budget(
+                        self.cfg, size, self.output_tokens, self.measured
+                    ):
+                        raise ContextLimit(
+                            "Recovery request exceeds context budget"
+                        ) from exc
+                self.run.retries.append({"step": self.step + 1, "reason": reason})
+                await durable(self.host.store.save_run, self.run)
+                thinking = "off"
+                params = self.host.config.model.request.wire(
+                    thinking=thinking, override=self.cfg.model
+                )
+                self.host.pending[self.run.id].preview = None
 
     async def record_response(
         self, data: dict, thinking: str | None, size: int
@@ -515,7 +553,17 @@ class StepState:
                     self.cfg.wrapup == "answer"
                     and data["choices"][0].get("finish_reason") != "length"
                 ):
-                    self.run.status = RunStatus.completed
+                    if self.run.output_schema is not None:
+                        self.work_steps = self.cfg.max_steps
+                        await self.finish_reply(assistant)
+                    else:
+                        from solakit.core.completion_check import unfinished_action
+
+                        if self.cfg.completion_check and unfinished_action(text):
+                            self.run.status = RunStatus.failed
+                            self.run.error = "Model wrap-up only announced an action."
+                        else:
+                            self.run.status = RunStatus.completed
                     return
         self.run.status = RunStatus.budget_exceeded
 
@@ -601,7 +649,7 @@ class StepLoopMixin(ExecutionServices):
                 )
                 await durable(self.store.save_run, run)
 
-            data, thinking = await state.complete(request, tools)
+            data, thinking, size = await state.complete(request, tools)
             assistant = await state.record_response(data, thinking, size)
             if assistant is None:
                 return

@@ -202,7 +202,14 @@ delivery — that message delivered to a channel (§6.3 / §7.2).
       If no schemas are granted, omit tools and set tool_choice to "none".
       A finish_reason of "length" preserves partial output, ends the run as
       budget_exceeded with an explicit error, and executes no tool calls.
-   b. No tool calls in the reply: append it, end run as `completed`.
+      Reasoning-only stops/caps retry once with thinking off. A normal empty
+      stop retries once with thinking off and a recorded request-only runtime
+      notice; the two recovery types share a maximum of three requests per step.
+      Transport/protocol errors are not retried. No accepted tool call is replayed.
+   b. No tool calls in the reply: append it, validate structured output and any
+      enabled completion/plan checks, then end run as `completed`. Answer-mode
+      budget wrap-up must also pass structured-output/completion checks; it cannot
+      reopen the exhausted work-step budget.
    c. Tool calls: FIRST append the assistant message carrying the
       tool_calls, THEN execute each call through the registry and append
       each result as a tool message with its matching tool_call_id.
@@ -247,8 +254,9 @@ The system prompt is the concatenation, in this fixed order, of:
 | 2 | Curated memory | `fragments/memory.md` (verbatim, optional) | file exists |
 | 3 | Standing context | `fragments/context.md` (verbatim, optional) | file exists |
 | 4 | Profile fragment | `fragments/profiles/<profile>.md` | always (may be empty) |
-| 5 | Tool index | Generated deferred tool index | deferred disclosure enabled |
-| 6 | Run facts | Generated `<run>` block: timezone, profile name, session ID — per-session constants only, format fixed in code, golden-tested | always |
+| 5 | Resource aliases | Generated current-profile named resource grants; not availability checks | resource grants exist |
+| 6 | Tool index | Generated deferred tool index | deferred disclosure enabled |
+| 7 | Run facts | Generated `<run>` block: timezone, profile name, session ID — per-session constants only, format fixed in code, golden-tested | always |
 
 **Prefix stability (profile `prompt_layout = "stable"`, the default).** The system
 message holds nothing that varies per run, so the system message plus replayed

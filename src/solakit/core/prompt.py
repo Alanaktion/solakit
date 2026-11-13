@@ -29,6 +29,7 @@ class PromptInput:
     playbook_index: str = ""
     playbook: str = ""
     notes: str = ""
+    resources: tuple[str, ...] = ()
 
 
 class AssembledPrompt(str):
@@ -63,6 +64,15 @@ def build_prompt(parts: PromptInput) -> str:
             ("recall", f"{parts.recall_header}\n<recall>\n{parts.recall}\n</recall>")
         )
     fragments.append(("profile", parts.profile_fragment))
+    if parts.resources:
+        fragments.append(
+            (
+                "resources",
+                "Granted named resources (use the alias after ':' in tool arguments; "
+                "these are grants, not live availability checks):\n"
+                + "\n".join(f"- {name}" for name in parts.resources),
+            )
+        )
     if parts.tool_index:
         fragments.append(("tool_index", parts.tool_index))
     if parts.playbook_index:
@@ -153,6 +163,7 @@ def prompt_input(
         playbook_index=playbooks.index_text(config, config.profiles[profile].playbooks),
         playbook=playbooks.load(config, playbook).text() if playbook else "",
         notes=notes_text(notes or {}),
+        resources=tuple(config.profiles[profile].resources),
     )
 
 

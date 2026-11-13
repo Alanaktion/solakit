@@ -433,3 +433,123 @@ def test_completion_check_substantive_replies(text):
     from solakit.core.completion_check import unfinished_action
 
     assert not unfinished_action(text)
+
+
+@pytest.mark.parametrize("reasoning_first", [False, True])
+@pytest.mark.parametrize("recover", [False, True])
+def test_empty_completion_recovery_is_bounded(config, reasoning_first, recover):
+    bodies = []
+
+    def handler(request):
+        if request.url.path.endswith("/models"):
+            return model_list(config)
+        bodies.append(json.loads(request.content))
+        if reasoning_first and len(bodies) == 1:
+            delta = {"role": "assistant", "reasoning_content": "Consider tools."}
+        elif recover and len(bodies) == 2 + reasoning_first:
+            delta = {"role": "assistant", "content": "Visible answer."}
+        else:
+            delta = {"role": "assistant", "content": ""}
+        return sse(config, [delta])
+
+    execution = setup(config, handler)
+
+    async def exercise():
+        run = await execution.submit("s", "Try the named workflow")
+        await execution.close()
+        return run
+
+    run = asyncio.run(exercise())
+    assert run.status == ("completed" if recover else "model_unavailable")
+    assert len(bodies) == 2 + reasoning_first
+    assert run.retries[-1]["reason"] == "empty_completion"
+    assert bodies[-1]["chat_template_kwargs"] == {"enable_thinking": False}
+    assert "no visible response" in bodies[-1]["messages"][-1]["content"]
+    transcript = execution.store.transcript("s")
+    assert all("runtime-notice" not in (m.get("content") or "") for m in transcript)
+    assert len(transcript) == (2 if recover else 0)
+    assert execution.model.available  # Empty output is not an unreachable endpoint.
+
+
+def test_empty_recovery_after_tool_does_not_reexecute_action(config):
+    from test_execution import call
+
+    bodies, actions = [], []
+
+    def handler(request):
+        if request.url.path.endswith("/models"):
+            return model_list(config)
+        bodies.append(json.loads(request.content))
+        if len(bodies) == 1:
+            return sse(
+                config,
+                [
+                    {
+                        "role": "assistant",
+                        "tool_calls": [
+                            {"index": 0, **call(arguments='{"text":"once"}')}
+                        ],
+                    }
+                ],
+                finish="tool_calls",
+            )
+        text = "" if len(bodies) == 2 else "Completed once."
+        return sse(config, [{"role": "assistant", "content": text}])
+
+    execution = setup(config, handler)
+
+    @tool(name="echo", profiles=["interactive"])
+    async def echo(ctx: ToolContext, text: str) -> ToolResult:
+        actions.append(text)
+        return ToolResult(content="Action completed")
+
+    execution.registry.register(echo)
+    config.profiles["interactive"].tools = ["echo"]
+    execution.registry.validate()
+
+    async def exercise():
+        run = await execution.submit("s", "Do this once")
+        await execution.close()
+        return run
+
+    run = asyncio.run(exercise())
+    assert run.status == "completed"
+    assert actions == ["once"]
+    assert len(bodies) == 3
+    transcript = execution.store.transcript("s")
+    assert [m["role"] for m in transcript] == ["user", "assistant", "tool", "assistant"]
+    assert any(m["role"] == "tool" for m in bodies[-1]["messages"])
+
+
+@pytest.mark.parametrize("content", [None, "", "partial"])
+def test_length_stop_never_uses_empty_recovery(config, content):
+    bodies = []
+
+    def handler(request):
+        if request.url.path.endswith("/models"):
+            return model_list(config)
+        bodies.append(json.loads(request.content))
+        return httpx.Response(
+            200,
+            json={
+                "model": config.model.model_id,
+                "choices": [
+                    {
+                        "message": {"role": "assistant", "content": content},
+                        "finish_reason": "length",
+                    }
+                ],
+            },
+        )
+
+    execution = setup(config, handler)
+
+    async def exercise():
+        run = await execution.submit("s", "question")
+        await execution.close()
+        return run
+
+    run = asyncio.run(exercise())
+    assert run.status == "budget_exceeded"
+    assert len(bodies) == 1 and not run.retries
+    assert execution.store.transcript("s")[-1]["content"] == content
