@@ -90,7 +90,10 @@ sola eval compare <before.json> <after.json>
 sola eval --only named-image-workflow --trials 2 --out <image-results>
 ```
 
-## Remaining limitations
+Follow-up replay identified a backend streaming discrepancy and added rejected-
+attempt diagnostics plus JSON recovery; see the [follow-up report](agent-turn-replay-2026-11-13.md).
+
+## Remaining limitations (initial audit)
 
 The model may still stop prematurely, invent unsupported claims, choose a wrong
 alias, or ignore continuation guidance. Completion checking remains an opt-in,

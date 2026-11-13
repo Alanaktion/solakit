@@ -553,3 +553,60 @@ def test_length_stop_never_uses_empty_recovery(config, content):
     assert run.status == "budget_exceeded"
     assert len(bodies) == 1 and not run.retries
     assert execution.store.transcript("s")[-1]["content"] == content
+
+
+def test_rejected_responses_have_private_attempt_evidence(config):
+    responses = [
+        {"role": "assistant", "reasoning_content": "private-marker-secret"},
+        {"role": "assistant", "content": ""},
+        {"role": "assistant", "content": ""},
+    ]
+
+    def handler(request):
+        if request.url.path.endswith("/models"):
+            return model_list(config)
+        return sse(
+            config,
+            [responses.pop(0)],
+            usage={"prompt_tokens": 20, "completion_tokens": 2},
+        )
+
+    execution = setup(config, handler)
+    execution.store.redactor.values = ("private-marker-secret",)
+
+    async def exercise():
+        run = await execution.submit("s", "question must not appear in diagnostics")
+        await execution.close()
+        return run
+
+    run = asyncio.run(exercise())
+    path = config.paths.data / "runs" / f"{run.id}.diagnostics.jsonl"
+    text = path.read_text()
+    records = [json.loads(line) for line in text.splitlines()]
+    assert len(records) == 3
+    assert [r["attempt"] for r in records] == [1, 2, 3]
+    assert "private-marker-secret" not in text
+    assert "question must not appear" not in text
+    assert "[redacted]" in records[0]["evidence"]["response_json"]
+    assert '"finish_reason": "stop"' in records[0]["evidence"]["response_json"]
+    assert records[1]["evidence"]["request_params"]["chat_template_kwargs"] == {
+        "enable_thinking": False
+    }
+    assert execution.store.transcript("s") == []
+
+
+def test_rejection_evidence_bounds_after_masking(config):
+    from solakit.core.model import ModelClient
+    from solakit.core.secrets import Redactor
+
+    model = ModelClient(config.model)
+    evidence = model.rejection_evidence(
+        {"messages": [{"content": "do not save this"}]},
+        {"reasoning": "sensitive" * 20000},
+        "invalid",
+        Redactor(["sensitive"]),
+    )
+    assert len(evidence["response_json"]) <= 32768
+    assert evidence["response_truncated"] is True
+    assert "sensitive" not in evidence["response_json"]
+    asyncio.run(model.close())

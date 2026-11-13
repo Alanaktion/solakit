@@ -92,8 +92,12 @@ def empty_keepalive(data):
     )
 
 
-async def complete_stream(client, request, on_text, *, max_reasoning_chars=None):  # noqa: C901
-    request = {**request, "stream": True, "stream_options": {"include_usage": True}}
+async def complete_stream(  # noqa: C901
+    client, request, on_text, *, max_reasoning_chars=None, observation=None
+):
+    request = dict(request)
+    if request.setdefault("stream", True):
+        request["stream_options"] = {"include_usage": True}
     content, calls, reasoning = "", {}, ""
     shown = ""
     usage, finish = None, None
@@ -109,6 +113,8 @@ async def complete_stream(client, request, on_text, *, max_reasoning_chars=None)
                 if len(body) > MAX_STREAM_BYTES:
                     raise ModelUnavailable("Model response exceeds size limit")
             data = json.loads(body)
+            if observation is not None:
+                observation["response"] = data
             for choice in data.get("choices") or []:
                 if isinstance(choice.get("message"), dict):
                     normalize_message(choice["message"])
@@ -121,6 +127,8 @@ async def complete_stream(client, request, on_text, *, max_reasoning_chars=None)
                 done = True
                 break
             data = json.loads(event)
+            if observation is not None:
+                observation["last_event"] = data
             if empty_keepalive(data):
                 continue
             if data.get("model") != request["model"]:
@@ -151,6 +159,14 @@ async def complete_stream(client, request, on_text, *, max_reasoning_chars=None)
                 if on_text is not None and visible != shown:
                     shown = visible
                     await on_text(visible)
+            if observation is not None:
+                observation.update(
+                    content=content,
+                    reasoning=reasoning,
+                    tool_calls=list(calls.values()),
+                    usage=usage,
+                    finish_reason=choice.get("finish_reason"),
+                )
             if (
                 max_reasoning_chars is not None
                 and not calls
@@ -179,6 +195,9 @@ async def complete_stream(client, request, on_text, *, max_reasoning_chars=None)
                     if value is not None:
                         call["function"][key] += value
             finish = choice.get("finish_reason")
+            if observation is not None:
+                observation["finish_reason"] = finish
+                observation["usage"] = usage
     if not done or finish not in {"stop", "tool_calls", "length"}:
         raise ModelUnavailable("Model stream interrupted before completion")
     if sorted(calls) != list(range(len(calls))):

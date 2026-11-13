@@ -1,6 +1,8 @@
 """Single pinned oMLX client. No provider abstraction or fallback."""
 
 import asyncio
+import hashlib
+import json
 import logging
 import re
 import time
@@ -28,6 +30,8 @@ def safe_url(value: str) -> str:
 
 class ModelUnavailable(Exception):
     """Pinned endpoint is unreachable, invalid, or serving another model."""
+
+    evidence: dict | None = None
 
 
 class EmptyCompletion(ModelUnavailable):
@@ -150,10 +154,14 @@ class ModelClient:
         max_tokens: int | None = None,
         tool_choice: str | None = None,
         max_reasoning_chars: int | None = None,
+        diagnostic_redactor: Redactor | None = None,
+        transport_stream: bool = True,
     ) -> dict:
         started = self._begin(
             "completion POST", "chat/completions", self.config.timeout_s
         )
+        data, observation, request = None, {}, {}
+        diagnostic_redactor = diagnostic_redactor or self.redactor
         try:
             if any(message.get("images") for message in messages):
                 if self.media is None:
@@ -167,6 +175,9 @@ class ModelClient:
                 "messages": messages,
                 "max_tokens": max_tokens or self.config.max_tokens,
             }
+            request["stream"] = transport_stream
+            if transport_stream:
+                request["stream_options"] = {"include_usage": True}
             # Configured sampling/thinking keys; validation excludes reserved keys.
             request.update(params or {})
             if tools:
@@ -177,14 +188,15 @@ class ModelClient:
                 request["tool_choice"] = "none"
             from solakit.core.model_stream import complete_stream
 
-            # Always stream the transport so closing it on cancellation signals
-            # disconnect to the generator, even when no UI preview is requested.
+            # The HTTP body is always read incrementally and cancellation closes
+            # it, including JSON-mode recovery from a server's broken SSE output.
             async with asyncio.timeout(self.config.timeout_s):
                 data = await complete_stream(
                     self.client,
                     request,
                     on_text,
                     max_reasoning_chars=max_reasoning_chars,
+                    observation=observation,
                 )
             if data.get("model") != self.config.model_id:
                 raise ModelUnavailable("Completion model does not match pinned ID")
@@ -249,12 +261,16 @@ class ModelClient:
                 (time.monotonic() - started) * 1000,
             )
             return data
-        except (ReasoningExhausted, EmptyCompletion):
-            self.available = True
-            raise
         except ModelUnavailable as exc:
-            self.available = False
-            self._failure("completion POST", "chat/completions", exc)
+            exc.evidence = self.rejection_evidence(
+                request,
+                data if data is not None else observation,
+                str(exc),
+                diagnostic_redactor,
+            )
+            self.available = isinstance(exc, (ReasoningExhausted, EmptyCompletion))
+            if not self.available:
+                self._failure("completion POST", "chat/completions", exc)
             raise
         except (
             httpx.HTTPError,
@@ -267,7 +283,39 @@ class ModelClient:
         ) as exc:
             self.available = False
             self._failure("completion POST", "chat/completions", exc)
-            raise ModelUnavailable("Model completion failed") from exc
+            failure = ModelUnavailable("Model completion failed")
+            failure.evidence = self.rejection_evidence(
+                request,
+                data if data is not None else observation,
+                type(exc).__name__,
+                diagnostic_redactor,
+            )
+            raise failure from exc
+
+    def rejection_evidence(
+        self, request: dict, response, error: str, redactor: Redactor
+    ) -> dict:
+        """Bound private diagnostic output after masking, without request text."""
+        redactor = Redactor([*self.redactor.values, *redactor.values])
+        encoded = json.dumps(request, ensure_ascii=False, sort_keys=True).encode()
+        payload = json.dumps(redactor.redact(response), ensure_ascii=False)
+        limit = 32768
+        return {
+            "validation_error": redactor.redact(error),
+            "request_sha256": hashlib.sha256(encoded).hexdigest(),
+            "request_params": redactor.redact(
+                {
+                    key: value
+                    for key, value in request.items()
+                    if key not in ("messages", "tools")
+                }
+            ),
+            "message_count": len(request.get("messages", [])),
+            "tool_names": [t["function"]["name"] for t in request.get("tools", [])],
+            "response_json": payload[:limit],
+            "response_chars": len(payload),
+            "response_truncated": len(payload) > limit,
+        }
 
     async def close(self) -> None:
         await self.client.aclose()

@@ -38,7 +38,10 @@ def failure_hint(run, config, tool_logs: list[dict] | None = None) -> str | None
         return "A tool failed repeatedly; inspect the tool log on this run."
     if status == "model_unavailable":
         if "Empty completion" in error:
-            return 'The model returned nothing; try thinking = "off" or sola doctor.'
+            return (
+                "The backend returned no usable text or tool calls; inspect this "
+                "run's rejected-attempt diagnostics and offered tool schemas."
+            )
         return "Run sola doctor to check the model endpoint and pinned id."
     if status == "memory_unavailable":
         return "Check the OpenViking endpoint, user and roots (sola doctor)."

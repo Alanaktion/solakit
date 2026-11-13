@@ -722,12 +722,25 @@ and are never promoted to OpenViking. `GET /api/sessions/{id}/notes` shows them.
 ### Empty model responses and resource aliases
 
 A normal stop with no visible text or tool calls receives one retry with thinking
-turned off and a recorded `empty_completion` runtime notice. Reasoning-only
+turned off, a recorded `empty_completion` runtime notice, and `stream: false`.
+The same pinned endpoint returns bounded JSON for this recovery: some backends
+silently suppress unoffered tool calls in SSE but return them in JSON. Returned
+calls still pass all registry, activation and grant checks before execution.
+The HTTP body remains incrementally read and closes on timeout/cancellation.
+Reasoning-only
 responses retain their separate one-time retry; at most three requests are made
 per step across both recoveries. Repeated empty output fails as
 `model_unavailable`; no user/assistant transcript messages are invented. HTTP,
 interrupted-stream, malformed-envelope and token-limit failures are not retried
 by this recovery. Tool actions already completed in earlier steps are not replayed.
+
+Rejected attempts are saved in private `runs/<id>.diagnostics.jsonl` records with
+`kind: model_rejection`, step/attempt numbers, a request hash, actual request
+parameters, offered tool names, and masked response details (including reasoning,
+finish reason and usage when available). Response JSON is capped at 32,768
+characters after masking, with an explicit original size and truncation flag.
+Prompts, request messages and authorization headers are excluded. These records
+never become transcript messages or model context.
 
 The system prompt includes the current profile's named resource grants, such as
 `image:studio`. Use the alias (`studio`) for a workflow argument. This exposes no

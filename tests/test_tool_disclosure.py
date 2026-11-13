@@ -755,3 +755,36 @@ def test_check_reads_stored_jobs_without_mutating_database(config, monkeypatch, 
         main()
     assert exc.value.code == 1
     assert "cannot inspect stored job definitions" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("ceiling", [None, ["beta.read"]])
+def test_empty_stream_recovery_preserves_deferred_authority(config, ceiling):
+    responses = ["", [call("alpha.read", '{"text":"once"}')]]
+    if ceiling is None:
+        responses.append([call("alpha.read", '{"text":"once"}')])
+    responses.append("Done")
+    execution, bodies, invoked = rig(config, responses)
+
+    async def exercise():
+        run = await execution.submit("s", "Try that tool", tools=ceiling)
+        await execution.close()
+        return run
+
+    run = asyncio.run(exercise())
+    assert run.status == "completed"
+    assert bodies[0]["stream"] is True
+    assert bodies[1]["stream"] is False
+    assert "stream_options" not in bodies[1]
+    assert all(body["stream"] for body in bodies[2:])
+    assert run.retries == [
+        {"step": 1, "reason": "empty_completion", "transport_stream": False}
+    ]
+    assert invoked == (["once"] if ceiling is None else [])
+    # The recovered call is evidence, but an inactive tool is not executed.
+    first_result = next(
+        m for m in execution.store.transcript("s") if m["role"] == "tool"
+    )
+    assert json.loads(first_result["content"])["error"] is True
+    if ceiling is not None:
+        assert all("alpha.read" not in names(body.get("tools", [])) for body in bodies)
+        assert run.tool_view["activations"] == []

@@ -203,9 +203,12 @@ delivery — that message delivered to a channel (§6.3 / §7.2).
       A finish_reason of "length" preserves partial output, ends the run as
       budget_exceeded with an explicit error, and executes no tool calls.
       Reasoning-only stops/caps retry once with thinking off. A normal empty
-      stop retries once with thinking off and a recorded request-only runtime
-      notice; the two recovery types share a maximum of three requests per step.
+      stop retries once with thinking off, non-streaming JSON from the same
+      pinned endpoint, and a recorded request-only runtime notice; the two recovery types share a maximum of three requests per step.
       Transport/protocol errors are not retried. No accepted tool call is replayed.
+      Rejected attempts retain bounded masked response/parameter diagnostics,
+      separate from the transcript; recovered JSON calls pass the same registry,
+      disclosure and access checks as streamed calls.
    b. No tool calls in the reply: append it, validate structured output and any
       enabled completion/plan checks, then end run as `completed`. Answer-mode
       budget wrap-up must also pass structured-output/completion checks; it cannot

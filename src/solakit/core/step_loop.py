@@ -265,12 +265,16 @@ class StepState:
                 "max_reasoning_tokens": self.cfg.model.max_reasoning_tokens,
             }
         reasoning_retried = empty_retried = False
+        attempt = 0
         while True:
+            attempt += 1
             try:
                 data = await self.host.model.complete(
                     request,
                     tools,
                     on_text=preview,
+                    diagnostic_redactor=self.host.store.redactor,
+                    transport_stream=not empty_retried,
                     params=params,
                     max_tokens=self.output_tokens,
                     max_reasoning_chars=(
@@ -289,7 +293,10 @@ class StepState:
                         self.output_tokens,
                     ),
                 )
-            except (ReasoningExhausted, EmptyCompletion) as exc:
+            except ModelUnavailable as exc:
+                await self.record_rejection(exc, attempt)
+                if not isinstance(exc, (ReasoningExhausted, EmptyCompletion)):
+                    raise
                 # No accepted response or tool execution is replayed. Each
                 # recovery is allowed once per step, including reasoning→empty.
                 if isinstance(exc, ReasoningExhausted):
@@ -325,13 +332,29 @@ class StepState:
                         raise ContextLimit(
                             "Recovery request exceeds context budget"
                         ) from exc
-                self.run.retries.append({"step": self.step + 1, "reason": reason})
+                retry = {"step": self.step + 1, "reason": reason}
+                if reason == "empty_completion":
+                    retry["transport_stream"] = False
+                self.run.retries.append(retry)
                 await durable(self.host.store.save_run, self.run)
                 thinking = "off"
                 params = self.host.config.model.request.wire(
                     thinking=thinking, override=self.cfg.model
                 )
                 self.host.pending[self.run.id].preview = None
+
+    async def record_rejection(self, exc: ModelUnavailable, attempt: int) -> None:
+        await durable(
+            self.host.store.log_diagnostic,
+            self.run.id,
+            {
+                "kind": "model_rejection",
+                "step": self.step + 1,
+                "attempt": attempt,
+                "exception_type": type(exc).__name__,
+                "evidence": exc.evidence,
+            },
+        )
 
     async def record_response(
         self, data: dict, thinking: str | None, size: int
@@ -531,8 +554,10 @@ class StepState:
                     ),
                     max_tokens=self.output_tokens,
                     tool_choice="none",
+                    diagnostic_redactor=self.host.store.redactor,
                 )
-            except ModelUnavailable:
+            except ModelUnavailable as exc:
+                await self.record_rejection(exc, 1)
                 # The honest outcome stands: the step budget was exceeded.
                 self.run.status = RunStatus.budget_exceeded
                 return

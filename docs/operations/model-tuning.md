@@ -51,6 +51,16 @@ is never written to the transcript or sent back to the model.
 - `finish_reason: length` with only reasoning ends `budget_exceeded` with
   "Thinking exhausted model.max_tokens …" rather than the generic message.
 
+Empty normal stops have a separate one-time recovery using `stream: false` on
+the same pinned endpoint, thinking off and a request-only runtime notice. This
+handles servers that silently suppress unoffered tool calls in SSE; returned
+calls still require the existing activation and authority checks. The HTTP body
+remains bounded, timeout-controlled and closed on cancellation. Every rejected
+attempt records private masked response details and actual parameters in
+`runs/<id>.diagnostics.jsonl` (`kind: model_rejection`); response JSON is capped at
+32,768 characters with an explicit truncation flag. No request messages or
+headers are copied into those diagnostics.
+
 ## Tool-call fallback
 
 Some server/template combinations leave Qwen-style `<tool_call>` blocks in the
