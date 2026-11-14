@@ -223,7 +223,7 @@ class Channels:
                     + (f" Hint: {run.hint}" if run.hint else "")
                 )
             else:
-                history = await durable(store.all_messages, run.session)
+                history = await durable(store.run_messages, run.session, run.id)
                 finals = [
                     m
                     for m in history
@@ -250,7 +250,6 @@ class Channels:
                 if delivery.mode == "artifact":
                     if not run.artifacts:
                         raise ValueError("Run produced no artifact")
-                    session = await durable(store.session, run.session)
                     ctx = ToolContext(session, run.profile, self.config, store, run.id)
                     path = ctx.path(run.artifacts[0])
                     payload = await durable(artifact_bytes, path)

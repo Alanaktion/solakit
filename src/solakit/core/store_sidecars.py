@@ -19,6 +19,20 @@ from solakit.core.store_base import (  # noqa: F401,E501
 )
 
 
+def _calibration_sample(value: Any) -> dict | None:
+    if not isinstance(value, dict):
+        return None
+    ratio, samples = value.get("bytes_per_token"), value.get("samples")
+    if (
+        not isinstance(ratio, (int, float))
+        or not 1.5 <= ratio <= 8.0
+        or type(samples) is not int
+        or not 1 <= samples <= 1000
+    ):
+        return None
+    return value
+
+
 class SidecarMixin(StoreServices):
     def write_prompt(self, run_id: str, prompt: str) -> str:
         payload = prompt.encode("utf-8")
@@ -173,7 +187,7 @@ class SidecarMixin(StoreServices):
         """Measured bytes-per-token for a model (rebuildable, advisory)."""
         path = self.root / "calibration.json"
         try:
-            return json.loads(path.read_bytes()).get(model_id)
+            return _calibration_sample(json.loads(path.read_bytes()).get(model_id))
         except (OSError, ValueError, AttributeError):
             return None
 
@@ -191,8 +205,11 @@ class SidecarMixin(StoreServices):
                     data = {}
             except (OSError, ValueError):
                 data = {}
-            entry = data.get(model_id) or {"bytes_per_token": ratio, "samples": 0}
-            samples = min(int(entry.get("samples", 0)) + 1, 1000)
+            entry = _calibration_sample(data.get(model_id)) or {
+                "bytes_per_token": ratio,
+                "samples": 0,
+            }
+            samples = min(entry["samples"] + 1, 1000)
             weight = max(0.05, 1 / samples)
             entry = {
                 "bytes_per_token": round(

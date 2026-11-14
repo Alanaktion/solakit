@@ -16,13 +16,32 @@ MAX_SCHEMA_BYTES = 8000
 
 
 def check_schema(schema: dict) -> None:
-    if not isinstance(schema, dict) or schema.get("type") not in TYPES | {
-        "number": 0,
-        "integer": 0,
-    }:
+    kinds = (*TYPES, "number", "integer")
+    if not isinstance(schema, dict) or schema.get("type") not in kinds:
         raise ValueError("output_schema needs a top-level type")
     if len(json.dumps(schema)) > MAX_SCHEMA_BYTES:
         raise ValueError(f"output_schema is limited to {MAX_SCHEMA_BYTES} bytes")
+    pending = [schema]
+    while pending:
+        node = pending.pop()
+        if not isinstance(node, dict) or ("type" in node and node["type"] not in kinds):
+            raise ValueError("output_schema contains an invalid type or subschema")
+        properties = node.get("properties", {})
+        required = node.get("required", [])
+        if (
+            not isinstance(properties, dict)
+            or not isinstance(required, list)
+            or any(not isinstance(key, str) for key in required)
+            or ("enum" in node and not isinstance(node["enum"], list))
+            or (
+                "additionalProperties" in node
+                and type(node["additionalProperties"]) is not bool
+            )
+        ):
+            raise ValueError("output_schema contains malformed validation fields")
+        pending.extend(properties.values())
+        if "items" in node:
+            pending.append(node["items"])
 
 
 def extract(content: str):
@@ -74,7 +93,7 @@ def render(template: str, value) -> str:
 
     environment = SandboxedEnvironment(autoescape=False, keep_trailing_newline=True)
     context = value if isinstance(value, dict) else {}
-    return environment.from_string(template).render(**context, data=value)
+    return environment.from_string(template).render({**context, "data": value})
 
 
 def check_render(template: str) -> None:

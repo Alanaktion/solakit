@@ -76,7 +76,8 @@ text. `sola doctor` reports whether the server needs it.
 `context_budget` remains the byte ceiling. Optional per-profile `context_tokens`
 adds a token budget: every completion records `request_bytes / prompt_tokens` in
 `calibration.json` in the data directory (bounded 1.5–8 bytes/token, running
-average). When a sample exists, a request whose estimated tokens plus the output
+average). Invalid cached samples are ignored and relearned on the next completion.
+When a sample exists, a request whose estimated tokens plus the output
 budget exceed `context_tokens`, or that exceeds 85% of it, triggers compaction (or
 `context_limit`). Within a run the previous step's server-reported
 `prompt_tokens` is used as a floor. Without a sample, only the byte rule applies.

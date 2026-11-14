@@ -678,7 +678,7 @@ class Registry:
         return [
             name
             for name in self.tool_names(profile)
-            if self.allowed(name, profile) and (selected is None or name in selected)
+            if selected is None or name in selected
         ]
 
     def schemas(self, profile: str, tools: list[str] | None = None) -> list[dict]:
