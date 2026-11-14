@@ -2,6 +2,7 @@
 
 import asyncio
 
+import httpx
 import pytest
 
 from solakit.core.config import MemoryConfig, ModelConfig
@@ -28,11 +29,12 @@ def test_malformed_no_proxy_does_not_break_default_clients(config, monkeypatch):
 def test_proxy_and_ca_environment_trust_is_an_explicit_setting(monkeypatch, trust_env):
     observed = []
 
-    def client(**kwargs):
-        observed.append(kwargs)
-        return object()
+    class Recording(httpx.AsyncClient):
+        def __init__(self, **kwargs):
+            observed.append(kwargs)
+            super().__init__(**kwargs)
 
-    monkeypatch.setattr("httpx.AsyncClient", client)
+    monkeypatch.setattr("httpx.AsyncClient", Recording)
     ModelClient(ModelConfig(trust_env=trust_env))
     MemoryClient(MemoryConfig(trust_env=trust_env))
     assert [kwargs["trust_env"] for kwargs in observed] == [trust_env, trust_env]

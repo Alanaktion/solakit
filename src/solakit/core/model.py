@@ -8,6 +8,8 @@ import re
 import time
 
 import httpx
+import openai
+from openai import AsyncOpenAI, Omit
 
 from solakit.core.config import ModelConfig, validate_api_token
 from solakit.core.io import durable
@@ -58,13 +60,18 @@ class ModelClient:
         self.auth_configured = bool(key)
         self.available = False
         self.media: Media | None = None
-        self.client = httpx.AsyncClient(
+        # The SDK owns URLs, auth headers, request encoding and SSE parsing; the
+        # httpx client only carries transport/proxy policy. No SDK retries.
+        self.http = httpx.AsyncClient(transport=transport, trust_env=config.trust_env)
+        self.client = AsyncOpenAI(
             base_url=config.base_url.rstrip("/") + "/",
+            api_key=key or "unset",
             timeout=config.timeout_s,
-            transport=transport,
-            trust_env=config.trust_env,
-            headers={"Authorization": f"Bearer {key}"} if key else {},
+            max_retries=0,
+            http_client=self.http,
         )
+        # The SDK insists on a key; a keyless backend gets no Authorization header.
+        self.auth_headers = {} if key else {"Authorization": Omit()}
 
     def _begin(self, operation: str, path: str, timeout: float) -> float:
         endpoint = safe_url(str(self.client.base_url.join(path)))
@@ -80,19 +87,19 @@ class ModelClient:
 
     def _failure(self, operation: str, path: str, exc: Exception) -> None:
         endpoint = safe_url(str(self.client.base_url.join(path)))
-        if isinstance(exc, httpx.HTTPStatusError):
-            status = exc.response.status_code
+        if isinstance(exc, openai.APIStatusError):
+            status = exc.status_code
             hint = (
                 "check [model].api_key and backend token configuration"
                 if status in {401, 403}
                 else "check the backend URL/path and server logs"
             )
             reason = f"HTTP {status}; {hint}"
-        elif isinstance(exc, (httpx.TimeoutException, TimeoutError)):
+        elif isinstance(exc, (openai.APITimeoutError, TimeoutError)):
             reason = (
                 "request timed out; check backend load/connectivity and model.timeout_s"
             )
-        elif isinstance(exc, httpx.RequestError):
+        elif isinstance(exc, openai.APIConnectionError):
             reason = (
                 "connection failed; check oMLX is listening at this host/port "
                 "and model.trust_env"
@@ -111,8 +118,13 @@ class ModelClient:
         )
         # Never log headers or model payloads. Sanitize URLs and the configured key
         # even if the transport's exception text embeds either of them.
-        detail = re.sub(
-            r"https?://[^\s<>\"']+", lambda match: safe_url(match[0]), str(exc)
+        # The SDK's status errors embed the response body; log only the status.
+        detail = (
+            f"HTTP {exc.status_code}"
+            if isinstance(exc, openai.APIStatusError)
+            else re.sub(
+                r"https?://[^\s<>\"']+", lambda match: safe_url(match[0]), str(exc)
+            )
         )
         LOGGER.debug(
             "%s", self.redactor.redact(f"Model {operation} diagnostic: {detail}")
@@ -122,11 +134,10 @@ class ModelClient:
         self.available = False
         started = self._begin("preflight GET", "models", min(5, self.config.timeout_s))
         try:
-            response = await self.client.get(
-                "models", timeout=min(5, self.config.timeout_s)
-            )
-            response.raise_for_status()
-            served = [x["id"] for x in response.json()["data"]]
+            page = await self.client.with_options(
+                timeout=min(5, self.config.timeout_s)
+            ).models.list(extra_headers=self.auth_headers)
+            served = [model.id for model in page.data]
             if self.config.model_id not in served:
                 LOGGER.debug(
                     "%s", self.redactor.redact(f"Served model IDs: {served[:20]}")
@@ -140,7 +151,13 @@ class ModelClient:
         except ModelUnavailable as exc:
             self._failure("preflight GET", "models", exc)
             raise
-        except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
+        except (
+            openai.OpenAIError,
+            ValueError,
+            KeyError,
+            TypeError,
+            AttributeError,
+        ) as exc:
             self._failure("preflight GET", "models", exc)
             raise ModelUnavailable("Model endpoint unavailable") from exc
 
@@ -197,6 +214,7 @@ class ModelClient:
                     on_text,
                     max_reasoning_chars=max_reasoning_chars,
                     observation=observation,
+                    extra_headers=self.auth_headers,
                 )
             if data.get("model") != self.config.model_id:
                 raise ModelUnavailable("Completion model does not match pinned ID")
@@ -273,7 +291,7 @@ class ModelClient:
                 self._failure("completion POST", "chat/completions", exc)
             raise
         except (
-            httpx.HTTPError,
+            openai.OpenAIError,
             TimeoutError,
             ValueError,
             KeyError,
@@ -318,4 +336,4 @@ class ModelClient:
         }
 
     async def close(self) -> None:
-        await self.client.aclose()
+        await self.client.close()

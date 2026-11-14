@@ -21,6 +21,8 @@ def test_golden_dry_run(config, auth, monkeypatch):
 
         monkeypatch.setattr("httpx.AsyncClient.get", forbidden)
         monkeypatch.setattr("httpx.AsyncClient.post", forbidden)
+        # The OpenAI SDK sends through AsyncClient.send rather than get/post.
+        monkeypatch.setattr("httpx.AsyncClient.send", forbidden)
         before = list(config.paths.data.rglob("*"))
         response = client.get(
             "/api/prompt",

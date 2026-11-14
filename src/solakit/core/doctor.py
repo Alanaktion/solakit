@@ -16,7 +16,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
-import httpx
+import openai
 
 from solakit.core.config import Config
 
@@ -79,20 +79,16 @@ def _typed_tool():
 
 class Doctor:
     def __init__(self, config: Config, *, transport=None, api_key: str | None = None):
+        from solakit.core.model import ModelClient
+
         self.config = config
-        self.transport = transport
-        key = api_key if api_key is not None else config.model.resolve_api_key()
-        self.client = httpx.AsyncClient(
-            base_url=config.model.base_url.rstrip("/") + "/",
-            timeout=config.model.timeout_s,
-            transport=transport,
-            trust_env=config.model.trust_env,
-            headers={"Authorization": f"Bearer {key}"} if key else {},
-        )
+        # One SDK client for every probe; it owns auth, URLs and transport policy.
+        self.model = ModelClient(config.model, transport, api_key=api_key)
+        self.client = self.model.client
         self.models: list[dict] = []
 
     async def close(self):
-        await self.client.aclose()
+        await self.model.close()
 
     def base_request(self, messages, **extra) -> dict:
         request = {
@@ -110,21 +106,26 @@ class Doctor:
         return request
 
     async def post(self, request: dict) -> tuple[dict, float]:
+        from solakit.core.model_stream import TYPED
+
         started = time.monotonic()
-        response = await self.client.post("chat/completions", json=request)
-        elapsed = time.monotonic() - started
-        response.raise_for_status()
-        return response.json(), elapsed
+        completion = await self.client.chat.completions.create(
+            **{key: request[key] for key in TYPED if key in request},
+            extra_body={k: v for k, v in request.items() if k not in TYPED},
+            extra_headers=self.model.auth_headers,
+        )
+        return completion.model_dump(exclude_unset=True), time.monotonic() - started
 
     # Probes -----------------------------------------------------------------
 
     async def reachable(self) -> Probe:
         try:
-            response = await self.client.get("models", timeout=10)
-            response.raise_for_status()
-            self.models = response.json()["data"]
-        except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
-            status = getattr(getattr(exc, "response", None), "status_code", None)
+            page = await self.client.models.list(
+                timeout=10, extra_headers=self.model.auth_headers
+            )
+            self.models = [model.model_dump() for model in page.data]
+        except (openai.OpenAIError, ValueError, KeyError, TypeError) as exc:
+            status = getattr(exc, "status_code", None)
             remedy = (
                 "check [model].api_key / backend token"
                 if status in (401, 403)
@@ -142,15 +143,10 @@ class Doctor:
         return Probe("model reachable", PASS, "pinned model served")
 
     async def streaming(self) -> Probe:
-        from solakit.core.model import ModelClient, ModelUnavailable
+        from solakit.core.model import ModelUnavailable
 
-        client = ModelClient(
-            self.config.model,
-            transport=self.transport,
-            api_key=self._key(),
-        )
         try:
-            data = await client.complete(
+            data = await self.model.complete(
                 [{"role": "user", "content": "Reply with the single word: ready"}], []
             )
             text = (data["choices"][0]["message"].get("content") or "").strip()
@@ -162,12 +158,6 @@ class Doctor:
                 str(exc),
                 "check the server's SSE support and [model].timeout_s",
             )
-        finally:
-            await client.close()
-
-    def _key(self) -> str | None:
-        header = self.client.headers.get("Authorization", "")
-        return header.removeprefix("Bearer ") or None
 
     async def tool_round_trip(self) -> Probe:
         request = self.base_request(
@@ -176,7 +166,7 @@ class Doctor:
         )
         try:
             data, _ = await self.post(request)
-        except httpx.HTTPError as exc:
+        except openai.APIError as exc:
             return Probe("tool-call round trip", FAIL, type(exc).__name__)
         message = data["choices"][0]["message"]
         calls = message.get("tool_calls") or []
@@ -220,7 +210,7 @@ class Doctor:
         )
         try:
             data, _ = await self.post(request)
-        except httpx.HTTPError as exc:
+        except openai.APIError as exc:
             return Probe("argument fidelity", FAIL, type(exc).__name__)
         calls = data["choices"][0]["message"].get("tool_calls") or []
         if not calls:
@@ -258,7 +248,7 @@ class Doctor:
         )
         try:
             await self.post(request)
-        except httpx.HTTPStatusError as exc:
+        except openai.APIStatusError as exc:
             return Probe(
                 "sampling params",
                 FAIL,
@@ -266,7 +256,7 @@ class Doctor:
                 "presence_penalty",
                 "remove unsupported keys from [model.request]",
             )
-        except httpx.HTTPError as exc:
+        except openai.APIError as exc:
             return Probe("sampling params", FAIL, type(exc).__name__)
         return Probe(
             "sampling params",
@@ -290,14 +280,14 @@ class Doctor:
         )
         try:
             data, _ = await self.post(request)
-        except httpx.HTTPStatusError as exc:
+        except openai.APIStatusError as exc:
             return Probe(
                 "structured output",
                 WARN,
                 f"response_format rejected (HTTP {exc.response.status_code})",
                 "jobs use validate-and-retry for output_schema; no action needed",
             )
-        except httpx.HTTPError as exc:
+        except openai.APIError as exc:
             return Probe("structured output", FAIL, type(exc).__name__)
         from solakit.core.structured import errors, extract
 
@@ -325,14 +315,14 @@ class Doctor:
             request["chat_template_kwargs"] = {"enable_thinking": enabled}
             try:
                 data, elapsed = await self.post(request)
-            except httpx.HTTPStatusError as exc:
+            except openai.APIStatusError as exc:
                 return Probe(
                     "thinking control",
                     FAIL,
                     f"HTTP {exc.response.status_code} for chat_template_kwargs",
                     'set [model.request].thinking_control = "none"',
                 )
-            except httpx.HTTPError as exc:
+            except openai.APIError as exc:
                 return Probe("thinking control", FAIL, type(exc).__name__)
             message = data["choices"][0]["message"]
             reasoning = message.get("reasoning_content") or message.get("reasoning")
@@ -388,7 +378,7 @@ class Doctor:
         request = self.base_request(messages, max_tokens=4)
         try:
             data, _ = await self.post(request)
-        except httpx.HTTPError as exc:
+        except openai.APIError as exc:
             return Probe("context window", FAIL, type(exc).__name__)
         prompt_tokens = (data.get("usage") or {}).get("prompt_tokens")
         size = len(json.dumps(messages, ensure_ascii=False).encode())
@@ -431,7 +421,7 @@ class Doctor:
             )
             try:
                 _, elapsed = await self.post(request)
-            except httpx.HTTPError as exc:
+            except openai.APIError as exc:
                 return Probe("prefix cache", FAIL, type(exc).__name__)
             timings.append(elapsed)
         ratio = timings[1] / timings[0] if timings[0] else 1
@@ -475,7 +465,7 @@ class Doctor:
                     "p95_s": round(latencies[-1], 2),
                     "median_s": round(statistics.median(latencies), 2),
                 }
-        except httpx.HTTPError as exc:
+        except openai.APIError as exc:
             return Probe("concurrency", FAIL, type(exc).__name__)
         return concurrency_verdict(table, self.config.model.concurrency)
 

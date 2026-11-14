@@ -198,7 +198,7 @@ def test_fifo_global_limit_cancellation_and_shutdown(config):
         await entered.wait()
         await execution.close()
         assert (await shutdown_run).status == "cancelled"
-        assert execution.model.client.is_closed
+        assert execution.model.http.is_closed
         assert not execution.queues
         assert not execution.workers
         assert not execution.session_locks
@@ -394,14 +394,14 @@ def test_shutdown_waits_for_inflight_acceptance_and_rejects_new_work(
         while execution._close_task is None:  # noqa: ASYNC110 - observe asynchronous test state
             await asyncio.sleep(0)
         assert not closing.done()
-        assert not execution.model.client.is_closed
+        assert not execution.model.http.is_closed
         finish.set()
         async with asyncio.timeout(5):
             run, _ = await asyncio.gather(submission, closing)
         assert run.status == "cancelled"
         assert not execution.pending
         assert all(worker.done() for worker in execution.workers.values())
-        assert execution.model.client.is_closed
+        assert execution.model.http.is_closed
         with pytest.raises(ValueError, match="shutting down"):
             await execution.submit("s", "too late")
         # Concurrent/repeated close requests use the same completed operation.
@@ -417,13 +417,16 @@ def test_unexpected_failure_retains_redacted_cause(
     from solakit.core.secrets import Redactor
 
     def handler(request):
-        if request.url.path.endswith("/models"):
-            return model_list(config)
+        return model_list(config)
+
+    async def broken(*args, **kwargs):
+        # The SDK wraps transport-level errors, so fail past the transport.
         try:
             raise OSError("diagnostic-secret")
         except OSError as cause:
             raise RuntimeError("unexpected provider failure") from cause
 
+    monkeypatch.setattr("solakit.core.model_stream.complete_stream", broken)
     execution = setup(config, handler)
     execution.store.redactor = Redactor(["diagnostic-secret"])
     if fail_diagnostic_write:
@@ -496,14 +499,14 @@ def test_shutdown_finishes_other_runs_when_one_finalization_fails(config, monkey
         while not (first_failed.is_set() and second_finishing.is_set()):  # noqa: ASYNC110 - observe asynchronous test state
             await asyncio.sleep(0)
         assert not closing.done()
-        assert not execution.model.client.is_closed
+        assert not execution.model.http.is_closed
         finish.set()
         with pytest.raises(ExceptionGroup, match="Run finalization failed"):
             await closing
         outcomes = await asyncio.gather(first, second, return_exceptions=True)
         assert isinstance(outcomes[0], OSError)
         assert outcomes[1].status == "cancelled"
-        assert execution.model.client.is_closed
+        assert execution.model.http.is_closed
         assert not execution.pending
         assert all(worker.done() for worker in execution.workers.values())
 

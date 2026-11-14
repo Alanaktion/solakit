@@ -83,7 +83,7 @@ def test_https_cookie_and_restart(config, mock_model):
     assert not app.state.ui_sessions.valid(opaque)
     from solakit.core.model import ModelClient
 
-    restarted_model = ModelClient(config.model, transport=mock_model.client._transport)
+    restarted_model = ModelClient(config.model, transport=mock_model.http._transport)
     with TestClient(
         create_app(config=config, model=restarted_model), base_url="https://testserver"
     ) as client:

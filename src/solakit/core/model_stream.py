@@ -42,34 +42,6 @@ def normalize_message(message: dict) -> dict:
     return message
 
 
-async def events(response):
-    """Parse data events across arbitrary network/UTF-8 boundaries."""
-    buffer = b""
-    data = []
-    size, received = 0, 0
-    async for chunk in response.aiter_bytes():
-        received += len(chunk)
-        if received > MAX_STREAM_BYTES:
-            raise ModelUnavailable("Model stream exceeds size limit")
-        buffer += chunk
-        if len(buffer) + size > MAX_STREAM_BYTES:
-            raise ModelUnavailable("Model stream event exceeds size limit")
-        while b"\n" in buffer:
-            line, buffer = buffer.split(b"\n", 1)
-            line = line.rstrip(b"\r")
-            if not line:
-                if data:
-                    yield b"\n".join(data).decode("utf-8")
-                data, size = [], 0
-            elif line.startswith(b"data:"):
-                value = line[5:].removeprefix(b" ")
-                data.append(value)
-                size += len(value)
-    # A missing event delimiter/[DONE] is an interrupted response, not success.
-    if buffer or data:
-        raise ModelUnavailable("Model stream ended inside an event")
-
-
 def empty_keepalive(data):
     """Recognize only oMLX's legacy empty heartbeat, never model output."""
     return (
@@ -92,23 +64,47 @@ def empty_keepalive(data):
     )
 
 
+TYPED = ("model", "messages", "max_tokens", "tools", "tool_choice", "stream_options")
+
+
 async def complete_stream(  # noqa: C901
-    client, request, on_text, *, max_reasoning_chars=None, observation=None
+    client,
+    request,
+    on_text,
+    *,
+    max_reasoning_chars=None,
+    observation=None,
+    extra_headers=None,
 ):
+    """Run one chat completion through ``AsyncOpenAI`` and assemble the result.
+
+    The SDK performs transport and SSE parsing; this adds solakit's bounds,
+    reasoning/think separation and tool-call validation."""
     request = dict(request)
     if request.setdefault("stream", True):
         request["stream_options"] = {"include_usage": True}
+    kwargs = {key: request[key] for key in TYPED if key in request}
+    # Sampling/thinking keys (e.g. chat_template_kwargs) pass through verbatim.
+    kwargs["extra_body"] = {
+        key: value for key, value in request.items() if key not in TYPED
+    }
     content, calls, reasoning = "", {}, ""
     shown = ""
     usage, finish = None, None
-    total, done = 0, False
-    async with client.stream("POST", "chat/completions", json=request) as response:
-        response.raise_for_status()
+    total = 0
+    create = client.chat.completions.with_streaming_response.create
+    async with create(
+        # Always parse as SSE; extra_body carries the wire "stream" value, and
+        # a JSON content type is handled below.
+        stream=True,
+        extra_headers=extra_headers,
+        **kwargs,
+    ) as response:
         # Some compatible endpoints return a complete JSON response even when
         # streaming is requested. Keep the same completion validation upstream.
         if response.headers.get("content-type", "").split(";")[0] == "application/json":
             body = bytearray()
-            async for chunk in response.aiter_bytes():
+            async for chunk in response.iter_bytes():
                 body.extend(chunk)
                 if len(body) > MAX_STREAM_BYTES:
                     raise ModelUnavailable("Model response exceeds size limit")
@@ -119,14 +115,11 @@ async def complete_stream(  # noqa: C901
                 if isinstance(choice.get("message"), dict):
                     normalize_message(choice["message"])
             return data
-        async for event in events(response):
-            total += len(event.encode("utf-8"))
+        async for chunk in await response.parse():
+            data = chunk.model_dump(exclude_unset=True)
+            total += len(json.dumps(data))
             if total > MAX_STREAM_BYTES:
                 raise ModelUnavailable("Model stream exceeds size limit")
-            if event == "[DONE]":
-                done = True
-                break
-            data = json.loads(event)
             if observation is not None:
                 observation["last_event"] = data
             if empty_keepalive(data):
@@ -198,7 +191,7 @@ async def complete_stream(  # noqa: C901
             if observation is not None:
                 observation["finish_reason"] = finish
                 observation["usage"] = usage
-    if not done or finish not in {"stop", "tool_calls", "length"}:
+    if finish not in {"stop", "tool_calls", "length"}:
         raise ModelUnavailable("Model stream interrupted before completion")
     if sorted(calls) != list(range(len(calls))):
         raise ModelUnavailable("Non-contiguous streamed tool calls")

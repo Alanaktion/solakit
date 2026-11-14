@@ -114,9 +114,12 @@ def test_model_key_is_validated_and_registered_for_run_diagnostics(
 
     def backend(request):
         assert request.headers["Authorization"] == f"Bearer {key}"
-        if request.url.path.endswith("/models"):
-            return httpx.Response(200, json={"data": [{"id": config.model.model_id}]})
+        return httpx.Response(200, json={"data": [{"id": config.model.model_id}]})
+
+    async def broken(*args, **kwargs):
         raise RuntimeError(f"provider failed with credential {key}")
+
+    monkeypatch.setattr("solakit.core.model_stream.complete_stream", broken)
 
     model = ModelClient(config.model, transport=httpx.MockTransport(backend))
     with caplog.at_level(logging.DEBUG, logger="solakit"):

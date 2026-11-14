@@ -159,7 +159,7 @@ data/                        # runtime state lives OUTSIDE the code tree (§10)
 ### 4.1 Concurrency model
 
 FastAPI, discord.py, and APScheduler all live on one asyncio loop; the
-model client is async (`httpx`). Blocking tools (git, file IO) run in a
+model client is async (`openai.AsyncOpenAI`). Blocking tools (git, file IO) run in a
 thread pool so they never stall the Discord gateway heartbeat.
 
 - **Per-session queue:** runs targeting the same session execute serially,
