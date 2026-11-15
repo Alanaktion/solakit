@@ -22,6 +22,19 @@ _LOCK = threading.RLock()
 _EDIT_LIMIT = 4_000_000
 
 
+def read_failure(exc: Exception) -> str:
+    """Say why a read failed so the next call can differ from the last."""
+    if isinstance(exc, FileNotFoundError):
+        return "No such file; locate it with files.find or files.list"
+    if isinstance(exc, IsADirectoryError):
+        return "Path is a directory; use files.list to see its entries"
+    if isinstance(exc, UnicodeError):
+        return "File is not UTF-8 text and cannot be read as text"
+    if isinstance(exc, PermissionError):
+        return "Cannot read requested file: permission denied"
+    return "Cannot read requested file"
+
+
 class _SearchMatcher:
     def __init__(self, query: str, regex: bool) -> None:
         try:
@@ -98,7 +111,7 @@ class Filesystem:
         try:
             content, _ = await asyncio.to_thread(self._read, path, limit)
         except (OSError, UnicodeError) as exc:
-            raise ToolError("Cannot read requested file") from exc
+            raise ToolError(read_failure(exc)) from exc
         return ToolResult(content=content, content_complete=len(content) <= limit)
 
     async def exists(self, path: str | Path) -> bool:
@@ -117,7 +130,7 @@ class Filesystem:
         try:
             content, _ = await asyncio.to_thread(self._read, path, _EDIT_LIMIT)
         except (OSError, UnicodeError) as exc:
-            raise ToolError("Cannot read requested file") from exc
+            raise ToolError(read_failure(exc)) from exc
         if len(content) > _EDIT_LIMIT:
             raise ToolError("File is too large to window")
         lines = content.splitlines()

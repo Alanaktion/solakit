@@ -428,11 +428,38 @@ def test_completion_check_preserves_evidence_and_bounds_retry(config, repeat):
     )
 
 
-@pytest.mark.parametrize("text", ["Hello!", "I'll check. Here are the results."])
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Hello!",
+        "I'll check. Here are the results.",
+        "Done: the file is saved. Let me know if you want changes.",
+        "Okay, let me know what you think.",
+        "Fixed. " + "Long report. " * 40 + "Let me check again.",
+    ],
+)
 def test_completion_check_substantive_replies(text):
     from solakit.core.completion_check import unfinished_action
 
     assert not unfinished_action(text)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # Observed discord-dm stalls: intent with no tool call.
+        "That file doesn't exist. Let me see what's actually there.",
+        "Running continued test. Let me find where Solakit lives.",
+        "Yes, I have `files.list`. Let me use it to find Solakit.",
+        "Let me check:",
+        "Now let me try the corrected path.",
+        "Checking.",
+    ],
+)
+def test_completion_check_detects_trailing_announcement(text):
+    from solakit.core.completion_check import unfinished_action
+
+    assert unfinished_action(text)
 
 
 @pytest.mark.parametrize("reasoning_first", [False, True])
@@ -610,3 +637,47 @@ def test_rejection_evidence_bounds_after_masking(config):
     assert evidence["response_truncated"] is True
     assert "sensitive" not in evidence["response_json"]
     asyncio.run(model.close())
+
+
+def test_completion_check_loads_announced_deferred_tool(config):
+    """Observed stall: the model names a granted tool it cannot see and stops."""
+    profile = config.profiles["interactive"]
+    profile.completion_check = True
+    profile.tools = ["files.*"]
+    profile.write = "workspace"
+    profile.tool_disclosure = "deferred"
+    profile.tool_resident = ["files.read"]
+    config.enabled_tools = ["files"]
+    bodies = []
+
+    def handler(request):
+        if request.url.path.endswith("/models"):
+            return model_list(config)
+        bodies.append(json.loads(request.content))
+        if len(bodies) == 1:
+            return sse(
+                config,
+                [
+                    {"role": "assistant", "reasoning": "I should call files.list."},
+                    {"content": "That file doesn't exist. Let me see what's there."},
+                ],
+            )
+        return sse(config, [{"role": "assistant", "content": "Nothing to list."}])
+
+    execution = setup(config, handler)
+
+    async def exercise():
+        run = await execution.submit("s", "Read notes.md")
+        await execution.close()
+        return run
+
+    run = asyncio.run(exercise())
+    assert run.status == "completed" and len(bodies) == 2
+    visible = [t["function"]["name"] for t in bodies[1].get("tools", [])]
+    assert "files.list" not in [
+        t["function"]["name"] for t in bodies[0].get("tools", [])
+    ]
+    assert "files.list" in visible
+    nudge = [m for m in bodies[1]["messages"] if "only announced" in str(m)]
+    assert nudge and "Now loaded and callable: files.list." in str(nudge[-1])
+    assert run.tool_view["activations"][-1]["activated"] == ["files.list"]

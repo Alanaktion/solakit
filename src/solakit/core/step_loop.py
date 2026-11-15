@@ -3,6 +3,7 @@
 import asyncio
 import hashlib
 import json
+import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
@@ -56,6 +57,7 @@ class StepState:
     reminded: bool = False
     structured_retries: int = 0
     completion_retries: int = 0
+    last_reasoning: str = ""
     usage_complete: bool = True
     run_assistants: int = 0
     escalated: bool = False
@@ -76,6 +78,15 @@ class StepState:
             self.run.tool_view["activations"].append(
                 {"step": self.step + 1, "activated": added}
             )
+
+    def unloaded_mentions(self, text: str) -> list[str]:
+        """Granted tools named in text but absent from this step's schemas."""
+        return [
+            name
+            for name in self.view.effective
+            if name not in self.loaded_tools
+            and re.search(rf"(?<![\w.]){re.escape(name)}(?![\w])", text)
+        ][:5]
 
     async def inject(self, kind: str, text: str, *, as_message: bool = False) -> None:
         """Request-only runtime notice; recorded as run evidence, never as a
@@ -388,6 +399,7 @@ class StepState:
             self.run.tokens = None
             self.usage_complete = False
         raw = data["choices"][0]["message"]
+        self.last_reasoning = raw.get("reasoning") or ""
         if raw.get("reasoning"):
             self.run.reasoning_steps += 1
             await durable(
@@ -497,12 +509,28 @@ class StepState:
                     )
                     return False
                 self.completion_retries += 1
+                # Small models announce a tool they cannot see in deferred mode and
+                # stop; load the granted tools they named so the retry can call them.
+                named = self.unloaded_mentions(
+                    (assistant.content or "") + "\n" + self.last_reasoning
+                )
+                self.activate(named)
                 await self.inject(
                     "completion_check",
-                    "Your last reply only announced an action. Complete the requested "
-                    "work using granted tools, or explain specifically what you cannot "
+                    "Your last reply only announced an action. Make the tool call "
+                    "now in this reply, or explain specifically what you cannot "
                     "verify with your available capabilities. Do not repeat completed "
-                    "actions. A statement of intent alone is not a final answer.",
+                    "actions. A statement of intent alone is not a final answer."
+                    + (
+                        " Now loaded and callable: " + ", ".join(named) + "."
+                        if named
+                        else (
+                            " A granted tool missing from your schemas must be "
+                            "loaded with tools.load first."
+                            if self.view.mode == "deferred"
+                            else ""
+                        )
+                    ),
                     as_message=True,
                 )
                 self.work_steps += 1

@@ -1743,10 +1743,15 @@ comparing retries; explicitly supplied timestamps are compared.
 
 ### Optional action-announcement completion check
 
-Profile `completion_check` defaults false. When enabled, a short single-line
-English action announcement without tool calls receives a recorded
-`completion_check` continuation notice, bounded by `completion_check_retries`
-(default 1, range 1–3) and the ordinary work-step budget. Repeated announcements
-or no remaining work step produce `failed`, not `completed`. Assistant evidence
+Profile `completion_check` defaults false. When enabled, a short reply (at most
+400 characters and three lines) without tool calls whose last sentence is an
+English action announcement ("That file doesn't exist. Let me see what's
+there.") receives a recorded `completion_check` continuation notice, bounded by
+`completion_check_retries` (default 1, range 1–3) and the ordinary work-step
+budget. "Let me know…" closings are not announcements. In deferred disclosure,
+granted tools named in the reply or that step's reasoning but absent from its
+schemas are activated (recorded in `tool_view.activations`) and named in the
+notice, because small models announce a tool they cannot see and stop. Repeated
+announcements or no remaining work step produce `failed`, not `completed`. Assistant evidence
 is retained verbatim. This heuristic does not verify general task success,
 change tool authority, or replace structured-output validation.

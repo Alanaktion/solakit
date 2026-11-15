@@ -472,3 +472,23 @@ def test_case_alias_cannot_bypass_private_data_boundary(config):
     for write in (False, True):
         with pytest.raises(ToolError, match="explicit"):
             ctx.path(str(alias / "app.db"), write=write)
+
+
+@pytest.mark.parametrize(
+    "error, text",
+    [
+        (FileNotFoundError(), "No such file; locate it with files.find"),
+        (IsADirectoryError(), "Path is a directory; use files.list"),
+        (UnicodeDecodeError("utf-8", b"\xff", 0, 1, "bad"), "not UTF-8"),
+        (OSError(), "Cannot read requested file"),
+    ],
+)
+def test_read_failures_say_what_to_do_next(config, monkeypatch, error, text):
+    fs = Filesystem(context(config))
+
+    def fail(*args):
+        raise error
+
+    monkeypatch.setattr(fs, "_read", fail)
+    with pytest.raises(ToolError, match=text):
+        asyncio.run(fs.read("notes.md"))

@@ -567,15 +567,11 @@ class Registry:
     def check_access(self, registered: Registered, profile: Profile) -> None:
         if registered.manifest.writes and profile.write == "none":
             raise ToolError(
-                f"{registered.manifest.name} requires filesystem write tier. "
-                + OPERATOR_FIX
+                f"{registered.manifest.name} requires filesystem write tier"
             )
         effect = registered.manifest.effect
         if effect and effect not in profile.effects:
-            raise ToolError(
-                f"{registered.manifest.name} requires effect '{effect}'. "
-                + OPERATOR_FIX
-            )
+            raise ToolError(f"{registered.manifest.name} requires effect '{effect}'")
 
     def deprecation_warnings(self) -> list[str]:
         warnings = []
@@ -848,7 +844,10 @@ class Registry:
             if ctx.channel_poster is None:
                 ctx.channel_poster = self.channel_poster
             cfg = self.config.profiles[ctx.profile]
-            self.check_access(registered, cfg)
+            try:
+                self.check_access(registered, cfg)
+            except ToolError as exc:
+                raise ToolError(f"{exc}. {OPERATOR_FIX}") from None
             repairable = True
             values, normalizations, ignored = prepare_arguments(
                 registered.arguments,

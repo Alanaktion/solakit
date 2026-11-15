@@ -751,9 +751,11 @@ completion checking, with no additional work steps after the budget is exhausted
 ### Early completion and context tuning
 
 Profiles may opt into `completion_check = true` with
-`completion_check_retries = 1` (range 1–3). A short single-line final reply
-starting with an action announcement (for example, “Let me check…” or
-“Checking tools…”) receives a recorded continuation notice. Retries consume
+`completion_check_retries = 1` (range 1–3). A short final reply whose last
+sentence announces an action (for example, “That file doesn't exist. Let me see
+what's there.” or “Checking tools…”) receives a recorded continuation notice. In
+deferred disclosure, granted tools the reply or its reasoning names are loaded
+for the retry and named in the notice. Retries consume
 normal work steps; repeated announcements or insufficient steps fail honestly.
 Original replies remain verbatim evidence. This English-language heuristic can
 misclassify short reports and does not prove that a task was completed. Disable
