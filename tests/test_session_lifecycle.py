@@ -5,7 +5,7 @@ import json
 import threading
 from datetime import UTC, datetime, timedelta
 
-import httpx
+import httpx2
 import pytest
 from fastapi.testclient import TestClient
 
@@ -235,8 +235,8 @@ def test_busy_sessions_cannot_be_archived_even_during_bulk_cleanup(
             await app.state.execution.semaphore.acquire()
             try:
                 pending = await app.state.execution.enqueue("old", "waiting")
-                async with httpx.AsyncClient(
-                    transport=httpx.ASGITransport(app=app),
+                async with httpx2.AsyncClient(
+                    transport=httpx2.ASGITransport(app=app),
                     base_url="http://test",
                     headers=auth,
                 ) as api:

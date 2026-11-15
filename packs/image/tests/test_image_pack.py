@@ -3,11 +3,11 @@ import json
 import threading
 from types import SimpleNamespace
 
-import httpx
+import httpx2
 import pytest
 from sola_packs import image
 
-HTTPClient = httpx.Client
+HTTPClient = httpx2.Client
 
 
 @pytest.fixture
@@ -43,10 +43,10 @@ def setup(tmp_path, monkeypatch, pack_context):
     def handler(request):
         calls.append(request)
         if request.method == "POST":
-            return httpx.Response(
+            return httpx2.Response(
                 200, json={"prompt_id": "prompt-1", "node_errors": {}}
             )
-        return httpx.Response(
+        return httpx2.Response(
             200,
             json={
                 "prompt-1": {
@@ -66,11 +66,11 @@ def setup(tmp_path, monkeypatch, pack_context):
             },
         )
 
-    client = httpx.Client
+    client = httpx2.Client
     monkeypatch.setattr(
-        image.httpx,
+        image.httpx2,
         "Client",
-        lambda **kwargs: client(transport=httpx.MockTransport(handler), **kwargs),
+        lambda **kwargs: client(transport=httpx2.MockTransport(handler), **kwargs),
     )
     return registry, ctx, calls, graph
 
@@ -105,7 +105,7 @@ def test_uncertain_submission_never_replays(setup, monkeypatch):
 
     def broken(*args):
         calls.append(args)
-        raise httpx.ReadTimeout("private server detail")
+        raise httpx2.ReadTimeout("private server detail")
 
     monkeypatch.setattr(image, "request", broken)
     assert "uncertain" in invoke(setup).content
@@ -221,14 +221,14 @@ def test_bad_http_acknowledgements_are_uncertain_and_never_follow_or_replay(
 
     def handler(request):
         calls.append(request)
-        return httpx.Response(
+        return httpx2.Response(
             status, content=body, headers={"Location": "https://elsewhere.invalid"}
         )
 
     monkeypatch.setattr(
-        image.httpx,
+        image.httpx2,
         "Client",
-        lambda **kwargs: HTTPClient(transport=httpx.MockTransport(handler), **kwargs),
+        lambda **kwargs: HTTPClient(transport=httpx2.MockTransport(handler), **kwargs),
     )
     assert "uncertain" in invoke(setup).content
     assert "uncertain" in invoke(setup).content
@@ -259,7 +259,7 @@ def test_pack_auth_registered_before_request_and_masked(setup, monkeypatch):
 
 
 def test_deadline_checks_small_chunks_without_waiting_for_a_full_buffer(monkeypatch):
-    class Trickle(httpx.SyncByteStream):
+    class Trickle(httpx2.SyncByteStream):
         def __iter__(self):
             yield b"{"
             yield b"}"
@@ -267,11 +267,11 @@ def test_deadline_checks_small_chunks_without_waiting_for_a_full_buffer(monkeypa
     ticks = iter([0, 0, 16])
     monkeypatch.setattr(image, "time", SimpleNamespace(monotonic=lambda: next(ticks)))
     monkeypatch.setattr(
-        image.httpx,
+        image.httpx2,
         "Client",
         lambda **kwargs: HTTPClient(
-            transport=httpx.MockTransport(
-                lambda request: httpx.Response(200, stream=Trickle())
+            transport=httpx2.MockTransport(
+                lambda request: httpx2.Response(200, stream=Trickle())
             ),
             **kwargs,
         ),
@@ -303,7 +303,7 @@ def test_completed_png_download_uses_receipt_auth_and_normalizes(
             "subfolder": "",
             "type": "output",
         }
-        return httpx.Response(200, content=buffer.getvalue())
+        return httpx2.Response(200, content=buffer.getvalue())
 
     # Keep history lookup deterministic while replacing the download transport.
     original_outcome = image.outcome
@@ -316,9 +316,9 @@ def test_completed_png_download_uses_receipt_auth_and_normalizes(
     )
     monkeypatch.setattr(image, "outcome", lambda *args: outcome)
     monkeypatch.setattr(
-        image.httpx,
+        image.httpx2,
         "Client",
-        lambda **kwargs: HTTPClient(transport=httpx.MockTransport(handler), **kwargs),
+        lambda **kwargs: HTTPClient(transport=httpx2.MockTransport(handler), **kwargs),
     )
     result = asyncio.run(image.completed_png(ctx, "studio", "picture-1"))
     assert result.startswith(b"\x89PNG\r\n\x1a\n")
@@ -392,23 +392,23 @@ def test_download_refuses_redirect_invalid_large_and_slow_images(monkeypatch, mo
     def handler(request):
         requests.append(request)
         if mode == "redirect":
-            return httpx.Response(
+            return httpx2.Response(
                 302, headers={"Location": "http://other.invalid/private"}
             )
         if mode == "oversize":
-            return httpx.Response(200, content=b"x" * 20_000_001)
+            return httpx2.Response(200, content=b"x" * 20_000_001)
         if mode == "dimensions":
             buffer = io.BytesIO()
             Raster.new("1", (6400, 6400)).save(buffer, format="PNG")
-            return httpx.Response(200, content=buffer.getvalue())
+            return httpx2.Response(200, content=buffer.getvalue())
         if mode == "timeout":
-            raise httpx.ReadTimeout("timed out")
-        return httpx.Response(200, content=b"not an image")
+            raise httpx2.ReadTimeout("timed out")
+        return httpx2.Response(200, content=b"not an image")
 
     monkeypatch.setattr(
-        image.httpx,
+        image.httpx2,
         "Client",
-        lambda **kwargs: HTTPClient(transport=httpx.MockTransport(handler), **kwargs),
+        lambda **kwargs: HTTPClient(transport=httpx2.MockTransport(handler), **kwargs),
     )
     cfg = SimpleNamespace(base_url="http://fixture.invalid", timeout_s=1)
     with pytest.raises(ToolError, match="valid bounded"):

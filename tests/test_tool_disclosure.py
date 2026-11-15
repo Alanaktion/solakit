@@ -5,7 +5,7 @@ import hashlib
 import json
 from datetime import UTC, datetime
 
-import httpx
+import httpx2
 import pytest
 from fastapi.testclient import TestClient
 from test_execution import call, completion, model_list, setup
@@ -294,7 +294,7 @@ def test_job_modes_residents_and_initial_prompt_inspection(
 
     app = create_app(
         config=config,
-        model=ModelClient(config.model, transport=httpx.MockTransport(handler)),
+        model=ModelClient(config.model, transport=httpx2.MockTransport(handler)),
     )
     with TestClient(app) as client:
         client.post("/login", data={"token": "operator-test-token"})

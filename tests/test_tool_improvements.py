@@ -4,7 +4,7 @@ import asyncio
 import json
 from pathlib import Path
 
-import httpx
+import httpx2
 import pytest
 from test_tools import context
 
@@ -69,7 +69,7 @@ def transport(monkeypatch, handler):
     monkeypatch.setattr(
         _read_api,
         "client",
-        lambda: httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        lambda: httpx2.AsyncClient(transport=httpx2.MockTransport(handler)),
     )
 
 
@@ -118,7 +118,7 @@ def test_invalid_proxy_url_is_actionable(dispatch, monkeypatch):
     call, ctx, _ = dispatch
 
     def broken():
-        raise httpx.InvalidURL("private proxy value")
+        raise httpx2.InvalidURL("private proxy value")
 
     monkeypatch.setattr(_read_api, "client", broken)
     result = asyncio.run(call("web.search", query="test"))
@@ -139,7 +139,7 @@ def test_large_github_projections_survive_dispatch(dispatch, monkeypatch):
         path = request.url.path
         common = {"headers": {"X-RateLimit-Remaining": "4999"}}
         if "/pulls/" in path:
-            return httpx.Response(
+            return httpx2.Response(
                 200,
                 json={
                     "number": 1982,
@@ -156,7 +156,7 @@ def test_large_github_projections_survive_dispatch(dispatch, monkeypatch):
                 **common,
             )
         if path.endswith("/check-runs"):
-            return httpx.Response(
+            return httpx2.Response(
                 200,
                 json={
                     "total_count": 12,
@@ -177,7 +177,7 @@ def test_large_github_projections_survive_dispatch(dispatch, monkeypatch):
                 **common,
             )
         if path.endswith("/status"):
-            return httpx.Response(
+            return httpx2.Response(
                 200,
                 json={
                     "state": "pending",
@@ -193,7 +193,7 @@ def test_large_github_projections_survive_dispatch(dispatch, monkeypatch):
                 **common,
             )
         if path == "/notifications":
-            return httpx.Response(
+            return httpx2.Response(
                 200,
                 json=[
                     {
@@ -216,7 +216,7 @@ def test_large_github_projections_survive_dispatch(dispatch, monkeypatch):
                 ],
                 **common,
             )
-        return httpx.Response(
+        return httpx2.Response(
             200,
             json={
                 "tag_name": "v1",
@@ -278,7 +278,7 @@ def test_structured_outputs_do_not_break_at_small_caps(dispatch, monkeypatch, ca
     ctx.config.profiles[ctx.profile].tool_output_max_chars = cap
     transport(
         monkeypatch,
-        lambda request: httpx.Response(
+        lambda request: httpx2.Response(
             200, json={"tag_name": "v1", "body": "long notes" * 10000, "assets": []}
         ),
     )
@@ -298,7 +298,7 @@ def test_page_offsets_reassemble_source(dispatch, monkeypatch, markdown):
     )
     transport(
         monkeypatch,
-        lambda r: httpx.Response(200, json={"success": True, "result": markdown}),
+        lambda r: httpx2.Response(200, json={"success": True, "result": markdown}),
     )
 
     async def exercise():
@@ -340,7 +340,7 @@ def test_cloudflare_errors_and_malformed_results(
     monkeypatch.setattr(
         RemoteTools, "public_url", staticmethod(lambda url: "93.184.216.34")
     )
-    transport(monkeypatch, lambda r: httpx.Response(200, json=payload))
+    transport(monkeypatch, lambda r: httpx2.Response(200, json=payload))
     result = asyncio.run(call("web.get_page", url="https://example.com"))
     assert result.error and message in result.content
     assert (
@@ -350,7 +350,7 @@ def test_cloudflare_errors_and_malformed_results(
 
 def test_github_missing_head_is_expected_error(dispatch, monkeypatch):
     call, ctx, _ = dispatch
-    transport(monkeypatch, lambda r: httpx.Response(200, json={"head": None}))
+    transport(monkeypatch, lambda r: httpx2.Response(200, json={"head": None}))
     result = asyncio.run(call("github.pr_status", owner="a", repo="b", n=1))
     assert result.error and "malformed" in result.content
     assert (
@@ -441,12 +441,12 @@ def test_feed_redirects_and_conditional_metadata(dispatch, monkeypatch):
         assert request.headers["If-None-Match"] == '"previous"'
         assert request.headers["If-Modified-Since"] == "yesterday"
         if request.url.path == "/start":
-            return httpx.Response(
+            return httpx2.Response(
                 301, headers={"Location": "https://feeds.example.com/middle"}
             )
         if request.url.path == "/middle":
-            return httpx.Response(302, headers={"Location": "/canonical"})
-        return httpx.Response(
+            return httpx2.Response(302, headers={"Location": "/canonical"})
+        return httpx2.Response(
             200, text=xml, headers={"ETag": '"current"', "Last-Modified": "today"}
         )
 
@@ -472,7 +472,9 @@ def test_feed_redirects_and_conditional_metadata(dispatch, monkeypatch):
         "https://feeds.example.com/canonical",
     ]
     assert all(r.url.host == "93.184.216.34" for r in requests)
-    transport(monkeypatch, lambda r: httpx.Response(304, headers={"ETag": '"current"'}))
+    transport(
+        monkeypatch, lambda r: httpx2.Response(304, headers={"ETag": '"current"'})
+    )
     result = asyncio.run(
         call("feeds.check", url=data["final_url"], if_none_match=data["etag"])
     )
@@ -523,7 +525,7 @@ def test_redirect_rejects_private_or_disallowed_hop_before_request(
 
     def handler(request):
         requests.append(str(request.url))
-        return httpx.Response(302, headers={"Location": target})
+        return httpx2.Response(302, headers={"Location": target})
 
     transport(monkeypatch, handler)
     result = asyncio.run(call("feeds.check", url="https://example.com/feed"))
@@ -540,7 +542,7 @@ def test_redirect_limit_and_cross_host_auth_strip(dispatch, monkeypatch):
 
     def loop(request):
         requests.append(request)
-        return httpx.Response(301, headers={"Location": "/again"})
+        return httpx2.Response(301, headers={"Location": "/again"})
 
     transport(monkeypatch, loop)
     result = asyncio.run(call("feeds.check", url="https://example.com/feed"))
@@ -551,14 +553,16 @@ def test_redirect_limit_and_cross_host_auth_strip(dispatch, monkeypatch):
     def success(request):
         requests.append(request)
         if len(requests) == 1:
-            return httpx.Response(
+            return httpx2.Response(
                 301, headers={"Location": "https://other.example.com/feed"}
             )
         assert "authorization" not in request.headers
-        return httpx.Response(200, text="ok")
+        return httpx2.Response(200, text="ok")
 
     async def exercise():
-        async with httpx.AsyncClient(transport=httpx.MockTransport(success)) as client:
+        async with httpx2.AsyncClient(
+            transport=httpx2.MockTransport(success)
+        ) as client:
             response = await RemoteTools(client, ctx).request(
                 "GET",
                 "https://example.com/feed",

@@ -2,14 +2,14 @@
 
 import json
 
-import httpx
+import httpx2
 
 from solakit.tools import ToolContext, ToolError, ToolResult
 from solakit.tools._remote import RemoteTools
 
 
-def client() -> httpx.AsyncClient:
-    return httpx.AsyncClient(trust_env=False)
+def client() -> httpx2.AsyncClient:
+    return httpx2.AsyncClient(trust_env=False)
 
 
 def encode_result(result: dict, cap: int) -> str:
@@ -48,11 +48,11 @@ async def invoke(ctx: ToolContext, operation: str, **arguments) -> ToolResult:
         if operation in {"notifications", "pr_status", "latest_release"}:
             cap = min(cap, 12000)
         return ToolResult(content=encode_result(result, cap))
-    except httpx.InvalidURL:
+    except httpx2.InvalidURL:
         raise ToolError(
             "Remote service unavailable: invalid URL or proxy configuration"
         ) from None
-    except (httpx.HTTPError, ValueError, OSError) as exc:
+    except (httpx2.HTTPError, ValueError, OSError) as exc:
         if isinstance(exc, ValueError):
             raise ToolError(str(exc)) from None
         raise ToolError("Remote service unavailable") from None

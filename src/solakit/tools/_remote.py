@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from urllib.parse import quote, urljoin, urlsplit
 from xml.etree.ElementTree import ParseError
 
-import httpx
+import httpx2
 from defusedxml import ElementTree
 from defusedxml.common import DefusedXmlException
 
@@ -19,7 +19,7 @@ from solakit.tools import ToolContext, ToolError
 @dataclass(frozen=True)
 class RemoteResponse:
     status: int
-    headers: httpx.Headers
+    headers: httpx2.Headers
     content: bytes
     final_url: str
 
@@ -58,7 +58,7 @@ def project(data, fields):
 
 
 class RemoteTools:
-    def __init__(self, client: httpx.AsyncClient, ctx: ToolContext):
+    def __init__(self, client: httpx2.AsyncClient, ctx: ToolContext):
         self.client = client
         self.ctx = ctx
 
@@ -72,13 +72,13 @@ class RemoteTools:
             if redirects:
                 try:
                     address = await asyncio.to_thread(self.public_url, url)
-                except (ValueError, OSError, httpx.InvalidURL):
+                except (ValueError, OSError, httpx2.InvalidURL):
                     if hop:
                         raise ToolError(
                             "Feed redirect target is not a public URL"
                         ) from None
                     raise
-                original = httpx.URL(url)
+                original = httpx2.URL(url)
                 request_url = original.copy_with(host=address)
                 headers = {
                     **headers,
@@ -103,7 +103,7 @@ class RemoteTools:
                         raise ToolError("Feed redirect is missing Location")
                     try:
                         target = urljoin(url, location)
-                    except (ValueError, OSError, httpx.InvalidURL):
+                    except (ValueError, OSError, httpx2.InvalidURL):
                         raise ToolError(
                             "Feed redirect target is not a public URL"
                         ) from None

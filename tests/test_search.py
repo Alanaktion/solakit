@@ -256,7 +256,7 @@ def test_offline_cli_never_initializes_store_recovers_runs_or_calls_api(
         raise AssertionError("offline search must be a read-only index query")
 
     monkeypatch.setattr(Store, "__init__", forbidden)
-    monkeypatch.setattr("httpx.get", forbidden)
+    monkeypatch.setattr("httpx2.get", forbidden)
     main()
     hit = json.loads(capsys.readouterr().out)[0]
     assert hit["snippet"] == "needle [redacted]"

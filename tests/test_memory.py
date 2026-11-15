@@ -1,7 +1,7 @@
 import asyncio
 import json
 
-import httpx
+import httpx2
 import pytest
 from pydantic import ValidationError
 from test_execution import completion, model_list, setup
@@ -43,7 +43,7 @@ def test_recall_then_commit_then_recall(config):
                 "task_id": "task1",
                 "archive_uri": "viking://user/sola/sessions/test/history/archive_001",
             }
-        return httpx.Response(200, json={"status": "ok", "result": result})
+        return httpx2.Response(200, json={"status": "ok", "result": result})
 
     def model_handler(request):
         if request.url.path.endswith("/models"):
@@ -57,7 +57,7 @@ def test_recall_then_commit_then_recall(config):
     execution.memory = MemoryClient(
         config.memory,
         "memory-test-secret",
-        transport=httpx.MockTransport(memory_handler),
+        transport=httpx2.MockTransport(memory_handler),
     )
 
     async def exercise():
@@ -94,12 +94,12 @@ def test_recall_failure_leaves_transcript_untouched(config):
         return model_list(config)
 
     def memory_handler(request):
-        raise httpx.ConnectError("offline")
+        raise httpx2.ConnectError("offline")
 
     config.memory = memory_config()
     execution = setup(config, model_handler)
     execution.memory = MemoryClient(
-        config.memory, transport=httpx.MockTransport(memory_handler)
+        config.memory, transport=httpx2.MockTransport(memory_handler)
     )
 
     async def exercise():
@@ -119,9 +119,9 @@ def test_ambiguous_commit_refuses_replay_and_scope_checks(config):
         if request.url.path.endswith("messages/batch"):
             writes.append(request.content)
             # Server might have accepted this before the connection disappeared.
-            raise httpx.ReadError("lost acknowledgment")
+            raise httpx2.ReadError("lost acknowledgment")
         if request.url.path.endswith("search/find"):
-            return httpx.Response(
+            return httpx2.Response(
                 200,
                 json={
                     "status": "ok",
@@ -132,9 +132,9 @@ def test_ambiguous_commit_refuses_replay_and_scope_checks(config):
                     },
                 },
             )
-        return httpx.Response(200, json={"status": "ok", "result": {}})
+        return httpx2.Response(200, json={"status": "ok", "result": {}})
 
-    client = MemoryClient(memory_config(), transport=httpx.MockTransport(handler))
+    client = MemoryClient(memory_config(), transport=httpx2.MockTransport(handler))
     store = Store(config.paths.data)
     scoped = client.scoped(Session(id="s"))
 
@@ -182,12 +182,12 @@ def test_tool_parts_and_invalid_memory_configuration():
 def test_commit_failure_is_visible_without_losing_conversation(config):
     def memory_handler(request):
         if request.url.path.endswith("search/find"):
-            return httpx.Response(
+            return httpx2.Response(
                 200, json={"status": "ok", "result": {"memories": []}}
             )
         if request.url.path.endswith("/commit"):
-            return httpx.Response(503)
-        return httpx.Response(200, json={"status": "ok", "result": {}})
+            return httpx2.Response(503)
+        return httpx2.Response(200, json={"status": "ok", "result": {}})
 
     def model_handler(request):
         if request.url.path.endswith("/models"):
@@ -196,7 +196,7 @@ def test_commit_failure_is_visible_without_losing_conversation(config):
 
     execution = setup(config, model_handler)
     execution.memory = MemoryClient(
-        memory_config(), transport=httpx.MockTransport(memory_handler)
+        memory_config(), transport=httpx2.MockTransport(memory_handler)
     )
 
     async def exercise():
@@ -225,7 +225,7 @@ def test_background_refresh_records_terminal_failure_without_replaying(config):
     def handler(request):
         calls.append((request.method, request.url.path))
         assert request.method == "GET"
-        return httpx.Response(
+        return httpx2.Response(
             200,
             json={
                 "status": "ok",
@@ -235,7 +235,7 @@ def test_background_refresh_records_terminal_failure_without_replaying(config):
 
     execution = setup(config, lambda request: None)
     execution.memory = MemoryClient(
-        memory_config(), transport=httpx.MockTransport(handler)
+        memory_config(), transport=httpx2.MockTransport(handler)
     )
     run = Run(
         session="s",
@@ -282,9 +282,9 @@ def test_explicit_openviking_user_checked_before_message_writes(config, actual_u
             if request.url.path.endswith("messages/batch"):
                 writes.append(True)
             result = {}
-        return httpx.Response(200, json={"status": "ok", "result": result})
+        return httpx2.Response(200, json={"status": "ok", "result": result})
 
-    memory = MemoryClient(cfg, transport=httpx.MockTransport(handler))
+    memory = MemoryClient(cfg, transport=httpx2.MockTransport(handler))
     store = Store(config.paths.data)
 
     async def exercise():
@@ -378,8 +378,8 @@ def test_observer_backoff_and_manual_recovery(config, monkeypatch):
         )
         execution.memory = MemoryClient(
             memory_config(),
-            transport=httpx.MockTransport(
-                lambda request: httpx.Response(
+            transport=httpx2.MockTransport(
+                lambda request: httpx2.Response(
                     200, json={"status": "ok", "result": {"status": "completed"}}
                 )
             ),

@@ -6,7 +6,7 @@ import os
 import signal
 import sys
 
-import httpx
+import httpx2
 import pytest
 
 from solakit.core.loop import Execution
@@ -19,7 +19,7 @@ from solakit.ui import auth
 
 
 def model_list(config):
-    return httpx.Response(200, json={"data": [{"id": config.model.model_id}]})
+    return httpx2.Response(200, json={"data": [{"id": config.model.model_id}]})
 
 
 def sse(config, content, finish):
@@ -44,7 +44,7 @@ def sse(config, content, finish):
         },
     ]
     body = "".join(f"data: {json.dumps(c)}\n\n" for c in chunks) + "data: [DONE]\n\n"
-    return httpx.Response(
+    return httpx2.Response(
         200, content=body.encode(), headers={"content-type": "text/event-stream"}
     )
 
@@ -59,7 +59,7 @@ def test_streamed_empty_reply_is_not_a_completed_answer(
     def handler(request):
         return sse(config, content, finish)
 
-    model = ModelClient(config.model, transport=httpx.MockTransport(handler))
+    model = ModelClient(config.model, transport=httpx2.MockTransport(handler))
 
     async def exercise():
         try:
@@ -98,7 +98,7 @@ def test_completed_tool_result_survives_cancellation_request(config):
             "type": "function",
             "function": {"name": "finish", "arguments": "{}"},
         }
-        return httpx.Response(
+        return httpx2.Response(
             200,
             json={
                 "model": config.model.model_id,
@@ -117,7 +117,7 @@ def test_completed_tool_result_survives_cancellation_request(config):
     registry = Registry(config)
     registry.register(finish)
     config.profiles["interactive"].tools = ["finish"]
-    model = ModelClient(config.model, transport=httpx.MockTransport(handler))
+    model = ModelClient(config.model, transport=httpx2.MockTransport(handler))
     execution = Execution(config, store, registry, model)
 
     async def exercise():

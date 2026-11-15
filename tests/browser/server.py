@@ -9,7 +9,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
-import httpx
+import httpx2
 import uvicorn
 from PIL import Image
 
@@ -82,7 +82,7 @@ config.profiles["status-only"] = Profile(tools=["runtime.status"])
 (root / "fragments/profiles/status-only.md").write_text("Scratch status-only job mode.")
 
 
-class BrowserStream(httpx.AsyncByteStream):
+class BrowserStream(httpx2.AsyncByteStream):
     def __init__(self, events, *, delay=0, fail=False):
         self.events, self.delay, self.fail = events, delay, fail
 
@@ -91,7 +91,7 @@ class BrowserStream(httpx.AsyncByteStream):
             yield ("data: " + json.dumps(event) + "\n\n").encode()
             await asyncio.sleep(self.delay)
         if self.fail:
-            raise httpx.ReadError("Deliberate scratch stream interruption")
+            raise httpx2.ReadError("Deliberate scratch stream interruption")
         yield b"data: [DONE]\n\n"
 
 
@@ -103,7 +103,7 @@ def chunk(delta, finish=None):
 
 
 def streamed(events, *, delay=0, fail=False):
-    return httpx.Response(
+    return httpx2.Response(
         200,
         stream=BrowserStream(events, delay=delay, fail=fail),
         headers={"content-type": "text/event-stream"},
@@ -112,7 +112,7 @@ def streamed(events, *, delay=0, fail=False):
 
 async def respond(request):
     if request.url.path.endswith("/models"):
-        return httpx.Response(200, json={"data": [{"id": config.model.model_id}]})
+        return httpx2.Response(200, json={"data": [{"id": config.model.model_id}]})
     body = json.loads(request.content)
     task = next(
         (
@@ -165,7 +165,7 @@ async def respond(request):
             delay=0.4,
         )
     if "remember-browser" in task and body["messages"][-1]["role"] == "user":
-        return httpx.Response(
+        return httpx2.Response(
             200,
             json={
                 "model": config.model.model_id,
@@ -226,7 +226,7 @@ async def respond(request):
                 ],
                 delay=0.3,
             )
-        return httpx.Response(
+        return httpx2.Response(
             200,
             json={
                 "model": config.model.model_id,
@@ -268,7 +268,7 @@ async def respond(request):
         return streamed(
             [chunk({"role": "assistant", "content": text}), chunk({}, "stop")]
         )
-    return httpx.Response(
+    return httpx2.Response(
         200,
         json={
             "model": config.model.model_id,
@@ -297,18 +297,18 @@ def memory_response(request):
             "archive_id": "archive_001",
             "overview": "Browser scratch conversation summary.",
         }
-    return httpx.Response(200, json={"status": "ok", "result": result})
+    return httpx2.Response(200, json={"status": "ok", "result": result})
 
 
 # Only this isolated QA process substitutes the memory transport. No request can
 # reach a live memory server, including startup, summary or commit operations.
 main_module.MemoryClient = lambda cfg, key=None: MemoryClient(
-    cfg, key, transport=httpx.MockTransport(memory_response)
+    cfg, key, transport=httpx2.MockTransport(memory_response)
 )
 
 app = create_app(
     config=config,
-    model=ModelClient(config.model, transport=httpx.MockTransport(respond)),
+    model=ModelClient(config.model, transport=httpx2.MockTransport(respond)),
 )
 
 

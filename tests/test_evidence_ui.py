@@ -6,7 +6,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import quote
 
-import httpx
+import httpx2
 from fastapi.testclient import TestClient
 from test_ui import new_session, sign_in
 
@@ -166,10 +166,10 @@ def test_run_cancellation_uses_existing_durable_operation(config):
 
     async def backend(request):
         if request.url.path.endswith("/models"):
-            return httpx.Response(200, json={"data": [{"id": config.model.model_id}]})
+            return httpx2.Response(200, json={"data": [{"id": config.model.model_id}]})
         entered.set()
         await asyncio.to_thread(release.wait, 3)
-        return httpx.Response(
+        return httpx2.Response(
             200,
             json={
                 "model": config.model.model_id,
@@ -177,7 +177,7 @@ def test_run_cancellation_uses_existing_durable_operation(config):
             },
         )
 
-    model = ModelClient(config.model, transport=httpx.MockTransport(backend))
+    model = ModelClient(config.model, transport=httpx2.MockTransport(backend))
     with TestClient(create_app(config=config, model=model)) as client:
         sign_in(client)
         new_session(client)

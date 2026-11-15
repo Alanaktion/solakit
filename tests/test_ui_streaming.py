@@ -4,7 +4,7 @@ import asyncio
 import json
 from html.parser import HTMLParser
 
-import httpx
+import httpx2
 import pytest
 from fastapi.testclient import TestClient
 
@@ -16,7 +16,7 @@ from solakit.tools import ToolContext, ToolResult, tool
 from solakit.ui.markdown import markdown
 
 
-class Stream(httpx.AsyncByteStream):
+class Stream(httpx2.AsyncByteStream):
     def __init__(self, chunks, release=None, entered=None):
         self.chunks, self.release, self.entered = chunks, release, entered
         self.closed = False
@@ -53,13 +53,13 @@ def frame(config, delta=None, finish=None, *, usage=None, model=None):
 def backend(config, chunks, **options):
     def handle(request):
         if request.url.path.endswith("/models"):
-            return httpx.Response(200, json={"data": [{"id": config.model.model_id}]})
+            return httpx2.Response(200, json={"data": [{"id": config.model.model_id}]})
         body = json.loads(request.content)
         assert body["stream"] is True
         assert body["stream_options"] == {"include_usage": True}
-        return httpx.Response(200, stream=Stream(chunks, **options))
+        return httpx2.Response(200, stream=Stream(chunks, **options))
 
-    return ModelClient(config.model, transport=httpx.MockTransport(handle))
+    return ModelClient(config.model, transport=httpx2.MockTransport(handle))
 
 
 def test_markdown_sanitizes_active_content_and_renders_structure():
@@ -141,7 +141,7 @@ def test_stream_assembles_utf8_calls_usage_and_keeps_tool_order(config):
         def handle(request):
             nonlocal counter
             if request.url.path.endswith("/models"):
-                return httpx.Response(
+                return httpx2.Response(
                     200, json={"data": [{"id": config.model.model_id}]}
                 )
             counter += 1
@@ -156,11 +156,11 @@ def test_stream_assembles_utf8_calls_usage_and_keeps_tool_order(config):
                 ]
             )
             # Byte-sized fragments exercise boundaries inside UTF-8 and SSE fields.
-            return httpx.Response(
+            return httpx2.Response(
                 200, stream=Stream([bytes([b]) for b in b"".join(chunks)])
             )
 
-        model = ModelClient(config.model, transport=httpx.MockTransport(handle))
+        model = ModelClient(config.model, transport=httpx2.MockTransport(handle))
         app = create_app(config=config, model=model)
         async with app.router.lifespan_context(app):
 
@@ -265,8 +265,10 @@ def test_sse_arrives_before_completion_masks_partial_secrets_and_survives_discon
         )
         auth = {"Authorization": "Bearer operator-test-token"}
         async with app.router.lifespan_context(app):
-            async with httpx.AsyncClient(
-                transport=httpx.ASGITransport(app), base_url="http://test", headers=auth
+            async with httpx2.AsyncClient(
+                transport=httpx2.ASGITransport(app),
+                base_url="http://test",
+                headers=auth,
             ) as client:
                 await client.post("/api/sessions", json={"id": "s"})
                 response = await client.post(
@@ -410,12 +412,12 @@ def test_cancelling_live_generation_closes_transport_without_saving_preview(
 
         def handle(request):
             if request.url.path.endswith("/models"):
-                return httpx.Response(
+                return httpx2.Response(
                     200, json={"data": [{"id": config.model.model_id}]}
                 )
-            return httpx.Response(200, stream=stream)
+            return httpx2.Response(200, stream=stream)
 
-        model = ModelClient(config.model, transport=httpx.MockTransport(handle))
+        model = ModelClient(config.model, transport=httpx2.MockTransport(handle))
         app = create_app(config=config, model=model)
         async with app.router.lifespan_context(app):
             app.state.store.create_session(Session(id="s"))
@@ -564,13 +566,13 @@ def test_stop_retains_output_through_last_tool_call(config, live):
         def handle(request):
             nonlocal requests
             if request.url.path.endswith("/models"):
-                return httpx.Response(
+                return httpx2.Response(
                     200, json={"data": [{"id": config.model.model_id}]}
                 )
             assert json.loads(request.content)["stream"] is True
             requests += 1
             if requests == 1:
-                return httpx.Response(
+                return httpx2.Response(
                     200,
                     stream=Stream(
                         [
@@ -596,9 +598,9 @@ def test_stop_retains_output_through_last_tool_call(config, live):
                         ]
                     ),
                 )
-            return httpx.Response(200, stream=interrupted)
+            return httpx2.Response(200, stream=interrupted)
 
-        model = ModelClient(config.model, transport=httpx.MockTransport(handle))
+        model = ModelClient(config.model, transport=httpx2.MockTransport(handle))
         app = create_app(config=config, model=model)
         async with app.router.lifespan_context(app):
 

@@ -1,7 +1,7 @@
 import asyncio
 import json
 
-import httpx
+import httpx2
 import pytest
 from pydantic import ValidationError
 from test_memory import memory_config
@@ -23,7 +23,7 @@ def recording(seen, *, hits=()):
             )
         )
         result = {"memories": list(hits)} if request.url.path.endswith("find") else {}
-        return httpx.Response(200, json={"status": "ok", "result": result})
+        return httpx2.Response(200, json={"status": "ok", "result": result})
 
     return handle
 
@@ -33,7 +33,7 @@ def client(seen, **kwargs):
     config.user = "sola"
     return MemoryClient(
         config,
-        transport=httpx.MockTransport(recording(seen, **kwargs)),
+        transport=httpx2.MockTransport(recording(seen, **kwargs)),
         overrides={"private": OVERRIDE},
     )
 

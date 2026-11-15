@@ -1,7 +1,7 @@
 import asyncio
 import logging
 
-import httpx
+import httpx2
 import pytest
 from fastapi.testclient import TestClient
 
@@ -36,8 +36,8 @@ def test_model_bearer_auth_used_for_preflight_and_completion(
         else:
             assert "Authorization" not in request.headers
         if request.url.path.endswith("/models"):
-            return httpx.Response(200, json={"data": [{"id": config.model.model_id}]})
-        return httpx.Response(
+            return httpx2.Response(200, json={"data": [{"id": config.model.model_id}]})
+        return httpx2.Response(
             200,
             json={
                 "model": config.model.model_id,
@@ -45,7 +45,7 @@ def test_model_bearer_auth_used_for_preflight_and_completion(
             },
         )
 
-    model = ModelClient(config.model, transport=httpx.MockTransport(backend))
+    model = ModelClient(config.model, transport=httpx2.MockTransport(backend))
 
     async def exercise():
         await model.preflight()
@@ -76,12 +76,12 @@ def test_backend_failure_diagnostics_are_actionable_and_redacted(
 
     def backend(request):
         if failure == "connect":
-            raise httpx.ConnectError(f"connection refused: {key}")
+            raise httpx2.ConnectError(f"connection refused: {key}")
         if failure == "timeout":
-            raise httpx.ReadTimeout(f"backend timeout: {key}")
-        return httpx.Response(failure, text=f"response body must not be logged: {key}")
+            raise httpx2.ReadTimeout(f"backend timeout: {key}")
+        return httpx2.Response(failure, text=f"response body must not be logged: {key}")
 
-    model = ModelClient(config.model, transport=httpx.MockTransport(backend))
+    model = ModelClient(config.model, transport=httpx2.MockTransport(backend))
 
     async def exercise():
         with pytest.raises(ModelUnavailable):
@@ -114,14 +114,14 @@ def test_model_key_is_validated_and_registered_for_run_diagnostics(
 
     def backend(request):
         assert request.headers["Authorization"] == f"Bearer {key}"
-        return httpx.Response(200, json={"data": [{"id": config.model.model_id}]})
+        return httpx2.Response(200, json={"data": [{"id": config.model.model_id}]})
 
     async def broken(*args, **kwargs):
         raise RuntimeError(f"provider failed with credential {key}")
 
     monkeypatch.setattr("solakit.core.model_stream.complete_stream", broken)
 
-    model = ModelClient(config.model, transport=httpx.MockTransport(backend))
+    model = ModelClient(config.model, transport=httpx2.MockTransport(backend))
     with caplog.at_level(logging.DEBUG, logger="solakit"):
         with TestClient(create_app(config=config, model=model)) as client:
             auth = {"Authorization": "Bearer operator-test-token"}
@@ -154,13 +154,13 @@ def test_default_model_and_server_ports_do_not_conflict():
 
 def test_debug_diagnostics_remove_url_credentials_and_queries(caplog):
     model = ModelClient(
-        ModelConfig(), transport=httpx.MockTransport(lambda request: None)
+        ModelConfig(), transport=httpx2.MockTransport(lambda request: None)
     )
     with caplog.at_level(logging.DEBUG, logger="solakit.core.model"):
         model._failure(
             "preflight GET",
             "models",
-            httpx.ConnectError(
+            httpx2.ConnectError(
                 "Cannot connect http://user:private-password@localhost:8000/v1?api_key=query-secret"
             ),
         )

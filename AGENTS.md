@@ -30,7 +30,7 @@ Read `SPEC.md` for behavioral contracts, `README.md` for an introduction,
   and return only final reports. Propagate parent
   cancellation through children; manifests that own timeouts must bound them and
   retain operation receipts. Worker grants control further delegation.
-- `core/model.py`, `core/model_stream.py`: `openai.AsyncOpenAI` (2.x, httpx transport) for one exact pinned model, preflight and
+- `core/model.py`, `core/model_stream.py`: `openai.AsyncOpenAI` (3.x on httpx2) for one exact pinned model, preflight and
   completion validation, bounded OpenAI SSE assembly,
   explicit authentication, bounded generation; no provider fallback.
 - `core/prompt.py`: deterministic assembly from operator-owned SOUL/fragments,

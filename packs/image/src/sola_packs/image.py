@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Annotated
 from urllib.parse import urlsplit
 
-import httpx
+import httpx2
 from pydantic import Field, field_validator, model_validator
 from sola_packs.support import IDENTIFIER, Settings, external, resource, secret
 from sola_packs.support.evidence import Lease, Operation
@@ -98,7 +98,7 @@ def request(cfg, headers, method, path, body=None):
     # No redirect/retry: credentials stay on the configured endpoint and a POST
     # that loses its acknowledgement remains ambiguous, even on cancellation.
     deadline = time.monotonic() + cfg.timeout_s
-    with httpx.Client(timeout=cfg.timeout_s, follow_redirects=False) as client:
+    with httpx2.Client(timeout=cfg.timeout_s, follow_redirects=False) as client:
         with client.stream(
             method, cfg.base_url + path, headers=headers, json=body
         ) as response:
@@ -320,7 +320,7 @@ def outcome(cfg, auth, prompt_id):
                     raise ValueError("Too many outputs")
         return {"status": "completed", "prompt_id": prompt_id, "images": outputs}
     except (
-        httpx.HTTPError,
+        httpx2.HTTPError,
         ValueError,
         KeyError,
         TypeError,
@@ -391,7 +391,7 @@ def download_png(cfg, auth, reference):
         raise ToolError("Cover must reference a safe ComfyUI output image")
     deadline = time.monotonic() + cfg.timeout_s
     try:
-        with httpx.Client(timeout=cfg.timeout_s, follow_redirects=False) as client:
+        with httpx2.Client(timeout=cfg.timeout_s, follow_redirects=False) as client:
             with client.stream(
                 "GET",
                 cfg.base_url + "/view",
@@ -419,7 +419,7 @@ def download_png(cfg, auth, reference):
                 if output.tell() > 20_000_000:
                     raise ValueError("Converted image exceeds 20 MB")
                 return output.getvalue()
-    except (httpx.HTTPError, OSError, ValueError, Warning, TimeoutError) as exc:
+    except (httpx2.HTTPError, OSError, ValueError, Warning, TimeoutError) as exc:
         raise ToolError("Cannot download valid bounded cover image") from exc
 
 

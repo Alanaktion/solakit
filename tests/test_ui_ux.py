@@ -175,7 +175,7 @@ def test_job_run_now_redirects_before_generation_finishes(config, stop):
     import asyncio
     import threading
 
-    import httpx
+    import httpx2
 
     from solakit.core.config import Job
     from solakit.core.model import ModelClient
@@ -194,10 +194,10 @@ def test_job_run_now_redirects_before_generation_finishes(config, stop):
 
     async def backend(request):
         if request.url.path.endswith("/models"):
-            return httpx.Response(200, json={"data": [{"id": config.model.model_id}]})
+            return httpx2.Response(200, json={"data": [{"id": config.model.model_id}]})
         entered.set()
         await asyncio.to_thread(release.wait, 5)
-        return httpx.Response(
+        return httpx2.Response(
             200,
             json={
                 "model": config.model.model_id,
@@ -209,7 +209,7 @@ def test_job_run_now_redirects_before_generation_finishes(config, stop):
 
     app = create_app(
         config=config,
-        model=ModelClient(config.model, transport=httpx.MockTransport(backend)),
+        model=ModelClient(config.model, transport=httpx2.MockTransport(backend)),
     )
     with TestClient(app) as client:
         sign_in(client)
@@ -299,7 +299,7 @@ def test_queued_successor_settles_with_its_own_delta(config, monkeypatch):
     import threading
     from concurrent.futures import ThreadPoolExecutor
 
-    import httpx
+    import httpx2
 
     from solakit.core.model import ModelClient
 
@@ -307,10 +307,10 @@ def test_queued_successor_settles_with_its_own_delta(config, monkeypatch):
 
     async def backend(request):
         if request.url.path.endswith("/models"):
-            return httpx.Response(200, json={"data": [{"id": config.model.model_id}]})
+            return httpx2.Response(200, json={"data": [{"id": config.model.model_id}]})
         entered.set()
         await asyncio.to_thread(release.wait, 5)
-        return httpx.Response(
+        return httpx2.Response(
             200,
             json={
                 "model": config.model.model_id,
@@ -320,7 +320,7 @@ def test_queued_successor_settles_with_its_own_delta(config, monkeypatch):
 
     app = create_app(
         config=config,
-        model=ModelClient(config.model, transport=httpx.MockTransport(backend)),
+        model=ModelClient(config.model, transport=httpx2.MockTransport(backend)),
     )
     with TestClient(app) as client:
         sign_in(client)

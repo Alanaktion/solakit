@@ -24,7 +24,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
-import httpx
+import httpx2
 from pydantic import BaseModel, ConfigDict, Field
 
 from solakit.core.compaction import request_bytes
@@ -353,11 +353,11 @@ FIRST_TOKEN = re.compile(
 )
 
 
-class TimingTransport(httpx.AsyncBaseTransport):
+class TimingTransport(httpx2.AsyncBaseTransport):
     """Record per-request time to first response byte and total time."""
 
     def __init__(self):
-        self.inner = httpx.AsyncHTTPTransport()
+        self.inner = httpx2.AsyncHTTPTransport()
         self.samples: list[dict] = []
 
     async def handle_async_request(self, request):
@@ -369,7 +369,7 @@ class TimingTransport(httpx.AsyncBaseTransport):
         self.samples.append(sample)
         inner_stream = response.stream
 
-        class Timed(httpx.AsyncByteStream):
+        class Timed(httpx2.AsyncByteStream):
             async def __aiter__(self):
                 async for chunk in inner_stream:
                     # First generated token, not headers or empty keepalives.
@@ -381,7 +381,7 @@ class TimingTransport(httpx.AsyncBaseTransport):
             async def aclose(self):
                 await inner_stream.aclose()
 
-        return httpx.Response(
+        return httpx2.Response(
             response.status_code,
             headers=response.headers,
             stream=Timed(),

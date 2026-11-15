@@ -4,7 +4,7 @@ import asyncio
 import json
 import threading
 
-import httpx
+import httpx2
 import pytest
 from fastapi.testclient import TestClient
 from test_execution import completion, model_list, setup
@@ -65,7 +65,7 @@ def test_api_crud_import_once_restart_and_rebuild(config, mock_model, auth):
     config.jobs[0].task = "Stale TOML"
     config.jobs.append(Job(**{**definition(), "id": "api-job"}))
     fresh_model = ModelClient(
-        config.model, transport=httpx.MockTransport(lambda request: model_list(config))
+        config.model, transport=httpx2.MockTransport(lambda request: model_list(config))
     )
     with TestClient(create_app(config=config, model=fresh_model)) as client:
         assert (
@@ -141,8 +141,8 @@ def test_api_nonblocking_trigger_acknowledges_while_inference_is_busy(
         async def exercise():
             await app.state.execution.semaphore.acquire()
             try:
-                async with httpx.AsyncClient(
-                    transport=httpx.ASGITransport(app=app),
+                async with httpx2.AsyncClient(
+                    transport=httpx2.ASGITransport(app=app),
                     base_url="http://test",
                     headers=auth,
                 ) as api:

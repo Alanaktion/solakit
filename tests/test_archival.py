@@ -2,7 +2,7 @@ import asyncio
 import json
 import threading
 
-import httpx
+import httpx2
 import pytest
 from fastapi.testclient import TestClient
 from test_execution import completion, model_list, setup
@@ -38,7 +38,7 @@ def test_archive_api_preserves_binding_evidence_and_starts_fresh(config, auth):
 
     from solakit.core.model import ModelClient
 
-    model = ModelClient(config.model, transport=httpx.MockTransport(backend))
+    model = ModelClient(config.model, transport=httpx2.MockTransport(backend))
     app = create_app(config=config, model=model)
     with TestClient(app) as client:
         app.state.store.create_session(Session(id="s", bound_channel="discord:123"))
@@ -229,7 +229,7 @@ def test_operator_archives_and_compaction_share_numbering_without_memory_writes(
 
     seen = []
     memory = MemoryClient(
-        memory_config(), transport=httpx.MockTransport(memory_handler(seen))
+        memory_config(), transport=httpx2.MockTransport(memory_handler(seen))
     )
     store = Store(config.paths.data)
     seed(store)

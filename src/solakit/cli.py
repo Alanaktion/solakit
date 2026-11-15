@@ -6,7 +6,7 @@ import os
 import sqlite3
 import sys
 
-import httpx
+import httpx2
 
 from solakit.core.config import ServerConfig, load_config
 from solakit.core.startup import ConfigurationError, prepare
@@ -363,7 +363,7 @@ def main() -> None:  # noqa: C901
     try:
         token = load_config().operator_token.resolve()
         if args.command == "memory-test":
-            response = httpx.post(
+            response = httpx2.post(
                 f"{args.url.rstrip('/')}/api/memory/probe",
                 json={
                     "fact": args.fact,
@@ -382,7 +382,7 @@ def main() -> None:  # noqa: C901
                     1, "Memory verification did not pass; inspect its run evidence.\n"
                 )
             return
-        response = httpx.get(
+        response = httpx2.get(
             f"{args.url.rstrip('/')}/api/prompt",
             params={
                 k: v
@@ -401,7 +401,7 @@ def main() -> None:  # noqa: C901
         )
         response.raise_for_status()
         data = response.json()
-    except (OSError, ValueError, httpx.HTTPError):
+    except (OSError, ValueError, httpx2.HTTPError):
         parser.exit(
             1, "Prompt inspection failed; check configuration and API status.\n"
         )

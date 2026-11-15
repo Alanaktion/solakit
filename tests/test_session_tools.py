@@ -4,7 +4,7 @@ import asyncio
 import json
 import sqlite3
 
-import httpx
+import httpx2
 import pytest
 
 from solakit.core.archival import archive_session
@@ -182,7 +182,7 @@ def test_runner_search_round_trip_uses_schema_and_preserves_tool_order(setup):
 
     def handler(request):
         if request.url.path.endswith("/models"):
-            return httpx.Response(
+            return httpx2.Response(
                 200, json={"data": [{"id": ctx.config.model.model_id}]}
             )
         body = json.loads(request.content)
@@ -203,7 +203,7 @@ def test_runner_search_round_trip_uses_schema_and_preserves_tool_order(setup):
                     }
                 ],
             }
-        return httpx.Response(
+        return httpx2.Response(
             200,
             json={
                 "model": ctx.config.model.model_id,
@@ -215,7 +215,7 @@ def test_runner_search_round_trip_uses_schema_and_preserves_tool_order(setup):
         ctx.config,
         ctx.store,
         registry,
-        ModelClient(ctx.config.model, transport=httpx.MockTransport(handler)),
+        ModelClient(ctx.config.model, transport=httpx2.MockTransport(handler)),
     )
 
     async def exercise():

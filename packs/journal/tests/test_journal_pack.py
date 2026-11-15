@@ -144,7 +144,7 @@ def test_second_collection_is_configuration_only(fixture):
 
 
 def test_runner_creates_and_publishes_to_scratch_remote(fixture, tmp_path):
-    import httpx
+    import httpx2
 
     from solakit.core.loop import Execution
     from solakit.core.model import ModelClient
@@ -171,7 +171,7 @@ def test_runner_creates_and_publishes_to_scratch_remote(fixture, tmp_path):
 
     def handler(request):
         if request.url.path.endswith("/models"):
-            return httpx.Response(200, json={"data": [{"id": config.model.model_id}]})
+            return httpx2.Response(200, json={"data": [{"id": config.model.model_id}]})
         captured.append(json.loads(request.content))
         step = len(captured) - 1
         message = {"role": "assistant", "content": "Published the moon entry."}
@@ -190,12 +190,12 @@ def test_runner_creates_and_publishes_to_scratch_remote(fixture, tmp_path):
                     }
                 ],
             }
-        return httpx.Response(
+        return httpx2.Response(
             200,
             json={"model": config.model.model_id, "choices": [{"message": message}]},
         )
 
-    model = ModelClient(config.model, transport=httpx.MockTransport(handler))
+    model = ModelClient(config.model, transport=httpx2.MockTransport(handler))
     execution = Execution(config, ctx.store, registry, model)
 
     async def exercise():

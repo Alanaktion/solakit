@@ -440,7 +440,7 @@ def test_relative_secret_files_and_permissions_are_checked_without_exposing_valu
 def test_pack_credentials_are_masked_by_existing_ui_without_changing_history(
     fixture, monkeypatch
 ):
-    import httpx
+    import httpx2
     from fastapi.testclient import TestClient
 
     from solakit.core.config import SecretRef
@@ -459,9 +459,9 @@ def test_pack_credentials_are_masked_by_existing_ui_without_changing_history(
     cfg.operator_token = SecretRef(env="PACK_OPERATOR_TOKEN")
 
     def model_backend(request):
-        return httpx.Response(200, json={"data": [{"id": cfg.model.model_id}]})
+        return httpx2.Response(200, json={"data": [{"id": cfg.model.model_id}]})
 
-    model = ModelClient(cfg.model, transport=httpx.MockTransport(model_backend))
+    model = ModelClient(cfg.model, transport=httpx2.MockTransport(model_backend))
     app = create_app(config=cfg, model=model)
     with TestClient(app) as client:
         # Production contexts share this same Store/redactor; keep the mock's

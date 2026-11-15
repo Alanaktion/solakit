@@ -13,7 +13,7 @@ import re
 import time
 from collections.abc import Mapping
 
-import httpx
+import httpx2
 
 from solakit.core.config import MemoryConfig, ProfileMemory
 from solakit.core.io import durable
@@ -39,7 +39,7 @@ class MemoryClient:
         headers = {"X-API-Key": key} if key else {}
         if config.user:
             headers["X-OpenViking-User"] = config.user
-        self.client = httpx.AsyncClient(
+        self.client = httpx2.AsyncClient(
             base_url=(config.base_url or "http://127.0.0.1:1933").rstrip("/") + "/",
             headers=headers,
             timeout=config.timeout_s,
@@ -60,7 +60,7 @@ class MemoryClient:
             if payload.get("status") != "ok" or "result" not in payload:
                 raise MemoryUnavailable("OpenViking returned an invalid result")
             return payload["result"]
-        except (httpx.HTTPError, ValueError, TypeError, AttributeError) as exc:
+        except (httpx2.HTTPError, ValueError, TypeError, AttributeError) as exc:
             raise MemoryUnavailable("OpenViking request failed") from exc
 
     async def preflight(self) -> None:

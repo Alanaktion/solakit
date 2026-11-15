@@ -1,7 +1,7 @@
 import asyncio
 import json
 
-import httpx
+import httpx2
 import pytest
 from test_tools import context
 
@@ -69,7 +69,7 @@ def run_with(config, monkeypatch, handler, operation):
     monkeypatch.setattr(
         _read_api,
         "client",
-        lambda: httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        lambda: httpx2.AsyncClient(transport=httpx2.MockTransport(handler)),
     )
 
     class Calls:
@@ -137,7 +137,7 @@ def test_brave_and_cloudflare(config, monkeypatch):
         if request.url.host == "api.search.brave.com":
             assert request.headers["X-Subscription-Token"] == "test-brave"
             assert request.url.params["q"] == "python"
-            return httpx.Response(
+            return httpx2.Response(
                 200,
                 json={
                     "web": {
@@ -154,7 +154,7 @@ def test_brave_and_cloudflare(config, monkeypatch):
         assert request.method == "POST"
         assert request.url.path.endswith("/browser-rendering/markdown")
         assert json.loads(request.content) == {"url": "https://example.com"}
-        return httpx.Response(200, json={"success": True, "result": "# Example"})
+        return httpx2.Response(200, json={"success": True, "result": "# Example"})
 
     async def operation(registry):
         assert (await registry.call("web.search", query="python"))["results"][0][
@@ -187,7 +187,7 @@ def test_feeds(config, monkeypatch, xml):
         assert data["title"] == "News"
         assert data["items"][0]["url"] == "https://example.com/1"
 
-    run_with(config, monkeypatch, lambda r: httpx.Response(200, text=xml), operation)
+    run_with(config, monkeypatch, lambda r: httpx2.Response(200, text=xml), operation)
 
 
 def test_github_and_wikipedia(config, monkeypatch):
@@ -200,9 +200,9 @@ def test_github_and_wikipedia(config, monkeypatch):
         if request.url.host == "api.github.com":
             assert request.headers["Authorization"] == "Bearer test-github"
             if "/pulls/" in request.url.path:
-                return httpx.Response(200, json={"head": {"sha": "abc"}})
+                return httpx2.Response(200, json={"head": {"sha": "abc"}})
             if request.url.path == "/notifications":
-                return httpx.Response(
+                return httpx2.Response(
                     200,
                     json=[
                         {
@@ -214,7 +214,7 @@ def test_github_and_wikipedia(config, monkeypatch):
                     ],
                 )
             if request.url.path.endswith("/check-runs"):
-                return httpx.Response(
+                return httpx2.Response(
                     200,
                     json={
                         "total_count": 1,
@@ -228,7 +228,7 @@ def test_github_and_wikipedia(config, monkeypatch):
                     },
                 )
             if request.url.path.endswith("/status"):
-                return httpx.Response(
+                return httpx2.Response(
                     200,
                     json={
                         "state": "success",
@@ -236,11 +236,11 @@ def test_github_and_wikipedia(config, monkeypatch):
                         "statuses": [{"context": "CI", "state": "success"}],
                     },
                 )
-            return httpx.Response(
+            return httpx2.Response(
                 200, json={"tag_name": "v1", "body": "Release notes", "assets": []}
             )
         assert "Authorization" not in request.headers
-        return httpx.Response(200, json={"title": "Python", "wikibase_item": "Q28865"})
+        return httpx2.Response(200, json={"title": "Python", "wikibase_item": "Q28865"})
 
     async def operation(registry):
         await registry.call("github.notifications")
@@ -265,7 +265,7 @@ def test_upstream_errors(config, monkeypatch, status):
         assert "secret" not in str(error.value)
 
     run_with(
-        config, monkeypatch, lambda r: httpx.Response(status, text="secret"), operation
+        config, monkeypatch, lambda r: httpx2.Response(status, text="secret"), operation
     )
 
 
@@ -302,7 +302,7 @@ def test_response_size_limit(config, monkeypatch):
     run_with(
         config,
         monkeypatch,
-        lambda r: httpx.Response(200, content=b"x" * 2_000_001),
+        lambda r: httpx2.Response(200, content=b"x" * 2_000_001),
         operation,
     )
 
@@ -317,7 +317,7 @@ def test_xml_entities_rejected(config, monkeypatch):
         with pytest.raises(ValueError):
             await registry.call("feeds.check", url="https://example.com/feed")
 
-    run_with(config, monkeypatch, lambda r: httpx.Response(200, text=xml), operation)
+    run_with(config, monkeypatch, lambda r: httpx2.Response(200, text=xml), operation)
 
 
 def test_cloudflare_failure(config, monkeypatch):
@@ -334,7 +334,7 @@ def test_cloudflare_failure(config, monkeypatch):
     run_with(
         config,
         monkeypatch,
-        lambda r: httpx.Response(200, json={"success": False}),
+        lambda r: httpx2.Response(200, json={"success": False}),
         operation,
     )
 
@@ -361,7 +361,7 @@ def test_secret_reference_registration(config, monkeypatch):
     ctx = context(config)
 
     async def exercise():
-        async with httpx.AsyncClient() as client:
+        async with httpx2.AsyncClient() as client:
             remote = RemoteTools(client, ctx)
             assert remote.credential("brave_api_key") == "private-brave-token"
             assert ctx.store.redactor.redact("private-brave-token") == "[redacted]"
@@ -384,8 +384,8 @@ def test_feed_connection_pins_address_and_preserves_host(config, monkeypatch):
         assert request.extensions["sni_hostname"] == "example.com"
         assert request.headers["connection"] == "close"
         if request.url.path == "/start":
-            return httpx.Response(302, headers={"Location": "/feed"})
-        return httpx.Response(
+            return httpx2.Response(302, headers={"Location": "/feed"})
+        return httpx2.Response(
             200, text="<rss><channel><title>News</title></channel></rss>"
         )
 

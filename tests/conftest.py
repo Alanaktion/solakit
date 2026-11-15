@@ -23,14 +23,14 @@ def config(tmp_path, monkeypatch):
 
 @pytest.fixture
 def mock_model(config):
-    import httpx
+    import httpx2
 
     from solakit.core.model import ModelClient
 
     def handler(request):
         if request.url.path.endswith("/models"):
-            return httpx.Response(200, json={"data": [{"id": config.model.model_id}]})
-        return httpx.Response(
+            return httpx2.Response(200, json={"data": [{"id": config.model.model_id}]})
+        return httpx2.Response(
             200,
             json={
                 "model": config.model.model_id,
@@ -40,7 +40,7 @@ def mock_model(config):
             },
         )
 
-    return ModelClient(config.model, transport=httpx.MockTransport(handler))
+    return ModelClient(config.model, transport=httpx2.MockTransport(handler))
 
 
 @pytest.fixture

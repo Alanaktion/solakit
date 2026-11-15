@@ -1,4 +1,4 @@
-import httpx
+import httpx2
 import pytest
 
 from solakit.cli import main
@@ -11,11 +11,11 @@ def test_cli_prints_exact_prompt(config, monkeypatch, capsys):
 
     def get(url, **kwargs):
         captured.append((url, kwargs))
-        return httpx.Response(
-            200, json={"prompt": "Verbatim\r\n  "}, request=httpx.Request("GET", url)
+        return httpx2.Response(
+            200, json={"prompt": "Verbatim\r\n  "}, request=httpx2.Request("GET", url)
         )
 
-    monkeypatch.setattr("solakit.cli.httpx.get", get)
+    monkeypatch.setattr("solakit.cli.httpx2.get", get)
     main()
     assert capsys.readouterr().out == "Verbatim\r\n  "
     assert captured[0][1]["headers"]["Authorization"] == "Bearer operator-test-token"
@@ -33,7 +33,7 @@ def test_offline_check_has_actionable_error_without_traceback(
     def forbidden(*args, **kwargs):
         raise AssertionError("offline check must not call external services")
 
-    monkeypatch.setattr("httpx.AsyncClient", forbidden)
+    monkeypatch.setattr("httpx2.AsyncClient", forbidden)
     main()
     output = capsys.readouterr().out
     assert "Tool disclosure profile interactive:" in output
@@ -89,11 +89,11 @@ def test_default_cli_uses_solakit_port(config, monkeypatch, capsys):
 
     def get(url, **kwargs):
         urls.append(url)
-        return httpx.Response(
-            200, json={"prompt": "exact"}, request=httpx.Request("GET", url)
+        return httpx2.Response(
+            200, json={"prompt": "exact"}, request=httpx2.Request("GET", url)
         )
 
-    monkeypatch.setattr("httpx.get", get)
+    monkeypatch.setattr("httpx2.get", get)
     main()
     assert urls == ["http://127.0.0.1:8382/api/prompt"]
     assert capsys.readouterr().out == "exact"

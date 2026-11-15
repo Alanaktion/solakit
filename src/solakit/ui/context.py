@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from http.cookiejar import CookieJar, DefaultCookiePolicy
 from typing import Any
 
-import httpx
+import httpx2
 from fastapi import FastAPI, Request
 from starlette.responses import Response
 
@@ -15,11 +15,11 @@ class RejectCookies(DefaultCookiePolicy):
         return False
 
 
-def internal_client(app: FastAPI) -> httpx.AsyncClient:
+def internal_client(app: FastAPI) -> httpx2.AsyncClient:
     # Authentication is request-local. In particular a Set-Cookie response from
     # the inner middleware must never authenticate a later, unrelated request.
-    return httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app),
+    return httpx2.AsyncClient(
+        transport=httpx2.ASGITransport(app=app),
         base_url="http://solakit.internal",
         timeout=None,
         trust_env=False,

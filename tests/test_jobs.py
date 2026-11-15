@@ -2,7 +2,7 @@ import asyncio
 import json
 from datetime import datetime, timedelta
 
-import httpx
+import httpx2
 import pytest
 from pydantic import ValidationError
 from test_channels import FakeAdapter
@@ -169,7 +169,7 @@ def test_pause_survives_index_rebuild_and_resume_skips_paused_interval(config):
 
 def test_model_down_is_a_gap_without_channel_messages(config):
     configured(config)
-    execution = setup(config, lambda request: httpx.Response(503))
+    execution = setup(config, lambda request: httpx2.Response(503))
     adapter = FakeAdapter()
     jobs = Jobs(config, execution, Channels(config, execution, {"discord": adapter}))
 
@@ -296,11 +296,11 @@ def test_sub_sessions_keep_memory_and_deliver_only_final(config, silent):
             }
         elif request.url.path.endswith("/commit"):
             result = {"status": "accepted"}
-        return httpx.Response(200, json={"status": "ok", "result": result})
+        return httpx2.Response(200, json={"status": "ok", "result": result})
 
     execution, adapter = setup(config, model), FakeAdapter()
     execution.memory = MemoryClient(
-        config.memory, transport=httpx.MockTransport(memory)
+        config.memory, transport=httpx2.MockTransport(memory)
     )
     channels = Channels(config, execution, {"discord": adapter})
     jobs = Jobs(config, execution, channels)

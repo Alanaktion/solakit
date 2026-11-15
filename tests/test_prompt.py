@@ -19,10 +19,10 @@ def test_golden_dry_run(config, auth, monkeypatch):
         def forbidden(*args, **kwargs):
             raise AssertionError("inspection must not call external services")
 
-        monkeypatch.setattr("httpx.AsyncClient.get", forbidden)
-        monkeypatch.setattr("httpx.AsyncClient.post", forbidden)
+        monkeypatch.setattr("httpx2.AsyncClient.get", forbidden)
+        monkeypatch.setattr("httpx2.AsyncClient.post", forbidden)
         # The OpenAI SDK sends through AsyncClient.send rather than get/post.
-        monkeypatch.setattr("httpx.AsyncClient.send", forbidden)
+        monkeypatch.setattr("httpx2.AsyncClient.send", forbidden)
         before = list(config.paths.data.rglob("*"))
         response = client.get(
             "/api/prompt",
@@ -294,7 +294,7 @@ def test_two_turns_share_byte_identical_request_prefix(config):
     import asyncio
     import json
 
-    import httpx
+    import httpx2
 
     from solakit.core.loop import Execution
     from solakit.core.model import ModelClient
@@ -306,9 +306,9 @@ def test_two_turns_share_byte_identical_request_prefix(config):
 
     def handler(request):
         if request.url.path.endswith("/models"):
-            return httpx.Response(200, json={"data": [{"id": config.model.model_id}]})
+            return httpx2.Response(200, json={"data": [{"id": config.model.model_id}]})
         requests.append(json.loads(request.content))
-        return httpx.Response(
+        return httpx2.Response(
             200,
             json={
                 "model": config.model.model_id,
@@ -322,7 +322,7 @@ def test_two_turns_share_byte_identical_request_prefix(config):
         config,
         store,
         Registry(config),
-        ModelClient(config.model, transport=httpx.MockTransport(handler)),
+        ModelClient(config.model, transport=httpx2.MockTransport(handler)),
     )
 
     async def exercise():

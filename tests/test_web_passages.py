@@ -1,7 +1,7 @@
 import asyncio
 import json
 
-import httpx
+import httpx2
 
 from solakit.core.config import Profile, SecretRef
 from solakit.core.schemas import Session
@@ -44,7 +44,7 @@ def test_get_page_query_and_search_extracts(config, monkeypatch):
 
     def handler(request):
         if "brave" in request.url.host:
-            return httpx.Response(
+            return httpx2.Response(
                 200,
                 json={
                     "web": {
@@ -55,15 +55,15 @@ def test_get_page_query_and_search_extracts(config, monkeypatch):
                     }
                 },
             )
-        return httpx.Response(200, json={"success": True, "result": DOC})
+        return httpx2.Response(200, json={"success": True, "result": DOC})
 
-    real = httpx.AsyncClient
+    real = httpx2.AsyncClient
 
     def client(*args, **kwargs):
-        kwargs["transport"] = httpx.MockTransport(handler)
+        kwargs["transport"] = httpx2.MockTransport(handler)
         return real(*args, **kwargs)
 
-    monkeypatch.setattr("solakit.tools._read_api.httpx.AsyncClient", client)
+    monkeypatch.setattr("solakit.tools._read_api.httpx2.AsyncClient", client)
     registry = Registry(config)
     store = Store(config.paths.data)
     store.create_session(Session(id="s"))

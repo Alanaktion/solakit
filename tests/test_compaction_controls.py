@@ -1,7 +1,7 @@
 import asyncio
 import json
 
-import httpx
+import httpx2
 import pytest
 from fastapi.testclient import TestClient
 from test_compaction import memory_handler, seed
@@ -40,7 +40,7 @@ def test_mid_run_compaction_retains_latest_results_without_replaying(config):
     execution = setup(config, backend)
     execution.memory = MemoryClient(
         config.memory,
-        transport=httpx.MockTransport(
+        transport=httpx2.MockTransport(
             memory_handler(seen, overview="First step done.")
         ),
     )
@@ -160,14 +160,14 @@ def test_mid_run_compaction_preserves_groups_goal_budgets_and_full_commit(
         if "/tasks/" in request.url.path:
             polls += 1
             if polls == 1:
-                return httpx.Response(
+                return httpx2.Response(
                     200, json={"status": "ok", "result": {"status": "running"}}
                 )
         return handler(request)
 
     execution.memory = MemoryClient(
         config.memory,
-        transport=httpx.MockTransport(delayed_memory),
+        transport=httpx2.MockTransport(delayed_memory),
     )
 
     @tool(name="echo", profiles=["interactive"])
@@ -247,7 +247,7 @@ def memory_app(config, mock_model, monkeypatch):
         lambda cfg, key, **kw: MemoryClient(
             cfg,
             key,
-            transport=httpx.MockTransport(
+            transport=httpx2.MockTransport(
                 memory_handler(seen, overview="Old context summary")
             ),
         ),
@@ -392,7 +392,7 @@ def test_cancel_between_prepared_manifest_and_rotation_finishes_atomically(
     seed(store)
     original = (store.root / "sessions/s.jsonl").read_bytes()
     memory = MemoryClient(
-        memory_config(), transport=httpx.MockTransport(memory_handler([]))
+        memory_config(), transport=httpx2.MockTransport(memory_handler([]))
     )
     entered, release = threading.Event(), threading.Event()
     write = rotation.atomic_write
@@ -439,7 +439,7 @@ def test_failed_compaction_commit_marker_blocks_writes_until_recovery(
     store = Store(config.paths.data)
     seed(store)
     memory = MemoryClient(
-        memory_config(), transport=httpx.MockTransport(memory_handler([]))
+        memory_config(), transport=httpx2.MockTransport(memory_handler([]))
     )
     write = rotation.atomic_write
 

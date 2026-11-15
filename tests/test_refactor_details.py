@@ -4,7 +4,7 @@ import asyncio
 import sys
 from datetime import datetime
 
-import httpx
+import httpx2
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
@@ -91,8 +91,8 @@ def test_managed_job_defaults_resolve_before_validation_and_survive_restart(
 
     restarted_model = ModelClient(
         config.model,
-        transport=httpx.MockTransport(
-            lambda request: httpx.Response(
+        transport=httpx2.MockTransport(
+            lambda request: httpx2.Response(
                 200, json={"data": [{"id": config.model.model_id}]}
             )
         ),

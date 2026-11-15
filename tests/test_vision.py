@@ -8,7 +8,7 @@ import json
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
 
-import httpx
+import httpx2
 import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
@@ -387,7 +387,7 @@ def test_streaming_image_request_preserves_pixels(config):
         requests.append(body)
         assert body["stream"] is True
         assert decode(body["messages"][-1]["content"][-1]).getpixel((0, 0))[0] > 240
-        return httpx.Response(
+        return httpx2.Response(
             200,
             stream=Stream(
                 [
@@ -419,7 +419,7 @@ def test_vision_backend_rejection_never_retries_text_only(config):
         if request.url.path.endswith("/models"):
             return model_list(config)
         requests.append(json.loads(request.content))
-        return httpx.Response(400, json={"error": "vision unsupported"})
+        return httpx2.Response(400, json={"error": "vision unsupported"})
 
     execution = setup(config, model)
 

@@ -4,7 +4,7 @@ and calibrated token budgets (MODEL-REQUEST-TUNING-PLAN)."""
 import asyncio
 import json
 
-import httpx
+import httpx2
 import pytest
 from pydantic import ValidationError
 from test_execution import model_list, setup
@@ -28,7 +28,7 @@ def sse(config, deltas, finish="stop", usage=None):
     if usage:
         chunks.append({"model": config.model.model_id, "choices": [], "usage": usage})
     body = "".join(f"data: {json.dumps(c)}\n\n" for c in chunks) + "data: [DONE]\n\n"
-    return httpx.Response(
+    return httpx2.Response(
         200, content=body, headers={"content-type": "text/event-stream"}
     )
 
@@ -529,7 +529,7 @@ def test_length_stop_never_uses_empty_recovery(config, content):
         if request.url.path.endswith("/models"):
             return model_list(config)
         bodies.append(json.loads(request.content))
-        return httpx.Response(
+        return httpx2.Response(
             200,
             json={
                 "model": config.model.model_id,

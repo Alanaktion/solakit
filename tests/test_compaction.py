@@ -1,7 +1,7 @@
 import asyncio
 import json
 
-import httpx
+import httpx2
 import pytest
 from test_execution import completion, model_list, setup
 from test_memory import memory_config
@@ -43,7 +43,7 @@ def memory_handler(
             }
         else:
             result = {}
-        return httpx.Response(200, json={"status": "ok", "result": result})
+        return httpx2.Response(200, json={"status": "ok", "result": result})
 
     return handle
 
@@ -61,7 +61,7 @@ def seed(store, text="x" * 2000):
 def test_compaction_preserves_archive_and_index_rebuild(config):
     seen = []
     memory = MemoryClient(
-        memory_config(), transport=httpx.MockTransport(memory_handler(seen))
+        memory_config(), transport=httpx2.MockTransport(memory_handler(seen))
     )
     store = Store(config.paths.data)
     seed(store)
@@ -98,7 +98,7 @@ def test_rotation_recovers_crash_after_archive_rename(config, monkeypatch):
     import solakit.core.compaction as module
 
     memory = MemoryClient(
-        memory_config(), transport=httpx.MockTransport(memory_handler([]))
+        memory_config(), transport=httpx2.MockTransport(memory_handler([]))
     )
     store = Store(config.paths.data)
     seed(store)
@@ -135,7 +135,7 @@ def test_incomplete_summary_never_rotates_history(config, status):
     cfg = memory_config()
     cfg.compaction_timeout_s = 0.001
     memory = MemoryClient(
-        cfg, transport=httpx.MockTransport(memory_handler([], task_status=status))
+        cfg, transport=httpx2.MockTransport(memory_handler([], task_status=status))
     )
     store = Store(config.paths.data)
     seed(store)
@@ -169,7 +169,7 @@ def test_oversized_context_compacts_before_model_or_fails_closed(config):
         assert failed.status == "context_limit"
         assert not captured
         execution.memory = MemoryClient(
-            memory_config(), transport=httpx.MockTransport(memory_handler([]))
+            memory_config(), transport=httpx2.MockTransport(memory_handler([]))
         )
         (config.paths.fragments / "recall-header.md").write_text("Recall:")
         run = await execution.submit("s", "hello")
@@ -228,7 +228,7 @@ def test_explicit_memory_probe_verifies_recall_not_model_claim(config):
             result = {"status": "accepted", "task_id": "t1"}
         elif "/tasks/" in request.url.path:
             result = {"status": "completed"}
-        return httpx.Response(200, json={"status": "ok", "result": result})
+        return httpx2.Response(200, json={"status": "ok", "result": result})
 
     def model(request):
         return (
@@ -239,7 +239,7 @@ def test_explicit_memory_probe_verifies_recall_not_model_claim(config):
 
     execution = setup(config, model)
     execution.memory = MemoryClient(
-        memory_config(), transport=httpx.MockTransport(memory)
+        memory_config(), transport=httpx2.MockTransport(memory)
     )
     (config.paths.fragments / "recall-header.md").write_text("Recall:")
 
@@ -269,12 +269,14 @@ def test_openviking_04171_archive_contract_without_status(config):
         if "/archives/" in request.url.path:
             payload = response.json()
             del payload["result"]["status"]
-            return httpx.Response(200, json=payload)
+            return httpx2.Response(200, json=payload)
         return response
 
     store = Store(config.paths.data)
     seed(store)
-    memory = MemoryClient(memory_config(), transport=httpx.MockTransport(version_04171))
+    memory = MemoryClient(
+        memory_config(), transport=httpx2.MockTransport(version_04171)
+    )
 
     async def exercise():
         result = await Compactor(store, memory).compact(store.session("s"))
@@ -288,7 +290,7 @@ def test_lost_compacted_active_file_is_not_treated_as_empty_session(config):
     from solakit.core.store import StorageCorruption
 
     memory = MemoryClient(
-        memory_config(), transport=httpx.MockTransport(memory_handler([]))
+        memory_config(), transport=httpx2.MockTransport(memory_handler([]))
     )
     store = Store(config.paths.data)
     seed(store)
@@ -324,14 +326,14 @@ def test_compaction_timeout_preserves_task_and_retry_reuses_commit(config):
     def backend(request):
         if "/tasks/" in request.url.path:
             seen.append((request.method, request.url.path, None))
-            return httpx.Response(
+            return httpx2.Response(
                 200, json={"status": "ok", "result": {"status": state["status"]}}
             )
         return handler(request)
 
     cfg = memory_config()
     cfg.compaction_timeout_s = 0.01
-    memory = MemoryClient(cfg, transport=httpx.MockTransport(backend))
+    memory = MemoryClient(cfg, transport=httpx2.MockTransport(backend))
     store = Store(config.paths.data)
     seed(store)
     original = (store.root / "sessions/s.jsonl").read_bytes()
@@ -368,7 +370,7 @@ def test_compaction_deadline_bounds_inflight_task_request(config):
 
     cfg = memory_config()
     cfg.compaction_timeout_s = 0.02
-    memory = MemoryClient(cfg, transport=httpx.MockTransport(backend))
+    memory = MemoryClient(cfg, transport=httpx2.MockTransport(backend))
     store = Store(config.paths.data)
     seed(store)
     original = (store.root / "sessions/s.jsonl").read_bytes()

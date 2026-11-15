@@ -3,7 +3,7 @@
 import asyncio
 import json
 
-import httpx
+import httpx2
 import pytest
 from test_execution import call, completion, model_list, setup
 
@@ -37,11 +37,11 @@ def runtime(config, *, note=None, commit_failure=False, model_failure=False):
             batches.append(json.loads(request.content)["messages"])
         elif path.endswith("/commit"):
             if commit_failure:
-                return httpx.Response(503)
+                return httpx2.Response(503)
             result = {"status": "accepted", "task_id": "extract-task"}
         elif "/tasks/" in path:
             result = {"status": "completed"}
-        return httpx.Response(200, json={"status": "ok", "result": result})
+        return httpx2.Response(200, json={"status": "ok", "result": result})
 
     def model_handler(request):
         if request.url.path.endswith("/models"):
@@ -52,12 +52,12 @@ def runtime(config, *, note=None, commit_failure=False, model_failure=False):
                 config, calls=[call("memory.remember", json.dumps({"text": note}))]
             )
         if model_failure:
-            return httpx.Response(503)
+            return httpx2.Response(503)
         return completion(config, "Done")
 
     execution = setup(config, model_handler)
     execution.memory = MemoryClient(
-        config.memory, transport=httpx.MockTransport(memory_handler)
+        config.memory, transport=httpx2.MockTransport(memory_handler)
     )
     return execution, queries, batches, captured
 

@@ -1,7 +1,7 @@
 import asyncio
 import logging
 
-import httpx
+import httpx2
 import pytest
 from fastapi.testclient import TestClient
 
@@ -35,10 +35,10 @@ def test_read_only_memory_startup_diagnostics(
         if mode == "deadline":
             await asyncio.sleep(1)
         if mode == "timeout":
-            raise httpx.ReadTimeout("memory-test-credential", request=request)
+            raise httpx2.ReadTimeout("memory-test-credential", request=request)
         if mode == "denied":
-            return httpx.Response(401, json={"detail": "memory-test-credential"})
-        return httpx.Response(
+            return httpx2.Response(401, json={"detail": "memory-test-credential"})
+        return httpx2.Response(
             200,
             json={
                 "status": "ok",
@@ -49,7 +49,7 @@ def test_read_only_memory_startup_diagnostics(
     monkeypatch.setattr(
         "solakit.main.MemoryClient",
         lambda cfg, key, **kw: MemoryClient(
-            cfg, key, transport=httpx.MockTransport(backend)
+            cfg, key, transport=httpx2.MockTransport(backend)
         ),
     )
     with caplog.at_level(logging.INFO):

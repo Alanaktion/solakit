@@ -1,7 +1,7 @@
 import asyncio
 import json
 
-import httpx
+import httpx2
 
 from solakit.core import doctor
 
@@ -11,13 +11,13 @@ def server(config, *, content_calls=False, reject_sampling=False, slow=False):
 
     async def handler(request):
         if request.url.path.endswith("/models"):
-            return httpx.Response(
+            return httpx2.Response(
                 200,
                 json={"data": [{"id": config.model.model_id, "context_length": 32768}]},
             )
         body = json.loads(request.content)
         if reject_sampling and "top_k" in body:
-            return httpx.Response(400, json={"error": "unknown field top_k"})
+            return httpx2.Response(400, json={"error": "unknown field top_k"})
         if slow:
             await asyncio.sleep(0.02)
         message = {"role": "assistant", "content": "ok"}
@@ -72,12 +72,12 @@ def server(config, *, content_calls=False, reject_sampling=False, slow=False):
                 }
             ]
             text = "".join(f"data: {json.dumps(c)}\n\n" for c in chunks)
-            return httpx.Response(
+            return httpx2.Response(
                 200,
                 content=text + "data: [DONE]\n\n",
                 headers={"content-type": "text/event-stream"},
             )
-        return httpx.Response(
+        return httpx2.Response(
             200,
             json={
                 "model": config.model.model_id,
@@ -86,7 +86,7 @@ def server(config, *, content_calls=False, reject_sampling=False, slow=False):
             },
         )
 
-    return httpx.MockTransport(handler)
+    return httpx2.MockTransport(handler)
 
 
 def statuses(probes):
@@ -147,10 +147,10 @@ def test_flags_concurrency_above_knee(config):
 
 def test_unreachable_model_fails_fast(config):
     def handler(request):
-        return httpx.Response(401)
+        return httpx2.Response(401)
 
     probes = asyncio.run(
-        doctor.run_doctor(config, transport=httpx.MockTransport(handler))
+        doctor.run_doctor(config, transport=httpx2.MockTransport(handler))
     )
     assert [p.status for p in probes] == ["FAIL"]
     assert "api_key" in probes[0].remedy

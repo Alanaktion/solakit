@@ -2,7 +2,7 @@ import asyncio
 import json
 from pathlib import Path
 
-import httpx
+import httpx2
 import pytest
 
 from solakit.core import eval as evaluation
@@ -86,7 +86,7 @@ def test_fakes_keep_schema_bytes_and_match_responses(config):
     assert [c["name"] for c in calls] == ["email.search", "math.eval"]
 
 
-class Scripted(httpx.AsyncBaseTransport):
+class Scripted(httpx2.AsyncBaseTransport):
     """A mock model that calls the first offered tool once, then answers."""
 
     def __init__(self, model_id, calls, answer):
@@ -96,7 +96,7 @@ class Scripted(httpx.AsyncBaseTransport):
 
     async def handle_async_request(self, request):
         if request.url.path.endswith("/models"):
-            return httpx.Response(200, json={"data": [{"id": self.model_id}]})
+            return httpx2.Response(200, json={"data": [{"id": self.model_id}]})
         body = json.loads(request.content)
         self.requests.append(body)
         self.samples.append({"ttfb": 0.01, "seconds": 0.02})
@@ -114,7 +114,7 @@ class Scripted(httpx.AsyncBaseTransport):
                     }
                 ],
             }
-        return httpx.Response(
+        return httpx2.Response(
             200,
             json={
                 "model": self.model_id,

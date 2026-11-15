@@ -5,7 +5,7 @@ import hashlib
 import json
 from datetime import UTC, datetime, timedelta
 
-import httpx
+import httpx2
 import pytest
 from fastapi.testclient import TestClient
 from test_execution import call, completion, model_list, setup
@@ -57,7 +57,7 @@ def test_job_schema_exposure_and_immutable_run_inspection(config, selected, expe
 
     app = create_app(
         config=config,
-        model=ModelClient(config.model, transport=httpx.MockTransport(handler)),
+        model=ModelClient(config.model, transport=httpx2.MockTransport(handler)),
     )
     with TestClient(app) as client:
         client.post("/login", data={"token": "operator-test-token"})
@@ -168,7 +168,7 @@ def test_profile_trim_survives_restart_warns_and_shrinks_future_run(config, mock
 
     fresh = create_app(
         config=config,
-        model=ModelClient(config.model, transport=httpx.MockTransport(handler)),
+        model=ModelClient(config.model, transport=httpx2.MockTransport(handler)),
     )
     with TestClient(fresh) as client:
         client.post("/login", data={"token": "operator-test-token"})
@@ -449,7 +449,7 @@ def test_selected_tool_keeps_profile_filesystem_scopes(config, tmp_path):
 
     app = create_app(
         config=config,
-        model=ModelClient(config.model, transport=httpx.MockTransport(handler)),
+        model=ModelClient(config.model, transport=httpx2.MockTransport(handler)),
     )
     with TestClient(app) as client:
         client.post("/login", data={"token": "operator-test-token"})

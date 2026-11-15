@@ -1,7 +1,7 @@
 import asyncio
 import json
 
-import httpx
+import httpx2
 import pytest
 from turns import plain
 
@@ -16,7 +16,7 @@ def setup(config, handler):
     store = Store(config.paths.data)
     store.create_session(Session(id="s"))
     registry = Registry(config)
-    model = ModelClient(config.model, transport=httpx.MockTransport(handler))
+    model = ModelClient(config.model, transport=httpx2.MockTransport(handler))
     return Execution(config, store, registry, model)
 
 
@@ -24,7 +24,7 @@ def completion(config, content=None, calls=None, usage=None):
     message = {"role": "assistant", "content": content}
     if calls is not None:
         message["tool_calls"] = calls
-    return httpx.Response(
+    return httpx2.Response(
         200,
         json={
             "model": config.model.model_id,
@@ -35,7 +35,7 @@ def completion(config, content=None, calls=None, usage=None):
 
 
 def model_list(config):
-    return httpx.Response(200, json={"data": [{"id": config.model.model_id}]})
+    return httpx2.Response(200, json={"data": [{"id": config.model.model_id}]})
 
 
 def call(name="echo", arguments='{"text":"tool input"}'):
@@ -99,10 +99,10 @@ def test_unavailable_does_not_mutate_session(config, mode):
         if request.url.path.endswith("/models") and mode.startswith("chat_"):
             return model_list(config)
         if mode == "chat_wrong":
-            return httpx.Response(200, json={"model": "other-model"})
+            return httpx2.Response(200, json={"model": "other-model"})
         if mode in {"down", "chat_down"}:
-            raise httpx.ConnectError("down")
-        return httpx.Response(200, json={"data": [{"id": "other-model"}]})
+            raise httpx2.ConnectError("down")
+        return httpx2.Response(200, json={"data": [{"id": "other-model"}]})
 
     execution = setup(config, handler)
 
@@ -608,7 +608,7 @@ def test_output_token_limit_stops_without_retry_or_tool_dispatch(config, with_ca
         )
         data = json.loads(response.content)
         data["choices"][0]["finish_reason"] = "length"
-        return httpx.Response(200, json=data)
+        return httpx2.Response(200, json=data)
 
     execution = setup(config, handler)
 

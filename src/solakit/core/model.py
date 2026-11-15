@@ -7,7 +7,7 @@ import logging
 import re
 import time
 
-import httpx
+import httpx2
 import openai
 from openai import AsyncOpenAI, Omit
 
@@ -22,11 +22,11 @@ LOGGER = logging.getLogger(__name__)
 def safe_url(value: str) -> str:
     try:
         return str(
-            httpx.URL(value).copy_with(
+            httpx2.URL(value).copy_with(
                 username="", password="", query=None, fragment=None
             )
         )
-    except (ValueError, httpx.InvalidURL):
+    except (ValueError, httpx2.InvalidURL):
         return "<invalid endpoint>"
 
 
@@ -61,8 +61,8 @@ class ModelClient:
         self.available = False
         self.media: Media | None = None
         # The SDK owns URLs, auth headers, request encoding and SSE parsing; the
-        # httpx client only carries transport/proxy policy. No SDK retries.
-        self.http = httpx.AsyncClient(transport=transport, trust_env=config.trust_env)
+        # httpx2 client only carries transport/proxy policy. No SDK retries.
+        self.http = httpx2.AsyncClient(transport=transport, trust_env=config.trust_env)
         self.client = AsyncOpenAI(
             base_url=config.base_url.rstrip("/") + "/",
             api_key=key or "unset",

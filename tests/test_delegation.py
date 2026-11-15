@@ -3,7 +3,7 @@
 import asyncio
 import json
 
-import httpx
+import httpx2
 import pytest
 from turns import plain
 
@@ -28,7 +28,7 @@ def answer(config, content=None, *, name=None, arguments=None):
                 },
             }
         ]
-    return httpx.Response(
+    return httpx2.Response(
         200,
         json={
             "model": config.model.model_id,
@@ -56,7 +56,7 @@ def setup(config, worker=None, *, memory=None, default_profile="interactive"):
 
     async def handler(request):
         if request.url.path.endswith("/models"):
-            return httpx.Response(200, json={"data": [{"id": config.model.model_id}]})
+            return httpx2.Response(200, json={"data": [{"id": config.model.model_id}]})
         data = json.loads(request.content)
         captured.append(data)
         if (
@@ -83,7 +83,7 @@ def setup(config, worker=None, *, memory=None, default_profile="interactive"):
         config,
         store,
         registry,
-        ModelClient(config.model, transport=httpx.MockTransport(handler)),
+        ModelClient(config.model, transport=httpx2.MockTransport(handler)),
         memory,
     )
     return execution, args, captured
@@ -241,7 +241,7 @@ def test_refusals_create_no_child_runs_and_are_recorded(config, refusal):
 def test_child_failure_returns_ids_and_no_report(config, failure):
     async def worker(data):
         if failure == "unavailable":
-            raise httpx.ConnectError("offline")
+            raise httpx2.ConnectError("offline")
         return answer(config, name="fixture.read")
 
     execution, _, _ = setup(config, worker)
@@ -587,7 +587,7 @@ def test_delegate_map_runs_serial_children_in_order(config):
 
     def handler(request):
         if request.url.path.endswith("/models"):
-            return httpx.Response(200, json={"data": [{"id": config.model.model_id}]})
+            return httpx2.Response(200, json={"data": [{"id": config.model.model_id}]})
         data = json.loads(request.content)
         user = plain(
             next(

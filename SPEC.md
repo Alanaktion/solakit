@@ -57,7 +57,7 @@ rejected even if it is convenient.
    tools implement one API (§8), jobs are data (§7). New capability =
    new file in `channels/` or `tools/` + a config entry.
 8. **Managed, boring stack.** FastAPI + uvicorn, APScheduler, discord.py,
-   Pydantic, httpx. One Python process, one asyncio loop, mainstream
+   Pydantic, httpx2 (with the openai SDK). One Python process, one asyncio loop, mainstream
    libraries doing the undifferentiated work (HTTP, cron parsing,
    Discord gateway) so the code Alan owns stays the interesting part:
    prompt, loop, tools, profiles.

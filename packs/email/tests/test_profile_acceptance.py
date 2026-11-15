@@ -3,7 +3,7 @@
 import asyncio
 import json
 
-import httpx
+import httpx2
 import pytest
 
 from solakit.core.config import Profile
@@ -74,7 +74,7 @@ def test_blog_profile_refuses_loaded_tools_and_preserves_evidence(
 
     def handler(request):
         if request.url.path.endswith("/models"):
-            return httpx.Response(200, json={"data": [{"id": config.model.model_id}]})
+            return httpx2.Response(200, json={"data": [{"id": config.model.model_id}]})
         captured.append(json.loads(request.content))
         message = {"role": "assistant", "content": "I cannot use that tool."}
         if len(captured) == 1:
@@ -89,12 +89,12 @@ def test_blog_profile_refuses_loaded_tools_and_preserves_evidence(
                     }
                 ],
             }
-        return httpx.Response(
+        return httpx2.Response(
             200,
             json={"model": config.model.model_id, "choices": [{"message": message}]},
         )
 
-    model = ModelClient(config.model, transport=httpx.MockTransport(handler))
+    model = ModelClient(config.model, transport=httpx2.MockTransport(handler))
     execution = Execution(config, ctx.store, registry, model)
 
     async def exercise():

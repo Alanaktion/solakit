@@ -1,6 +1,6 @@
 """UI integration checks: API parity, opaque auth, and safe presentation."""
 
-import httpx
+import httpx2
 from fastapi.testclient import TestClient
 
 from solakit.core.model import ModelClient
@@ -172,9 +172,9 @@ def test_validation_and_missing_session(config, mock_model):
 
 def test_backend_down_honest_failure(config):
     def unavailable(request):
-        raise httpx.ConnectError("Backend offline", request=request)
+        raise httpx2.ConnectError("Backend offline", request=request)
 
-    model = ModelClient(config.model, transport=httpx.MockTransport(unavailable))
+    model = ModelClient(config.model, transport=httpx2.MockTransport(unavailable))
     with TestClient(create_app(config=config, model=model)) as client:
         sign_in(client)
         page = client.get("/")
@@ -343,7 +343,7 @@ def test_real_tool_call_visible_in_chat_fragment(config):
 
     def backend(request):
         if request.url.path.endswith("/models"):
-            return httpx.Response(200, json={"data": [{"id": config.model.model_id}]})
+            return httpx2.Response(200, json={"data": [{"id": config.model.model_id}]})
         body = json.loads(request.content)
         completions.append(body)
         message = {"role": "assistant", "content": "Finished"}
@@ -362,7 +362,7 @@ def test_real_tool_call_visible_in_chat_fragment(config):
                     }
                 ],
             }
-        return httpx.Response(
+        return httpx2.Response(
             200,
             json={
                 "model": config.model.model_id,
@@ -374,7 +374,7 @@ def test_real_tool_call_visible_in_chat_fragment(config):
     async def echo(ctx: ToolContext, text: str) -> ToolResult:
         return ToolResult(content=text)
 
-    model = ModelClient(config.model, transport=httpx.MockTransport(backend))
+    model = ModelClient(config.model, transport=httpx2.MockTransport(backend))
     app = create_app(config=config, model=model)
     with TestClient(app) as client:
         app.state.registry.register(echo)
