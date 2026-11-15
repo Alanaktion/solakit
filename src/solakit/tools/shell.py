@@ -7,12 +7,12 @@ from typing import Annotated
 from pydantic import Field
 
 from solakit.services.process import execute
-from solakit.tools import ToolContext, ToolError, ToolResult, tool
+from solakit.tools import OPERATOR_FIX, ToolContext, ToolError, ToolResult, tool
 
 
 async def run_process(ctx, argv, directory, timeout_s):
     if "shell" not in ctx.config.profiles[ctx.profile].effects:
-        raise ToolError("Missing effect: shell")
+        raise ToolError("Missing effect: shell. " + OPERATOR_FIX)
     if (
         not argv
         or len(argv) > 128

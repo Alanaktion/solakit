@@ -20,7 +20,8 @@ async def read(
         str,
         Field(
             description=(
-                "File or directory path inside this profile’s filesystem scopes."
+                "Path relative to the working directory, e.g. 'notes/todo.md'; "
+                "absolute paths must be inside granted scopes."
             )
         ),
     ],
@@ -65,7 +66,8 @@ async def write(
         str,
         Field(
             description=(
-                "File or directory path inside this profile’s filesystem scopes."
+                "Path relative to the working directory, e.g. 'notes/todo.md'; "
+                "absolute paths must be inside granted scopes."
             )
         ),
     ],
@@ -74,7 +76,10 @@ async def write(
         bool, Field(description="Replace an existing file instead of failing.")
     ] = False,
 ) -> ToolResult:
-    """Create a UTF-8 file. Existing files are refused unless overwrite is true."""
+    """Create a new text file, e.g. to save notes, a draft or requested output.
+
+    Existing files are refused unless overwrite is true. To change part of a file
+    use files.edit; to add to the end use files.append."""
     existed = overwrite and (await ctx.fs.exists(path))
     target = await ctx.fs.write(path, content, overwrite=overwrite)
     verb = "Replaced" if existed else "Created"
@@ -97,7 +102,8 @@ async def edit(
         str,
         Field(
             description=(
-                "File or directory path inside this profile’s filesystem scopes."
+                "Path relative to the working directory, e.g. 'notes/todo.md'; "
+                "absolute paths must be inside granted scopes."
             )
         ),
     ],
@@ -108,7 +114,7 @@ async def edit(
         str, Field(description="Replacement text for the unique old match.")
     ],
 ) -> ToolResult:
-    """Replace one unique match of old with new.
+    """Change part of an existing file by replacing one unique piece of text.
 
     Exact text is preferred; if none matches, whole lines are matched ignoring
     trailing whitespace and line endings. Zero or multiple matches fail."""
@@ -137,13 +143,16 @@ async def append(
         str,
         Field(
             description=(
-                "File or directory path inside this profile’s filesystem scopes."
+                "Path relative to the working directory, e.g. 'notes/todo.md'; "
+                "absolute paths must be inside granted scopes."
             )
         ),
     ],
     content: Annotated[str, Field(description="Exact UTF-8 text to write.")],
 ) -> ToolResult:
-    """Append text to an existing regular file inside profile write scopes."""
+    """Add text to the end of an existing file, e.g. a log or running list.
+
+    The file must exist inside profile write scopes; use files.write to create one."""
     target = await ctx.fs.append(path, content)
     return ToolResult(
         content=f"Appended {len(content.encode())} bytes to {target}",
@@ -163,7 +172,8 @@ async def list_files(
         str,
         Field(
             description=(
-                "File or directory path inside this profile’s filesystem scopes."
+                "Path relative to the working directory, e.g. 'notes/todo.md'; "
+                "absolute paths must be inside granted scopes."
             )
         ),
     ],
@@ -171,10 +181,11 @@ async def list_files(
         int, Field(ge=1, le=500, description="Maximum directory entries to return.")
     ] = 100,
 ) -> ToolResult:
-    """List up to 500 operator-file entries inside profile scopes, without recursion.
+    """See what one directory contains, up to 500 entries, without recursion.
 
-    Prefer granted domain tools for their data and resource discovery. Do not browse
-    runtime configuration or credentials to work around a failed domain call."""
+    Use files.find to search by name below it. Prefer granted domain tools for
+    their data and resource discovery. Do not browse runtime configuration or
+    credentials to work around a failed domain call."""
     entries, more = await ctx.fs.entries(path, limit)
     return ToolResult(
         content=json.dumps({"entries": entries, "more": more}, ensure_ascii=False)
@@ -200,7 +211,9 @@ async def find(
             )
         ),
     ],
-    path: Annotated[str, Field(description="Directory to search below.")] = ".",
+    path: Annotated[
+        str, Field(description="Directory to search below; omit for the workspace.")
+    ] = ".",
     limit: Annotated[int, Field(ge=1, le=200, description="Maximum results.")] = 50,
 ) -> ToolResult:
     """Find files recursively by glob, returning relative paths and sizes.
@@ -222,7 +235,9 @@ async def find(
 async def grep(
     ctx: ToolContext,
     query: Annotated[str, Field(min_length=1, description="Text to find (no case).")],
-    path: Annotated[str, Field(description="File or directory to search.")] = ".",
+    path: Annotated[
+        str, Field(description="File or directory to search; omit for the workspace.")
+    ] = ".",
     glob: Annotated[
         str | None, Field(description="Only files matching this glob, e.g. *.py.")
     ] = None,
@@ -234,9 +249,11 @@ async def grep(
     ] = 2,
     limit: Annotated[int, Field(ge=1, le=100, description="Maximum matches.")] = 30,
 ) -> ToolResult:
-    """Search text files recursively; lines read path:line: text (matches) and
-    path-line- text (context). Skips binary files, symlinks and lines over 4096
-    characters; matching has a 100 ms cumulative budget."""
+    """Find where text appears inside files, e.g. a name, setting or phrase.
+
+    Searches recursively; lines read path:line: text (matches) and path-line- text
+    (context). Skips binary files, symlinks and lines over 4096 characters;
+    matching has a 100 ms cumulative budget. Use files.find to search names."""
     result = await ctx.fs.grep(
         query, path, glob=glob, regex=regex, context=context, limit=limit
     )

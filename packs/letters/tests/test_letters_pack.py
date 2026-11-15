@@ -124,7 +124,11 @@ def test_duplicate_numbers_and_cross_resource_denials(fixture):
         result = await registry.dispatch(
             "letters.read", '{"resource_name":"other","number":1}', ctx
         )
-        assert result.error and "Missing resource" in result.content
+        assert result.error and "Unknown letters alias" in result.content
+        result = await registry.dispatch(
+            "letters.read", '{"resource_name":"corespondence","number":1}', ctx
+        )
+        assert "Did you mean correspondence?" in result.content
         ctx.config.profiles["letters"].effects.remove("push")
         result = await registry.dispatch(
             "letters.reply",
@@ -256,9 +260,7 @@ def test_omitted_resource_uses_default_with_normal_grants(fixture, tmp_path):
         ]
         for name, arguments in requests:
             denied = await registry.dispatch(name, arguments, ctx)
-            assert (
-                denied.error and "Missing resource: letters:default" in denied.content
-            )
+            assert denied.error and "Available: correspondence." in denied.content
         ctx.config.profiles["letters"].resources.append("letters:default")
         for name, arguments in requests:
             result = await registry.dispatch(name, arguments, ctx)

@@ -6,7 +6,14 @@ from pydantic import Field
 
 from solakit.core.config import Job, session_readable
 from solakit.jobs.schemas import JobToolsError
-from solakit.tools import ToolContext, ToolError, ToolResult, tool, tool_json
+from solakit.tools import (
+    OPERATOR_FIX,
+    ToolContext,
+    ToolError,
+    ToolResult,
+    tool,
+    tool_json,
+)
 
 
 def manager(ctx):
@@ -47,7 +54,9 @@ def existing(ctx, identity):
     try:
         job = manager(ctx).job(identity)
     except KeyError as exc:
-        raise ToolError("Job not found or outside this chat's grants") from exc
+        raise ToolError(
+            "Job not found or outside this chat's grants; jobs.list shows valid ids"
+        ) from exc
     if not permitted(ctx, job):
         raise denied(ctx, job)
     return job
@@ -94,7 +103,7 @@ def parse_when(when: str) -> tuple[str | None, str | None]:
 def authorize(ctx, job):
     # Mutation callbacks run under the scheduler lock, after any wait.
     if "operate" not in ctx.config.profiles[ctx.profile].effects:
-        raise ToolError("Job mutation requires effect 'operate'")
+        raise ToolError("Job mutation requires effect 'operate'. " + OPERATOR_FIX)
 
 
 async def operation(ctx, name, *args):
@@ -108,7 +117,7 @@ async def operation(ctx, name, *args):
     except (FileExistsError, RuntimeError) as exc:
         raise ToolError(str(exc)) from exc
     except KeyError as exc:
-        raise ToolError("Job not found") from exc
+        raise ToolError("Job not found; jobs.list shows valid ids") from exc
     except JobToolsError as exc:
         raise ToolError(str(exc)) from exc
     except ValueError as exc:
@@ -129,7 +138,9 @@ async def operation(ctx, name, *args):
     profiles=["*"],
 )
 async def list_jobs(ctx: ToolContext) -> ToolResult:
-    """List jobs for this chat/profile; the operate effect allows every job."""
+    """See scheduled tasks, e.g. before updating, pausing, running or deleting one.
+
+    Lists this chat/profile's jobs; the operate effect lists every job."""
     jobs = manager(ctx)
     return result(
         ctx, [jobs.get(job.id) for job in jobs.jobs.values() if permitted(ctx, job)]
@@ -384,18 +395,15 @@ async def update(
     ctx: ToolContext,
     id: Annotated[
         str,
-        Field(
-            description=(
-                "Stable scheduled job ID; use the same ID to avoid duplicate creation."
-            )
-        ),
+        Field(description="Existing job id, exactly as shown by jobs.list."),
     ],
     changes: Annotated[
         dict[str, Any],
         Field(
             description=(
-                "Partial job fields to change; omit unchanged fields and use "
-                "null to clear nullable values."
+                'Partial job fields to change, e.g. {"enabled": false} or '
+                '{"cron": "0 9 * * *"}; omit unchanged fields and use null to '
+                "clear nullable values."
             )
         ),
     ],
@@ -432,11 +440,7 @@ async def run(
     ctx: ToolContext,
     id: Annotated[
         str,
-        Field(
-            description=(
-                "Stable scheduled job ID; use the same ID to avoid duplicate creation."
-            )
-        ),
+        Field(description="Existing job id, exactly as shown by jobs.list."),
     ],
 ) -> ToolResult:
     """Queue an enabled job once without waiting, including in this chat.
@@ -460,11 +464,7 @@ async def pause(
     ctx: ToolContext,
     id: Annotated[
         str,
-        Field(
-            description=(
-                "Stable scheduled job ID; use the same ID to avoid duplicate creation."
-            )
-        ),
+        Field(description="Existing job id, exactly as shown by jobs.list."),
     ],
     paused: Annotated[
         bool,
@@ -476,7 +476,9 @@ async def pause(
         ),
     ] = True,
 ) -> ToolResult:
-    """Pause/resume future firings; does not cancel active work or enable a job."""
+    """Stop or restart a job's future firings without deleting it.
+
+    Does not cancel active work or enable a disabled job."""
     existing(ctx, id)
     await operation(ctx, "pause", id, paused)
     return result(ctx, manager(ctx).get(id))
@@ -493,13 +495,11 @@ async def delete(
     ctx: ToolContext,
     id: Annotated[
         str,
-        Field(
-            description=(
-                "Stable scheduled job ID; use the same ID to avoid duplicate creation."
-            )
-        ),
+        Field(description="Existing job id, exactly as shown by jobs.list."),
     ],
 ) -> ToolResult:
-    """Delete an idle job; retain all prior run evidence."""
+    """Remove a scheduled task for good; use jobs.pause to stop it temporarily.
+
+    The job must be idle; all prior run evidence is retained."""
     existing(ctx, id)
     return await operation(ctx, "delete", id)

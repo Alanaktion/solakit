@@ -76,7 +76,7 @@ def test_grants_and_scopes_before_read(setup, monkeypatch):
         raise AssertionError("must not read")
 
     monkeypatch.setattr(calendar, "query", forbidden)
-    assert "Missing resource" in invoke(setup).content
+    assert "No calendar resources are granted" in invoke(setup).content
 
 
 def test_filesystem_scope_and_invalid_export(setup):

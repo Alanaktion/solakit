@@ -42,6 +42,22 @@ class ToolError(Exception):
     """Expected tool failure safe to return to the model."""
 
 
+# Appended to failures only configuration can fix, so the model stops retrying.
+OPERATOR_FIX = "Retrying or changing arguments cannot fix this; tell the operator."
+
+
+def choices_hint(value: str, options) -> str:
+    """Recovery text for an unknown name: closest match plus the valid choices."""
+    import difflib
+
+    options = sorted(set(options))
+    if not options:
+        return " None are available to this profile. " + OPERATOR_FIX
+    close = difflib.get_close_matches(value, options, n=1, cutoff=0.5)
+    hint = f" Did you mean {close[0]}?" if close else ""
+    return hint + " Available: " + ", ".join(options[:20]) + "."
+
+
 class ToolResult(BaseModel):
     content: str
     error: bool = False
@@ -214,7 +230,16 @@ class ToolContext:
                     "Runtime data requires an explicit filesystem path grant"
                 )
         if not any(root and candidate.is_relative_to(root) for root in roots):
-            raise ToolError("Path is outside profile filesystem scopes")
+            raise ToolError(
+                "Path is outside profile filesystem scopes."
+                + (
+                    " Relative paths start in the working directory: use '.' or "
+                    "a relative path such as 'notes/todo.md', and do not guess "
+                    "absolute or ~ paths."
+                    if self.config.server.cwd is not None
+                    else " Use a path inside a granted workspace."
+                )
+            )
         return candidate
 
 
@@ -243,6 +268,19 @@ def error_class(exc: Exception, *, known: bool, before: bool) -> str:
     ):
         return "arguments"
     return "access" if before else "tool"
+
+
+def unexpected_failure(registered: "Registered | None") -> str:
+    manifest = registered.manifest if registered else None
+    if manifest and (manifest.effect or manifest.writes):
+        return (
+            "Tool failed unexpectedly and may have partly run. Inspect current "
+            "state or operation receipts before retrying side effects."
+        )
+    return (
+        "Tool failed with an internal error; the same call will likely fail "
+        "again. Try a different approach, or report the failure to the operator."
+    )
 
 
 def _arguments_hash(arguments) -> str:
@@ -529,11 +567,15 @@ class Registry:
     def check_access(self, registered: Registered, profile: Profile) -> None:
         if registered.manifest.writes and profile.write == "none":
             raise ToolError(
-                f"{registered.manifest.name} requires filesystem write tier"
+                f"{registered.manifest.name} requires filesystem write tier. "
+                + OPERATOR_FIX
             )
         effect = registered.manifest.effect
         if effect and effect not in profile.effects:
-            raise ToolError(f"{registered.manifest.name} requires effect '{effect}'")
+            raise ToolError(
+                f"{registered.manifest.name} requires effect '{effect}'. "
+                + OPERATOR_FIX
+            )
 
     def deprecation_warnings(self) -> list[str]:
         warnings = []
@@ -749,6 +791,7 @@ class Registry:
     async def dispatch(self, name: str, arguments: str, ctx: ToolContext) -> ToolResult:  # noqa: C901
         start = time.monotonic()
         result = ToolResult(content="Tool execution failed", error=True)
+        registered = None
         parsed = None
         detail = None
         repairable = False
@@ -858,16 +901,14 @@ class Registry:
                 message = argument_error(registered.arguments, exc)
             else:
                 detail = traceback.format_exc()
-                message = (
-                    "Tool failed. Inspect current state or operation receipts "
-                    "before retrying side effects."
-                )
+                message = unexpected_failure(registered)
             result = ToolResult(content=message, error=True, repairable=repairable)
             result._meta["error_class"] = error_class(
                 exc, known=name in self.tools, before=not execution_started
             )
         except Exception:
             detail = traceback.format_exc()
+            result = ToolResult(content=unexpected_failure(registered), error=True)
         finally:
             limit = self.config.profiles[ctx.profile].tool_output_max_chars
             observed_chars = len(result.content)

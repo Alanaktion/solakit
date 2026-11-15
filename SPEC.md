@@ -838,7 +838,9 @@ across aliases log a warning; split profiles to preserve that distinction.
 - **Errors are data:** a tool raises `ToolError("…")` → the model gets
   a tool-error message with that text. Unexpected exceptions are caught,
   logged with traceback to the run record, and surfaced to the model as
-  a generic failure — a crashed tool never crashes the run or the app.
+  a generic failure — a crashed tool never crashes the run or the app. That
+  failure tells read-only tools that a retry will likely fail again, and tools
+  with effects or writes to inspect state or receipts before retrying.
 
 ### 8.1.1 Delegated child sessions
 
@@ -1633,7 +1635,13 @@ unchanged. Every tool has a one-line summary, keywords, and descriptions for all
 parameters; schema constraints advertise numeric bounds before network calls.
 
 A tool that can name its operational failure raises `ToolError` with its
-model-facing message. Bare tool-code `ValueError` is a bug; private validation
+model-facing message, written so one retry can succeed: an unknown alias names
+the closest granted alias and the granted choices (never ungranted ones), a
+lookup miss names the tool that lists valid ids, and an out-of-scope path says
+how relative paths resolve. Failures only configuration can fix (missing
+effects, write tiers, resources, credentials or pack configuration) end with
+`OPERATOR_FIX`, so the model reports them instead of retrying. Descriptions
+lead with when to use the tool, then name the alternative, then mechanics. Bare tool-code `ValueError` is a bug; private validation
 seams may raise it when their caller converts it to `ToolError`. Registry
 argument-validation backstops do not replace domain messages. Datetime tools
 retain DST-gap/fold/naive-time/bad-date guidance and name unknown zones. Invalid

@@ -34,7 +34,7 @@ async def search(
     For exact conversation evidence use sessions.search. For current external
     data use its domain tool. Use returned canonical URIs with memory.read."""
     if ctx.memory_client is None:
-        raise ToolError("Memory is disabled for this session")
+        raise ToolError("Memory is disabled for this session; answer without it")
     try:
         return ToolResult(content=await ctx.memory_client.search(query))
     except MemoryUnavailable as exc:
@@ -59,9 +59,11 @@ async def read(
         ),
     ],
 ) -> ToolResult:
-    """Read a canonical URI inside configured shared memory roots."""
+    """Open the full memory behind a memory.search result by its canonical URI.
+
+    Only URIs inside configured shared memory roots are readable."""
     if ctx.memory_client is None:
-        raise ToolError("Memory is disabled for this session")
+        raise ToolError("Memory is disabled for this session; answer without it")
     try:
         return ToolResult(content=await ctx.memory_client.read(uri))
     except MemoryUnavailable as exc:
@@ -86,12 +88,12 @@ async def remember(
         ),
     ],
 ) -> ToolResult:
-    """Stage an exact note for this run's normal shared-memory commit.
+    """Keep a durable fact, decision or preference for future conversations.
 
-    Returns staged note/run IDs, not a claim that storage or extraction succeeded.
-    Requires enabled shared memory. Empty or over-limit notes are refused whole;
-    completion is tracked by the run's existing memory/extraction status.
-    """
+    Not for one-offs, secrets or facts only this chat needs (use notes.set).
+    Stages the note for this run's shared-memory commit and returns staged note/run
+    IDs, not a claim that storage or extraction succeeded. Requires enabled shared
+    memory. Empty or over-limit notes are refused whole."""
     if ctx.memory_client is None or ctx.session.memory_scope != "shared":
         raise ToolError("Memory notes require enabled shared memory")
     if not text.strip() or len(text) > ctx.config.memory.remember_max_chars:

@@ -47,7 +47,9 @@ async def check(
         ),
     ] = None,
 ) -> ToolResult:
-    """Read up to 100 untrusted feed entries; retain IDs to track updates."""
+    """Check an RSS or Atom feed for recent posts, e.g. news or release updates.
+
+    Reads up to 100 untrusted entries; retain IDs to spot new ones later."""
     return await invoke(
         ctx,
         "check_feed",

@@ -12,7 +12,7 @@ from solakit.tools._arithmetic_calendar import evaluate
 @tool(
     name="math.eval",
     profiles=["*"],
-    summary="Evaluate bounded arithmetic with 50-digit decimal precision.",
+    summary="Compute exact arithmetic instead of calculating mentally",
     keywords=("math", "arithmetic", "calculate", "money", "tokens", "bytes"),
 )
 def eval(
@@ -27,11 +27,11 @@ def eval(
         ),
     ],
 ) -> ToolResult:
-    """Evaluate literals, parentheses and + - * / // % **; return a decimal string.
+    """Compute arithmetic exactly instead of mentally: totals, percentages, ratios.
 
-    Uses 50 significant digits. Exponents must be integers in -1000..1000.
-    No functions, names, attributes or containers. No currency rounding policy.
-    """
+    Literals, parentheses and + - * / // % **; returns a decimal string with 50
+    significant digits. Exponents must be integers in -1000..1000. No functions,
+    names, attributes or containers. No currency rounding policy."""
     try:
         result = evaluate(expression)
     except (ValueError, SyntaxError, ArithmeticError, RecursionError):

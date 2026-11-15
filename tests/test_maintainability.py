@@ -92,6 +92,22 @@ def test_generated_tool_reference_is_current():
     assert (ROOT / "docs/tools.md").read_text() == render()
 
 
+def test_every_core_and_pack_tool_explains_its_parameters():
+    """Small models misuse arguments they cannot read about; packs included."""
+    from solakit.core.config import Config
+    from solakit.core.toolref import MODULES
+    from solakit.tools import Registry
+
+    registry = Registry(Config(enabled_tools=MODULES))
+    for name, item in registry.tools.items():
+        assert item.manifest.summary and item.manifest.keywords, name
+        schema = item.schema()["function"]["parameters"]
+        objects = [schema, *schema.get("$defs", {}).values()]
+        for obj in objects:
+            for key, value in obj.get("properties", {}).items():
+                assert value.get("description"), (name, key)
+
+
 def test_architecture_doc_module_paths_exist():
     text = (ROOT / "docs/architecture.md").read_text()
     paths = set(re.findall(r"`((?:src|packs)/[\w/.-]+\.py)`", text))

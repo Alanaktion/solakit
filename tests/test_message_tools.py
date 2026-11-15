@@ -62,7 +62,8 @@ def test_post_is_granted_receipted_and_idempotent(config):
         denied = await call(
             "messages.send", channel="one", text="x", operation_id="denied"
         )
-        assert denied.error and "Missing resource: channel:one" in denied.content
+        assert denied.error and "not granted" in denied.content
+        assert "Available: two." in denied.content
         assert len(adapter.sent) == 1
         await execution.close()
 
@@ -119,7 +120,7 @@ def test_disabled_api_and_unknown_channels_are_refused(config):
 
     async def exercise():
         result = await call("messages.send", channel="one", text="x", operation_id="a")
-        assert result.error and "Missing resource" in result.content
+        assert result.error and "not granted" in result.content
         result = await call("messages.send", channel="web", text="x", operation_id="b")
         assert result.error and "no outbound" in result.content
         assert not adapter.sent

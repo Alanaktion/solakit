@@ -13,7 +13,7 @@ from defusedxml import ElementTree
 from defusedxml.common import DefusedXmlException
 
 from solakit.core.config import validate_api_token
-from solakit.tools import ToolContext, ToolError
+from solakit.tools import OPERATOR_FIX, ToolContext, ToolError
 
 
 @dataclass(frozen=True)
@@ -28,6 +28,15 @@ class RemoteResponse:
             return json.loads(self.content)
         except (ValueError, UnicodeError):
             raise ToolError("Remote service returned invalid JSON") from None
+
+
+HTTP_HINTS = {
+    401: "; the configured credential was rejected. " + OPERATOR_FIX,
+    403: "; access is forbidden. Do not retry the same request.",
+    404: "; nothing exists there. Check the URL, owner, name or number.",
+    410: "; the resource is gone. Do not retry the same request.",
+    429: "; rate limited. Do not retry now; report it or try later.",
+}
 
 
 def object_data(value):
@@ -120,6 +129,7 @@ class RemoteTools:
                 ):
                     raise ToolError(
                         f"Upstream request failed (HTTP {response.status_code})"
+                        + HTTP_HINTS.get(response.status_code, "")
                     )
                 content = bytearray()
                 async for chunk in response.aiter_bytes():
@@ -137,11 +147,13 @@ class RemoteTools:
     def credential(self, name: str) -> str:
         reference = getattr(self.ctx.config.tool_apis, name)
         if reference is None:
-            raise ToolError(f"Configure tool_apis.{name} to use this tool")
+            raise ToolError(f"tool_apis.{name} is not configured. " + OPERATOR_FIX)
         try:
             value = validate_api_token(reference.resolve())
         except (ValueError, OSError):
-            raise ToolError(f"Credential unavailable: tool_apis.{name}") from None
+            raise ToolError(
+                f"Credential unavailable: tool_apis.{name}. " + OPERATOR_FIX
+            ) from None
         redactor = self.ctx.store.redactor
         redactor.values = tuple(
             sorted(set((*redactor.values, value)), key=len, reverse=True)
@@ -201,7 +213,9 @@ class RemoteTools:
         await asyncio.to_thread(self.public_url, url)
         account = self.ctx.config.tool_apis.cloudflare_account_id
         if not account:
-            raise ToolError("Configure tool_apis.cloudflare_account_id")
+            raise ToolError(
+                "tool_apis.cloudflare_account_id is not configured. " + OPERATOR_FIX
+            )
         if not re.fullmatch(r"[a-zA-Z0-9_-]+", account):
             raise ToolError("Invalid Cloudflare account ID")
         response = await self.request(

@@ -9,7 +9,14 @@ from urllib.parse import urlsplit
 
 import httpx2
 from pydantic import Field, field_validator, model_validator
-from sola_packs.support import IDENTIFIER, Settings, external, resource, secret
+from sola_packs.support import (
+    IDENTIFIER,
+    OPERATOR_FIX,
+    Settings,
+    external,
+    resource,
+    secret,
+)
 from sola_packs.support.evidence import Lease, Operation
 
 from solakit.sdk import SecretRef, ToolContext, ToolError, ToolResult, durable, tool
@@ -214,14 +221,17 @@ async def generate(
         ),
     ] = 768,
 ) -> ToolResult:
-    """Submit a named workflow once; width and height default to 768 pixels.
+    """Create an image from a text prompt, e.g. a blog cover or an illustration.
 
-    Configured dimension inputs are overridden without editing the workflow file.
-    Custom sizes require width/height mappings; legacy unmapped workflows retain
-    their dimensions when both arguments use the defaults.
-    """
+    Submits a named workflow once; check progress or outputs with image.result
+    instead of resubmitting. Width and height default to 768 pixels. Configured
+    dimension inputs are overridden without editing the workflow file. Custom sizes
+    require width/height mappings; legacy unmapped workflows retain their
+    dimensions when both arguments use the defaults."""
     if ctx.config.profiles[ctx.profile].write == "none":
-        raise ToolError("Image generation requires filesystem write tier")
+        raise ToolError(
+            "Image generation requires filesystem write tier. " + OPERATOR_FIX
+        )
     cfg = resource(ctx, "images", workflow, Image, "generate")
     if not IDENTIFIER.fullmatch(operation_id):
         raise ToolError("A stable operation ID is required")
@@ -233,7 +243,10 @@ async def generate(
     ):
         raise ToolError("Width and height must be multiples of 8 from 64 to 4096")
     if cfg.width_node is None and (width, height) != (768, 768):
-        raise ToolError("Custom dimensions require configured width/height mappings")
+        raise ToolError(
+            "This workflow has no width/height mappings; omit width and height "
+            "to use its own size"
+        )
     text = await durable(read_workflow, cfg.workflow)
     try:
         graph = json.loads(text)
@@ -275,7 +288,10 @@ def receipt(ctx, workflow, operation_id, endpoint):
     with Lease(ctx, "image", [workflow, operation_id]) as lease:
         events = lease.events()
         if not events:
-            raise ToolError("Unknown generation operation")
+            raise ToolError(
+                "Unknown generation operation; pass the exact workflow and "
+                "operation_id given to image.generate"
+            )
         last = events[-1]
         if last["stage"] != "submitted":
             raise ToolError(
@@ -342,12 +358,7 @@ async def result(
     ctx: ToolContext,
     operation_id: Annotated[
         str,
-        Field(
-            description=(
-                "Stable unique operation ID; reuse only for the identical "
-                "request. Uncertain operations never auto-replay."
-            )
-        ),
+        Field(description="The operation_id given to image.generate for this image."),
     ],
     workflow: Annotated[
         str,
@@ -359,7 +370,9 @@ async def result(
         ),
     ] = "image",
 ) -> ToolResult:
-    """Inspect a receipted generation and return ComfyUI output image references."""
+    """Check whether an image.generate operation finished and get its output images.
+
+    Use after submitting, or after a timeout, instead of generating again."""
     cfg = resource(ctx, "images", workflow, Image, "read")
     if not IDENTIFIER.fullmatch(operation_id):
         raise ToolError("Invalid operation ID")

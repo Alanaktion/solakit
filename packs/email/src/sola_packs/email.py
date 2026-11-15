@@ -16,6 +16,7 @@ from zoneinfo import ZoneInfo
 from pydantic import Field, model_validator
 from sola_packs.support import (
     IDENTIFIER,
+    OPERATOR_FIX,
     Settings,
     external,
     fingerprint,
@@ -553,12 +554,15 @@ async def reply(
         ),
     ],
 ) -> ToolResult:
-    """Reply to source sender/Reply-To; reuse operation_id to prevent duplicates."""
+    """Answer an existing email found by email.search; recipient and threading come
+    from that message.
+
+    Use email.send for new mail. Reuse operation_id to prevent duplicates."""
     if "send" not in ctx.config.profiles[ctx.profile].effects:
-        raise ToolError("Missing effect: send")
+        raise ToolError("Missing effect: send. " + OPERATOR_FIX)
     cfg = resource(ctx, "mailboxes", mailbox, Mailbox, "reply")
     if not cfg.smtp_host:
-        raise ToolError("SMTP is not configured for this mailbox")
+        raise ToolError("SMTP is not configured for this mailbox. " + OPERATOR_FIX)
     if not IDENTIFIER.fullmatch(operation_id) or not body.strip() or len(body) > 64000:
         raise ToolError(
             "Reply requires a stable operation ID and 1–64000 body characters"
@@ -689,7 +693,9 @@ async def mark_read(
     """
     cfg = resource(ctx, "mailboxes", mailbox, Mailbox, "manage")
     if not cfg.allow_mark_read:
-        raise ToolError("Marking messages is not enabled for this mailbox")
+        raise ToolError(
+            "Marking messages is not enabled for this mailbox. " + OPERATOR_FIX
+        )
     if not 1 <= len(message_ids) <= 50:
         raise ToolError("Provide 1–50 message ids")
     try:
@@ -718,7 +724,10 @@ async def delete(
     """
     cfg = resource(ctx, "mailboxes", mailbox, Mailbox, "manage")
     if not cfg.trash_folder:
-        raise ToolError("Deleting is not enabled for this mailbox (no trash_folder)")
+        raise ToolError(
+            "Deleting is not enabled for this mailbox (no trash_folder). "
+            + OPERATOR_FIX
+        )
     if not 1 <= len(message_ids) <= 50:
         raise ToolError("Provide 1–50 message ids")
     try:
@@ -736,7 +745,8 @@ def recipients_of(cfg, values, label):
         target = address(value)
         if not cfg.recipient_allowed(target):
             raise ToolError(
-                f"{label} recipient is outside this mailbox's allowed_recipients"
+                f"{label} recipient is outside this mailbox's allowed_recipients. "
+                "Use only addresses the operator allowed, or ask the operator."
             )
         result.append(target)
     return result
@@ -846,12 +856,15 @@ async def send_email(
     operation_id to prevent duplicates; uncertain receipts block replay.
     """
     if "send" not in ctx.config.profiles[ctx.profile].effects:
-        raise ToolError("Missing effect: send")
+        raise ToolError("Missing effect: send. " + OPERATOR_FIX)
     cfg = resource(ctx, "mailboxes", mailbox, Mailbox, "send")
     if not cfg.smtp_host:
-        raise ToolError("SMTP is not configured for this mailbox")
+        raise ToolError("SMTP is not configured for this mailbox. " + OPERATOR_FIX)
     if not cfg.allowed_recipients:
-        raise ToolError("New email is not enabled for this mailbox")
+        raise ToolError(
+            "New email is not enabled for this mailbox; email.reply still works. "
+            + OPERATOR_FIX
+        )
     if (
         not IDENTIFIER.fullmatch(operation_id)
         or not body.strip()

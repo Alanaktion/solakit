@@ -20,7 +20,9 @@ async def notifications(
         int, Field(description="Maximum number of entries to return.", ge=1, le=100)
     ] = 30,
 ) -> ToolResult:
-    """Read one batch of 1–100 GitHub notifications without marking them read."""
+    """Check what needs attention on GitHub: reviews, mentions, issues, CI notices.
+
+    Reads one batch of 1–100 notifications without marking them read."""
     return await invoke(ctx, "notifications", limit=limit)
 
 
@@ -45,7 +47,9 @@ async def pr_status(
         int, Field(description="Positive pull request number, not an issue URL.", ge=1)
     ],
 ) -> ToolResult:
-    """Read PR metadata, combined commit status and the first page of CI check runs."""
+    """Check a pull request, e.g. whether CI passed or it is ready to merge.
+
+    Reads PR metadata, combined commit status and the first page of check runs."""
     return await invoke(ctx, "pr_status", owner=owner, repo=repo, n=n)
 
 
@@ -67,5 +71,7 @@ async def latest_release(
         str, Field(description="GitHub repository name, without owner or URL.")
     ],
 ) -> ToolResult:
-    """Read the latest published GitHub release; drafts and prereleases are excluded."""
+    """Find a repository's newest stable version, e.g. before upgrading.
+
+    Reads the latest published release; drafts and prereleases are excluded."""
     return await invoke(ctx, "latest_release", owner=owner, repo=repo)

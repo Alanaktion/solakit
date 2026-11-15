@@ -99,7 +99,7 @@ def query(content, cfg, start, end, limit):
 
 
 @tool(
-    summary="Read calendar events within a bounded date window",
+    summary="Check the operator's schedule within a date window",
     keywords=("calendar", "events", "agenda", "schedule"),
     name="calendar.events",
     profiles=["*"],
@@ -113,7 +113,8 @@ async def events(
         str,
         Field(
             description=(
-                "Inclusive ISO timestamp with UTC offset for the event window."
+                "Window start, inclusive, ISO with UTC offset, "
+                "e.g. 2026-11-15T00:00:00+00:00."
             )
         ),
     ],
@@ -121,7 +122,8 @@ async def events(
         str,
         Field(
             description=(
-                "Exclusive ISO timestamp with UTC offset; at most 31 days after after."
+                "Window end, exclusive, ISO with UTC offset; "
+                "at most 31 days after the start."
             )
         ),
     ],
@@ -129,7 +131,9 @@ async def events(
         int, Field(description="Maximum number of entries to return.")
     ] = 50,
 ) -> ToolResult:
-    """Read an ICS agenda in [after, before), at most 31 days; use ISO timestamps."""
+    """Check the operator's schedule, e.g. today's agenda or whether a slot is free.
+
+    Reads ICS events in [after, before), at most 31 days; use ISO timestamps."""
     cfg = resource(ctx, "calendars", calendar, Calendar, "read")
     try:
         start, end = (

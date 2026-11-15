@@ -1,5 +1,6 @@
 """Pack-owned config and grants; the core knows no letters/mail/device schemas."""
 
+import difflib
 import hashlib
 import html
 import json
@@ -15,6 +16,26 @@ from solakit.sdk import SecretRef, ToolError
 
 _SECRET_LOCK = threading.Lock()
 IDENTIFIER = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}\Z")
+OPERATOR_FIX = "Retrying or changing arguments cannot fix this; tell the operator."
+DISCOVERY = {"mailbox": " Discover aliases with email.list_mailboxes."}
+
+
+def _unknown(prefix, alias, profile):
+    """Name the granted aliases (and the closest) so one retry can succeed."""
+    granted = sorted(
+        r.split(":", 1)[1] for r in profile.resources if r.startswith(prefix + ":")
+    )
+    if not granted:
+        return f"No {prefix} resources are granted to this profile. " + OPERATOR_FIX
+    close = difflib.get_close_matches(alias, granted, n=1, cutoff=0.5)
+    return (
+        f"Unknown {prefix} alias."
+        + (f" Did you mean {close[0]}?" if close else "")
+        + " Available: "
+        + ", ".join(granted[:20])
+        + "."
+        + DISCOVERY.get(prefix, "")
+    )
 
 
 class Settings(BaseModel):
@@ -22,8 +43,6 @@ class Settings(BaseModel):
 
 
 def resource(ctx, section, alias, model, action):
-    if not IDENTIFIER.fullmatch(alias):
-        raise ToolError("Invalid resource alias")
     prefix = {
         "letters": "letters",
         "mailboxes": "mailbox",
@@ -32,8 +51,10 @@ def resource(ctx, section, alias, model, action):
         "images": "image",
     }[section]
     profile = ctx.config.profiles[ctx.profile]
+    if not IDENTIFIER.fullmatch(alias):
+        raise ToolError(_unknown(prefix, "", profile))
     if f"{prefix}:{alias}" not in profile.resources:
-        raise ToolError(f"Missing resource: {prefix}:{alias}")
+        raise ToolError(_unknown(prefix, alias, profile))
     effect = {
         "read": None,
         "manage": None,
@@ -43,9 +64,11 @@ def resource(ctx, section, alias, model, action):
         "generate": None,
     }[action]
     if effect and effect not in profile.effects:
-        raise ToolError(f"Missing effect: {effect}")
+        raise ToolError(f"Missing effect: {effect}. " + OPERATOR_FIX)
     if action == "generate" and profile.write == "none":
-        raise ToolError("Image generation requires filesystem write tier")
+        raise ToolError(
+            "Image generation requires filesystem write tier. " + OPERATOR_FIX
+        )
     try:
         path = Path(os.environ["SOLA_PACKS_CONFIG"]).expanduser().resolve()
         if path.stat().st_size > 1_000_000:
@@ -62,7 +85,8 @@ def resource(ctx, section, alias, model, action):
         return result
     except (OSError, ValueError, KeyError, TypeError) as exc:
         raise ToolError(
-            "Pack resource unavailable or invalid; check SOLA_PACKS_CONFIG"
+            f"Configuration for {prefix}:{alias} is missing or invalid in "
+            "SOLA_PACKS_CONFIG. " + OPERATOR_FIX
         ) from exc
 
 
@@ -71,7 +95,8 @@ def secret(ctx, reference):
         value = reference.resolve()
     except (OSError, ValueError) as exc:
         raise ToolError(
-            "Pack credential unavailable; check env/file reference and permissions"
+            "Pack credential unavailable (env/file reference or permissions). "
+            + OPERATOR_FIX
         ) from exc
     # Runtime logging/UI share the Store's redactor. Register before connecting,
     # including credentials loaded by packages the core has never imported.

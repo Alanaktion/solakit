@@ -98,7 +98,7 @@ def transport(monkeypatch, handler):
         ),
         (
             {"value": "2024-01-01T00:00:00+00:00", "to_zone": "Unknown/Zone"},
-            "Unknown time zone: Unknown/Zone",
+            "Unknown time zone: Unknown/Zone; use an IANA name such as Europe/London",
         ),
         (
             {"value": "bad date", "to_zone": "UTC"},
@@ -630,3 +630,24 @@ def test_discovery_requires_signal_and_keeps_exact_alias_lookup(dispatch):
     assert not ctx.active_tools
     result = asyncio.run(call("tools.search", query="math_eval"))
     assert json.loads(result.content)["matches"][0]["name"] == "math.eval"
+
+
+def test_unknown_alias_errors_suggest_only_readable_aliases(dispatch, tmp_path):
+    call, ctx, _ = dispatch
+    readable = tmp_path / "workspace" / "notes-repo"
+    readable.mkdir(parents=True)
+    ctx.config.profiles[ctx.profile].workspace = ["repo:notes"]
+    ctx.config.repositories["notes"] = readable
+    ctx.config.repositories["private"] = tmp_path / "outside-scopes"
+    result = asyncio.run(call("repo_git.status", repository="note"))
+    assert result.error and "Did you mean notes?" in result.content
+    assert "Available: notes." in result.content
+    assert "private" not in result.content
+
+
+def test_out_of_scope_path_explains_relative_paths(dispatch, tmp_path):
+    call, ctx, _ = dispatch
+    ctx.config.server.cwd = tmp_path
+    result = asyncio.run(call("files.grep", query="DATABASE_URL", path="/nowhere"))
+    assert result.error and "outside profile filesystem scopes" in result.content
+    assert "Relative paths start in the working directory" in result.content

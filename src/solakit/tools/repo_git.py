@@ -22,12 +22,15 @@ async def status(
         ),
     ],
 ) -> ToolResult:
-    """Return short Git status for a named repository within read scopes."""
+    """Check a named repository for uncommitted or untracked changes, e.g. before a
+    commit or pull.
+
+    Returns short Git status within read scopes."""
     return await ctx.git(repository).status()
 
 
 @tool(
-    summary="Read staged and unstaged repository changes",
+    summary="See what changed in a named repository before committing",
     keywords=("git", "diff", "changes", "patch"),
     name="repo_git.diff",
     profiles=["*"],
@@ -41,7 +44,9 @@ async def diff(
         ),
     ],
 ) -> ToolResult:
-    """Show staged and unstaged changes against HEAD; no external diff drivers."""
+    """See exactly what changed in a named repository, e.g. to review before committing.
+
+    Shows staged and unstaged changes against HEAD; no external diff drivers."""
     return await ctx.git(repository).diff()
 
 
@@ -63,7 +68,7 @@ async def log(
         int, Field(description="Maximum number of results to return.")
     ] = 10,
 ) -> ToolResult:
-    """Show up to 100 recent commits for a named repository."""
+    """See a named repository's recent history, up to 100 commits."""
     return await ctx.git(repository).log(count)
 
 
@@ -83,7 +88,9 @@ async def pull(
         ),
     ],
 ) -> ToolResult:
-    """Fast-forward a clean repository inside profile write roots."""
+    """Bring a clean named repository up to date with its remote (fast-forward only).
+
+    The repository must be inside profile write roots."""
     return await ctx.git(repository).pull()
 
 
@@ -116,5 +123,7 @@ async def commit_push(
         str, Field(description="Git commit message describing the named file changes.")
     ],
 ) -> ToolResult:
-    """Commit named files and push; needs write reach and the push effect."""
+    """Save and publish work: commit exactly the named files and push.
+
+    Needs write reach and the push effect."""
     return await ctx.git(repository).commit_push(paths, message)

@@ -70,7 +70,9 @@ async def create(
         ),
     ] = None,
 ) -> ToolResult:
-    """Create one dated entry from a configured collection layout; never overwrite."""
+    """Write a new dated journal entry (or other collection entry); never overwrites.
+
+    Saving does not publish; use journal.publish to commit and push it."""
     resource = ctx.collection(collection)
     if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", slug) or len(slug) > 100:
         raise ToolError("Slug must use lowercase letters, digits and single hyphens")
@@ -119,7 +121,8 @@ async def list_recent(
         int, Field(description="Maximum number of entries to return.")
     ] = 10,
 ) -> ToolResult:
-    """List matching entries ordered by modification time, newest first."""
+    """See a collection's recent entries, newest modified first, e.g. to find one to
+    continue or publish."""
     resource = ctx.collection(collection)
     if not resource.root.exists():
         return ToolResult(
@@ -168,7 +171,9 @@ async def publish(
         str, Field(description="Git commit message describing the named file changes.")
     ],
 ) -> ToolResult:
-    """Commit and push named collection entries; requires write and git.push grants."""
+    """Commit and push entries already written with journal.create.
+
+    Name the exact entries; requires write and git.push grants."""
     resource = ctx.collection(collection)
     checked = []
     for name in paths:

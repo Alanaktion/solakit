@@ -85,11 +85,14 @@ async def continue_child(
     ],
     task: TASK,
 ) -> ToolResult:
-    """Continue an idle child of this conversation with its own history."""
+    """Ask a worker from an earlier delegate.run a follow-up; it keeps its own history.
+
+    The child must be idle and belong to this conversation."""
     return await delegate(ctx, task, None, session)
 
 
 MAP_LIMIT = 8
+CHILD_NOT_FOUND = "Child session not found; pass session_id from a delegate.run receipt"
 
 
 @tool(
@@ -156,7 +159,7 @@ async def delegate(ctx, task, profile, session, *, timeout=None) -> ToolResult: 
         try:
             profile = (await durable(ctx.store.session, session)).default_profile
         except (FileNotFoundError, ValueError) as exc:
-            raise ToolError("Child session not found") from exc
+            raise ToolError(CHILD_NOT_FOUND) from exc
     profile = ctx.profile if profile is None else profile
     allowed = ctx.config.delegation.allowed_profiles
     if profile != ctx.profile and profile not in allowed:
@@ -193,7 +196,7 @@ async def delegate(ctx, task, profile, session, *, timeout=None) -> ToolResult: 
                 try:
                     child = await durable(ctx.store.session, session)
                 except (FileNotFoundError, ValueError) as exc:
-                    raise ToolError("Child session not found") from exc
+                    raise ToolError(CHILD_NOT_FOUND) from exc
                 if (
                     child.parent_session != ctx.session.id
                     or child.archived_at is not None

@@ -265,5 +265,16 @@ def test_runtime_value_error_is_not_misreported_as_argument_rejection(config):
     assert result.error and not result.repairable
     assert "not executed" not in result.content
     assert "Invalid tool arguments" not in result.content
-    assert "before retrying" in result.content
+    assert "will likely fail again" in result.content
+    assert "private" not in result.content
+
+    @tool(name="writer", profiles=["*"], effect="print")
+    async def writer(ctx: ToolContext):
+        raise RuntimeError("private operational details")
+
+    registry.register(writer)
+    config.profiles["interactive"].tools = ["writer"]
+    config.profiles["interactive"].effects = ["print"]
+    result = asyncio.run(registry.dispatch("writer", "{}", ctx))
+    assert result.error and "before retrying side effects" in result.content
     assert "private" not in result.content

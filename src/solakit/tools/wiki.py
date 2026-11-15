@@ -11,7 +11,7 @@ from solakit.tools._read_api import invoke
 @tool(
     name="wiki.summary",
     profiles=["*"],
-    summary="Read a Wikipedia summary and its Wikidata entity ID.",
+    summary="Quick Wikipedia overview of a topic, plus its Wikidata ID",
     keywords=("wikipedia", "wikidata", "summary", "encyclopedia"),
 )
 async def summary(
@@ -30,5 +30,8 @@ async def summary(
         ),
     ] = "en",
 ) -> ToolResult:
-    """Read a MediaWiki REST summary plus Wikidata ID; not full Wikidata claims."""
+    """Get a quick encyclopedic overview of a person, place or topic from Wikipedia.
+
+    Returns the article summary plus its Wikidata ID, not full Wikidata claims;
+    use web.get_page for the whole article."""
     return await invoke(ctx, "summary", title=title, language=language)

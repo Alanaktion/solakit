@@ -54,7 +54,7 @@ async def set_note(
     profiles=["*"],
 )
 async def list_notes(ctx: ToolContext) -> ToolResult:
-    """All notes saved in this conversation."""
+    """Show every note saved in this conversation with notes.set."""
     notes = await durable(ctx.store.session_notes, ctx.session.id)
     values = {key: event["value"] for key, event in notes.items()}
     return ToolResult(content=json.dumps(values, ensure_ascii=False))

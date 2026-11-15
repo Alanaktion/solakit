@@ -7,7 +7,7 @@ import re
 from datetime import date as calendar_date
 from datetime import datetime, time
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 from zoneinfo import ZoneInfo
 
 import yaml
@@ -38,9 +38,50 @@ TOTAL_TIMEOUT = 600
 
 class Cover(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
-    workflow: str
-    operation_id: str
-    image_index: int = Field(default=0, ge=0, le=99)
+    workflow: str = Field(description="Workflow alias passed to image.generate.")
+    operation_id: str = Field(
+        description="operation_id of the completed image.generate call."
+    )
+    image_index: int = Field(
+        default=0, ge=0, le=99, description="Which output image to use; 0 is first."
+    )
+
+
+Repository = Annotated[
+    str, Field(description="Configured blog repository alias, not a path or URL.")
+]
+OperationId = Annotated[
+    str,
+    Field(
+        description=(
+            "Stable unique ID for this write, e.g. 'post-2026-11-15-autumn'. "
+            "Reuse it only to retry the identical request."
+        )
+    ),
+]
+Limit = Annotated[int, Field(ge=1, le=100, description="Entries to return, 1-100.")]
+Offset = Annotated[
+    int, Field(ge=0, le=2000, description="Entries to skip, for the next page.")
+]
+Slug = Annotated[
+    str,
+    Field(
+        description="Filename slug: lowercase letters, digits, single hyphens, "
+        "e.g. 'autumn-walk'."
+    ),
+]
+EntryDate = Annotated[
+    str | None,
+    Field(
+        description="Content date YYYY-MM-DD or ISO timestamp with timezone; "
+        "omit for now."
+    ),
+]
+Body = Annotated[str, Field(description="Markdown body without frontmatter.")]
+Publish = Annotated[
+    bool,
+    Field(description="true builds, commits and pushes; false saves a draft only."),
+]
 
 
 def _slug(value):
@@ -210,25 +251,31 @@ async def _list(ctx, repository, kind, limit, offset):
 
 @tool(
     name="blog.list_posts",
+    keywords=("blog", "posts", "list", "drafts"),
     profiles=["*"],
     summary="List blog posts by content date, including drafts",
 )
 async def list_posts(
-    ctx: ToolContext, repository: str, limit: int = 10, offset: int = 0
+    ctx: ToolContext, repository: Repository, limit: Limit = 10, offset: Offset = 0
 ) -> ToolResult:
-    """List bounded post metadata newest first; repository is a configured alias."""
+    """Find blog posts, drafts included, newest first, e.g. to pick one to read.
+
+    repository is a configured blog alias. Use blog.read_post for a post's text."""
     return await _list(ctx, repository, "post", limit, offset)
 
 
 @tool(
     name="blog.list_dreams",
+    keywords=("blog", "dreams", "list"),
     profiles=["*"],
     summary="List dreams by content date, including drafts",
 )
 async def list_dreams(
-    ctx: ToolContext, repository: str, limit: int = 10, offset: int = 0
+    ctx: ToolContext, repository: Repository, limit: Limit = 10, offset: Offset = 0
 ) -> ToolResult:
-    """List bounded dream metadata newest first; repository is a configured alias."""
+    """Find dream entries, drafts included, newest first, e.g. to see which dates exist.
+
+    repository is a configured blog alias. Use blog.read_dream for an entry's text."""
     return await _list(ctx, repository, "dream", limit, offset)
 
 
@@ -244,21 +291,31 @@ async def _read(ctx, repository, kind, identifier):
 
 @tool(
     name="blog.read_post",
+    keywords=("blog", "post", "read"),
     profiles=["*"],
     summary="Read a blog post's literal Markdown and frontmatter",
 )
-async def read_post(ctx: ToolContext, repository: str, slug: str) -> ToolResult:
-    """Read one post by its filename slug, with explicitly bounded output."""
+async def read_post(ctx: ToolContext, repository: Repository, slug: Slug) -> ToolResult:
+    """Read one blog post's Markdown and frontmatter, e.g. to quote or follow up on it.
+
+    Identify it by filename slug (see blog.list_posts); output is explicitly bounded."""
     return await _read(ctx, repository, "post", slug)
 
 
 @tool(
     name="blog.read_dream",
+    keywords=("blog", "dream", "read"),
     profiles=["*"],
     summary="Read a dream's literal Markdown and frontmatter",
 )
-async def read_dream(ctx: ToolContext, repository: str, date: str) -> ToolResult:
-    """Read one dream by its YYYY-MM-DD filename date, with bounded output."""
+async def read_dream(
+    ctx: ToolContext,
+    repository: Repository,
+    date: Annotated[str, Field(description="Dream date as YYYY-MM-DD.")],
+) -> ToolResult:
+    """Read one dream entry's Markdown and frontmatter by its YYYY-MM-DD date.
+
+    Use blog.list_dreams first when the date is unknown; output is bounded."""
     return await _read(ctx, repository, "dream", date)
 
 
@@ -444,6 +501,7 @@ async def _create(ctx, git, kind, data, operation):
 
 @tool(
     name="blog.write_post",
+    keywords=("blog", "post", "write", "publish", "article"),
     profiles=["*"],
     writes=["filesystem"],
     manages_timeout=True,
@@ -451,23 +509,33 @@ async def _create(ctx, git, kind, data, operation):
 )
 async def write_post(
     ctx: ToolContext,
-    repository: str,
-    operation_id: str,
-    slug: str,
-    title: str,
-    description: str,
-    body: str,
-    date: str | None = None,
-    tags: list[str] = [],  # noqa: B006 - immutable tool schema default
-    draft: bool = False,
-    cover: Cover | None = None,
-    publish: bool = True,
+    repository: Repository,
+    operation_id: OperationId,
+    slug: Slug,
+    title: Annotated[str, Field(description="Post title as readers see it.")],
+    description: Annotated[
+        str, Field(description="One-sentence summary for listings and previews.")
+    ],
+    body: Body,
+    date: EntryDate = None,
+    tags: Annotated[
+        list[str], Field(description="Up to 50 short topic tags, e.g. ['travel'].")
+    ] = [],  # noqa: B006 - immutable tool schema default
+    draft: Annotated[
+        bool, Field(description="Mark the post as a draft in its frontmatter.")
+    ] = False,
+    cover: Annotated[
+        Cover | None,
+        Field(description="Generated cover image; omit for no cover."),
+    ] = None,
+    publish: Publish = True,
 ) -> ToolResult:
-    """Create a new Astro post; publish=False saves only. Never overwrite.
+    """Write a new blog post when the operator asks for one; publishes by default.
 
-    Cover references a completed image operation (workflow, operation_id, image_index).
-    Dates accept YYYY-MM-DD or a timestamp with timezone; omit for local now.
-    """
+    Builds, commits and pushes; publish=False saves a draft only (publish it later
+    with blog.publish). Never overwrites. Cover references a completed image
+    operation (workflow, operation_id, image_index). Dates accept YYYY-MM-DD or a
+    timestamp with timezone; omit for local now."""
     data = {
         "slug": slug,
         "title": title,
@@ -483,6 +551,7 @@ async def write_post(
 
 @tool(
     name="blog.write_dream",
+    keywords=("blog", "dream", "write", "journal"),
     profiles=["*"],
     writes=["filesystem"],
     manages_timeout=True,
@@ -490,17 +559,21 @@ async def write_post(
 )
 async def write_dream(
     ctx: ToolContext,
-    repository: str,
-    operation_id: str,
-    body: str,
-    date: str | None = None,
-    align: Literal["left", "center", "right"] | None = None,
-    publish: bool = True,
+    repository: Repository,
+    operation_id: OperationId,
+    body: Body,
+    date: EntryDate = None,
+    align: Annotated[
+        Literal["left", "center", "right"] | None,
+        Field(description="Text alignment; omit for the default."),
+    ] = None,
+    publish: Publish = True,
 ) -> ToolResult:
-    """Create one dream per date with optional alignment; publish=False saves only.
+    """Record a dream on the blog, one entry per date, with optional alignment.
 
-    Dates accept YYYY-MM-DD or a timestamp with timezone; omit for local now.
-    """
+    Publishes by default; publish=False saves only (publish it later with
+    blog.publish). Dates accept YYYY-MM-DD or a timestamp with timezone; omit for
+    local now."""
     return await _write(
         ctx,
         repository,
@@ -513,6 +586,7 @@ async def write_dream(
 
 @tool(
     name="blog.publish",
+    keywords=("blog", "publish", "draft", "push"),
     profiles=["*"],
     writes=["filesystem"],
     effect="push",
@@ -521,12 +595,19 @@ async def write_dream(
 )
 async def publish(
     ctx: ToolContext,
-    repository: str,
-    operation_id: str,
-    kind: Literal["post", "dream"],
-    identifier: str,
+    repository: Repository,
+    operation_id: OperationId,
+    kind: Annotated[
+        Literal["post", "dream"], Field(description="Which kind of entry to publish.")
+    ],
+    identifier: Annotated[
+        str, Field(description="Post slug, or dream date as YYYY-MM-DD.")
+    ],
 ) -> ToolResult:
-    """Publish a saved entry by post slug or dream YYYY-MM-DD."""
+    """Publish a draft saved earlier with publish=False: build, commit and push it.
+
+    Identify a post by slug or a dream by YYYY-MM-DD. New entries written with the
+    default publish=True need no separate publish."""
     git = ctx.git(repository)
     relative = _entry(kind, identifier)
     request = {"action": "publish", "kind": kind, "identifier": identifier}

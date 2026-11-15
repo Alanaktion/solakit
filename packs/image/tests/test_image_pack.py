@@ -117,7 +117,7 @@ def test_uncertain_submission_never_replays(setup, monkeypatch):
 def test_grants_and_workflow_scope(setup):
     _, ctx, calls, _ = setup
     ctx.config.profiles[ctx.profile].resources.remove("image:studio")
-    assert "Missing resource" in invoke(setup).content and not calls
+    assert "No image resources are granted" in invoke(setup).content and not calls
     ctx.config.profiles[ctx.profile].resources.append("image:studio")
     ctx.config.profiles[ctx.profile].read = "none"
     ctx.config.profiles[ctx.profile].workspace = []
@@ -352,7 +352,7 @@ def test_completed_png_rechecks_resource_endpoint_and_selection(
     with pytest.raises(ToolError, match="output is missing"):
         asyncio.run(image.completed_png(ctx, "studio", "picture-1", 1))
     ctx.config.profiles[ctx.profile].resources.clear()
-    with pytest.raises(ToolError, match="Missing resource"):
+    with pytest.raises(ToolError, match="No image resources are granted"):
         asyncio.run(image.completed_png(ctx, "studio", "picture-1"))
     ctx.config.profiles[ctx.profile].resources.append("image:studio")
     with (tmp_path / "packs.toml").open("a") as stream:

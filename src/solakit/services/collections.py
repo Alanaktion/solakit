@@ -3,7 +3,7 @@
 from pathlib import Path
 
 from solakit.services.git import Git
-from solakit.tools import ToolContext, ToolError, scope_root
+from solakit.tools import ToolContext, ToolError, choices_hint, scope_root
 
 
 class Collection:
@@ -11,7 +11,18 @@ class Collection:
         self.ctx, self.alias = ctx, alias
         config = ctx.config.collections.get(alias)
         if config is None:
-            raise ToolError("Unknown collection")
+            granted = ctx.config.profiles[ctx.profile].resources
+            raise ToolError(
+                "Unknown collection alias."
+                + choices_hint(
+                    alias,
+                    [
+                        r.removeprefix("collection:")
+                        for r in granted
+                        if r.startswith("collection:")
+                    ],
+                )
+            )
         self.config = config
         root = scope_root(f"collection:{alias}", ctx.config)
         if root is None:

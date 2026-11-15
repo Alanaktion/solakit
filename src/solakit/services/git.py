@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from solakit.services.process import execute
-from solakit.tools import ToolContext, ToolError, ToolResult
+from solakit.tools import ToolContext, ToolError, ToolResult, choices_hint
 
 _LOCKS: dict[Path, threading.Lock] = {}
 _LOCKS_GUARD = threading.Lock()
@@ -32,6 +32,18 @@ async def repository_lock(root: Path) -> AsyncIterator[None]:
         lock.release()
 
 
+def visible(ctx: ToolContext, paths: dict) -> list[str]:
+    """Aliases whose directory this profile can read; never list the rest."""
+    names = []
+    for name, path in paths.items():
+        try:
+            ctx.path(str(Path(path).expanduser()))
+        except ToolError:
+            continue
+        names.append(name)
+    return names
+
+
 class Git:
     def __init__(
         self, ctx: ToolContext, repository: str, *, collection: str | None = None
@@ -39,13 +51,26 @@ class Git:
         self.ctx, self.alias, self.collection = ctx, repository, collection
         configured = ctx.config.repositories.get(repository)
         if configured is None:
-            raise ToolError("Unknown repository")
+            raise ToolError(
+                "Unknown repository alias."
+                + choices_hint(repository, visible(ctx, ctx.config.repositories))
+            )
         self.root = configured.expanduser().resolve()
         self.directory = self.root
         if collection is not None:
             resource = ctx.config.collections.get(collection)
             if resource is None or resource.repository != repository:
-                raise ToolError("Unknown collection")
+                raise ToolError(
+                    "Unknown collection for this repository."
+                    + choices_hint(
+                        collection,
+                        [
+                            name
+                            for name, item in ctx.config.collections.items()
+                            if item.repository == repository
+                        ],
+                    )
+                )
             self.directory = (self.root / resource.directory).resolve()
             if not self.directory.is_relative_to(self.root):
                 raise ToolError("Collection directory escapes repository")
