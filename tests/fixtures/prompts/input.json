@@ -1,0 +1,75 @@
+{
+  "at": "2026-11-16T12:00:00Z",
+  "input": {
+    "schema_version": 1,
+    "id": "33333333333333333333333333333333",
+    "created_at": "2026-11-16T12:00:00Z",
+    "origin": "interactive",
+    "session_id": "11111111111111111111111111111111",
+    "run_id": "22222222222222222222222222222222",
+    "role": "user",
+    "content": "  Verbatim café 🐈\r\n<think>quoted</think>\n",
+    "tool_call_id": null
+  },
+  "history": [
+    {
+      "schema_version": 1,
+      "id": "44444444444444444444444444444444",
+      "created_at": "2026-11-16T12:00:00Z",
+      "origin": "interactive",
+      "session_id": "11111111111111111111111111111111",
+      "run_id": "22222222222222222222222222222222",
+      "role": "user",
+      "content": "Earlier question",
+      "tool_call_id": null
+    },
+    {
+      "schema_version": 1,
+      "id": "55555555555555555555555555555555",
+      "created_at": "2026-11-16T12:00:00Z",
+      "origin": "interactive",
+      "session_id": "11111111111111111111111111111111",
+      "run_id": "22222222222222222222222222222222",
+      "role": "assistant",
+      "content": "Earlier answer",
+      "tool_call_id": null
+    }
+  ],
+  "summary": {
+    "schema_version": 1,
+    "id": "66666666666666666666666666666666",
+    "created_at": "2026-11-16T12:00:00Z",
+    "origin": "interactive",
+    "session_id": "11111111111111111111111111111111",
+    "run_id": "22222222222222222222222222222222",
+    "role": "assistant",
+    "content": "Recorded summary",
+    "tool_call_id": null
+  },
+  "context_boundary": "77777777777777777777777777777777",
+  "recall": "Frozen recall, not live retrieval.",
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "z.status",
+        "description": "Fixture tool.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "a.read",
+        "description": "Fixture tool.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    }
+  ]
+}

@@ -153,3 +153,12 @@ def test_record_and_event_fixtures() -> None:
     assert [event.sequence for event in events] == [1, 2, 3]
     assert events[-1].type == "run.terminal"
     assert len({event.event_id for event in events}) == 3
+
+
+def test_phase_three_model_steps_remain_readable() -> None:
+    root = Path(__file__).parents[1] / "docs/contracts/examples"
+    raw = json.loads((root / "records.json").read_text())["ModelStep"]
+    for key in ("request_id", "response", "usage"):
+        raw.pop(key)
+    step = records.ModelStep.model_validate_json(json.dumps(raw))
+    assert step.request_id is None and step.response is None and step.usage is None

@@ -1,0 +1,8 @@
+data_dir = "data"
+soul_file = "SOUL.md"
+curated_memory_file = "MEMORY.md"
+[model]
+pin = "fixture-qwen"
+[defaults]
+fragments = ["profile.md"]
+workspace_roots = ["."]

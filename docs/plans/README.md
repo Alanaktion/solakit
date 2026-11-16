@@ -40,6 +40,13 @@ locally verified. Read the [storage protocol](../contracts/storage.md),
 [maintenance runbook](../backup-restore.md) and [Phase 3 evidence](../validation/phase-03.md).
 Dispatch/live services and semantic production migration retain their later gates.
 
+Phase 4 deterministic prompt assembly, private exact request evidence, offline
+inspection and the pinned model adapter are implemented. The chosen Qwen passed
+live oMLX text/tool/reasoning and synthetic image probes in both transport modes.
+Read the [request contract](../contracts/model-prompts.md) and
+[Phase 4 evidence](../validation/phase-04.md). Weight identity, verified tokenizer
+accounting and production attachment admission retain their documented limits.
+
 - One Sola, one operator, one runtime process, one event loop, one worker, one shared inference semaphore.
 - Pinned local Qwen served by oMLX. No silent model substitution.
 - Operator-owned SOUL, curated memory, and prompt fragments preserve identity. The harness supplies mechanics rather than personality policy.

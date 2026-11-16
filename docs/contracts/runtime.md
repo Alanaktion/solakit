@@ -5,8 +5,9 @@ Phase 2 contract, implemented on 2026-11-16. Core modules are
 and [`runtime.py`](../../src/solakit/runtime.py). None imports HTTP or provider SDK
 types. Pydantic validates owned values; it is not an application container.
 Phase 3 [storage](storage.md) now persists these values and supplies durable
-admission/evidence. Dispatch, scheduling, and live adapters retain their later
-phase gates. An in-memory transition alone is not a durable admission or effect receipt.
+admission/evidence. Phase 4 [model requests](model-prompts.md) add exact private
+request artifacts and a pinned oMLX adapter. Dispatch and scheduling retain their
+later phase gates. An in-memory transition alone is not a durable admission or effect receipt.
 
 ## Records and identities
 
@@ -27,6 +28,7 @@ IDs/time and round-trip every record type; they include an unsuccessful tool cal
 | Message | Session and run; verbatim text and role; tool messages require a tool-call ID |
 | Run | Session, request idempotency ID, profile, optional retry-of run; scheduled/proactive runs require job and occurrence IDs |
 | ModelStep | Session, run, attempt index (starts at 1), model pin, optional provider response ID, normalized content/reasoning/outcome |
+| ModelRequest | Session, run, attempt index and pin; exact body/manifest artifact references, durable before transmission |
 | ToolCall | Session, run, model step, provider tool-call ID, name, JSON arguments |
 | ToolReceipt | Session, run, internal tool-call ID even on failure; status, result, failure, effect certainty |
 | Job | Profile, task, schedule string/timezone, bound session or ephemeral target; disabled initially |

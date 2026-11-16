@@ -1,0 +1,452 @@
+"""Pinned oMLX boundary. SDK transport, inert tool calls, no implicit retries."""
+
+import asyncio
+import logging
+import os
+from collections.abc import AsyncIterator
+from typing import Any, cast
+
+import httpx2
+from openai import APIError, APIStatusError, APITimeoutError, AsyncOpenAI
+from pydantic import Field, JsonValue
+
+from solakit.config import EffectiveProfile
+from solakit.evidence import canonical, checked_json
+from solakit.prompts import PreparedPrompt, inspect_prompt
+from solakit.records import (
+    Artifact,
+    ErrorCode,
+    Failure,
+    ModelRequest,
+    ModelStep,
+    ProviderID,
+    Run,
+    Value,
+    new_id,
+)
+from solakit.store import Store
+
+MAX_RESPONSE_BYTES = 4 * 1024 * 1024
+
+
+class ModelError(ValueError):
+    def __init__(
+        self,
+        message: str,
+        code: ErrorCode = ErrorCode.INVALID_MODEL_RESPONSE,
+        *,
+        values: dict[str, Any] | None = None,
+    ):
+        super().__init__(message)
+        self.code = code
+        self.values = values or {}
+
+
+class NormalizedCall(Value):
+    provider_tool_call_id: ProviderID
+    name: str = Field(min_length=1, max_length=256, pattern=r"^[A-Za-z0-9_.-]+$")
+    arguments: dict[str, JsonValue]
+
+
+class ModelResult(Value):
+    step: ModelStep
+    calls: tuple[NormalizedCall, ...] = ()
+
+
+def _identity(data: dict[str, Any], pin: str) -> None:
+    if data.get("model") is not None and data["model"] != pin:
+        raise ModelError("Returned model differs from the pin", ErrorCode.MODEL_MISMATCH)
+
+
+def normalize(data: dict[str, Any], pin: str) -> dict[str, Any]:
+    """Only explicit reasoning fields are reasoning; quoted/code tags stay literal."""
+    _identity(data, pin)
+    provider_id = data.get("id")
+    if provider_id is not None and (
+        not isinstance(provider_id, str) or not 1 <= len(provider_id) <= 256
+    ):
+        raise ModelError("Invalid response ID")
+    choices = data.get("choices")
+    if not isinstance(choices, list) or len(choices) != 1:
+        raise ModelError("Expected one model choice")
+    choice = choices[0]
+    if (
+        not isinstance(choice, dict)
+        or type(choice.get("index", 0)) is not int
+        or choice.get("index", 0) != 0
+    ):
+        raise ModelError("Invalid model choice")
+    finish = choice.get("finish_reason")
+    if finish is not None and not isinstance(finish, str):
+        raise ModelError("Invalid finish reason")
+    message = choice.get("message")
+    if not isinstance(message, dict) or message.get("role") != "assistant":
+        raise ModelError("Invalid assistant message")
+    content = message.get("content")
+    if content is None:
+        content = ""
+    reasoning = message.get("reasoning_content")
+    if reasoning is None:
+        reasoning = message.get("reasoning")
+    if reasoning is None:
+        reasoning = ""
+    if not isinstance(content, str) or not isinstance(reasoning, str):
+        raise ModelError("Invalid content or reasoning")
+    usage = data.get("usage")
+    if usage is not None:
+        if not isinstance(usage, dict):
+            raise ModelError("Invalid usage")
+        for key in ("prompt_tokens", "completion_tokens", "total_tokens"):
+            if key in usage and (type(usage[key]) is not int or usage[key] < 0):
+                raise ModelError("Invalid token usage")
+        canonical(usage)
+    values = {
+        "content": content,
+        "reasoning": reasoning,
+        "finish_reason": finish,
+        "provider_call_id": provider_id,
+        "usage": usage,
+    }
+    if finish not in ("stop", "tool_calls"):
+        raise ModelError("Model response is incomplete", values=values)
+    raw_calls = message.get("tool_calls")
+    if raw_calls is None:
+        raw_calls = []
+    if not isinstance(raw_calls, list) or len(raw_calls) > 64:
+        raise ModelError("Invalid tool calls")
+    calls = []
+    for raw in raw_calls:
+        if not isinstance(raw, dict) or raw.get("type") != "function":
+            raise ModelError("Invalid tool call type")
+        function = raw.get("function")
+        if not isinstance(function, dict) or not isinstance(function.get("arguments"), str):
+            raise ModelError("Invalid function arguments")
+        arguments = checked_json(function["arguments"].encode())
+        if not isinstance(arguments, dict):
+            raise ModelError("Function arguments must be a JSON object")
+        canonical(arguments)
+        calls.append(
+            NormalizedCall.model_validate(
+                {
+                    "provider_tool_call_id": raw.get("id"),
+                    "name": function.get("name"),
+                    "arguments": arguments,
+                }
+            )
+        )
+    if len({call.provider_tool_call_id for call in calls}) != len(calls):
+        raise ModelError("Duplicate tool call IDs")
+    if bool(calls) != (finish == "tool_calls"):
+        raise ModelError("Tool calls and finish reason disagree")
+    if not calls and not content.strip():
+        raise ModelError("Model stopped without visible content or tool calls", values=values)
+    return values | {"calls": tuple(calls)}
+
+
+async def _events(chunks: AsyncIterator[bytes], raw: bytearray) -> AsyncIterator[bytes]:
+    """Frame SSE before UTF-8/JSON decoding, including split multibyte characters."""
+    pending = b""
+    lines: list[bytes] = []
+    async for chunk in chunks:
+        if len(raw) + len(chunk) > MAX_RESPONSE_BYTES:
+            raise ModelError("Model response exceeds size limit")
+        raw.extend(chunk)
+        pending += chunk
+        while b"\n" in pending:
+            line, pending = pending.split(b"\n", 1)
+            line = line.removesuffix(b"\r")
+            if not line:
+                if lines:
+                    yield b"\n".join(lines)
+                    lines.clear()
+            elif line.startswith(b"data:"):
+                lines.append(line[5:].removeprefix(b" "))
+    raise ModelError("Model stream ended without [DONE]")
+
+
+async def assemble_stream(chunks: AsyncIterator[bytes], pin: str, raw: bytearray) -> dict[str, Any]:
+    content, reasoning = "", ""
+    calls: dict[int, dict[str, Any]] = {}
+    finish = None
+    provider_id = None
+    usage = None
+    async for event in _events(chunks, raw):
+        if event == b"[DONE]":
+            if finish is None:
+                raise ModelError("Model stream ended before finish reason")
+            if sorted(calls) != list(range(len(calls))):
+                raise ModelError("Noncontiguous streamed calls")
+            return {
+                "id": provider_id,
+                "model": pin,
+                "choices": [
+                    {
+                        "index": 0,
+                        "finish_reason": finish,
+                        "message": {
+                            "role": "assistant",
+                            "content": content,
+                            "reasoning_content": reasoning,
+                            "tool_calls": [calls[i] for i in sorted(calls)],
+                        },
+                    }
+                ],
+                "usage": usage,
+            }
+        data = checked_json(event)
+        if not isinstance(data, dict) or "error" in data:
+            raise ModelError("Invalid model stream event")
+        # oMLX emits this exact empty heartbeat before the model starts generating.
+        if isinstance(data.get("id"), str) and data == {
+            "id": data["id"],
+            "object": "chat.completion.chunk",
+            "created": 0,
+            "model": "keepalive",
+            "choices": [
+                {"index": 0, "delta": {"role": "assistant", "content": ""}, "finish_reason": None}
+            ],
+        }:
+            continue
+        _identity(data, pin)
+        if data.get("id") is not None:
+            if provider_id is not None and provider_id != data["id"]:
+                raise ModelError("Stream response ID changed")
+            provider_id = data["id"]
+        if data.get("usage") is not None:
+            usage = data["usage"]
+        choices = data.get("choices")
+        if choices == [] and data.get("usage") is not None:
+            continue
+        if not isinstance(choices, list) or len(choices) != 1 or finish is not None:
+            raise ModelError("Invalid stream choices or content after finish")
+        choice = choices[0]
+        if not isinstance(choice, dict) or choice.get("index") != 0:
+            raise ModelError("Invalid streamed choice")
+        delta = choice.get("delta")
+        if not isinstance(delta, dict) or delta.get("role") not in (None, "assistant"):
+            raise ModelError("Invalid streamed role")
+        for key in ("content", "reasoning_content", "reasoning"):
+            value = delta.get(key)
+            if value is not None:
+                if not isinstance(value, str):
+                    raise ModelError("Invalid streamed text")
+                if key == "content":
+                    content += value
+                elif key != "reasoning" or delta.get("reasoning_content") is None:
+                    reasoning += value
+        fragments = delta.get("tool_calls")
+        if fragments is None:
+            fragments = []
+        if not isinstance(fragments, list):
+            raise ModelError("Invalid streamed tool calls")
+        for fragment in fragments:
+            if not isinstance(fragment, dict):
+                raise ModelError("Invalid tool fragment")
+            index = fragment.get("index")
+            if type(index) is not int or not 0 <= index < 64:
+                raise ModelError("Invalid streamed tool index")
+            call = calls.setdefault(
+                index, {"id": "", "type": "function", "function": {"name": "", "arguments": ""}}
+            )
+            if fragment.get("type") not in (None, "function"):
+                raise ModelError("Invalid streamed tool type")
+            if fragment.get("id") is not None:
+                if not isinstance(fragment["id"], str):
+                    raise ModelError("Invalid streamed tool ID")
+                if call["id"] and call["id"] != fragment["id"]:
+                    raise ModelError("Streamed tool ID changed")
+                call["id"] = fragment["id"]
+            function = fragment.get("function")
+            if function is not None:
+                if not isinstance(function, dict):
+                    raise ModelError("Invalid streamed function")
+                for key in ("name", "arguments"):
+                    value = function.get(key)
+                    if value is not None:
+                        if not isinstance(value, str):
+                            raise ModelError("Invalid streamed function fragment")
+                        call["function"][key] += value
+        finish = choice.get("finish_reason")
+    raise ModelError("Model stream interrupted")
+
+
+class ModelAdapter:
+    def __init__(
+        self,
+        profile: EffectiveProfile,
+        store: Store,
+        inference: asyncio.Semaphore,
+        *,
+        transport: httpx2.AsyncBaseTransport | None = None,
+    ) -> None:
+        self.profile, self.store, self.inference = profile, store, inference
+        self.transport = transport
+        self.client: AsyncOpenAI | None = None
+
+    async def start(self) -> None:
+        if self.client is not None:
+            return
+        # SDK debug traces include request bodies; private artifacts own that evidence.
+        for name in ("openai", "openai._base_client", "httpx2", "httpcore2"):
+            logging.getLogger(name).setLevel(logging.WARNING)
+        key = os.getenv(self.profile.model_api_key_env or "OPENAI_API_KEY")
+        if self.profile.model_api_key_env and not key:
+            raise ModelError("Configured model credential is missing", ErrorCode.CONFIGURATION)
+        self.client = AsyncOpenAI(
+            base_url=self.profile.model_base_url.rstrip("/") + "/",
+            api_key=key or "local",
+            max_retries=0,
+            timeout=httpx2.Timeout(
+                self.profile.model_generation_timeout_seconds,
+                connect=self.profile.model_connect_timeout_seconds,
+            ),
+            http_client=httpx2.AsyncClient(
+                transport=self.transport, trust_env=False, follow_redirects=False
+            ),
+        )
+
+    async def stop(self) -> None:
+        if self.client is not None:
+            await self.client.close()
+            self.client = None
+
+    async def verify(self) -> dict[str, Any]:
+        if self.client is None:
+            raise ModelError("Model client is not started", ErrorCode.MODEL_UNAVAILABLE)
+        async with asyncio.timeout(self.profile.model_connect_timeout_seconds):
+            models = await self.client.get("models", cast_to=dict[str, Any])
+        if not isinstance(models, dict):
+            raise ModelError("Invalid /models response")
+        data = models.get("data")
+        if not isinstance(data, list) or not any(
+            isinstance(model, dict) and model.get("id") == self.profile.model_pin for model in data
+        ):
+            raise ModelError("Pinned model absent from /models", ErrorCode.MODEL_MISMATCH)
+        return {
+            "pin": self.profile.model_pin,
+            "models": models,
+            "verified": "API model ID only; weight identity unverified",
+        }
+
+    async def complete(self, prompt: PreparedPrompt, run: Run, index: int) -> ModelResult:
+        inspected = inspect_prompt(prompt)
+        request = inspected["request"]
+        manifest = inspected["manifest"]
+        if (
+            not isinstance(request, dict)
+            or request.get("model") != self.profile.model_pin
+            or type(request.get("stream")) is not bool
+            or not isinstance(manifest, dict)
+            or manifest.get("session_id") != run.session_id
+            or manifest.get("run_id") != run.id
+            or manifest.get("origin") != run.origin
+            or manifest.get("endpoint")
+            != self.profile.model_base_url.rstrip("/") + "/chat/completions"
+            or manifest.get("timeouts")
+            != {
+                "connect_seconds": self.profile.model_connect_timeout_seconds,
+                "generation_seconds": self.profile.model_generation_timeout_seconds,
+            }
+        ):
+            raise ModelError(
+                "Request differs from pinned model configuration", ErrorCode.CONFIGURATION
+            )
+        if self.client is None:
+            raise ModelError("Model client is not started", ErrorCode.MODEL_UNAVAILABLE)
+        async with self.inference:
+            recorded = ModelRequest(
+                origin=run.origin,
+                session_id=run.session_id,
+                run_id=run.id,
+                index=index,
+                model=self.profile.model_pin,
+                body=Artifact.model_validate(self.store.artifact(new_id(), prompt.body)),
+                manifest=Artifact.model_validate(self.store.artifact(new_id(), prompt.manifest)),
+            )
+            self.store.append(recorded)
+            raw = bytearray()
+            response = None
+            values: dict[str, Any] = {}
+            calls: tuple[NormalizedCall, ...] = ()
+            failure: Failure | None = Failure(
+                code=ErrorCode.INVALID_MODEL_RESPONSE, message="Model request did not complete"
+            )
+            try:
+                async with asyncio.timeout(self.profile.model_generation_timeout_seconds):
+                    await self.verify()
+                    # Raw content prevents SDK reserialization of the recorded bytes.
+                    response = cast(
+                        httpx2.Response,
+                        await self.client.post(
+                            "chat/completions",
+                            cast_to=httpx2.Response,
+                            content=prompt.body,
+                            stream=True,
+                        ),
+                    )
+                    if request["stream"]:
+                        data = await assemble_stream(
+                            response.aiter_bytes(), self.profile.model_pin, raw
+                        )
+                    else:
+                        async for chunk in response.aiter_bytes():
+                            if len(raw) + len(chunk) > MAX_RESPONSE_BYTES:
+                                raise ModelError("Model response exceeds size limit")
+                            raw.extend(chunk)
+                        decoded = checked_json(bytes(raw))
+                        if not isinstance(decoded, dict):
+                            raise ModelError("Invalid JSON model response")
+                        data = decoded
+                    values = normalize(data, self.profile.model_pin)
+                    calls = values.pop("calls")
+                    failure = None
+            except asyncio.CancelledError:
+                failure = Failure(code=ErrorCode.CANCELLED, message="Model request cancelled")
+                raise
+            except TimeoutError, APITimeoutError:
+                failure = Failure(code=ErrorCode.TIMEOUT, message="Model request timed out")
+            except ModelError as error:
+                values = error.values
+                failure = Failure(code=error.code, message=str(error))
+            except APIStatusError as error:
+                raw.extend(error.response.content[:MAX_RESPONSE_BYTES])
+                failure = Failure(
+                    code=ErrorCode.MODEL_UNAVAILABLE,
+                    message=f"Model endpoint returned HTTP {error.status_code}",
+                )
+            except APIError, httpx2.HTTPError:
+                failure = Failure(
+                    code=ErrorCode.MODEL_UNAVAILABLE, message="Model transport failed"
+                )
+            except ValueError, TypeError, KeyError, IndexError, UnicodeError:
+                failure = Failure(
+                    code=ErrorCode.INVALID_MODEL_RESPONSE, message="Malformed model response"
+                )
+            finally:
+                try:
+                    if response is not None:
+                        async with asyncio.timeout(self.profile.model_connect_timeout_seconds):
+                            await response.aclose()
+                except Exception:
+                    if failure is None:
+                        failure = Failure(
+                            code=ErrorCode.MODEL_UNAVAILABLE,
+                            message="Model response cleanup failed",
+                        )
+                    raise ModelError(
+                        "Model response cleanup failed", ErrorCode.MODEL_UNAVAILABLE
+                    ) from None
+                finally:
+                    step = ModelStep(
+                        origin=run.origin,
+                        session_id=run.session_id,
+                        run_id=run.id,
+                        index=index,
+                        model=self.profile.model_pin,
+                        request_id=recorded.id,
+                        failure=failure,
+                        response=Artifact.model_validate(self.store.artifact(new_id(), bytes(raw))),
+                        **values,
+                    )
+                    self.store.append(step)
+            return ModelResult(step=step, calls=calls if failure is None else ())

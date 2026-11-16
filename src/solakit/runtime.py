@@ -5,11 +5,14 @@ import fcntl
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from solakit.config import EffectiveProfile
 from solakit.evidence import ensure_directory
 from solakit.store import Store
+
+if TYPE_CHECKING:
+    from solakit.model import ModelAdapter
 
 
 class LifecycleError(RuntimeError):
@@ -63,6 +66,7 @@ class ApplicationContext:
     profile: EffectiveProfile
     resources: tuple[Resource, ...] = ()
     store: Store | None = None
+    model: ModelAdapter | None = None
     inference: asyncio.Semaphore = field(default_factory=lambda: asyncio.Semaphore(1), init=False)
     state: str = field(default="stopped", init=False)
     _active: list[Resource] = field(default_factory=list, init=False, repr=False)
@@ -139,5 +143,10 @@ def compose(
     profile: EffectiveProfile, *, resources: tuple[Resource, ...] = ()
 ) -> ApplicationContext:
     """Resources are supplied in dependency order, closed in reverse order."""
+    from solakit.model import ModelAdapter
+
     store = Store(profile.data_dir)
-    return ApplicationContext(profile=profile, resources=(store, *resources), store=store)
+    context = ApplicationContext(profile=profile, store=store)
+    context.model = ModelAdapter(profile, store, context.inference)
+    context.resources = (store, context.model, *resources)
+    return context

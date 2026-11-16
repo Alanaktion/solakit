@@ -15,7 +15,7 @@ def test_health(profile: EffectiveProfile) -> None:
     with TestClient(create_app(context)) as client:
         response = client.get("/health")
         assert response.status_code == 200
-        assert response.json() == {"status": "running", "phase": "evidence-search"}
+        assert response.json() == {"status": "running", "phase": "model-prompts"}
     assert context.state == "stopped"
 
 

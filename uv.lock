@@ -467,6 +467,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
+    { name = "httpx2" },
     { name = "openai" },
     { name = "pydantic" },
     { name = "uvicorn" },
@@ -482,6 +483,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "fastapi", specifier = ">=0.163.1" },
+    { name = "httpx2", specifier = ">=2.16.2" },
     { name = "openai", specifier = ">=3.51.0" },
     { name = "pydantic", specifier = ">=2.12" },
     { name = "uvicorn", specifier = ">=0.54.0" },

@@ -21,7 +21,16 @@ def main() -> None:
         command.add_argument("--config", type=Path)
         command.add_argument("--profile", default="default")
     check.add_argument("--explain", action="store_true")
-    commands.add_parser("prompt", help="offline prompt inspection (Phase 4)")
+    prompt = commands.add_parser("prompt", help="offline prompt inspection (private content)")
+    prompt.add_argument("text", nargs="?")
+    prompt.add_argument("--config", type=Path)
+    prompt.add_argument("--profile", default="default")
+    prompt.add_argument("--frozen", type=Path, help="PromptInput JSON with fixed IDs/time/recall")
+    prompt.add_argument("--recall-file", type=Path)
+    prompt.add_argument("--at", help="explicit UTC ISO timestamp")
+    prompt.add_argument("--request-body", type=Path, help="recorded request artifact")
+    prompt.add_argument("--manifest", type=Path, help="recorded manifest artifact")
+    prompt.add_argument("--hashes", action="store_true")
     search_command = commands.add_parser("search", help="offline evidence search")
     search_command.add_argument("query")
     search_command.add_argument("--config", type=Path)
@@ -46,7 +55,7 @@ def main() -> None:
         uvicorn.run(create_app(compose(profile)), host="127.0.0.1", port=8765, workers=1)
     elif args.command == "check":
         report: dict[str, object] = {
-            "phase": "evidence-search",
+            "phase": "model-prompts",
             "python": platform.python_version(),
             "packages": {name: version(name) for name in ("solakit", "fastapi", "openai")},
             "runtime_configured": False,
@@ -69,6 +78,56 @@ def main() -> None:
             args.config is not None or DEFAULT_CONFIG.exists()
         ):
             raise SystemExit(2)
+    elif args.command == "prompt":
+        from datetime import datetime
+
+        from solakit.prompts import PreparedPrompt, PromptInput, assemble, inspect_prompt
+        from solakit.records import Message, new_id, utc_now
+
+        try:
+            if args.request_body or args.manifest:
+                if not (args.request_body and args.manifest) or any(
+                    value is not None
+                    for value in (args.text, args.frozen, args.recall_file, args.at)
+                ):
+                    parser.error("recorded inspection requires only --request-body and --manifest")
+                prepared = PreparedPrompt(
+                    args.request_body.read_bytes(), args.manifest.read_bytes()
+                )
+            else:
+                profile = resolve_profile(
+                    load_config(args.config),
+                    args.profile,
+                    base=(args.config or DEFAULT_CONFIG).resolve().parent,
+                )
+                if args.frozen:
+                    if any(value is not None for value in (args.text, args.recall_file, args.at)):
+                        parser.error(
+                            "--frozen cannot be combined with text, recall or time overrides"
+                        )
+                    frozen = PromptInput.model_validate_json(args.frozen.read_bytes())
+                else:
+                    if args.text is None:
+                        parser.error("prompt requires text or --frozen")
+                    frozen = PromptInput(
+                        at=datetime.fromisoformat(args.at) if args.at else utc_now(),
+                        input=Message(
+                            origin=profile.origin,
+                            session_id=new_id(),
+                            run_id=new_id(),
+                            role="user",
+                            content=args.text,
+                        ),
+                        recall=args.recall_file.read_bytes().decode() if args.recall_file else None,
+                    )
+                prepared = assemble(profile, frozen)
+            print(
+                json.dumps(
+                    inspect_prompt(prepared, hashes=args.hashes), ensure_ascii=False, indent=2
+                )
+            )
+        except ValueError, OSError:
+            parser.error("prompt input/configuration is invalid or unavailable")
     elif args.command == "search":
         from solakit.evidence import CorruptionError, StorageError
         from solakit.search import search

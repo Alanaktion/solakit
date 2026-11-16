@@ -3,11 +3,18 @@ schema_version = 1
 data_dir = "~/.local/share/sola"
 loaded_tools = []
 shutdown_timeout_seconds = 5
+# Operator-owned UTF-8 files, read verbatim; optional and never created by Sola.
+# soul_file = "SOUL.md"
+# curated_memory_file = "MEMORY.md"
 
 [model]
 pin = "Qwen3.6-35B-A3B-mxfp4"
 base_url = "http://127.0.0.1:8000/v1"
+# OPENAI_API_KEY is used by default; .env is only loaded by the developer probe.
 # api_key_env = "SOLA_MODEL_API_KEY"
+context_tokens = 32768
+connect_timeout_seconds = 5
+generation_timeout_seconds = 120
 
 [defaults]
 workspace_roots = ["."]

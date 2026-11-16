@@ -52,7 +52,10 @@
     "finish_reason": "tool_calls",
     "content": "",
     "reasoning": "",
-    "failure": null
+    "failure": null,
+    "request_id": null,
+    "response": null,
+    "usage": null
   },
   "ToolCall": {
     "schema_version": 1,
@@ -143,5 +146,25 @@
     "source_message_ids": [
       "0000000000000000000000000000000d"
     ]
+  },
+  "ModelRequest": {
+    "schema_version": 1,
+    "id": "0000000000000000000000000000000e",
+    "created_at": "2026-11-16T12:00:00Z",
+    "origin": "scheduled",
+    "session_id": "00000000000000000000000000000001",
+    "run_id": "00000000000000000000000000000002",
+    "index": 1,
+    "model": "fixture-qwen",
+    "body": {
+      "path": "artifacts/0000000000000000000000000000000f",
+      "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "length": 2
+    },
+    "manifest": {
+      "path": "artifacts/00000000000000000000000000000010",
+      "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "length": 2
+    }
   }
 }

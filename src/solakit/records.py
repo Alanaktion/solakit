@@ -182,6 +182,21 @@ class Run(Record):
         return type(self).model_validate(self.model_dump() | changes)
 
 
+class Artifact(Value):
+    path: Annotated[str, Field(pattern=r"^artifacts/[0-9a-f]{32}$")]
+    sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    length: Annotated[int, Field(ge=0)]
+
+
+class ModelRequest(Record):
+    session_id: RecordID
+    run_id: RecordID
+    index: Annotated[int, Field(ge=1)]
+    model: Annotated[str, Field(min_length=1)]
+    body: Artifact
+    manifest: Artifact
+
+
 class ModelStep(Record):
     session_id: RecordID
     run_id: RecordID
@@ -192,6 +207,9 @@ class ModelStep(Record):
     content: str = ""
     reasoning: str = ""
     failure: Failure | None = None
+    request_id: RecordID | None = None
+    response: Artifact | None = None
+    usage: dict[str, JsonValue] | None = None
 
 
 class ToolCall(Record):
@@ -323,6 +341,7 @@ class DurableEvent(Value):
         "run.terminal",
         "message.appended",
         "model.recorded",
+        "model.requested",
         "compaction.recorded",
         "tool.intent",
         "tool.receipt",

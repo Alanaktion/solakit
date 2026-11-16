@@ -50,6 +50,9 @@ class ProfileSettings(Value):
 class ModelSettings(Value):
     pin: str = ""
     base_url: str = "http://127.0.0.1:8000/v1"
+    context_tokens: Annotated[int, Field(ge=1024, le=1048576)] = 32768
+    connect_timeout_seconds: Annotated[int, Field(ge=1, le=60)] = 5
+    generation_timeout_seconds: Annotated[int, Field(ge=1, le=3600)] = 120
     api_key_env: Annotated[str, Field(pattern=r"^[A-Za-z_][A-Za-z0-9_]*$")] | None = Field(
         default=None, repr=False
     )
@@ -78,6 +81,8 @@ class ModelSettings(Value):
 class OperatorConfig(Value):
     schema_version: SchemaVersion = 1
     data_dir: str = "~/.local/share/sola"
+    soul_file: str | None = None
+    curated_memory_file: str | None = None
     shutdown_timeout_seconds: Annotated[int, Field(ge=1, le=60)] = 5
     model: ModelSettings = Field(default_factory=ModelSettings)
     loaded_tools: list[Name] = Field(default_factory=list)
@@ -93,6 +98,11 @@ class EffectiveProfile(Value):
     data_dir: Path
     model_pin: str
     model_base_url: str
+    model_context_tokens: int = 32768
+    model_connect_timeout_seconds: int = 5
+    model_generation_timeout_seconds: int = 120
+    soul_file: Path | None = None
+    curated_memory_file: Path | None = None
     model_api_key_env: str | None = Field(repr=False)
     shutdown_timeout_seconds: int
     workspace_roots: tuple[Path, ...]
@@ -236,6 +246,11 @@ def resolve_profile(
         ("model_pin", "model.pin"),
         ("model_base_url", "model.base_url"),
         ("model_api_key_env", "model.api_key_env"),
+        ("model_context_tokens", "model.context_tokens"),
+        ("model_connect_timeout_seconds", "model.connect_timeout_seconds"),
+        ("model_generation_timeout_seconds", "model.generation_timeout_seconds"),
+        ("soul_file", "soul_file"),
+        ("curated_memory_file", "curated_memory_file"),
         ("loaded_tools", "loaded_tools"),
         ("shutdown_timeout_seconds", "shutdown_timeout_seconds"),
     ):
@@ -255,6 +270,15 @@ def resolve_profile(
         data_dir=data_dir,
         model_pin=config.model.pin,
         model_base_url=config.model.base_url,
+        model_context_tokens=config.model.context_tokens,
+        model_connect_timeout_seconds=config.model.connect_timeout_seconds,
+        model_generation_timeout_seconds=config.model.generation_timeout_seconds,
+        soul_file=_paths([config.soul_file], base, directories=False)[0]
+        if config.soul_file is not None
+        else None,
+        curated_memory_file=_paths([config.curated_memory_file], base, directories=False)[0]
+        if config.curated_memory_file is not None
+        else None,
         model_api_key_env=config.model.api_key_env,
         shutdown_timeout_seconds=config.shutdown_timeout_seconds,
         workspace_roots=roots,

@@ -31,6 +31,7 @@ from solakit.records import (
     MemoryCommit,
     MemoryState,
     Message,
+    ModelRequest,
     ModelStep,
     Origin,
     Record,
@@ -51,6 +52,7 @@ type StoredRecord = (
     | Run
     | Message
     | ModelStep
+    | ModelRequest
     | ToolCall
     | ToolReceipt
     | Delivery
@@ -487,6 +489,7 @@ class Store:
         self,
         record: Message
         | ModelStep
+        | ModelRequest
         | ToolCall
         | ToolReceipt
         | Delivery
@@ -517,14 +520,23 @@ class Store:
             ):
                 raise ValueError("tool already has a receipt")
         if (
-            isinstance(record, ModelStep)
+            isinstance(record, (ModelStep, ModelRequest))
             and self.db.execute(
-                "SELECT 1 FROM entities WHERE kind='model' AND run_id=? "
+                "SELECT 1 FROM entities WHERE kind=? AND run_id=? "
                 "AND json_extract(body,'$.index')=?",
-                (run.id, record.index),
+                (kind, run.id, record.index),
             ).fetchone()
         ):
             raise ValueError("model attempt index already recorded")
+        if isinstance(record, ModelStep) and record.request_id is not None:
+            request = self._load("request", record.request_id, ModelRequest)
+            if (request.run_id, request.session_id, request.index, request.model) != (
+                record.run_id,
+                record.session_id,
+                record.index,
+                record.model,
+            ):
+                raise ValueError("model response differs from its request")
         if isinstance(record, Delivery):
             self._same_run(self._load("message", record.message_id, Message), record)
             if record.state != DeliveryState.PENDING:

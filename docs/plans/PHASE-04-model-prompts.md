@@ -1,6 +1,6 @@
 # Phase 4 — Model access and deterministic prompt assembly
 
-Status: planned. Depends on [Phases 2](PHASE-02-records-configuration.md) and [3](PHASE-03-evidence-search.md). Unlocks the run loop and live evaluations.
+Status: implemented and locally/live verified (2026-11-16). Depends on [Phases 2](PHASE-02-records-configuration.md) and [3](PHASE-03-evidence-search.md). Unlocks the run loop and live evaluations. See the [model/prompt contract](../contracts/model-prompts.md) and [validation report](../validation/phase-04.md). API identity is verified; weight identity and tokenizer accounting remain explicitly unverified. Production attachment admission stays in Phase 12.
 
 ## Outcome
 
