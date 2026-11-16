@@ -24,6 +24,7 @@ from solakit.records import (
     Value,
     new_id,
 )
+from solakit.redaction import Redactor
 from solakit.store import Store
 
 MAX_RESPONSE_BYTES = 4 * 1024 * 1024
@@ -278,8 +279,10 @@ class ModelAdapter:
         inference: asyncio.Semaphore,
         *,
         transport: httpx2.AsyncBaseTransport | None = None,
+        redactor: Redactor | None = None,
     ) -> None:
         self.profile, self.store, self.inference = profile, store, inference
+        self.redactor = redactor or Redactor()
         self.transport = transport
         self.client: AsyncOpenAI | None = None
 
@@ -292,6 +295,7 @@ class ModelAdapter:
         key = os.getenv(self.profile.model_api_key_env or "OPENAI_API_KEY")
         if self.profile.model_api_key_env and not key:
             raise ModelError("Configured model credential is missing", ErrorCode.CONFIGURATION)
+        self.redactor.register(key or "")
         self.client = AsyncOpenAI(
             base_url=self.profile.model_base_url.rstrip("/") + "/",
             api_key=key or "local",

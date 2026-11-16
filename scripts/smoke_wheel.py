@@ -8,6 +8,7 @@ from zipfile import ZipFile
 
 
 def main() -> None:
+    checkout = Path(__file__).resolve().parents[1]
     with TemporaryDirectory(prefix="sola-wheel-") as temporary:
         root = Path(temporary)
         subprocess.run(["uv", "build", "--wheel", "--out-dir", str(root)], check=True)
@@ -58,7 +59,7 @@ def main() -> None:
             capture_output=True,
             text=True,
         )
-        assert json.loads(command.stdout)["phase"] == "model-prompts"
+        assert json.loads(command.stdout)["phase"] == "tools-permissions"
         assert json.loads(command.stdout)["runtime_configured"] is True
         assert not (root / "data").exists()
         prompt = subprocess.run(
@@ -89,6 +90,25 @@ def main() -> None:
         )
         assert search.returncode == 2 and json.loads(search.stdout)["status"] == "unavailable"
         assert not (root / "data").exists()
+        pack_dist = root / "pack-dist"
+        subprocess.run(
+            [
+                "uv",
+                "build",
+                "--wheel",
+                "--project",
+                str(checkout / "examples/phase5_pack"),
+                "--out-dir",
+                str(pack_dist),
+            ],
+            check=True,
+        )
+        (pack_wheel,) = pack_dist.glob("*.whl")
+        subprocess.run(
+            ["uv", "pip", "install", "--python", str(python), "--no-deps", str(pack_wheel)],
+            check=True,
+        )
+        subprocess.run([str(python), str(checkout / "scripts/pack_smoke.py")], cwd=root, check=True)
         subprocess.run(
             [
                 str(python),
@@ -106,7 +126,7 @@ def main() -> None:
             cwd=root,
             check=True,
         )
-    print("Clean wheel, CLI, offline imports, and pack exclusion passed.")
+    print("Clean wheel, CLI, offline imports, pack exclusion and external pack dispatch passed.")
 
 
 if __name__ == "__main__":

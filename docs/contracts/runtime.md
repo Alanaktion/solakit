@@ -6,8 +6,8 @@ and [`runtime.py`](../../src/solakit/runtime.py). None imports HTTP or provider 
 types. Pydantic validates owned values; it is not an application container.
 Phase 3 [storage](storage.md) now persists these values and supplies durable
 admission/evidence. Phase 4 [model requests](model-prompts.md) add exact private
-request artifacts and a pinned oMLX adapter. Dispatch and scheduling retain their
-later phase gates. An in-memory transition alone is not a durable admission or effect receipt.
+request artifacts and a pinned oMLX adapter. Phase 5 [tool dispatch](tools.md) enforces saved/current authority and guarded
+services; scheduling and the model/tool cycle retain their later phase gates. An in-memory transition alone is not a durable admission or effect receipt.
 
 ## Records and identities
 
@@ -141,8 +141,8 @@ Use [config.example.toml](../../config.example.toml), or the default operator fi
 creating them, constructing the server, opening databases, acquiring ownership,
 or contacting any service. An empty TOML parses for initialization but cannot
 resolve a runnable profile without an existing workspace root and explicit model
-pin. Loaded/granted tools start empty. No wildcard expansion or automatic tool
-discovery is supplied in this phase.
+pin. Loaded/granted tools start empty. Phase 5 adds exact configured module loading
+and `*`/`?` expansion against explicitly loaded names; no automatic discovery.
 
 `[defaults]` supplies workspace roots, grants (`tools`), memory mode, fragments,
 and budgets. `[profiles.NAME]` inherits `default`, or a
@@ -171,7 +171,7 @@ current grants and budgets with the admitted profile via `restrict_to_admission`
 revocations apply, additional grants cannot widen the run, roots intersect, and
 identity/endpoint/data-directory changes require new admission. The admitted origin,
 session mode, and fragments remain fixed. Job-specific profiles use the same
-subset/ceiling rules; dispatch enforcement itself belongs to Phase 5.
+subset/ceiling rules; Phase 5 dispatch enforces them against durable admission evidence.
 
 Model credentials use only `model.api_key_env`, never a literal TOML key value.
 Explain replaces the reference with `<redacted>` and never reads the environment

@@ -317,7 +317,8 @@ def test_lineage_recovery_and_terminal_lifecycles(tmp_path: Path) -> None:
             == MemoryState.FAILED
         )
         assert any(isinstance(record, ToolCall) for record in records)
-        assert not any(isinstance(record, ToolReceipt) for record in records)
+        receipt = next(record for record in records if isinstance(record, ToolReceipt))
+        assert receipt.status == "uncertain" and receipt.effect == "uncertain"
         with pytest.raises(InvalidTransition):
             store.transition_delivery(delivery.id, DeliveryState.DELIVERED)
 

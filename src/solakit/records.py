@@ -228,6 +228,10 @@ class ToolReceipt(Record):
     status: Literal["succeeded", "failed", "denied", "cancelled", "uncertain"]
     effect: Literal["none", "confirmed", "uncertain"] = "none"
     result: JsonValue = None
+    artifact: Artifact | None = None
+    truncated: bool = False
+    result_bytes: Annotated[int, Field(ge=0)] = 0
+    result_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")] | None = None
     failure: Failure | None = None
 
     @model_validator(mode="after")

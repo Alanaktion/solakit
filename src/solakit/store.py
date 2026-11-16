@@ -349,6 +349,29 @@ class Store:
     def run(self, identity: str) -> Run:
         return self._load("run", identity, Run)
 
+    def admission_profile(self, run_id: str) -> dict[str, object]:
+        self.run(run_id)
+        row = self.db.execute(
+            "SELECT reference FROM outbox WHERE delivered=1 "
+            "AND json_extract(body,'$.event.run_id')=? "
+            "AND json_extract(body,'$.event.type')='run.admitted'",
+            (run_id,),
+        ).fetchone()
+        if row is None:
+            raise StorageError("durable admission unavailable")
+        profile = self.log.read(Reference.model_validate_json(row[0])).details.get("admission")
+        if not isinstance(profile, dict) or not profile:
+            raise ValueError("tool dispatch requires a durable effective profile at admission")
+        return profile
+
+    def tool_attempts(self, run_id: str) -> int:
+        self.run(run_id)
+        return int(
+            self.db.execute(
+                "SELECT count(*) FROM entities WHERE kind='tool' AND run_id=?", (run_id,)
+            ).fetchone()[0]
+        )
+
     def request(self, request_id: str) -> Run | None:
         valid_id(request_id)
         row = self.db.execute(
@@ -507,6 +530,13 @@ class Store:
         if isinstance(record, ToolCall):
             parent = self._load("model", record.model_step_id, ModelStep)
             self._same_run(parent, record)
+            if self.db.execute(
+                "SELECT 1 FROM entities WHERE kind='tool' AND run_id=? "
+                "AND json_extract(body,'$.model_step_id')=? "
+                "AND json_extract(body,'$.provider_tool_call_id')=?",
+                (record.run_id, record.model_step_id, record.provider_tool_call_id),
+            ).fetchone():
+                raise ValueError("provider tool call already dispatched")
         if isinstance(record, (ToolReceipt, Message)) and record.tool_call_id is not None:
             tool = self._load("tool", record.tool_call_id, ToolCall)
             self._same_run(tool, record)
@@ -685,3 +715,24 @@ class Store:
                 memory = self._load("memory", row["id"], MemoryCommit)
                 if memory.state == MemoryState.RUNNING:
                     self.transition_memory(memory.id, MemoryState.FAILED, reason=reason)
+
+        for row in self.db.execute(
+            "SELECT body FROM entities AS tool WHERE kind='tool' AND NOT EXISTS ("
+            "SELECT 1 FROM entities AS receipt WHERE receipt.kind='receipt' "
+            "AND json_extract(receipt.body,'$.tool_call_id')=tool.id)"
+        ).fetchall():
+            call = ToolCall.model_validate_json(row[0])
+            self.append(
+                ToolReceipt(
+                    origin=call.origin,
+                    session_id=call.session_id,
+                    run_id=call.run_id,
+                    tool_call_id=call.id,
+                    status="uncertain",
+                    effect="uncertain",
+                    failure=Failure(
+                        code=ErrorCode.EFFECT_UNCERTAIN,
+                        message="Process stopped before a tool receipt; inspect before retry",
+                    ),
+                )
+            )

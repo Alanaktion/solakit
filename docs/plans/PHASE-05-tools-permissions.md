@@ -1,6 +1,9 @@
 # Phase 5 — Tool authoring and capability enforcement
 
-Status: planned. Depends on [Phase 2](PHASE-02-records-configuration.md), [Phase 3](PHASE-03-evidence-search.md), and request/schema contracts in [Phase 4](PHASE-04-model-prompts.md). Unlocks safe tool execution.
+Status: implemented and locally verified on 2026-11-16. See the
+[SDK/access contract](../contracts/tools.md) and [verification](../validation/phase-05.md).
+The installed external example uses a fake image adapter; the multistep loop,
+live memory, jobs, and real images retain their later phase gates. Depends on [Phase 2](PHASE-02-records-configuration.md), [Phase 3](PHASE-03-evidence-search.md), and request/schema contracts in [Phase 4](PHASE-04-model-prompts.md). Unlocks safe tool execution.
 
 ## Outcome
 

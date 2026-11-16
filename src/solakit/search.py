@@ -169,7 +169,14 @@ def rebuild(root: Path) -> int:
 
 
 def search(
-    root: Path, query: str, *, limit: int = 20, session_id: str | None = None
+    root: Path,
+    query: str,
+    *,
+    limit: int = 20,
+    session_id: str | None = None,
+    run_id: str | None = None,
+    kind: str | None = None,
+    shared_only: bool = False,
 ) -> list[dict[str, object]]:
     if not query.strip() or len(query.encode("utf-8")) > 4096:
         raise ValueError("query must contain 1–4096 UTF-8 bytes")
@@ -179,6 +186,10 @@ def search(
         from solakit.store import valid_id
 
         valid_id(session_id)
+    if run_id is not None:
+        from solakit.store import valid_id
+
+        valid_id(run_id)
     log = EvidenceLog(root)
     try:
         db = _open(root / "search.db", readonly=True)
@@ -204,8 +215,11 @@ def search(
                 "SELECT entry_id,record_id,session_id,run_id,kind,text,"
                 "snippet(documents,5,'[',']','…',24) AS snippet "
                 "FROM documents WHERE documents MATCH ? AND (? IS NULL OR session_id=?) "
-                "ORDER BY rank,entry_id LIMIT ?",
-                (phrase, session_id, session_id, limit),
+                "AND (? IS NULL OR run_id=?) AND (? IS NULL OR kind=?) "
+                "AND (?=0 OR session_id IN (SELECT record_id FROM documents "
+                "WHERE json_extract(CASE WHEN kind='session' THEN text ELSE '{}' END, "
+                "'$.mode')='shared')) ORDER BY rank,entry_id LIMIT ?",
+                (phrase, session_id, session_id, run_id, run_id, kind, kind, shared_only, limit),
             ).fetchall()
             results = []
             for row in rows:

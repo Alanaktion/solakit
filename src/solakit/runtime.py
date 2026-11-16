@@ -3,6 +3,7 @@
 import asyncio
 import fcntl
 import os
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
@@ -12,6 +13,7 @@ from solakit.evidence import ensure_directory
 from solakit.store import Store
 
 if TYPE_CHECKING:
+    from solakit.dispatch import Dispatcher
     from solakit.model import ModelAdapter
 
 
@@ -67,6 +69,7 @@ class ApplicationContext:
     resources: tuple[Resource, ...] = ()
     store: Store | None = None
     model: ModelAdapter | None = None
+    tools: Dispatcher | None = None
     inference: asyncio.Semaphore = field(default_factory=lambda: asyncio.Semaphore(1), init=False)
     state: str = field(default="stopped", init=False)
     _active: list[Resource] = field(default_factory=list, init=False, repr=False)
@@ -140,13 +143,25 @@ class ApplicationContext:
 
 
 def compose(
-    profile: EffectiveProfile, *, resources: tuple[Resource, ...] = ()
+    profile: EffectiveProfile,
+    *,
+    resources: tuple[Resource, ...] = (),
+    current_profile: Callable[[EffectiveProfile], EffectiveProfile] | None = None,
 ) -> ApplicationContext:
     """Resources are supplied in dependency order, closed in reverse order."""
+    from solakit.dispatch import Dispatcher, load_registry
     from solakit.model import ModelAdapter
+    from solakit.redaction import Redactor
 
     store = Store(profile.data_dir)
     context = ApplicationContext(profile=profile, store=store)
-    context.model = ModelAdapter(profile, store, context.inference)
+    redactor = Redactor()
+    context.model = ModelAdapter(profile, store, context.inference, redactor=redactor)
+    context.tools = Dispatcher(
+        store,
+        load_registry(profile),
+        current_profile or (lambda admitted: context.profile),
+        redactor=redactor,
+    )
     context.resources = (store, context.model, *resources)
     return context

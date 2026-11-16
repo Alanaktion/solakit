@@ -86,7 +86,11 @@
     "failure": {
       "code": "tool_failed",
       "message": "Disposable fixture failure; no write occurred."
-    }
+    },
+    "artifact": null,
+    "truncated": false,
+    "result_bytes": 0,
+    "result_sha256": null
   },
   "Job": {
     "schema_version": 1,

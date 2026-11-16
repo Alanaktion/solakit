@@ -47,6 +47,14 @@ Read the [request contract](../contracts/model-prompts.md) and
 [Phase 4 evidence](../validation/phase-04.md). Weight identity, verified tokenizer
 accounting and production attachment admission retain their documented limits.
 
+Phase 5 explicit SDK/registry, frozen/current authority enforcement, guarded file
+services, durable dispatch/receipts, scoped transcript search and status are
+implemented and locally verified. The separately installed example pack uses
+only the public SDK, including a fake image adapter. Read the
+[tool contract and access matrix](../contracts/tools.md) and
+[Phase 5 evidence](../validation/phase-05.md). The conversation loop, scheduled
+admission, live memory and real image workflow retain Phases 6/9/7/12 gates.
+
 - One Sola, one operator, one runtime process, one event loop, one worker, one shared inference semaphore.
 - Pinned local Qwen served by oMLX. No silent model substitution.
 - Operator-owned SOUL, curated memory, and prompt fragments preserve identity. The harness supplies mechanics rather than personality policy.

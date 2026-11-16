@@ -162,3 +162,13 @@ def test_phase_three_model_steps_remain_readable() -> None:
         raw.pop(key)
     step = records.ModelStep.model_validate_json(json.dumps(raw))
     assert step.request_id is None and step.response is None and step.usage is None
+
+
+def test_old_tool_receipts_remain_readable() -> None:
+    path = Path(__file__).parents[1] / "docs/contracts/examples/records.json"
+    raw = json.loads(path.read_text())["ToolReceipt"]
+    for key in ("artifact", "truncated", "result_bytes", "result_sha256"):
+        raw.pop(key)
+    receipt = records.ToolReceipt.model_validate_json(json.dumps(raw))
+    assert receipt.artifact is None and not receipt.truncated
+    assert receipt.result_bytes == 0 and receipt.result_sha256 is None

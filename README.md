@@ -16,7 +16,8 @@ uv run sola serve --config config.example.toml
 at `http://127.0.0.1:8765` with one worker. Set the data directory and workspace
 roots before using the example; relative paths resolve beside the TOML file.
 It opens/reconciles the evidence store and owns a pinned oMLX client before serving
-health; startup does not contact oMLX. Chat and tool execution remain later phases.
+health; startup does not contact oMLX. Phase 5 adds a headless tool dispatcher;
+the conversation/run loop remains Phase 6.
 The four public commands are `serve`, `check`, `prompt`, and `search`. Search works offline:
 
 ```sh
@@ -58,5 +59,9 @@ uv run --locked python scripts/smoke_wheel.py
 ```
 
 See [evaluation instructions](evals/README.md), the [phase plans](docs/plans/README.md),
-and [validation evidence](docs/validation/phase-04.md). Dispatch, memory, tools,
-the run loop, and production migration arrive in later phases.
+and [validation evidence](docs/validation/phase-05.md). The
+[tool SDK and access matrix](docs/contracts/tools.md) describe explicit pack loading,
+guarded file access, transcript search, status, and the unavailable memory port.
+The separately installable [example pack](examples/phase5_pack/) demonstrates
+reads, writes, and fake image generation. No real image endpoint is used here.
+Memory, the run loop, and production migration retain their later phase gates.

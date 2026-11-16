@@ -205,3 +205,34 @@ def test_proactive_override_and_admitted_budget_ceiling(tmp_path: Path) -> None:
     )
     current = resolve_profile(lowered, base=tmp_path, origin=Origin.PROACTIVE)
     assert restrict_to_admission(current, admitted).budgets.model_calls == 2
+
+
+def test_wildcards_expand_loaded_names_and_children_only_narrow(tmp_path: Path) -> None:
+    config = OperatorConfig.model_validate(
+        {
+            "model": {"pin": "fixture"},
+            "loaded_tools": ["files.read", "files.write", "runtime.status"],
+            "defaults": {"workspace_roots": [str(tmp_path)], "tools": ["files.*", "not.loaded"]},
+            "profiles": {
+                "job": {"tools": ["files.r?ad"], "budgets": {"tool_calls": 1}},
+                "widened": {"tools": ["*"]},
+            },
+        }
+    )
+    admitted = resolve_profile(config)
+    assert admitted.tools == {"files.read", "files.write"}
+    assert admitted.granted_tools == {"files.read", "files.write", "not.loaded"}
+    job = resolve_profile(config, "job", origin=Origin.SCHEDULED)
+    assert job.tools == {"files.read"} and job.budgets.tool_calls == 1
+    assert restrict_to_admission(admitted, job).tools == {"files.read"}
+    assert restrict_to_admission(admitted, job).origin == Origin.SCHEDULED
+    with pytest.raises(ConfigError, match="exceed"):
+        resolve_profile(config, "widened")
+    added = OperatorConfig.model_validate(
+        config.model_dump()
+        | {
+            "loaded_tools": [*config.loaded_tools, "files.new"],
+        }
+    )
+    assert "files.new" in resolve_profile(added).tools
+    assert "files.new" not in restrict_to_admission(resolve_profile(added), admitted).tools

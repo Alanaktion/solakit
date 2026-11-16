@@ -1,6 +1,9 @@
 # Paths are relative to this file. Copy and edit; no services are contacted by check.
 schema_version = 1
 data_dir = "~/.local/share/sola"
+# Explicit import modules for installed trusted packs; loading grants no access.
+tool_modules = []
+# Built-ins: files.read, files.write, transcripts.search, runtime.status, memory.recall.
 loaded_tools = []
 shutdown_timeout_seconds = 5
 # Operator-owned UTF-8 files, read verbatim; optional and never created by Sola.
@@ -18,6 +21,7 @@ generation_timeout_seconds = 120
 
 [defaults]
 workspace_roots = ["."]
+# Exact names or * / ? patterns, expanded only against loaded_tools.
 tools = []
 memory_mode = "optional"
 fragments = []

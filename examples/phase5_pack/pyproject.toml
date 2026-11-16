@@ -1,0 +1,12 @@
+[project]
+name = "sola-example-pack"
+version = "0.1.0"
+requires-python = ">=3.15"
+dependencies = ["solakit>=0.1,<0.2"]
+
+[build-system]
+requires = ["uv_build==0.12.24"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "sola_example"

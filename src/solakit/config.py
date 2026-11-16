@@ -1,6 +1,7 @@
 """Strict operator TOML and immutable, traceable authority snapshots."""
 
 import tomllib
+from fnmatch import fnmatchcase
 from pathlib import Path
 from typing import Annotated, Literal
 from urllib.parse import urlsplit
@@ -12,6 +13,7 @@ from solakit.records import Origin, SchemaVersion, SessionMode, Value
 Count = Annotated[int, Field(ge=1, le=256)]
 Seconds = Annotated[int, Field(ge=1, le=86400)]
 Name = Annotated[str, Field(pattern=r"^[a-zA-Z0-9_][a-zA-Z0-9_.-]*$", max_length=128)]
+ToolGrant = Annotated[str, Field(pattern=r"^[a-zA-Z0-9_*?][a-zA-Z0-9_.*?-]*$", max_length=128)]
 MemoryMode = Literal["off", "optional", "required"]
 DEFAULT_CONFIG = Path.home() / ".config/sola/config.toml"
 
@@ -41,7 +43,7 @@ class BudgetOverrides(Value):
 class ProfileSettings(Value):
     extends: Name = "default"
     workspace_roots: list[str] | None = None
-    tools: list[Name] | None = None
+    tools: list[ToolGrant] | None = None
     memory_mode: MemoryMode | None = None
     fragments: list[str] | None = None
     budgets: BudgetOverrides = Field(default_factory=BudgetOverrides)
@@ -85,6 +87,7 @@ class OperatorConfig(Value):
     curated_memory_file: str | None = None
     shutdown_timeout_seconds: Annotated[int, Field(ge=1, le=60)] = 5
     model: ModelSettings = Field(default_factory=ModelSettings)
+    tool_modules: list[Name] = Field(default_factory=list)
     loaded_tools: list[Name] = Field(default_factory=list)
     defaults: ProfileSettings = Field(default_factory=ProfileSettings)
     profiles: dict[Name, ProfileSettings] = Field(default_factory=dict)
@@ -106,6 +109,7 @@ class EffectiveProfile(Value):
     model_api_key_env: str | None = Field(repr=False)
     shutdown_timeout_seconds: int
     workspace_roots: tuple[Path, ...]
+    tool_modules: tuple[str, ...] = ()
     loaded_tools: frozenset[str]
     granted_tools: frozenset[str]
     tools: frozenset[str]
@@ -196,7 +200,14 @@ def resolve_profile(
             roots = selected
             sources["workspace_roots"] = source + ".workspace_roots"
         if settings.tools is not None:
-            selected_tools = frozenset(settings.tools)
+            selected_tools = frozenset(
+                name
+                for pattern in settings.tools
+                for name in config.loaded_tools
+                if fnmatchcase(name, pattern)
+            ) | frozenset(
+                pattern for pattern in settings.tools if not any(c in pattern for c in "*?")
+            )
             if child and not selected_tools <= grants:
                 raise ConfigError("profile tools exceed inherited authority")
             grants = selected_tools
@@ -252,6 +263,7 @@ def resolve_profile(
         ("soul_file", "soul_file"),
         ("curated_memory_file", "curated_memory_file"),
         ("loaded_tools", "loaded_tools"),
+        ("tool_modules", "tool_modules"),
         ("shutdown_timeout_seconds", "shutdown_timeout_seconds"),
     ):
         top, _, nested = setting.partition(".")
@@ -282,6 +294,7 @@ def resolve_profile(
         model_api_key_env=config.model.api_key_env,
         shutdown_timeout_seconds=config.shutdown_timeout_seconds,
         workspace_roots=roots,
+        tool_modules=tuple(config.tool_modules),
         loaded_tools=frozenset(config.loaded_tools),
         granted_tools=grants,
         tools=grants & frozenset(config.loaded_tools),
@@ -315,7 +328,14 @@ def restrict_to_admission(
         "workspace_roots": roots,
         "loaded_tools": current.loaded_tools & admitted.loaded_tools,
         "granted_tools": current.granted_tools & admitted.granted_tools,
-        "tools": current.tools & admitted.tools,
+        "tools": (
+            current.tools
+            & admitted.tools
+            & current.loaded_tools
+            & admitted.loaded_tools
+            & current.granted_tools
+            & admitted.granted_tools
+        ),
         "memory_mode": "off"
         if "off" in (current.memory_mode, admitted.memory_mode)
         else admitted.memory_mode,

@@ -5,12 +5,24 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from solakit.config import DEFAULT_CONFIG, load_config, resolve_profile
+from solakit.config import DEFAULT_CONFIG, EffectiveProfile, load_config, resolve_profile
 from solakit.runtime import ApplicationContext, compose
 
 
 def create_app(context: ApplicationContext | None = None) -> FastAPI:
-    context = context or compose(resolve_profile(load_config(), base=DEFAULT_CONFIG.parent))
+    if context is None:
+
+        def current_profile(admitted: EffectiveProfile) -> EffectiveProfile:
+            return resolve_profile(
+                load_config(),
+                admitted.name,
+                base=DEFAULT_CONFIG.parent,
+                origin=admitted.origin,
+                mode=admitted.mode,
+            )
+
+        profile = resolve_profile(load_config(), base=DEFAULT_CONFIG.parent)
+        context = compose(profile, current_profile=current_profile)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -25,6 +37,6 @@ def create_app(context: ApplicationContext | None = None) -> FastAPI:
 
     @app.get("/health")
     async def health() -> dict[str, str]:
-        return {"status": context.state, "phase": "model-prompts"}
+        return {"status": context.state, "phase": "tools-permissions"}
 
     return app

@@ -6,7 +6,13 @@ import platform
 from importlib.metadata import version
 from pathlib import Path
 
-from solakit.config import DEFAULT_CONFIG, ConfigError, load_config, resolve_profile
+from solakit.config import (
+    DEFAULT_CONFIG,
+    ConfigError,
+    EffectiveProfile,
+    load_config,
+    resolve_profile,
+)
 
 
 def main() -> None:
@@ -44,6 +50,15 @@ def main() -> None:
         from solakit.api import create_app
         from solakit.runtime import compose
 
+        def current_profile(admitted: EffectiveProfile) -> EffectiveProfile:
+            return resolve_profile(
+                load_config(args.config),
+                admitted.name,
+                base=(args.config or DEFAULT_CONFIG).resolve().parent,
+                origin=admitted.origin,
+                mode=admitted.mode,
+            )
+
         try:
             profile = resolve_profile(
                 load_config(args.config),
@@ -52,10 +67,15 @@ def main() -> None:
             )
         except ConfigError as error:
             parser.error(str(error))
-        uvicorn.run(create_app(compose(profile)), host="127.0.0.1", port=8765, workers=1)
+        uvicorn.run(
+            create_app(compose(profile, current_profile=current_profile)),
+            host="127.0.0.1",
+            port=8765,
+            workers=1,
+        )
     elif args.command == "check":
         report: dict[str, object] = {
-            "phase": "model-prompts",
+            "phase": "tools-permissions",
             "python": platform.python_version(),
             "packages": {name: version(name) for name in ("solakit", "fastapi", "openai")},
             "runtime_configured": False,
