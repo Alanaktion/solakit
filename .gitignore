@@ -14,5 +14,4 @@ wheels/
 
 # Local reference files
 .env
-docs/plans/
 docs/validation/

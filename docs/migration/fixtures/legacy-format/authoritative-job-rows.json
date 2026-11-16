@@ -1,0 +1,1 @@
+[{"id": "consumed-once", "payload": {"run_at": "2026-11-01T09:00:00-07:00", "profile": "interactive", "task": "Synthetic task", "bind_session": "sample"}, "deleted": 0}, {"id": "removed-job", "payload": {"task": "Do not resurrect"}, "deleted": 1}]

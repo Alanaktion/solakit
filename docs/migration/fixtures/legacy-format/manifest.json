@@ -1,0 +1,61 @@
+{
+  "kind": "synthetic legacy-shaped examples, not exported production records",
+  "purpose": "Phase 0 format inventory; future importer tests must validate full legacy shapes",
+  "files": [
+    {
+      "path": "authoritative-job-rows.json",
+      "bytes": 248,
+      "sha256": "ad99d4685ae9a66ea73b1980e5f596ef10585b9da10bccc02983824397a980a7"
+    },
+    {
+      "path": "jobs/consumed-once.jsonl",
+      "bytes": 73,
+      "sha256": "c3b8e817bcbf34cb6cb66211f92412539cdb6ff1f5893316c80bc238368d936c"
+    },
+    {
+      "path": "pack-operations/sample.jsonl",
+      "bytes": 107,
+      "sha256": "1d395af9acdc35dadc08b4cccc7f37d00814d815b56b6207c8cad20a79ef467f"
+    },
+    {
+      "path": "runs/damaged.events.jsonl",
+      "bytes": 47,
+      "sha256": "5818673196e2ed17dc5829f7adfdc4894638e984a7c12d14809a038225edf89e"
+    },
+    {
+      "path": "runs/sample-run.events.jsonl",
+      "bytes": 162,
+      "sha256": "2619174ce5d42a752c21f839891017a1db7264d7b3a9ddc9c28028af16264770"
+    },
+    {
+      "path": "runs/sample-run.prompt.txt",
+      "bytes": 38,
+      "sha256": "ec7f53768e0a3d8e0d3f0125be1d71c6fd2f0778bdb32c306493a595902bbe83"
+    },
+    {
+      "path": "runs/sample-run.tool-schemas.json",
+      "bytes": 115,
+      "sha256": "69b1b1394a251943c691c7b040441adf3964da0d35c29a646836d31474af03d9"
+    },
+    {
+      "path": "runs/sample-run.tools.jsonl",
+      "bytes": 81,
+      "sha256": "042e680d48b409c1f3c3ae36bc2b0c1081f6085feb3dc07c184efd7515836c96"
+    },
+    {
+      "path": "sessions/sample.jsonl",
+      "bytes": 558,
+      "sha256": "4ba4523ffcf0152f429c1058f976f80165439a1e45a503d6b88ea4833eaaefb2"
+    },
+    {
+      "path": "sessions/sample.jsonl.1",
+      "bytes": 173,
+      "sha256": "c368316a5d531e228fd3dbe48eec13ee1dcd29ddc6740e4496d31735130b2965"
+    },
+    {
+      "path": "sessions/sample.meta.json",
+      "bytes": 196,
+      "sha256": "033b928ab630da87ec3e3249bfaaaf88fe32edc28b475e6ef52c090e00428853"
+    }
+  ]
+}

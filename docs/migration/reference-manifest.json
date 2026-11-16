@@ -1,0 +1,77 @@
+{
+  "source_commit": "fd2086bea12e247297cf0acef47544fb535e2324",
+  "source": "sibling solakit checkout; source/tests/docs only",
+  "scope": "No production data or credentials. Temporary byte copies hashed and compared.",
+  "files": [
+    {
+      "path": "src/solakit/core/schemas.py",
+      "bytes": 5056,
+      "sha256": "01ad822a5f8d67674bee7f18be682182091ab86631e2807f300a08f342d2709b"
+    },
+    {
+      "path": "src/solakit/core/store.py",
+      "bytes": 25758,
+      "sha256": "e868b93af93bf22ed8b171caabcceaf721e7c6b3563deadd767e807e68d6597d"
+    },
+    {
+      "path": "src/solakit/core/store_sidecars.py",
+      "bytes": 9135,
+      "sha256": "a7a8c333ce48d996fd6b977593574cb0a430ff15a111f4ae81a475d402a5a146"
+    },
+    {
+      "path": "src/solakit/core/archival.py",
+      "bytes": 1940,
+      "sha256": "bb8df38302094afe3e79904ada020fe2f5ad0fa60b55dfe93dfa1d57f773fd54"
+    },
+    {
+      "path": "src/solakit/jobs/definitions.py",
+      "bytes": 2377,
+      "sha256": "9316410003fde232c569b14cf47f56b9e9a20fa34a4e36fc2f1ab74d0421f577"
+    },
+    {
+      "path": "src/solakit/ui/auth.py",
+      "bytes": 4766,
+      "sha256": "4af2da02c36d31cc56c09d7e39788bb72005e354d1e92fe12cff12a4a374555e"
+    },
+    {
+      "path": "tests/test_store.py",
+      "bytes": 11535,
+      "sha256": "31cec45fdca1601ff9b5667921abc4a24ba753662d9127254780512e43668a33"
+    },
+    {
+      "path": "tests/test_archival.py",
+      "bytes": 9777,
+      "sha256": "c070d06b253dcc8d6ddb4d507c3b478c6e5b5e0c634c74d858bb352502f1334a"
+    },
+    {
+      "path": "tests/test_startup_index.py",
+      "bytes": 8503,
+      "sha256": "8502646127fb5f901f5b02b165de323267215f32f5a118711158bda7db893070"
+    },
+    {
+      "path": "tests/test_oneshot_jobs.py",
+      "bytes": 11847,
+      "sha256": "d2965fdd476fb188bec90361330de0a582f465a635f881da8f55ca7ba9da4671"
+    },
+    {
+      "path": "packs/README.md",
+      "bytes": 3761,
+      "sha256": "d0381e91186274c7924a899f09df3a983492c8d8eeeda94477b2b850ef6199bc"
+    },
+    {
+      "path": "docs/operations/jobs.md",
+      "bytes": 13141,
+      "sha256": "4d2ce34a6a97c36d40bbc4dbbe5f5886287baf9e70841820c970c1b403461d34"
+    },
+    {
+      "path": "docs/operations/memory-direction.md",
+      "bytes": 6678,
+      "sha256": "9913cfe83a138ac3175de8d983fc466583a6f2edde198ddaba679cdc728c50ec"
+    },
+    {
+      "path": "docs/completion-check-evaluation.md",
+      "bytes": 1340,
+      "sha256": "c63ef5cd51b9035f89d3f44480f9ee6f7f5ece03986a3e1caa8bb24221eec5a6"
+    }
+  ]
+}
