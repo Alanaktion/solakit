@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "status": "selected-before-live-baseline",
+  "reliability": {
+    "task_completion_rate_min": 0.9,
+    "first_tool_accuracy_min": 0.9,
+    "silent_unattempted_tasks_max": 0,
+    "false_continuations_max": 0,
+    "incorrect_effects_max": 0,
+    "duplicate_effects_max": 0
+  },
+  "deferred_disclosure": {
+    "lost_paired_successes_max": 0,
+    "median_extra_model_steps_max": 1,
+    "schema_byte_reduction_min": 0.2
+  }
+}

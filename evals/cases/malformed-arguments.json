@@ -1,0 +1,129 @@
+{
+  "version": 1,
+  "id": "malformed-arguments",
+  "description": "Malformed arguments produce a linked error and may be repaired.",
+  "messages": [
+    {
+      "role": "system",
+      "content": "Use the available evaluation tools to do requested work. Report failures honestly. Never claim an effect without a tool result."
+    },
+    {
+      "role": "user",
+      "content": "Write exactly done followed by a newline to result.txt."
+    }
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "write_file",
+        "description": "Disposable evaluation write_file.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "content": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "path",
+            "content"
+          ],
+          "additionalProperties": false
+        }
+      }
+    }
+  ],
+  "resources": {},
+  "expected": {
+    "kind": "action",
+    "artifacts": {
+      "result.txt": "done\n"
+    },
+    "first_tool": "write_file",
+    "required_tools": [
+      "write_file"
+    ],
+    "receipt_statuses": [
+      "invalid_arguments",
+      "ok"
+    ],
+    "alternative_receipt_statuses": [
+      [
+        "ok"
+      ]
+    ]
+  },
+  "trials": 3,
+  "max_steps": 6,
+  "fake_responses": [
+    {
+      "id": "fixture",
+      "model": "fake-qwen",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": null,
+            "tool_calls": [
+              {
+                "id": "call-1",
+                "type": "function",
+                "function": {
+                  "name": "write_file",
+                  "arguments": "{\"path\":"
+                }
+              }
+            ]
+          },
+          "finish_reason": "tool_calls"
+        }
+      ],
+      "usage": null
+    },
+    {
+      "id": "fixture",
+      "model": "fake-qwen",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": null,
+            "tool_calls": [
+              {
+                "id": "call-2",
+                "type": "function",
+                "function": {
+                  "name": "write_file",
+                  "arguments": "{\"path\": \"result.txt\", \"content\": \"done\\n\"}"
+                }
+              }
+            ]
+          },
+          "finish_reason": "tool_calls"
+        }
+      ],
+      "usage": null
+    },
+    {
+      "id": "fixture",
+      "model": "fake-qwen",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "Saved result.txt."
+          },
+          "finish_reason": "stop"
+        }
+      ],
+      "usage": null
+    }
+  ]
+}

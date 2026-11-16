@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "id": "quoted-announcement",
+  "description": "Quoted intent must not trigger tool use.",
+  "messages": [
+    {
+      "role": "system",
+      "content": "Use the available evaluation tools to do requested work. Report failures honestly. Never claim an effect without a tool result."
+    },
+    {
+      "role": "user",
+      "content": "Explain what the quoted sentence means: \"I will write the file now.\" Do not write anything."
+    }
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "write_file",
+        "description": "Disposable evaluation write_file.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "content": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "path",
+            "content"
+          ],
+          "additionalProperties": false
+        }
+      }
+    }
+  ],
+  "resources": {},
+  "expected": {
+    "kind": "conversation"
+  },
+  "trials": 3,
+  "max_steps": 6,
+  "fake_responses": [
+    {
+      "id": "fixture",
+      "model": "fake-qwen",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "The speaker announces an intention to write a file."
+          },
+          "finish_reason": "stop"
+        }
+      ],
+      "usage": null
+    }
+  ]
+}

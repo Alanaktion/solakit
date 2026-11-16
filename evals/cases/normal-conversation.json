@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "id": "normal-conversation",
+  "description": "A conversational reply needs no tools.",
+  "messages": [
+    {
+      "role": "system",
+      "content": "Use the available evaluation tools to do requested work. Report failures honestly. Never claim an effect without a tool result."
+    },
+    {
+      "role": "user",
+      "content": "Hello! How are you?"
+    }
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "runtime_info",
+        "description": "Disposable evaluation runtime_info.",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        }
+      }
+    }
+  ],
+  "resources": {},
+  "expected": {
+    "kind": "conversation"
+  },
+  "trials": 3,
+  "max_steps": 6,
+  "fake_responses": [
+    {
+      "id": "fixture",
+      "model": "fake-qwen",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "Hello! Ready to help."
+          },
+          "finish_reason": "stop"
+        }
+      ],
+      "usage": null
+    }
+  ]
+}

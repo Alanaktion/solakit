@@ -1,0 +1,85 @@
+{
+  "version": 1,
+  "id": "zero-arg-runtime",
+  "description": "A zero-argument tool must actually be called.",
+  "messages": [
+    {
+      "role": "system",
+      "content": "Use the available evaluation tools to do requested work. Report failures honestly. Never claim an effect without a tool result."
+    },
+    {
+      "role": "user",
+      "content": "Inspect the evaluation runtime with runtime_info."
+    }
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "runtime_info",
+        "description": "Disposable evaluation runtime_info.",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        }
+      }
+    }
+  ],
+  "resources": {},
+  "expected": {
+    "kind": "action",
+    "first_tool": "runtime_info",
+    "required_tools": [
+      "runtime_info"
+    ],
+    "receipt_statuses": [
+      "ok"
+    ]
+  },
+  "trials": 3,
+  "max_steps": 6,
+  "fake_responses": [
+    {
+      "id": "fixture",
+      "model": "fake-qwen",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": null,
+            "tool_calls": [
+              {
+                "id": "call-1",
+                "type": "function",
+                "function": {
+                  "name": "runtime_info",
+                  "arguments": "{}"
+                }
+              }
+            ]
+          },
+          "finish_reason": "tool_calls"
+        }
+      ],
+      "usage": null
+    },
+    {
+      "id": "fixture",
+      "model": "fake-qwen",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "The runtime is evaluation."
+          },
+          "finish_reason": "stop"
+        }
+      ],
+      "usage": null
+    }
+  ]
+}

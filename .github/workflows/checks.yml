@@ -1,0 +1,20 @@
+name: checks
+on: [push, pull_request]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.12.9"
+          python-version: "3.15"
+          enable-cache: true
+      - run: uv sync --locked
+      - run: uv run --locked ruff check .
+      - run: uv run --locked ruff format --check .
+      - run: uv run --locked mypy
+      - run: uv run --locked pytest
+      - run: uv run --locked python -m evals.runner --output /tmp/sola-fake-baseline
+      - run: uv run --locked python -m evals.replay /tmp/sola-fake-baseline
+      - run: uv run --locked python scripts/smoke_wheel.py
