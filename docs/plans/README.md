@@ -34,6 +34,12 @@ and locally verified. Read the [runtime contract](../contracts/runtime.md) and
 [evidence](../validation/phase-02.md) before implementing the Phase 3 storage
 protocol. No live client or durable admission/dispatch is claimed by Phase 2.
 
+Phase 3 durable evidence, operational state, session services, independent offline
+search, fixture preservation and coherent backup/restore are implemented and
+locally verified. Read the [storage protocol](../contracts/storage.md),
+[maintenance runbook](../backup-restore.md) and [Phase 3 evidence](../validation/phase-03.md).
+Dispatch/live services and semantic production migration retain their later gates.
+
 - One Sola, one operator, one runtime process, one event loop, one worker, one shared inference semaphore.
 - Pinned local Qwen served by oMLX. No silent model substitution.
 - Operator-owned SOUL, curated memory, and prompt fragments preserve identity. The harness supplies mechanics rather than personality policy.

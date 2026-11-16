@@ -1,6 +1,6 @@
 # Phase 3 — Durable evidence, sessions, and offline search
 
-Status: planned. Depends on [Phase 2](PHASE-02-records-configuration.md). Unlocks evidence-backed model requests, runs, memory tracking, and migration.
+Status: passed for local deterministic durability/session/search and copied-fixture backup/restore gates on 2026-11-16. See [verification](../validation/phase-03.md), [storage protocol](../contracts/storage.md), and [maintenance runbook](../backup-restore.md). Production semantic migration, live integrations, and operator acceptance retain their later gates. Depends on [Phase 2](PHASE-02-records-configuration.md). Unlocks evidence-backed model requests, runs, memory tracking, and migration.
 
 ## Outcome and authorities
 

@@ -25,6 +25,6 @@ def create_app(context: ApplicationContext | None = None) -> FastAPI:
 
     @app.get("/health")
     async def health() -> dict[str, str]:
-        return {"status": context.state, "phase": "records-configuration"}
+        return {"status": context.state, "phase": "evidence-search"}
 
     return app

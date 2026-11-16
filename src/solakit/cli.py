@@ -22,7 +22,12 @@ def main() -> None:
         command.add_argument("--profile", default="default")
     check.add_argument("--explain", action="store_true")
     commands.add_parser("prompt", help="offline prompt inspection (Phase 4)")
-    commands.add_parser("search", help="offline evidence search (Phase 3)")
+    search_command = commands.add_parser("search", help="offline evidence search")
+    search_command.add_argument("query")
+    search_command.add_argument("--config", type=Path)
+    search_command.add_argument("--data-dir", type=Path)
+    search_command.add_argument("--limit", type=int, default=20)
+    search_command.add_argument("--session", dest="session_id")
     args = parser.parse_args()
     if args.command == "serve":
         import uvicorn
@@ -41,7 +46,7 @@ def main() -> None:
         uvicorn.run(create_app(compose(profile)), host="127.0.0.1", port=8765, workers=1)
     elif args.command == "check":
         report: dict[str, object] = {
-            "phase": "records-configuration",
+            "phase": "evidence-search",
             "python": platform.python_version(),
             "packages": {name: version(name) for name in ("solakit", "fastapi", "openai")},
             "runtime_configured": False,
@@ -64,5 +69,25 @@ def main() -> None:
             args.config is not None or DEFAULT_CONFIG.exists()
         ):
             raise SystemExit(2)
+    elif args.command == "search":
+        from solakit.evidence import CorruptionError, StorageError
+        from solakit.search import search
+
+        try:
+            root = args.data_dir
+            if root is None:
+                config = load_config(args.config)
+                base = (args.config or DEFAULT_CONFIG).resolve().parent
+                root = Path(config.data_dir).expanduser()
+                if not root.is_absolute():
+                    root = base / root
+            results = search(
+                root.resolve(), args.query, limit=args.limit, session_id=args.session_id
+            )
+        except (StorageError, ConfigError, OSError, ValueError) as error:
+            status = "corrupt" if isinstance(error, CorruptionError) else "unavailable"
+            print(json.dumps({"status": status, "error": str(error)}))
+            raise SystemExit(2) from None
+        print(json.dumps({"status": "available", "results": results}, ensure_ascii=False, indent=2))
     else:
         parser.error(f"{args.command} is not implemented yet; see its phase plan")

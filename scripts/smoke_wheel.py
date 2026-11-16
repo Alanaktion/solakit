@@ -58,8 +58,16 @@ def main() -> None:
             capture_output=True,
             text=True,
         )
-        assert json.loads(command.stdout)["phase"] == "records-configuration"
+        assert json.loads(command.stdout)["phase"] == "evidence-search"
         assert json.loads(command.stdout)["runtime_configured"] is True
+        assert not (root / "data").exists()
+        search = subprocess.run(
+            [str(environment / "bin/sola"), "search", "fixture", "--data-dir", str(root / "data")],
+            cwd=root,
+            capture_output=True,
+            text=True,
+        )
+        assert search.returncode == 2 and json.loads(search.stdout)["status"] == "unavailable"
         assert not (root / "data").exists()
         subprocess.run(
             [

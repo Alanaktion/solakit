@@ -322,6 +322,8 @@ class DurableEvent(Value):
         "run.started",
         "run.terminal",
         "message.appended",
+        "model.recorded",
+        "compaction.recorded",
         "tool.intent",
         "tool.receipt",
         "memory.changed",

@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Protocol
 
 from solakit.config import EffectiveProfile
+from solakit.evidence import ensure_directory
+from solakit.store import Store
 
 
 class LifecycleError(RuntimeError):
@@ -26,7 +28,7 @@ class DataDirectoryLock:
     def acquire(self) -> None:
         if self._fd is not None:
             return
-        self.directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+        ensure_directory(self.directory)
         fd = os.open(
             self.directory / ".owner.lock",
             os.O_CREAT | os.O_RDWR | os.O_CLOEXEC | os.O_NOFOLLOW,
@@ -60,6 +62,7 @@ class Resource(Protocol):
 class ApplicationContext:
     profile: EffectiveProfile
     resources: tuple[Resource, ...] = ()
+    store: Store | None = None
     inference: asyncio.Semaphore = field(default_factory=lambda: asyncio.Semaphore(1), init=False)
     state: str = field(default="stopped", init=False)
     _active: list[Resource] = field(default_factory=list, init=False, repr=False)
@@ -136,4 +139,5 @@ def compose(
     profile: EffectiveProfile, *, resources: tuple[Resource, ...] = ()
 ) -> ApplicationContext:
     """Resources are supplied in dependency order, closed in reverse order."""
-    return ApplicationContext(profile=profile, resources=resources)
+    store = Store(profile.data_dir)
+    return ApplicationContext(profile=profile, resources=(store, *resources), store=store)
