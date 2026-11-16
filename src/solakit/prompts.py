@@ -7,7 +7,37 @@ from pydantic import JsonValue
 
 from solakit.config import EffectiveProfile
 from solakit.evidence import canonical, checked_json, digest
-from solakit.records import Message, RecordID, SessionMode, Timestamp, Value
+from solakit.records import Message, RecordID, SessionMode, Timestamp, ToolProposal, Value
+
+
+class PromptTurn(Value):
+    source_id: RecordID
+    session_id: RecordID
+    role: str
+    content: str
+    tool_calls: tuple[ToolProposal, ...] = ()
+    tool_call_id: str | None = None
+
+    def message(self) -> dict[str, JsonValue]:
+        if self.role not in ("user", "assistant", "tool", "system"):
+            raise ValueError("invalid projected role")
+        if (self.role == "tool") != (self.tool_call_id is not None):
+            raise ValueError("projected tool result requires a provider call ID")
+        if self.tool_calls and self.role != "assistant":
+            raise ValueError("only assistants propose tools")
+        result: dict[str, JsonValue] = {"role": self.role, "content": self.content}
+        if self.tool_call_id is not None:
+            result["tool_call_id"] = self.tool_call_id
+        if self.tool_calls:
+            result["tool_calls"] = [
+                {
+                    "id": call.provider_tool_call_id,
+                    "type": "function",
+                    "function": {"name": call.name, "arguments": call.arguments},
+                }
+                for call in self.tool_calls
+            ]
+        return result
 
 
 class PromptInput(Value):
@@ -22,6 +52,10 @@ class PromptInput(Value):
     temperature: float = 0.0
     top_p: float = 1.0
     enable_thinking: bool = True
+    prior_turns: tuple[PromptTurn, ...] = ()
+    continuation: tuple[PromptTurn, ...] = ()
+    disclosure: str = "eager-v1"
+    tool_catalog: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -36,7 +70,9 @@ def assemble(profile: EffectiveProfile, frozen: PromptInput) -> PreparedPrompt:
         raise ValueError("input must be a user message with the admitted origin")
     if profile.mode != SessionMode.SHARED and frozen.recall is not None:
         raise ValueError("recall is unavailable in isolated/ephemeral mode")
-    if profile.mode == SessionMode.EPHEMERAL and (frozen.history or frozen.summary):
+    if profile.mode == SessionMode.EPHEMERAL and (
+        frozen.history or frozen.summary or frozen.prior_turns
+    ):
         raise ValueError("ephemeral prompts cannot carry continuing context")
     if (frozen.summary is None) != (frozen.context_boundary is None):
         raise ValueError("summary and context boundary must be supplied together")
@@ -67,6 +103,26 @@ def assemble(profile: EffectiveProfile, frozen: PromptInput) -> PreparedPrompt:
         )
         add(section, "system", raw.decode())
 
+    def project(section: str, turns: tuple[PromptTurn, ...]) -> None:
+        pending: set[str] = set()
+        for turn in turns:
+            if turn.session_id != frozen.input.session_id:
+                raise ValueError("projected turn crosses sessions")
+            if turn.role == "tool":
+                if turn.tool_call_id not in pending:
+                    raise ValueError("orphan projected tool result")
+                pending.remove(turn.tool_call_id)
+            else:
+                if pending:
+                    raise ValueError("projected tool exchange is incomplete")
+                pending = {call.provider_tool_call_id for call in turn.tool_calls}
+                if len(pending) != len(turn.tool_calls):
+                    raise ValueError("duplicate projected tool ID")
+            sections.append({"section": section, "message_index": len(messages)})
+            messages.append(turn.message())
+        if pending:
+            raise ValueError("projected tool exchange is incomplete")
+
     if profile.soul_file is not None:
         fragment("soul", profile.soul_file)
     if profile.curated_memory_file is not None:
@@ -77,6 +133,7 @@ def assemble(profile: EffectiveProfile, frozen: PromptInput) -> PreparedPrompt:
         add("summary", "assistant", frozen.summary.content)
     for message in frozen.history:
         add("history", message.role, message.content)
+    project("history", frozen.prior_turns)
     if frozen.recall is not None:
         add("recorded_recall", "user", frozen.recall)
         messages[-1]["name"] = "recorded_recall"
@@ -92,7 +149,16 @@ def assemble(profile: EffectiveProfile, frozen: PromptInput) -> PreparedPrompt:
             }
         ).decode(),
     )
+    if frozen.tool_catalog:
+        add(
+            "tool_catalog",
+            "system",
+            "Authorized tool names with deferred schemas: "
+            + ", ".join(frozen.tool_catalog)
+            + ". Request an identifiable tool to disclose its schema before execution.",
+        )
     add("input", "user", frozen.input.content)
+    project("continuation", frozen.continuation)
     named_tools = []
     for tool in frozen.tools:
         function = tool.get("function")
@@ -147,7 +213,7 @@ def assemble(profile: EffectiveProfile, frozen: PromptInput) -> PreparedPrompt:
         "context_boundary": frozen.context_boundary,
         "recall": "recorded" if frozen.recall is not None else "omitted",
         "recall_sha256": digest(frozen.recall.encode()) if frozen.recall is not None else None,
-        "disclosure": "eager-v1",
+        "disclosure": frozen.disclosure,
         "tools_sha256": digest(canonical(tools)),
         "accounting": {
             "kind": "estimate: UTF-8 bytes/4 plus 32/message; no verified tokenizer",
@@ -157,6 +223,10 @@ def assemble(profile: EffectiveProfile, frozen: PromptInput) -> PreparedPrompt:
             "context_tokens": profile.model_context_tokens,
         },
     }
+    if frozen.prior_turns or frozen.continuation:
+        manifest["projected_record_ids"] = [
+            turn.source_id for turn in (*frozen.prior_turns, *frozen.continuation)
+        ]
     return PreparedPrompt(body=body, manifest=canonical(manifest))
 
 

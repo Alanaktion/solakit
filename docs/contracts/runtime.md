@@ -244,3 +244,11 @@ its inode would allow split ownership. New directories/files use private modes;
 existing directory permissions and content are preserved. This targets the local
 macOS/Linux filesystem boundary, not network filesystems or malicious operator
 code ignoring advisory locks.
+
+
+Phase 6 composition now registers Store, ModelAdapter, supplied resources, then
+RunLoop in dependency order. The RunLoop closes first and owns its queue coordinator
+and bounded active run tasks. Accepted queued work may contact oMLX on startup;
+otherwise startup still does not probe the service. Public headless admission,
+waiting/cancellation, concurrency and recovery are specified in the
+[run contract](run-loop.md). Scheduled admission remains Phase 9.

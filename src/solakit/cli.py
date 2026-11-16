@@ -75,7 +75,7 @@ def main() -> None:
         )
     elif args.command == "check":
         report: dict[str, object] = {
-            "phase": "tools-permissions",
+            "phase": "run-loop",
             "python": platform.python_version(),
             "packages": {name: version(name) for name in ("solakit", "fastapi", "openai")},
             "runtime_configured": False,

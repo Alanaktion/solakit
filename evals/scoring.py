@@ -48,6 +48,8 @@ def score(case: Case, run: dict[str, Any]) -> dict[str, Any]:
     final = run.get("final_message") or {}
     has_answer = bool((final.get("content") or "").strip())
     normal_stop = run["outcome"] == "stop"
+    if run.get("harness") == "runtime-v1" and expected.kind != "denial":
+        normal_stop = normal_stop and run["runtime_state"] == "completed"
     if expected.kind == "interrupted":
         expectation_met = run["outcome"] == "interrupted" and evidence_matches
     else:
@@ -63,12 +65,19 @@ def score(case: Case, run: dict[str, Any]) -> dict[str, Any]:
         "expected_denial": expected.kind == "denial",
         "first_tool_accuracy": names[0] == expected.first_tool if names else False,
         "first_tool_applicable": expected.first_tool is not None,
-        # shortcut: evidence detects unattempted work, linguistic continuation belongs to Phase 6.
         "detected_narration_failure": unattempted and has_answer,
         "reasoning_only": not has_answer and bool(final.get("reasoning_content")),
         "silent_unattempted_task": unattempted and normal_stop,
         "false_continuation": (
-            expected.kind == "conversation" and not expected.required_tools and bool(receipts)
+            expected.kind == "conversation"
+            and not expected.required_tools
+            and (
+                bool(receipts)
+                or any(
+                    note["kind"] in ("narration", "schema_disclosure")
+                    for note in run.get("recovery", [])
+                )
+            )
         ),
         "no_tool_applicable": expected.kind == "conversation" and not expected.required_tools,
         "repair_count": sum(status == "invalid_arguments" for status in statuses),

@@ -55,6 +55,14 @@ only the public SDK, including a fake image adapter. Read the
 [Phase 5 evidence](../validation/phase-05.md). The conversation loop, scheduled
 admission, live memory and real image workflow retain Phases 6/9/7/12 gates.
 
+Phase 6 adds the headless run service, bounded queues, complete tool-history
+projection, cancellation and bounded reliability recovery. Read the
+[execution contract](../contracts/run-loop.md) and
+[Phase 6 evidence](../validation/phase-06.md). Deterministic checks and live corpus
+results are reported separately. The final eager candidate passes the declared
+reliability thresholds; deferred disclosure fails its paired gate and stays disabled
+in production.
+
 - One Sola, one operator, one runtime process, one event loop, one worker, one shared inference semaphore.
 - Pinned local Qwen served by oMLX. No silent model substitution.
 - Operator-owned SOUL, curated memory, and prompt fragments preserve identity. The harness supplies mechanics rather than personality policy.

@@ -15,6 +15,7 @@ from solakit.store import Store
 if TYPE_CHECKING:
     from solakit.dispatch import Dispatcher
     from solakit.model import ModelAdapter
+    from solakit.run_loop import RunLoop
 
 
 class LifecycleError(RuntimeError):
@@ -70,6 +71,7 @@ class ApplicationContext:
     store: Store | None = None
     model: ModelAdapter | None = None
     tools: Dispatcher | None = None
+    runs: RunLoop | None = None
     inference: asyncio.Semaphore = field(default_factory=lambda: asyncio.Semaphore(1), init=False)
     state: str = field(default="stopped", init=False)
     _active: list[Resource] = field(default_factory=list, init=False, repr=False)
@@ -152,6 +154,7 @@ def compose(
     from solakit.dispatch import Dispatcher, load_registry
     from solakit.model import ModelAdapter
     from solakit.redaction import Redactor
+    from solakit.run_loop import RunLoop
 
     store = Store(profile.data_dir)
     context = ApplicationContext(profile=profile, store=store)
@@ -163,5 +166,6 @@ def compose(
         current_profile or (lambda admitted: context.profile),
         redactor=redactor,
     )
-    context.resources = (store, context.model, *resources)
+    context.runs = RunLoop(store, context.model, context.tools)
+    context.resources = (store, context.model, *resources, context.runs)
     return context

@@ -1,4 +1,4 @@
-"""Model-only baseline, deliberately separate from the future production run loop."""
+"""Paired corpus collection through the runtime, with the Phase 1 baseline retained."""
 
 import argparse
 import asyncio
@@ -161,19 +161,25 @@ async def collect(args: argparse.Namespace) -> None:
     metadata = {
         "version": 1,
         "driver": args.driver,
+        "harness": args.harness,
+        "runtime_policy": "json-receipts-revoke-at-intent-v1"
+        if args.harness == "runtime"
+        else None,
+        "disclosure": args.disclosure,
         "model": args.model,
         "server_version": args.server_version or "unverified",
         "base_url": args.base_url,
         "python": platform.python_version(),
         "packages": {name: version(name) for name in ("openai", "fastapi")},
         "corpus_hash": digest([case.model_dump() for case in cases]),
-        "parameters": {"temperature": 0, "max_tokens": 1024},
+        "parameters": {"temperature": 0, "max_tokens": 1024}
+        | ({"stream": True, "enable_thinking": False} if args.harness == "runtime" else {}),
         "scorer_version": SCORER_VERSION,
         "thresholds": json.loads(Path("evals/thresholds.json").read_bytes()),
         "live_gate": "pending" if args.driver == "fake" else "requires_evidence_review",
     }
     client = None
-    if args.driver == "openai":
+    if args.driver == "openai" and args.harness == "baseline":
         from openai import AsyncOpenAI
 
         client = AsyncOpenAI(
@@ -193,10 +199,23 @@ async def collect(args: argparse.Namespace) -> None:
         with (args.output / "results.jsonl").open("x", encoding="utf-8") as stream:
             for case in cases:
                 for trial in range(case.trials):
-                    driver = OpenAIDriver(client) if client else FakeDriver(case.fake_responses)
-                    if case.fixture_only:
-                        driver = FakeDriver(case.fake_responses)
-                    run = await run_trial(case, trial, driver, args.model)
+                    if args.harness == "runtime":
+                        from evals.runtime import run_runtime_trial
+
+                        run = await run_runtime_trial(
+                            case,
+                            trial,
+                            args.model,
+                            live=args.driver == "openai",
+                            base_url=args.base_url or "http://127.0.0.1:8000/v1",
+                            deferred=args.disclosure == "deferred",
+                            output=args.output.resolve() / "evidence" / f"{case.id}-{trial}",
+                        )
+                    else:
+                        driver = OpenAIDriver(client) if client else FakeDriver(case.fake_responses)
+                        if case.fixture_only:
+                            driver = FakeDriver(case.fake_responses)
+                        run = await run_trial(case, trial, driver, args.model)
                     stream.write(encoded(run).decode() + "\n")
                     stream.flush()
                     os.fsync(stream.fileno())
@@ -219,12 +238,16 @@ async def collect(args: argparse.Namespace) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--driver", choices=("fake", "openai"), default="fake")
+    parser.add_argument("--harness", choices=("runtime", "baseline"), default="runtime")
+    parser.add_argument("--disclosure", choices=("eager", "deferred"), default="eager")
     parser.add_argument("--cases", type=Path, default=Path("evals/cases"))
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--model")
     parser.add_argument("--base-url", default=os.getenv("OPENAI_BASE_URL"))
     parser.add_argument("--server-version")
     args = parser.parse_args()
+    if args.harness == "baseline" and args.disclosure != "eager":
+        parser.error("deferred disclosure is a runtime-only experiment")
     args.model = args.model or (
         os.getenv("OPENAI_MODEL") if args.driver == "openai" else "fake-qwen"
     )

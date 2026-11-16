@@ -20,6 +20,7 @@ from solakit.records import (
     ModelStep,
     Record,
     RecordID,
+    RecoveryNote,
     Run,
     RunState,
     SchemaVersion,
@@ -41,6 +42,7 @@ RECORDS: dict[str, type[Record]] = {
     "delivery": Delivery,
     "memory": MemoryCommit,
     "compaction": CompactionBoundary,
+    "recovery": RecoveryNote,
 }
 SEGMENT = re.compile(r"^[0-9]{8}\.jsonl$")
 
@@ -121,6 +123,7 @@ def event_type(kind: str, record: Record) -> str:
         "memory": "memory.changed",
         "delivery": "delivery.changed",
         "compaction": "compaction.recorded",
+        "recovery": "recovery.noted",
     }[kind]
 
 
@@ -138,6 +141,7 @@ class Entry(Value):
         "delivery",
         "memory",
         "compaction",
+        "recovery",
         "legacy",
     ]
     record: dict[str, object]

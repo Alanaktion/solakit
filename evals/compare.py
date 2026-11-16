@@ -30,6 +30,10 @@ def compare(baseline: Path, candidate: Path) -> dict[str, Any]:
     ]
     if before.keys() != after.keys():
         unmatched.append("trial_membership")
+    if old.get("harness", "baseline") != new.get("harness", "baseline"):
+        unmatched.append("harness")
+    if old.get("runtime_policy") != new.get("runtime_policy"):
+        unmatched.append("runtime_policy")
     pairs = sorted(before.keys() & after.keys())
     lost = [
         key

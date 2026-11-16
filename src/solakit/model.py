@@ -21,6 +21,7 @@ from solakit.records import (
     ModelStep,
     ProviderID,
     Run,
+    ToolProposal,
     Value,
     new_id,
 )
@@ -101,7 +102,7 @@ def normalize(data: dict[str, Any], pin: str) -> dict[str, Any]:
             if key in usage and (type(usage[key]) is not int or usage[key] < 0):
                 raise ModelError("Invalid token usage")
         canonical(usage)
-    values = {
+    values: dict[str, Any] = {
         "content": content,
         "reasoning": reasoning,
         "finish_reason": finish,
@@ -115,30 +116,43 @@ def normalize(data: dict[str, Any], pin: str) -> dict[str, Any]:
         raw_calls = []
     if not isinstance(raw_calls, list) or len(raw_calls) > 64:
         raise ModelError("Invalid tool calls")
-    calls = []
+    proposals = []
     for raw in raw_calls:
         if not isinstance(raw, dict) or raw.get("type") != "function":
             raise ModelError("Invalid tool call type")
         function = raw.get("function")
         if not isinstance(function, dict) or not isinstance(function.get("arguments"), str):
             raise ModelError("Invalid function arguments")
-        arguments = checked_json(function["arguments"].encode())
-        if not isinstance(arguments, dict):
-            raise ModelError("Function arguments must be a JSON object")
-        canonical(arguments)
-        calls.append(
-            NormalizedCall.model_validate(
+        proposals.append(
+            ToolProposal.model_validate(
                 {
                     "provider_tool_call_id": raw.get("id"),
                     "name": function.get("name"),
-                    "arguments": arguments,
+                    "arguments": function["arguments"],
                 }
             )
         )
-    if len({call.provider_tool_call_id for call in calls}) != len(calls):
+    if len({call.provider_tool_call_id for call in proposals}) != len(proposals):
         raise ModelError("Duplicate tool call IDs")
-    if bool(calls) != (finish == "tool_calls"):
+    if bool(proposals) != (finish == "tool_calls"):
         raise ModelError("Tool calls and finish reason disagree")
+    values["tool_calls"] = tuple(proposals)
+    calls = []
+    try:
+        for proposal in proposals:
+            arguments = checked_json(proposal.arguments.encode())
+            if not isinstance(arguments, dict):
+                raise ValueError("arguments must be an object")
+            canonical(arguments)
+            calls.append(
+                NormalizedCall(
+                    provider_tool_call_id=proposal.provider_tool_call_id,
+                    name=proposal.name,
+                    arguments=arguments,
+                )
+            )
+    except ValueError, TypeError, UnicodeError:
+        raise ModelError("Malformed tool arguments; no calls executed", values=values) from None
     if not calls and not content.strip():
         raise ModelError("Model stopped without visible content or tool calls", values=values)
     return values | {"calls": tuple(calls)}

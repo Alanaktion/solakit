@@ -37,6 +37,6 @@ def create_app(context: ApplicationContext | None = None) -> FastAPI:
 
     @app.get("/health")
     async def health() -> dict[str, str]:
-        return {"status": context.state, "phase": "tools-permissions"}
+        return {"status": context.state, "phase": "run-loop"}
 
     return app

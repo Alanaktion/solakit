@@ -36,6 +36,7 @@ from solakit.records import (
     Origin,
     Record,
     RecordID,
+    RecoveryNote,
     Run,
     RunState,
     Session,
@@ -58,6 +59,7 @@ type StoredRecord = (
     | Delivery
     | MemoryCommit
     | CompactionBoundary
+    | RecoveryNote
 )
 
 SCHEMA = """
@@ -372,6 +374,17 @@ class Store:
             ).fetchone()[0]
         )
 
+    def queued_runs(self) -> list[Run]:
+        """The admitted outbox ordinal is the durable order, across sessions."""
+        return [
+            self.run(row[0])
+            for row in self.db.execute(
+                "SELECT entity.id FROM entities AS entity JOIN outbox "
+                "ON outbox.id=entity.entry_id WHERE entity.kind='run' "
+                "AND json_extract(entity.body,'$.state')='queued' ORDER BY outbox.ordinal"
+            ).fetchall()
+        ]
+
     def request(self, request_id: str) -> Run | None:
         valid_id(request_id)
         row = self.db.execute(
@@ -517,7 +530,8 @@ class Store:
         | ToolReceipt
         | Delivery
         | MemoryCommit
-        | CompactionBoundary,
+        | CompactionBoundary
+        | RecoveryNote,
     ) -> None:
         kind = next(name for name, cls in RECORDS.items() if isinstance(record, cls))
         run = self.run(record.run_id)
@@ -537,6 +551,10 @@ class Store:
                 (record.run_id, record.model_step_id, record.provider_tool_call_id),
             ).fetchone():
                 raise ValueError("provider tool call already dispatched")
+        if isinstance(record, RecoveryNote):
+            parent = self._load("model", record.model_step_id, ModelStep)
+            if parent.run_id != record.run_id:
+                raise ValueError("recovery crosses runs")
         if isinstance(record, (ToolReceipt, Message)) and record.tool_call_id is not None:
             tool = self._load("tool", record.tool_call_id, ToolCall)
             self._same_run(tool, record)

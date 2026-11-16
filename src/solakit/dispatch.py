@@ -80,15 +80,17 @@ class ToolSession:
     def schemas(
         self, *, deferred: frozenset[str] = frozenset()
     ) -> tuple[dict[str, JsonValue], ...]:
+        return self.dispatcher.registry.visible(self.eligible(), deferred=deferred)
+
+    def eligible(self) -> frozenset[str]:
         profile = restrict_to_admission(self.dispatcher.current(self.admitted), self.admitted)
-        eligible = frozenset(
+        return frozenset(
             name
             for name in profile.tools
             if name in self.dispatcher.registry.tools
             and profile.origin in self.dispatcher.registry.tools[name].origins
             and (name != "memory.recall" or profile.memory_mode != "off")
         )
-        return self.dispatcher.registry.visible(eligible, deferred=deferred)
 
     async def dispatch(self, call: ToolCall) -> ToolReceipt:
         async with self.lock:

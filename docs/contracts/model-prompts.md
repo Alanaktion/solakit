@@ -153,3 +153,12 @@ a separate synthetic image capability experiment. Image requests retain exact
 multimodal bytes and explicitly label image accounting unverified. Production
 attachment admission and image-token accounting remain Phase 12; unsupported
 attachments must be rejected there rather than causing model substitution.
+
+
+Phase 6 extends `PromptInput` with validated prior/continuation turns. Complete
+assistant calls and matching provider-ID tool results are projected from durable
+records, with source IDs in the manifest. The original `sola-prompt-v1` ordering and
+golden request remain unchanged for an input without projected turns. Malformed
+argument replies retain content, reasoning, usage and raw argument strings; the
+run service may grant one recorded repair opportunity after complete envelope
+validation. See the [execution contract](run-loop.md).

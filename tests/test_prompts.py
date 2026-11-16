@@ -162,3 +162,43 @@ def test_offline_cli_frozen_and_recorded_without_importing_clients(tmp_path: Pat
     )
     assert json.loads(recorded.stdout) == json.loads(frozen.stdout)
     assert not (FIXTURES / "data").exists()
+
+
+def test_complete_tool_projection_and_ephemeral_lineage(profile: EffectiveProfile) -> None:
+    from solakit.prompts import PromptTurn
+    from solakit.records import Message, Origin, ToolProposal, new_id, utc_now
+
+    user = Message(
+        origin=Origin.INTERACTIVE,
+        session_id=new_id(),
+        run_id=new_id(),
+        role="user",
+        content="request",
+    )
+    assistant = PromptTurn(
+        source_id=new_id(),
+        session_id=user.session_id,
+        role="assistant",
+        content="",
+        tool_calls=(ToolProposal(provider_tool_call_id="provider", name="echo", arguments="{}"),),
+    )
+    result = PromptTurn(
+        source_id=new_id(),
+        session_id=user.session_id,
+        role="tool",
+        content="ok",
+        tool_call_id="provider",
+    )
+    value = PromptInput(at=utc_now(), input=user, continuation=(assistant, result))
+    ephemeral = profile.model_copy(update={"mode": SessionMode.EPHEMERAL})
+    assert json.loads(assemble(ephemeral, value).body)["messages"][-1]["tool_call_id"] == "provider"
+    for turns in (
+        (assistant,),
+        (result,),
+        (assistant, result.model_copy(update={"tool_call_id": "wrong"})),
+        (assistant, result.model_copy(update={"session_id": new_id()})),
+    ):
+        with pytest.raises(ValueError):
+            assemble(profile, value.model_copy(update={"continuation": turns}))
+    with pytest.raises(ValueError, match="continuing context"):
+        assemble(ephemeral, value.model_copy(update={"prior_turns": (assistant, result)}))

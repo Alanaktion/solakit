@@ -59,7 +59,7 @@ def main() -> None:
             capture_output=True,
             text=True,
         )
-        assert json.loads(command.stdout)["phase"] == "tools-permissions"
+        assert json.loads(command.stdout)["phase"] == "run-loop"
         assert json.loads(command.stdout)["runtime_configured"] is True
         assert not (root / "data").exists()
         prompt = subprocess.run(

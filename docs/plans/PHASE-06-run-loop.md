@@ -1,6 +1,8 @@
 # Phase 6 — Run loop and tool reliability
 
-Status: planned. Depends on [Phases 1–5](README.md). Milestone: a reliable headless harness, before live memory or UI.
+Status: implemented; deterministic and eager live pinned-model reliability gates passed.
+Deferred disclosure failed its separate paired gate and remains off.
+See [execution contract](../contracts/run-loop.md) and [evidence](../validation/phase-06.md). Depends on [Phases 1–5](README.md). Milestone: a reliable headless harness, before live memory or UI.
 
 ## Outcome
 

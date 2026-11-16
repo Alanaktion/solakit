@@ -197,6 +197,12 @@ class ModelRequest(Record):
     manifest: Artifact
 
 
+class ToolProposal(Value):
+    provider_tool_call_id: ProviderID
+    name: str = Field(min_length=1, max_length=256, pattern=r"^[A-Za-z0-9_.-]+$")
+    arguments: str
+
+
 class ModelStep(Record):
     session_id: RecordID
     run_id: RecordID
@@ -210,6 +216,15 @@ class ModelStep(Record):
     request_id: RecordID | None = None
     response: Artifact | None = None
     usage: dict[str, JsonValue] | None = None
+    tool_calls: tuple[ToolProposal, ...] = ()
+
+
+class RecoveryNote(Record):
+    session_id: RecordID
+    run_id: RecordID
+    model_step_id: RecordID
+    kind: Literal["argument_repair", "schema_disclosure", "narration"]
+    content: str
 
 
 class ToolCall(Record):

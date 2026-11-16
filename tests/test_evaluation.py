@@ -164,3 +164,24 @@ def test_case_version_and_unknown_fields_rejected() -> None:
     for change in ({"version": 2}, {"unrecognized": True}, {"trials": 1}):
         with pytest.raises(ValidationError):
             Case.model_validate(CASES[0].model_dump() | change)
+
+
+@pytest.mark.parametrize("case", CASES, ids=lambda case: case.id)
+def test_runtime_corpus_uses_production_cycle(case: Case) -> None:
+    from evals.runtime import run_runtime_trial
+
+    run = asyncio.run(run_runtime_trial(case, 0, "fake-qwen"))
+    assert run["score"]["expectation_met"] == (case.id not in EXPECTED_FAILURES)
+    assert not run["score"]["silent_unattempted_task"]
+    assert not run["score"]["false_continuation"]
+    if case.id == "announcement-only":
+        assert run["runtime_state"] == "failed"
+        assert run["recovery"][0]["kind"] == "narration"
+    if case.id == "malformed-arguments":
+        assert run["receipts"][0]["executed"] is False
+        assert run["recovery"][0]["kind"] == "argument_repair"
+    if case.id == "denied-call":
+        assert run["steps"][0]["request"]["tools"][0]["function"]["name"] == "write_file"
+        assert run["receipts"][0]["receipt"]["effect"] == "none"
+        assert run["runtime_state"] == "failed"
+    assert score(case, run) == run["score"]
