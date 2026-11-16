@@ -71,11 +71,7 @@ def requested_tools(text: str, names: Sequence[str]) -> set[str]:
     return {
         name
         for name in names
-        if (
-            actions.intersection(re.split(r"[_.-]", name))
-            or name in text
-            or (name in ("runtime.status", "runtime_info") and actions & {"check", "inspect"})
-        )
+        if (actions.intersection(re.split(r"[_.-]", name)) or name in text)
         and (not ({"file", "files"} & set(re.split(r"[_.-]", name))) or file_target or name in text)
         and (
             not ({"image", "images"} & set(re.split(r"[_.-]", name)))

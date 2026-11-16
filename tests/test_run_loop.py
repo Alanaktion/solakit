@@ -226,11 +226,18 @@ def test_independent_bounded_recovery(profile: EffectiveProfile, kind: str) -> N
         "Can you show me how to write a file?",
         "Generate a list of ideas.",
         "Write a poem. Do not write a file.",
+        "check this out, what do you think?",
+        "Check out my new photo",
+        "can you check the weather?",
+        "Inspect this photo.",
+        "Can you inspect this picture?",
         "Hello!",
     ],
 )
 def test_discussion_never_continues(profile: EffectiveProfile, text: str) -> None:
-    assert not requested_tools(text, ("files.write", "publish_note", "images.generate"))
+    assert not requested_tools(
+        text, ("files.write", "publish_note", "images.generate", "runtime.status", "runtime_info")
+    )
 
     async def scenario() -> None:
         context, requests = harness(profile, [reply('The phrase "I will write" describes intent.')])
@@ -247,6 +254,17 @@ def test_discussion_never_continues(profile: EffectiveProfile, text: str) -> Non
             await context.stop()
 
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("Check runtime.status", "runtime.status"),
+        ("Inspect the evaluation runtime with runtime_info.", "runtime_info"),
+    ],
+)
+def test_explicit_status_tool_request(text: str, expected: str) -> None:
+    assert requested_tools(text, ("runtime.status", "runtime_info")) == {expected}
 
 
 @pytest.mark.parametrize("after_effect", [False, True])

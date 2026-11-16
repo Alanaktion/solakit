@@ -128,6 +128,8 @@ There is at most one recovery of **each** kind per run:
   gets one continuation opportunity. An unresolved continuation fails, including a
   repeated promise or a later refusal. Quotes, hypothetical questions, explanations,
   and ordinary requests to write prose are covered by negative tests.
+  `check` and `inspect` do not imply a runtime status request; explicit status-tool
+  names still match through the normal tool-name rule.
 
 A RecoveryNote links each decision to its original ModelStep. Its instructions and
 all original replies/arguments remain evidence. The detector is intentionally
