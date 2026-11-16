@@ -46,14 +46,21 @@ def main() -> None:
             ],
             check=True,
         )
+        config = root / "config.toml"
+        config.write_text(
+            'data_dir = "data"\n[model]\npin = "fixture-qwen"\n'
+            '[defaults]\nworkspace_roots = ["."]\n'
+        )
         command = subprocess.run(
-            [str(environment / "bin/sola"), "check", "--explain"],
+            [str(environment / "bin/sola"), "check", "--config", str(config), "--explain"],
             cwd=root,
             check=True,
             capture_output=True,
             text=True,
         )
-        assert json.loads(command.stdout)["phase"] == "skeleton"
+        assert json.loads(command.stdout)["phase"] == "records-configuration"
+        assert json.loads(command.stdout)["runtime_configured"] is True
+        assert not (root / "data").exists()
         subprocess.run(
             [
                 str(python),
@@ -62,9 +69,11 @@ def main() -> None:
                     "import importlib.util, sys; import solakit; "
                     "assert importlib.util.find_spec('packs') is None; "
                     "assert importlib.util.find_spec('evals') is None; "
-                    "from solakit.cli import main; sys.argv = ['sola', 'check']; main(); "
+                    "from solakit.cli import main; "
+                    "sys.argv = ['sola', 'check', '--config', sys.argv[1]]; main(); "
                     "assert 'fastapi' not in sys.modules; assert 'openai' not in sys.modules"
                 ),
+                str(config),
             ],
             cwd=root,
             check=True,

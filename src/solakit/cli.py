@@ -4,14 +4,22 @@ import argparse
 import json
 import platform
 from importlib.metadata import version
+from pathlib import Path
+
+from solakit.config import DEFAULT_CONFIG, ConfigError, load_config, resolve_profile
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(prog="sola")
     parser.add_argument("--version", action="version", version=version("solakit"))
     commands = parser.add_subparsers(dest="command", required=True)
-    commands.add_parser("serve", help="serve the localhost skeleton health endpoint")
-    check = commands.add_parser("check", help="check the installed development skeleton")
+    serve = commands.add_parser("serve", help="serve the configured localhost runtime")
+    check = commands.add_parser(
+        "check", help="validate local configuration without starting services"
+    )
+    for command in (serve, check):
+        command.add_argument("--config", type=Path)
+        command.add_argument("--profile", default="default")
     check.add_argument("--explain", action="store_true")
     commands.add_parser("prompt", help="offline prompt inspection (Phase 4)")
     commands.add_parser("search", help="offline evidence search (Phase 3)")
@@ -19,18 +27,42 @@ def main() -> None:
     if args.command == "serve":
         import uvicorn
 
-        uvicorn.run("solakit.api:create_app", factory=True, host="127.0.0.1", port=8765, workers=1)
+        from solakit.api import create_app
+        from solakit.runtime import compose
+
+        try:
+            profile = resolve_profile(
+                load_config(args.config),
+                args.profile,
+                base=(args.config or DEFAULT_CONFIG).resolve().parent,
+            )
+        except ConfigError as error:
+            parser.error(str(error))
+        uvicorn.run(create_app(compose(profile)), host="127.0.0.1", port=8765, workers=1)
     elif args.command == "check":
-        report = {
-            "phase": "skeleton",
+        report: dict[str, object] = {
+            "phase": "records-configuration",
             "python": platform.python_version(),
             "packages": {name: version(name) for name in ("solakit", "fastapi", "openai")},
             "runtime_configured": False,
         }
-        if args.explain:
-            report["explanation"] = (
-                "Installation check only; runtime configuration arrives in Phase 2."
+        try:
+            profile = resolve_profile(
+                load_config(args.config),
+                args.profile,
+                base=(args.config or DEFAULT_CONFIG).resolve().parent,
             )
+        except ConfigError as error:
+            report["configuration_error"] = str(error)
+        else:
+            report["runtime_configured"] = True
+            if args.explain:
+                report["effective_config"] = profile.explain()
+        report["verification"] = "Local validation only; no services started or contacted."
         print(json.dumps(report, indent=2))
+        if not report["runtime_configured"] and (
+            args.config is not None or DEFAULT_CONFIG.exists()
+        ):
+            raise SystemExit(2)
     else:
         parser.error(f"{args.command} is not implemented yet; see its phase plan")

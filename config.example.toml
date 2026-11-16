@@ -1,0 +1,32 @@
+# Paths are relative to this file. Copy and edit; no services are contacted by check.
+schema_version = 1
+data_dir = "~/.local/share/sola"
+loaded_tools = []
+shutdown_timeout_seconds = 5
+
+[model]
+pin = "Qwen3.6-35B-A3B-mxfp4"
+base_url = "http://127.0.0.1:8000/v1"
+# api_key_env = "SOLA_MODEL_API_KEY"
+
+[defaults]
+workspace_roots = ["."]
+tools = []
+resources = []
+effects = []
+memory_mode = "optional"
+fragments = []
+
+[profiles.short]
+# Profiles inherit default; they may only narrow grants and budgets.
+tools = []
+
+[profiles.short.budgets]
+model_calls = 4
+tool_calls = 8
+active_seconds = 300
+
+[proactive_budgets]
+model_calls = 8
+tool_calls = 12
+active_seconds = 600

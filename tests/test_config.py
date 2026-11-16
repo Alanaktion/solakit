@@ -1,0 +1,199 @@
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+from pydantic import ValidationError
+
+from solakit.config import (
+    ConfigError,
+    EffectiveProfile,
+    OperatorConfig,
+    load_config,
+    resolve_profile,
+    restrict_to_admission,
+)
+from solakit.records import Origin, SessionMode
+
+
+def write_config(tmp_path: Path, extra: str = "") -> Path:
+    path = tmp_path / "config.toml"
+    path.write_text(
+        'data_dir = "data"\nloaded_tools = ["read", "write"]\n'
+        '[model]\npin = "fixture-qwen"\napi_key_env = "PRIVATE_KEY_REFERENCE"\n'
+        '[defaults]\nworkspace_roots = ["."]\ntools = ["read", "write", "unloaded"]\n'
+        'resources = ["images"]\neffects = ["file_write"]\n' + extra
+    )
+    return path
+
+
+def test_inheritance_sources_and_empty_tools(tmp_path: Path) -> None:
+    path = write_config(
+        tmp_path,
+        '[profiles.readonly]\ntools = ["read"]\neffects = []\n'
+        "[profiles.readonly.budgets]\nmodel_calls = 4\n"
+        '[profiles.none]\nextends = "readonly"\ntools = []\n',
+    )
+    config = load_config(path)
+    inherited = resolve_profile(config, "readonly", base=tmp_path)
+    assert inherited.tools == {"read"} and inherited.effects == set()
+    assert inherited.workspace_roots == (tmp_path,)
+    assert inherited.budgets.model_calls == 4 and inherited.budgets.tool_calls == 32
+    assert dict(inherited.sources)["budgets.model_calls"] == "profiles.readonly.budgets.model_calls"
+    assert not resolve_profile(config, "none", base=tmp_path).tools
+    default = resolve_profile(config, base=tmp_path)
+    assert default.granted_tools == {"read", "write", "unloaded"}
+    assert default.tools == {"read", "write"}
+    with pytest.raises(ValidationError):
+        inherited.memory_mode = "off"
+    assert "PRIVATE_KEY_REFERENCE" not in json.dumps(inherited.explain())
+    assert "PRIVATE_KEY_REFERENCE" not in repr(inherited)
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        '[profiles.child]\ntools = ["extra"]\n',
+        '[profiles.child]\nresources = ["extra"]\n',
+        '[profiles.child]\neffects = ["extra"]\n',
+        "[profiles.child.budgets]\nmodel_calls = 17\n",
+        '[profiles.child]\nworkspace_roots = [".."]\n',
+        '[profiles.child]\nextends = "child"\n',
+        '[profiles.child]\nextends = "missing"\n',
+    ],
+)
+def test_reject_widening_and_bad_inheritance(tmp_path: Path, extra: str) -> None:
+    with pytest.raises(ConfigError):
+        resolve_profile(load_config(write_config(tmp_path, extra)), "child", base=tmp_path)
+
+
+def test_root_narrowing_and_current_revocations(tmp_path: Path) -> None:
+    subdir = tmp_path / "sub"
+    subdir.mkdir()
+    path = write_config(tmp_path, '[profiles.child]\nworkspace_roots = ["sub"]\ntools = ["read"]\n')
+    config = load_config(path)
+    admitted = resolve_profile(config, base=tmp_path)
+    current = resolve_profile(config, "child", base=tmp_path)
+    assert restrict_to_admission(current, admitted).workspace_roots == (subdir,)
+    assert restrict_to_admission(current, admitted).tools == {"read"}
+    assert restrict_to_admission(admitted, current).tools == {"read"}
+    assert restrict_to_admission(admitted, current).workspace_roots == (subdir,)
+    changed = current.model_dump() | {"model_pin": "another-model"}
+    with pytest.raises(ConfigError):
+        restrict_to_admission(EffectiveProfile.model_validate(changed), admitted)
+
+
+def test_modes_and_proactive_budgets(tmp_path: Path) -> None:
+    config = load_config(write_config(tmp_path))
+    for mode in (SessionMode.ISOLATED, SessionMode.EPHEMERAL):
+        assert resolve_profile(config, base=tmp_path, mode=mode).memory_mode == "off"
+    proactive = resolve_profile(config, base=tmp_path, origin=Origin.PROACTIVE)
+    assert (
+        proactive.budgets.model_calls,
+        proactive.budgets.tool_calls,
+        proactive.budgets.active_seconds,
+    ) == (8, 12, 600)
+    disabled = OperatorConfig.model_validate(
+        config.model_dump()
+        | {
+            "defaults": {"workspace_roots": ["."], "memory_mode": "off"},
+            "profiles": {"child": {"memory_mode": "optional"}},
+        }
+    )
+    with pytest.raises(ConfigError):
+        resolve_profile(disabled, "child", base=tmp_path)
+
+
+@pytest.mark.parametrize(
+    "contents",
+    [
+        'unknown = "VERY_PRIVATE_VALUE"',
+        '[model]\nbase_url = "http://user:VERY_PRIVATE_VALUE@localhost/v1"',
+        "[defaults.budgets]\nmodel_calls = true",
+        '[defaults.budgets]\nmodel_calls = "VERY_PRIVATE_VALUE"',
+        "[defaults.budgets]\nmodel_calls = 257",
+        '[defaults.budgets]\nmisspelled = "VERY_PRIVATE_VALUE"',
+        'loaded_tools = "VERY_PRIVATE_VALUE"',
+        "schema_version = true",
+        'broken = ["VERY_PRIVATE_VALUE"',
+    ],
+)
+def test_invalid_config_is_secret_safe(tmp_path: Path, contents: str) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text(contents)
+    with pytest.raises(ConfigError) as error:
+        load_config(path)
+    assert "VERY_PRIVATE_VALUE" not in str(error.value)
+
+
+def test_empty_config_and_missing_roots(tmp_path: Path) -> None:
+    path = tmp_path / "empty.toml"
+    path.write_text("")
+    config = load_config(path)
+    with pytest.raises(ConfigError, match="workspace root"):
+        resolve_profile(config)
+    path.write_text('[model]\npin = "fixture"\n[defaults]\nworkspace_roots = ["missing"]')
+    with pytest.raises(ConfigError, match="must exist"):
+        resolve_profile(load_config(path), base=tmp_path)
+    with pytest.raises(ConfigError, match="does not exist"):
+        load_config(tmp_path / "missing.toml")
+    path.write_text(
+        '[model]\npin = "fixture"\n[defaults]\nworkspace_roots = ["~sola_fixture_no_such_user"]'
+    )
+    with pytest.raises(ConfigError, match="must exist"):
+        resolve_profile(load_config(path), base=tmp_path)
+
+
+def test_cli_explain_is_offline_and_read_only(tmp_path: Path) -> None:
+    path = write_config(tmp_path)
+    script = (
+        "import sys; from solakit.cli import main; "
+        "sys.argv = ['sola', 'check', '--config', sys.argv[1], '--explain']; main(); "
+        "assert 'fastapi' not in sys.modules; assert 'openai' not in sys.modules; "
+        "assert 'solakit.runtime' not in sys.modules"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", script, str(path)], check=True, capture_output=True, text=True
+    )
+    report = json.loads(result.stdout)
+    assert report["runtime_configured"]
+    assert report["effective_config"]["values"]["model_api_key_env"] == "<redacted>"
+    assert "PRIVATE_KEY_REFERENCE" not in result.stdout
+    assert not (tmp_path / "data").exists()
+
+
+def test_canonical_roots_and_fragment_inheritance(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (workspace / "alias").symlink_to(outside, target_is_directory=True)
+    (tmp_path / "soul.md").write_text("Operator-owned identity")
+    config = OperatorConfig.model_validate(
+        {
+            "model": {"pin": "fixture"},
+            "defaults": {"workspace_roots": ["workspace"], "fragments": ["soul.md"]},
+            "profiles": {"child": {"workspace_roots": ["workspace/alias"]}},
+        }
+    )
+    assert resolve_profile(config, base=tmp_path).fragments == (tmp_path / "soul.md",)
+    with pytest.raises(ConfigError, match="exceed"):
+        resolve_profile(config, "child", base=tmp_path)
+
+
+def test_proactive_override_and_admitted_budget_ceiling(tmp_path: Path) -> None:
+    path = write_config(tmp_path)
+    config = load_config(path)
+    admitted = resolve_profile(config, base=tmp_path, origin=Origin.PROACTIVE)
+    raised = OperatorConfig.model_validate(
+        config.model_dump() | {"proactive_budgets": {"model_calls": 12}}
+    )
+    current = resolve_profile(raised, base=tmp_path, origin=Origin.PROACTIVE)
+    assert current.budgets.model_calls == 12 and current.budgets.tool_calls == 12
+    assert restrict_to_admission(current, admitted).budgets.model_calls == 8
+    lowered = OperatorConfig.model_validate(
+        config.model_dump() | {"proactive_budgets": {"model_calls": 2}}
+    )
+    current = resolve_profile(lowered, base=tmp_path, origin=Origin.PROACTIVE)
+    assert restrict_to_admission(current, admitted).budgets.model_calls == 2
