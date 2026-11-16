@@ -22,8 +22,7 @@ def write_config(tmp_path: Path, extra: str = "") -> Path:
     path.write_text(
         'data_dir = "data"\nloaded_tools = ["read", "write"]\n'
         '[model]\npin = "fixture-qwen"\napi_key_env = "PRIVATE_KEY_REFERENCE"\n'
-        '[defaults]\nworkspace_roots = ["."]\ntools = ["read", "write", "unloaded"]\n'
-        'resources = ["images"]\neffects = ["file_write"]\n' + extra
+        '[defaults]\nworkspace_roots = ["."]\ntools = ["read", "write", "unloaded"]\n' + extra
     )
     return path
 
@@ -31,13 +30,13 @@ def write_config(tmp_path: Path, extra: str = "") -> Path:
 def test_inheritance_sources_and_empty_tools(tmp_path: Path) -> None:
     path = write_config(
         tmp_path,
-        '[profiles.readonly]\ntools = ["read"]\neffects = []\n'
+        '[profiles.readonly]\ntools = ["read"]\n'
         "[profiles.readonly.budgets]\nmodel_calls = 4\n"
         '[profiles.none]\nextends = "readonly"\ntools = []\n',
     )
     config = load_config(path)
     inherited = resolve_profile(config, "readonly", base=tmp_path)
-    assert inherited.tools == {"read"} and inherited.effects == set()
+    assert inherited.tools == {"read"}
     assert inherited.workspace_roots == (tmp_path,)
     assert inherited.budgets.model_calls == 4 and inherited.budgets.tool_calls == 32
     assert dict(inherited.sources)["budgets.model_calls"] == "profiles.readonly.budgets.model_calls"
@@ -55,8 +54,6 @@ def test_inheritance_sources_and_empty_tools(tmp_path: Path) -> None:
     "extra",
     [
         '[profiles.child]\ntools = ["extra"]\n',
-        '[profiles.child]\nresources = ["extra"]\n',
-        '[profiles.child]\neffects = ["extra"]\n',
         "[profiles.child.budgets]\nmodel_calls = 17\n",
         '[profiles.child]\nworkspace_roots = [".."]\n',
         '[profiles.child]\nextends = "child"\n',
@@ -66,6 +63,15 @@ def test_inheritance_sources_and_empty_tools(tmp_path: Path) -> None:
 def test_reject_widening_and_bad_inheritance(tmp_path: Path, extra: str) -> None:
     with pytest.raises(ConfigError):
         resolve_profile(load_config(write_config(tmp_path, extra)), "child", base=tmp_path)
+
+
+@pytest.mark.parametrize("field", ["resources", "effects"])
+@pytest.mark.parametrize("table", ["defaults", "profiles.child"])
+def test_removed_permission_settings_are_rejected(tmp_path: Path, table: str, field: str) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text(f"[{table}]\n{field} = []\n")
+    with pytest.raises(ConfigError, match=field):
+        load_config(path)
 
 
 def test_root_narrowing_and_current_revocations(tmp_path: Path) -> None:
@@ -159,6 +165,8 @@ def test_cli_explain_is_offline_and_read_only(tmp_path: Path) -> None:
     report = json.loads(result.stdout)
     assert report["runtime_configured"]
     assert report["effective_config"]["values"]["model_api_key_env"] == "<redacted>"
+    for section in ("values", "sources"):
+        assert not {"resources", "effects"} & report["effective_config"][section].keys()
     assert "PRIVATE_KEY_REFERENCE" not in result.stdout
     assert not (tmp_path / "data").exists()
 

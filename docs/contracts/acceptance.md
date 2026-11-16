@@ -12,7 +12,7 @@ Evidence: durable admission, request bytes/hashes, recall status, final message/
 
 ## J2 — Reliable tool-assisted file and image work
 
-Input: in a disposable granted workspace, read a brief, create a requested text artifact, then generate an image with one configured workflow and save/refer to its output. The core services authorize each file/workflow resource and effect, record exact tool arguments, persist intent before consequential execution, and associate results with call IDs. Generation shares normal budgets, cancellation, and inference coordination where applicable.
+Input: in a disposable granted workspace, read a brief, create a requested text artifact, then generate an image with one configured workflow and save/refer to its output. The core services authorize tool calls through effective tool grants and confine filesystem access to workspace roots, record exact tool arguments, persist intent before consequential execution, and associate results with call IDs. Generation shares normal budgets, cancellation, and inference coordination where applicable.
 
 Success: text artifact has expected content, image output is accessible via a stable authorized reference, and each reported action has a receipt. A path escape, guessed tool, malformed argument, or unavailable workflow fails clearly before an unauthorized effect. An announcement without execution is not task success. Stop after an uncertain image submission and expose its reconciliation reference instead of submitting again.
 

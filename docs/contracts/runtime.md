@@ -141,24 +141,27 @@ resolve a runnable profile without an existing workspace root and explicit model
 pin. Loaded/granted tools start empty. No wildcard expansion or automatic tool
 discovery is supplied in this phase.
 
-`[defaults]` supplies workspace roots, grants (`tools`), resources, effects,
-memory mode, fragments, and budgets. `[profiles.NAME]` inherits `default`, or a
+`[defaults]` supplies workspace roots, grants (`tools`), memory mode, fragments,
+and budgets. `[profiles.NAME]` inherits `default`, or a
 named parent through `extends`. Cycles, unknown parents, and use of the reserved
 `default` profile name fail resolution. An explicit empty list clears inheritance;
-omission inherits. Child roots must be within canonical inherited roots; tool,
-resource, and effect sets must be subsets; budgets cannot increase. Fragments are
+omission inherits. Child roots must be within canonical inherited roots; tool
+grants must be subsets; budgets cannot increase. Fragments are
 operator-selected replacement lists, preserve order, and must name existing files.
 Unknown keys and invalid types fail even in unused profile tables; semantic
 inheritance/root validation applies to the selected profile and its ancestors.
 
-Effective tools are `loaded_tools ∩ granted_tools`. Loading alone grants nothing;
-resource/effect requirements remain additional Phase 5 checks. Memory is `off`,
+Effective tools are `loaded_tools ∩ granted_tools`. Loading alone grants nothing.
+Workspace roots and tool grants are the access controls; there are no separate
+resource or effect permissions. Old `resources` and `effects` keys are rejected as
+unknown settings. Session isolation, origin rules, budgets, and protected-path
+checks still apply at their service boundaries. Memory is `off`,
 `optional`, or `required`; profiles cannot enable an inherited `off`. Isolated and
 ephemeral sessions force `off`. Required memory changes failure policy, not scope.
 
 `EffectiveProfile` is frozen with immutable collections and includes the pin,
 endpoint, credential environment reference, roots, loaded/granted/effective tools,
-resources, effects, mode, fragments, budgets, and per-field sources. It records
+mode, fragments, budgets, and per-field sources. It records
 paths, not fragment bytes; Phase 4 hashes/freezes exact fragment bytes at request
 assembly. No later edit can change an existing snapshot. Dispatch intersects
 current grants and budgets with the admitted profile via `restrict_to_admission`:

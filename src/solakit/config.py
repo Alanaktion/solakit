@@ -42,8 +42,6 @@ class ProfileSettings(Value):
     extends: Name = "default"
     workspace_roots: list[str] | None = None
     tools: list[Name] | None = None
-    resources: list[Name] | None = None
-    effects: list[Name] | None = None
     memory_mode: MemoryMode | None = None
     fragments: list[str] | None = None
     budgets: BudgetOverrides = Field(default_factory=BudgetOverrides)
@@ -101,8 +99,6 @@ class EffectiveProfile(Value):
     loaded_tools: frozenset[str]
     granted_tools: frozenset[str]
     tools: frozenset[str]
-    resources: frozenset[str]
-    effects: frozenset[str]
     memory_mode: MemoryMode
     fragments: tuple[Path, ...]
     budgets: Budgets
@@ -110,7 +106,7 @@ class EffectiveProfile(Value):
 
     def explain(self) -> dict[str, object]:
         values = self.model_dump(mode="json", exclude={"sources", "model_api_key_env"})
-        for key in ("loaded_tools", "granted_tools", "tools", "resources", "effects"):
+        for key in ("loaded_tools", "granted_tools", "tools"):
             values[key] = sorted(values[key])
         values["model_api_key_env"] = "<redacted>" if self.model_api_key_env else None
         return {"values": values, "sources": dict(self.sources)}
@@ -179,8 +175,6 @@ def resolve_profile(
         sources[f"budgets.{key}"] = "builtin"
     roots: tuple[Path, ...] = ()
     grants: frozenset[str] = frozenset()
-    resources: frozenset[str] = frozenset()
-    effects: frozenset[str] = frozenset()
     memory: MemoryMode = "optional"
     fragments: tuple[Path, ...] = ()
     for source, settings in [("defaults", config.defaults), *reversed(chain)]:
@@ -191,19 +185,12 @@ def resolve_profile(
                 raise ConfigError("profile workspace roots exceed inherited authority")
             roots = selected
             sources["workspace_roots"] = source + ".workspace_roots"
-        for key, inherited in (("tools", grants), ("resources", resources), ("effects", effects)):
-            raw = getattr(settings, key)
-            if raw is not None:
-                selected_set = frozenset(raw)
-                if child and not selected_set <= inherited:
-                    raise ConfigError(f"profile {key} exceed inherited authority")
-                if key == "tools":
-                    grants = selected_set
-                elif key == "resources":
-                    resources = selected_set
-                else:
-                    effects = selected_set
-                sources["granted_tools" if key == "tools" else key] = source + "." + key
+        if settings.tools is not None:
+            selected_tools = frozenset(settings.tools)
+            if child and not selected_tools <= grants:
+                raise ConfigError("profile tools exceed inherited authority")
+            grants = selected_tools
+            sources["granted_tools"] = source + ".tools"
         if settings.memory_mode is not None:
             if child and memory == "off" and settings.memory_mode != "off":
                 raise ConfigError("profile cannot enable inherited disabled memory")
@@ -274,8 +261,6 @@ def resolve_profile(
         loaded_tools=frozenset(config.loaded_tools),
         granted_tools=grants,
         tools=grants & frozenset(config.loaded_tools),
-        resources=resources,
-        effects=effects,
         memory_mode=memory,
         fragments=fragments,
         budgets=budgets,
@@ -307,8 +292,6 @@ def restrict_to_admission(
         "loaded_tools": current.loaded_tools & admitted.loaded_tools,
         "granted_tools": current.granted_tools & admitted.granted_tools,
         "tools": current.tools & admitted.tools,
-        "resources": current.resources & admitted.resources,
-        "effects": current.effects & admitted.effects,
         "memory_mode": "off"
         if "off" in (current.memory_mode, admitted.memory_mode)
         else admitted.memory_mode,
