@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="color-scheme" content="light" />
+    <meta name="color-scheme" content="light dark" />
     <title>Sola · Conversation</title>
     <link rel="stylesheet" href="/assets/chat.css" />
     <script type="module" src="/assets/chat.js"></script>
@@ -31,12 +31,15 @@
         <button id="topic-edit" disabled>Topic details</button>
       </header>
       <p id="connection" role="status" aria-live="polite">Connecting…</p>
-      <div id="notice" role="alert" hidden></div>
+      <div id="notice" role="alert" hidden>
+        <span id="notice-message"></span><button id="notice-dismiss">Dismiss</button>
+      </div>
       <section id="history" aria-label="Conversation" tabindex="0">
         <button id="older" hidden>Load older conversation</button>
         <div id="empty">
           <h2>What’s on your mind?</h2>
-          <p>Start a topic, then send Sola a message.</p>
+          <p id="empty-hint">Start a topic, then send Sola a message.</p>
+          <button id="empty-new-topic" class="primary">Start a topic</button>
         </div>
         <div id="turns"></div>
       </section>
@@ -49,6 +52,7 @@
           rows="3"
           maxlength="32768"
           placeholder="Message Sola…"
+          aria-describedby="compose-hint"
           required
         ></textarea>
         <div class="composer-actions">
@@ -59,7 +63,9 @@
               <option value="">Server default</option>
             </select></label
           >
-          <button class="primary" id="send" type="submit" aria-label="Send message">Send ↑</button>
+          <button class="primary" id="send" type="submit" aria-label="Send message" disabled>
+            Send ↑
+          </button>
         </div>
       </form>
     </main>
@@ -78,7 +84,7 @@
         <h2 id="topic-dialog-title">New topic</h2>
         <p id="topic-error" role="alert"></p>
         <label for="topic-name">Title</label
-        ><input id="topic-name" maxlength="256" autocomplete="off" />
+        ><input id="topic-name" maxlength="256" autocomplete="off" autofocus />
         <label for="mode">Memory mode</label
         ><select id="mode">
           <option value="shared">Shared memory</option>
@@ -108,10 +114,14 @@
           <button id="jobs-refresh">Refresh jobs</button
           ><button id="scheduler-toggle">Pause all schedules</button>
         </div>
+        <p id="jobs-empty" class="meta" hidden>No jobs yet. Create one below when you need it.</p>
         <div id="jobs"></div>
         <button id="more-jobs" hidden>More jobs</button>
         <form id="job-form">
           <h3 id="job-form-title">Create a job</h3>
+          <p id="job-topic-hint" class="meta" hidden>
+            Create a shared or isolated topic before scheduling work.
+          </p>
           <label for="job-task">Task</label
           ><textarea id="job-task" required maxlength="32768" rows="3"></textarea>
           <div class="fields">

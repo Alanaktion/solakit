@@ -1,12 +1,16 @@
 :root {
+  color-scheme: light dark;
   --paper: hsl(45 30% 98%);
   --surface: hsl(42 24% 95%);
   --line: hsl(40 14% 84%);
   --ink: hsl(160 14% 16%);
   --muted: hsl(155 8% 36%);
   --accent: hsl(158 32% 28%);
+  --on-accent: hsl(45 30% 98%);
+  --accent-hover: hsl(158 32% 22%);
   --tint: hsl(155 24% 91%);
   --danger: hsl(5 60% 34%);
+  --backdrop: hsl(160 14% 10% / 0.45);
   --radius: 8px;
   font:
     16px/1.6 -apple-system,
@@ -15,6 +19,21 @@
     sans-serif;
   color: var(--ink);
   background: var(--paper);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: hsl(160 10% 11%);
+    --surface: hsl(160 9% 15%);
+    --line: hsl(155 8% 32%);
+    --ink: hsl(45 16% 91%);
+    --muted: hsl(150 8% 69%);
+    --accent: hsl(153 32% 70%);
+    --on-accent: hsl(160 20% 12%);
+    --accent-hover: hsl(153 35% 79%);
+    --tint: hsl(155 18% 22%);
+    --danger: hsl(6 80% 77%);
+    --backdrop: hsl(160 14% 4% / 0.7);
+  }
 }
 * {
   box-sizing: border-box;
@@ -44,7 +63,7 @@ button {
   padding: 8px 16px;
   cursor: pointer;
 }
-button:hover {
+button:hover:not(:disabled) {
   background: var(--tint);
 }
 button:disabled {
@@ -53,13 +72,12 @@ button:disabled {
 }
 .primary {
   background: var(--accent);
-  color: white;
+  color: var(--on-accent);
   border-color: var(--accent);
   font-weight: 600;
 }
-.primary:hover {
-  background: var(--ink);
-  color: white;
+.primary:hover:not(:disabled) {
+  background: var(--accent-hover);
 }
 :focus-visible {
   outline: 3px solid var(--accent);
@@ -117,6 +135,14 @@ label:has(input[type='checkbox']) {
 }
 textarea {
   resize: vertical;
+}
+input::placeholder,
+textarea::placeholder {
+  color: var(--muted);
+  opacity: 1;
+}
+input[type='checkbox'] {
+  accent-color: var(--accent);
 }
 .sidebar {
   padding: 32px 16px 16px;
@@ -186,6 +212,12 @@ main {
   justify-content: space-between;
   gap: 16px;
 }
+.topbar > div {
+  min-width: 0;
+}
+.topbar > button {
+  flex-shrink: 0;
+}
 .topbar p,
 #connection,
 #compose-hint,
@@ -208,6 +240,17 @@ main {
 #notice {
   color: var(--danger);
   padding: 8px 32px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  overflow-wrap: anywhere;
+}
+#notice-message {
+  flex: 1;
+  min-width: 0;
+}
+#notice-dismiss {
+  flex-shrink: 0;
 }
 #history {
   flex: 1;
@@ -220,7 +263,7 @@ main {
 }
 #empty h2 {
   font-family: Georgia, serif;
-  font-size: 30px;
+  font-size: clamp(24px, 4vw, 30px);
 }
 #empty p {
   color: var(--muted);
@@ -316,11 +359,17 @@ summary {
   background: var(--paper);
   padding: 12px;
 }
+#composer:focus-within {
+  border-color: var(--accent);
+}
 #draft {
   border: 0;
   padding: 8px;
   max-height: 192px;
   min-height: 64px;
+}
+#draft:focus-visible {
+  outline-offset: 0;
 }
 .composer-actions {
   display: flex;
@@ -341,6 +390,13 @@ summary {
 #compose-hint {
   margin-right: auto;
   font-size: 12px;
+}
+#compose-hint.explanation {
+  flex-basis: 100%;
+  font-size: 14px;
+}
+.composer-actions:has(.explanation) {
+  flex-wrap: wrap;
 }
 #outbox {
   max-height: 128px;
@@ -368,7 +424,7 @@ dialog {
   max-height: calc(100dvh - 32px);
 }
 dialog::backdrop {
-  background: hsl(160 14% 16% / 0.35);
+  background: var(--backdrop);
 }
 dialog.wide {
   width: min(800px, calc(100% - 24px));
@@ -404,12 +460,21 @@ dialog > details > summary {
 #jobs article {
   margin: 16px 0 24px;
 }
+#jobs article > button {
+  margin: 0 8px 8px 0;
+}
+#job-form {
+  border-top: 1px solid var(--line);
+  padding-top: 24px;
+  margin-top: 24px;
+}
 #jobs h3 {
   margin: 0;
 }
 #settings-error,
 #login-error,
-#evidence-error {
+#evidence-error,
+#topic-error {
   color: var(--danger);
 }
 .sr-only,
@@ -430,12 +495,14 @@ dialog > details > summary {
   padding: 8px;
   background: var(--paper);
 }
+@media (max-width: 1100px) {
+  #compose-hint:not(.explanation) {
+    display: none;
+  }
+}
 @media (max-width: 800px) {
   body {
     grid-template-columns: 192px minmax(0, 1fr);
-  }
-  #compose-hint {
-    display: none;
   }
   .topbar {
     padding: 16px;
@@ -454,13 +521,13 @@ dialog > details > summary {
   }
   .sidebar {
     padding: 8px 12px;
-    flex-direction: row;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
     align-items: center;
-    flex-wrap: wrap;
     gap: 8px;
   }
   .brand {
-    font-size: 24px;
+    font-size: 20px;
     padding: 0;
   }
   .brand span {
@@ -468,14 +535,20 @@ dialog > details > summary {
   }
   .archive-toggle {
     font-size: 12px;
+    grid-column: 3;
+    grid-row: 2;
   }
   #new-topic {
     padding: 8px;
+    font-size: 14px;
+    justify-self: start;
+    white-space: nowrap;
   }
   #topics {
-    order: 4;
     display: flex;
-    flex-basis: 100%;
+    grid-column: 1 / 3;
+    grid-row: 2;
+    min-width: 0;
     max-height: 64px;
     gap: 8px;
   }
@@ -488,24 +561,54 @@ dialog > details > summary {
     overflow: hidden;
   }
   .sidebar-footer {
-    margin-left: auto;
+    grid-column: 3;
+    grid-row: 1;
   }
   .sidebar-footer button {
     padding: 8px;
+    font-size: 12px;
+  }
+  #more-topics {
+    grid-column: 1 / -1;
+  }
+  #empty {
+    margin: 32px 0;
   }
   main {
     flex: 1;
   }
+  .topbar h1 {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+  }
+  .topbar > button {
+    font-size: 14px;
+    padding: 8px 12px;
+  }
   #history {
     padding: 16px;
   }
+  #notice {
+    padding: 8px 16px;
+  }
   #composer {
-    margin: 8px 12px 12px;
+    margin: 8px 12px max(12px, env(safe-area-inset-bottom));
     width: calc(100% - 24px);
   }
   #draft {
     min-height: 48px;
     height: 64px;
+  }
+  .composer-actions {
+    gap: 8px;
+  }
+  .composer-actions select {
+    max-width: 120px;
+  }
+  #send {
+    padding: 8px 12px;
   }
   dialog {
     padding: 24px;

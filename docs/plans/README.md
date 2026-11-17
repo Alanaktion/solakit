@@ -96,6 +96,8 @@ see V2-33 in the [decision register](../decisions.md) and the
 
 Phase 11 adds the packaged chat/Settings shell, stable vanilla-JavaScript rendering,
 bounded backward history, durable browser retries and shared SSE/polling recovery.
+Its UX follow-up adds system light/dark appearance, clearer empty/disabled states,
+compact mobile controls and configured-server Qwen browser verification.
 Read the [UI guide](../chat-ui.md) and [Phase 11 evidence](../validation/phase-11.md).
 Operator completion of the conversation/tool/scheduled/recovery journeys remains
 an explicit acceptance gate; browser automation does not stand in for it.

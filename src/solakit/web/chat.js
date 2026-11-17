@@ -73,9 +73,10 @@ function showError(error) {
       ? $('settings-error')
       : $('topic-dialog').open
         ? $('topic-error')
-        : $('notice');
+        : $('notice-message');
   text(target, error.message || 'Request failed. Please retry.');
   target.hidden = false;
+  if (target.id === 'notice-message') $('notice').hidden = false;
 }
 function requireLogin() {
   loggedIn = false;
@@ -347,6 +348,7 @@ function render() {
     $('empty').hidden = ids.size > 0;
   });
   updateTimers();
+  updateComposer();
 }
 function updateTimers() {
   for (const [id, turn] of turns) {
@@ -600,14 +602,52 @@ function connect() {
 }
 function saveDraft() {
   if (selected)
-    write(`sola.draft.${selected}`, { content: $('draft').value, profile: $('profile').value });
+    write(`sola.draft.${selected}`, {
+      content: $('draft').value,
+      profile: $('profile').value
+    });
+  updateComposer();
+}
+function updateComposer() {
+  const topic = topics.get(selected);
+  const used =
+    topic?.mode === 'ephemeral' &&
+    (runs.size > 0 || outbox.some((item) => item.session_id === selected));
+  $('draft').disabled = !topic;
+  $('send').disabled = !topic || topic.archived || used || !$('draft').value.trim();
+  $('compose-hint').classList.toggle('explanation', !!(topic?.archived || used));
+  text(
+    $('compose-hint'),
+    topic?.archived
+      ? 'Restore this topic in Topic details to send a message.'
+      : used
+        ? 'This topic allows one run. Start a new topic to continue.'
+        : 'Enter to send · Shift + Enter for a new line'
+  );
 }
 function setTopicHeading() {
   const topic = topics.get(selected);
-  text($('topic-title'), topic?.title || 'Untitled topic');
-  text($('topic-mode'), `${topic?.mode || 'shared'}${topic?.archived ? ' · archived' : ''}`);
+  const title = topic ? topic.title || 'Untitled topic' : 'Conversation';
+  text($('topic-title'), title);
+  document.title = `Sola · ${title}`;
+  const modes = {
+    shared: 'Shared memory',
+    isolated: 'Isolated memory',
+    ephemeral: 'One run · evidence retained'
+  };
+  text(
+    $('topic-mode'),
+    topic ? `${modes[topic.mode]}${topic.archived ? ' · archived' : ''}` : 'A little room to think.'
+  );
+  text(
+    $('empty-hint'),
+    topic
+      ? 'Send a message to start this conversation.'
+      : 'Start a topic, then send Sola a message.'
+  );
+  $('empty-new-topic').hidden = !!topic;
   $('topic-edit').disabled = !topic;
-  $('send').disabled = !topic || topic.archived;
+  updateComposer();
 }
 async function selectTopic(id) {
   saveDraft();
@@ -655,6 +695,10 @@ function renderTopics() {
     if (topic.id === selected) b.setAttribute('aria-current', 'page');
     else b.removeAttribute('aria-current');
   }
+  revealTopic();
+}
+function revealTopic() {
+  $(`topic-${selected}`)?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 }
 async function loadTopics(more = false) {
   const result = await api(
@@ -712,7 +756,7 @@ async function deliver(item) {
 }
 async function submit(event) {
   event.preventDefault();
-  if (!selected || !$('draft').value.trim()) return;
+  if ($('send').disabled) return;
   if (new TextEncoder().encode($('draft').value).length > 32768) {
     showError(new Error('Please keep messages under 32 KiB.'));
     return;
@@ -848,6 +892,7 @@ async function loadJobs(more = false) {
   jobCursor = result.next;
   $('more-jobs').hidden = result.items.length < 50;
   schedulerPaused = control.paused;
+  $('jobs-empty').hidden = jobs.size > 0;
   text($('scheduler-toggle'), control.paused ? 'Resume all schedules' : 'Pause all schedules');
   $('jobs').replaceChildren();
   for (const job of jobs.values()) {
@@ -945,6 +990,7 @@ function fillJob(job = null) {
 async function openSettings() {
   $('settings').showModal();
   text($('settings-error'), '');
+  text($('settings-status'), '');
   $('job-topic').replaceChildren();
   for (const topic of topics.values())
     if (topic.mode !== 'ephemeral' && !topic.archived) {
@@ -952,6 +998,8 @@ async function openSettings() {
       option.value = topic.id;
       $('job-topic').append(option);
     }
+  $('job-topic-hint').hidden = $('job-topic').options.length > 0;
+  $('job-form').querySelector('button.primary').disabled = !$('job-topic').options.length;
   fillJob();
   await Promise.all([loadJobs(), refreshMemory(), refreshHealth()]);
 }
@@ -975,13 +1023,16 @@ async function boot() {
     );
   else {
     text($('connection'), 'Connected · create a topic to begin');
-    $('send').disabled = true;
+    setTopicHeading();
   }
 }
 
 $('login-dialog').addEventListener('cancel', (event) => event.preventDefault());
 $('login-form').addEventListener('submit', async (event) => {
   event.preventDefault();
+  const submit = $('login-form').querySelector('button');
+  if (submit.disabled) return;
+  submit.disabled = true;
   try {
     await api('/auth/login', {
       method: 'POST',
@@ -994,12 +1045,19 @@ $('login-form').addEventListener('submit', async (event) => {
   } catch (error) {
     text($('login-error'), error.message);
     $('password').value = '';
+    $('password').focus();
+  } finally {
+    submit.disabled = false;
   }
 });
 for (const item of outbox) item.sending = false;
 for (const b of document.querySelectorAll('[data-close]'))
   b.addEventListener('click', () => $(b.dataset.close).close());
 $('composer').addEventListener('submit', submit);
+$('notice-dismiss').addEventListener('click', () => {
+  $('notice').hidden = true;
+});
+$('empty-new-topic').addEventListener('click', () => $('new-topic').click());
 $('draft').addEventListener('input', saveDraft);
 $('profile').addEventListener('change', saveDraft);
 $('draft').addEventListener('keydown', (event) => {
@@ -1023,6 +1081,7 @@ $('archived-topics').addEventListener('change', () => loadTopics().catch(showErr
 $('more-topics').addEventListener('click', () => loadTopics(true).catch(showError));
 $('new-topic').addEventListener('click', () => {
   editingTopic = false;
+  text($('topic-error'), '');
   text($('topic-dialog-title'), 'New topic');
   $('topic-form').reset();
   $('mode').disabled = false;
@@ -1031,6 +1090,7 @@ $('new-topic').addEventListener('click', () => {
 });
 $('topic-edit').addEventListener('click', () => {
   editingTopic = true;
+  text($('topic-error'), '');
   const topic = topics.get(selected);
   text($('topic-dialog-title'), 'Topic details');
   $('topic-name').value = topic.title;
@@ -1043,6 +1103,9 @@ $('topic-edit').addEventListener('click', () => {
 });
 $('topic-form').addEventListener('submit', async (event) => {
   event.preventDefault();
+  const submit = $('topic-form').querySelector('button.primary');
+  if (submit.disabled) return;
+  submit.disabled = true;
   try {
     const topic = await api(editingTopic ? `/sessions/${selected}` : '/sessions', {
       method: editingTopic ? 'PATCH' : 'POST',
@@ -1060,6 +1123,8 @@ $('topic-form').addEventListener('submit', async (event) => {
     $('draft').focus();
   } catch (error) {
     showError(error);
+  } finally {
+    submit.disabled = false;
   }
 });
 $('logout').addEventListener('click', () =>
@@ -1117,6 +1182,7 @@ $('search-form').addEventListener('submit', async (event) => {
 });
 $('more-evidence').addEventListener('click', () => moreEvidence().catch(showError));
 window.addEventListener('online', connect);
+window.addEventListener('resize', revealTopic);
 window.addEventListener('offline', () => {
   stopTransport();
   startPolling();

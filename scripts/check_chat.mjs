@@ -20,7 +20,10 @@ const browser = await chromium.launch({
   headless: true,
   ...(process.env.SOLA_BROWSER ? { executablePath: process.env.SOLA_BROWSER } : {})
 });
-const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+const context = await browser.newContext({
+  viewport: { width: 1440, height: 1000 },
+  colorScheme: 'light'
+});
 // LAN HTTP has getRandomValues but no secure-context randomUUID API.
 await context.addInitScript(() => Object.defineProperty(crypto, 'randomUUID', { value: undefined }));
 const page = await context.newPage();
@@ -93,7 +96,67 @@ try {
     assert(report.snapshot.runs <= 50);
     assert(report.snapshot.bytes < 20000);
   });
-  await page.screenshot({ path: path.join(options.output, 'chat-desktop.png'), fullPage: true });
+  await page.screenshot({
+    path: path.join(options.output, 'chat-desktop.png'),
+    fullPage: true
+  });
+  await check(
+    'system light/dark themes switch live with readable text and native controls',
+    async () => {
+      report.themes = {};
+      for (const colorScheme of ['dark', 'light']) {
+        await page.emulateMedia({ colorScheme });
+        const theme = await page.evaluate(() => {
+          const rgb = (value) =>
+            value
+              .match(/[\d.]+/g)
+              .slice(0, 3)
+              .map(Number);
+          const luminance = (color) =>
+            rgb(color)
+              .map((n) => {
+                n /= 255;
+                return n <= 0.04045 ? n / 12.92 : ((n + 0.055) / 1.055) ** 2.4;
+              })
+              .reduce((sum, n, i) => sum + n * [0.2126, 0.7152, 0.0722][i], 0);
+          const contrast = (a, b) =>
+            (Math.max(luminance(a), luminance(b)) + 0.05) /
+            (Math.min(luminance(a), luminance(b)) + 0.05);
+          const root = getComputedStyle(document.documentElement);
+          const primary = getComputedStyle(document.querySelector('#send'));
+          const muted = getComputedStyle(document.querySelector('#connection')).color;
+          return {
+            background: root.backgroundColor,
+            luminance: luminance(root.backgroundColor),
+            scheme: getComputedStyle(document.querySelector('#profile')).colorScheme,
+            contrast: {
+              text: contrast(root.color, root.backgroundColor),
+              muted: contrast(muted, root.backgroundColor),
+              sidebar: contrast(
+                muted,
+                getComputedStyle(document.querySelector('.sidebar')).backgroundColor
+              ),
+              primary: contrast(primary.color, primary.backgroundColor),
+              error: contrast(
+                getComputedStyle(document.querySelector('#topic-error')).color,
+                root.backgroundColor
+              )
+            }
+          };
+        });
+        assert(theme.scheme.includes(colorScheme));
+        assert(colorScheme === 'dark' ? theme.luminance < 0.1 : theme.luminance > 0.8);
+        for (const [name, ratio] of Object.entries(theme.contrast))
+          assert(ratio >= 4.5, `${colorScheme} ${name}: ${ratio}`);
+        report.themes[colorScheme] = theme;
+        if (colorScheme === 'dark')
+          await page.screenshot({
+            path: path.join(options.output, 'chat-desktop-dark.png'),
+            fullPage: true
+          });
+      }
+    }
+  );
   await check('older history is prepended with a preserved scroll anchor', async () => {
     await page.locator('#history').evaluate((h) => (h.scrollTop = 0));
     const anchor = page.locator('.turn').first();
@@ -156,6 +219,39 @@ try {
   await waitFor(() => document.querySelector('#connection').textContent === 'Connected');
   fixture.other = await page.locator('#topics [aria-current=page]').getAttribute('id');
   fixture.other = fixture.other.replace('topic-', '');
+  await check('empty composer, keyboard input and topic archive/restore', async () => {
+    assert(await page.locator('#send').isDisabled());
+    assert(await page.locator('#empty-new-topic').isHidden());
+    assert.equal(
+      await page.locator('#empty-hint').textContent(),
+      'Send a message to start this conversation.'
+    );
+    await page.locator('#draft').fill('   ');
+    assert(await page.locator('#send').isDisabled());
+    await page.locator('#draft').fill('Keep this draft');
+    assert(await page.locator('#send').isEnabled());
+    await page.locator('#draft').press('Shift+Enter');
+    assert.equal(await page.locator('#draft').inputValue(), 'Keep this draft\n');
+    await page.locator('#draft').dispatchEvent('keydown', { key: 'Enter', isComposing: true });
+    assert.equal(await page.locator('.message.user').count(), 0);
+    await page.locator('#topic-edit').click();
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'topic-name');
+    await page.locator('#topic-name').fill('Polished conversation');
+    await page.locator('#pinned').check();
+    await page.locator('#archived').check();
+    await page.locator('#topic-form button.primary').click();
+    await page.locator('#topic-dialog').waitFor({ state: 'hidden' });
+    assert(await page.locator('#send').isDisabled());
+    assert.equal(await page.locator('#draft').inputValue(), 'Keep this draft\n');
+    assert.equal(await page.title(), 'Sola · Polished conversation');
+    await page.locator('#topic-edit').click();
+    await page.locator('#archived').uncheck();
+    await page.locator('#topic-form button.primary').click();
+    await page.locator('#topic-dialog').waitFor({ state: 'hidden' });
+    assert(await page.locator('#send').isEnabled());
+    await page.locator('#draft').fill('');
+    assert(await page.locator('#send').isDisabled());
+  });
   await check('two drafts during a tool run, focus and settled text survive previews', async () => {
     await send('tool first submission');
     await page.getByText('fixture.pause · working', { exact: true }).waitFor();
@@ -290,6 +386,8 @@ try {
     };
     await page.route('**/api/v1/runs', intercept);
     await send('Receipt loss fixture');
+    await page.locator('#notice-dismiss').click();
+    assert(await page.locator('#notice').isHidden());
     await page.getByRole('button', { name: 'Retry same submission', exact: true }).click();
     await retryConfirmed;
     await page.unroute('**/api/v1/runs', intercept);
@@ -444,6 +542,83 @@ try {
     });
     await page.keyboard.press('Escape');
     assert.equal(await page.evaluate(() => document.activeElement.id), 'settings-open');
+  });
+  await check(
+    'light/dark mobile layouts, Settings and evidence fit narrow and short viewports',
+    async () => {
+      for (const colorScheme of ['light', 'dark']) {
+        await page.emulateMedia({ colorScheme });
+        for (const viewport of [
+          { width: 320, height: 568 },
+          { width: 390, height: 844 },
+          { width: 844, height: 390 }
+        ]) {
+          await page.setViewportSize(viewport);
+          await page.evaluate(() => new Promise(requestAnimationFrame));
+          const layout = await page.evaluate(() => {
+            const composer = document.querySelector('#composer').getBoundingClientRect();
+            return {
+              width: innerWidth,
+              scrollWidth: document.documentElement.scrollWidth,
+              height: innerHeight,
+              composerBottom: composer.bottom,
+              historyHeight: document.querySelector('#history').clientHeight
+            };
+          });
+          assert(
+            layout.scrollWidth <= layout.width &&
+              layout.composerBottom <= layout.height &&
+              layout.historyHeight > 0,
+            `${colorScheme} ${JSON.stringify(layout)}`
+          );
+          await page.locator('#settings-open').click();
+          assert(
+            await page.locator('#settings').evaluate((el) => el.scrollWidth <= el.clientWidth)
+          );
+          assert(
+            await page.locator('#topics [aria-current=page]').evaluate((el) => {
+              const box = el.getBoundingClientRect(),
+                nav = el.parentElement.getBoundingClientRect();
+              return box.left < nav.right && box.right > nav.left;
+            })
+          );
+          await page.keyboard.press('Escape');
+        }
+        await page.setViewportSize({ width: 390, height: 844 });
+        await page.evaluate(() => new Promise(requestAnimationFrame));
+        await page.screenshot({
+          path: path.join(options.output, `chat-mobile-${colorScheme}.png`),
+          fullPage: true
+        });
+        await page.locator('#settings-open').click();
+        await page.screenshot({
+          path: path.join(options.output, `settings-mobile-${colorScheme}.png`),
+          fullPage: true
+        });
+        await page.keyboard.press('Escape');
+        await page.getByRole('button', { name: 'Inspect evidence', exact: true }).last().click();
+        assert(await page.locator('#evidence').evaluate((el) => el.scrollWidth <= el.clientWidth));
+        await page.keyboard.press('Escape');
+      }
+    }
+  );
+  await check('single-use topics explain why another submission is unavailable', async () => {
+    await page.locator('#new-topic').click();
+    await page.locator('#topic-name').fill('Ephemeral browser verification');
+    await page.locator('#mode').selectOption('ephemeral');
+    await page.locator('#topic-form button.primary').click();
+    await page.locator('#topic-dialog').waitFor({ state: 'hidden' });
+    await send('Single-use conversation');
+    await page.locator('.run-bar').filter({ hasText: 'completed' }).waitFor({ timeout: 30000 });
+    await page.locator('#draft').fill('Keep the next thought as a draft');
+    assert(await page.locator('#send').isDisabled());
+    assert((await page.locator('#compose-hint').textContent()).includes('one run'));
+    assert(await page.locator('#compose-hint').isVisible());
+    await page.reload();
+    await waitFor(() => document.querySelector('#connection').textContent === 'Connected');
+    assert.equal(await page.locator('#draft').inputValue(), 'Keep the next thought as a draft');
+    assert(await page.locator('#send').isDisabled());
+    assert.equal(await page.locator('.message.user').count(), 1);
   });
   report.errors = errors;
   assert.deepEqual(errors, []);

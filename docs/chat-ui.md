@@ -6,6 +6,11 @@ configured origin) and sign in. The server serves the HTML, CSS and vanilla
 JavaScript from the core wheel; there is no frontend build or external CDN.
 See [HTTP authentication and deployment](contracts/api.md) for LAN HTTP and remote HTTPS setup.
 
+The interface follows your system light or dark appearance through
+`prefers-color-scheme`, including native controls and dialogs. Changes apply
+immediately; there is no separate theme setting. On a fresh setup, **Start a
+topic** opens topic creation. Empty/whitespace drafts cannot be submitted.
+
 Create a topic, choose its memory mode, and send a message. Enter sends;
 Shift+Enter inserts a newline. The composer remains editable while Sola works,
 and additional submissions appear as queued runs. Each topic keeps its draft,
@@ -34,6 +39,10 @@ interrupted work, memory extraction state and staged notes have separate labels.
 A staged note is not a claim that memory extraction succeeded. Context summary
 markers retain original turns; topic details can rename, pin or archive a topic.
 The Archived topics checkbox makes archived topics available again.
+Archived and already-used ephemeral topics explain why sending is unavailable;
+their drafts remain editable. Single-use topics require a new topic for another
+run. Error notices can be dismissed without removing an uncertain submission
+from the outbox. The selected topic stays visible in narrow-screen navigation.
 
 Settings contains:
 
@@ -88,6 +97,9 @@ SOLA_PLAYWRIGHT_PATH=/tmp/sola-chat-browser/node_modules/playwright \
 `SOLA_BROWSER` can select an already-installed Chromium executable. The script
 creates its own conversation through the UI, so it can be rerun against the same
 fixture. It records payload/node measurements, results and desktop/mobile PNGs.
+It checks live appearance switching and text contrast in both themes, 320-pixel
+and 390-pixel portrait layouts, short landscape layouts, archive/restore,
+single-use topics, keyboard submission and composition input.
 Stop the fixture with Ctrl+C when finished. Browser tooling is not a runtime or
 Python dependency.
 
@@ -95,3 +107,6 @@ Automated acceptance is separate from operator acceptance. The operator still
 needs to complete the conversation, permitted tool task, scheduled message and
 recovery journeys against the intended deployment. Safari/touch devices, a real
 screen reader and remote TLS are not established by a headless Chromium check.
+Configured-server Qwen conversation, cancellation, recovery, Settings and manual
+scheduled delivery have also been browser-verified; see the
+[Phase 11 follow-up evidence](validation/phase-11.md#appearance-and-ux-follow-up).
