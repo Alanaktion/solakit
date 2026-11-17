@@ -60,7 +60,7 @@ uv run --locked python scripts/smoke_wheel.py
 ```
 
 See [evaluation instructions](evals/README.md), the [phase plans](docs/plans/README.md),
-and [validation evidence](docs/validation/phase-07.md). The
+and [validation evidence](docs/validation/phase-08.md). The
 [tool SDK and access matrix](docs/contracts/tools.md) describe explicit pack loading,
 guarded file access, transcript search, status, and scoped memory tools.
 The separately installable [example pack](examples/phase5_pack/) demonstrates
@@ -69,4 +69,7 @@ Live task reliability is measured separately from deterministic checks; see the
 Phase 6 report. Phase 7 adds [OpenViking memory (stable >=0.5.5,<0.6.0)](docs/contracts/memory.md),
 exact note staging, restart-safe extraction observation, and copied-configuration
 migration. Setup, isolated live probes and reconciliation are in the
-[memory runbook](docs/memory.md). Scheduling, UI and production cutover retain later gates.
+[memory runbook](docs/memory.md). Phase 8 adds
+[context compaction](docs/contracts/context-compaction.md), private summary provenance,
+and restart recovery while preserving original searchable history.
+Scheduling, UI and production cutover retain later gates.

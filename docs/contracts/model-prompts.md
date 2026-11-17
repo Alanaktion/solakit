@@ -127,12 +127,14 @@ Redirecting its output is an intentional export of private prompt data.
 
 ## Accounting and offline inspection
 
-No tokenizer has been verified locally. Input accounting estimates UTF-8 JSON bytes
-divided by four plus 32 tokens per message. Output reserves the admitted token
-limit; tool-result headroom reserves the admitted byte limit divided by four.
-The request fails if their sum exceeds `model.context_tokens` (default 32768).
-These are labelled estimates, not a guarantee against the server's tokenizer limit.
-There is no automatic context truncation or model substitution.
+No tokenizer has been verified locally. Phase 8 supersedes the initial bytes/4
+estimate with serialized UTF-8 bytes plus 32 per message, the admitted output
+reserve, 10% window safety margin, and expected tool-result headroom capped at
+window/8 when tools are offered. Actual continuations are rechecked. Requests
+exceeding `model.context_tokens` fail with an explicit context-limit outcome.
+These remain labelled estimates. The run service can select a durable summary
+and whole-turn tail before inference; the assembler never trims supplied context.
+See the [context/manifest contract](context-compaction.md).
 
 ```sh
 uv run sola prompt 'Hello' --config config.example.toml --hashes

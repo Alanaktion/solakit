@@ -71,7 +71,10 @@ not executed; they are never represented as successful calls. Projected record I
 are recorded in the manifest. Future queued user inputs never enter an active
 turn's context. Previous started turns in the same topic are projected in order;
 queued-cancelled turns are excluded. Ephemeral runs see only their own exchanges.
-Context overflow fails visibly without silent truncation; compaction is Phase 8.
+Phase 8 selects one active summary plus the later whole-turn tail, with two recent
+turns preserved. Compaction happens under the same session owner before the first
+conversation step. Context that cannot fit still fails visibly without silent
+truncation; see the [context contract](context-compaction.md).
 
 ## Bounded concurrency and waits
 
@@ -89,8 +92,8 @@ inference semaphore; its waiters acquire in arrival order. A continuously active
 run rejoins behind already waiting calls on its next model step. Tools and waits
 hold the session slot but release the inference permit. Tests measure one concurrent
 inference and a maximum eight-position interval between turns under mixed-origin
-load. Future compaction must use this same permit rather than introduce a second
-inference path. Durable scheduled/wake fairness remains a Phase 9 integration gate.
+load. Compaction uses this same permit, run deadline and model-call budget.
+Durable scheduled/wake fairness remains a Phase 9 integration gate.
 
 `wait` observes state and does not own execution. Its timeout, cancellation, or a
 future HTTP disconnection leaves admitted work running. A wait from within a tool

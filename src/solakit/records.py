@@ -65,6 +65,7 @@ class ErrorCode(StrEnum):
     INVALID_INPUT = "invalid_input"
     CONFIGURATION = "configuration"
     BUDGET_EXCEEDED = "budget_exceeded"
+    CONTEXT_LIMIT = "context_limit"
     MODEL_UNAVAILABLE = "model_unavailable"
     MODEL_MISMATCH = "model_mismatch"
     INVALID_MODEL_RESPONSE = "invalid_model_response"
@@ -217,6 +218,7 @@ class ModelStep(Record):
     response: Artifact | None = None
     usage: dict[str, JsonValue] | None = None
     tool_calls: tuple[ToolProposal, ...] = ()
+    purpose: Literal["conversation", "compaction"] = "conversation"
 
 
 class RecoveryNote(Record):
@@ -388,6 +390,8 @@ class CompactionBoundary(Record):
     through_message_id: RecordID
     summary_message_id: RecordID
     source_message_ids: Annotated[tuple[RecordID, ...], Field(min_length=1)]
+    state: Literal["prepared", "committed"] = "committed"
+    manifest: Artifact | None = None
 
 
 class DurableEvent(Value):

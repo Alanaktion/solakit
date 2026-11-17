@@ -156,6 +156,9 @@ class Store:
             self.log.recover()
             self._reconcile()
             self._flush()
+            from solakit.compaction import recover
+
+            recover(self)
             self._recover_work()
             self._index()
         except BaseException:
@@ -616,6 +619,19 @@ class Store:
             if record.payload and record.payload_sha256 != digest(canonical(record.payload)):
                 raise ValueError("memory payload hash mismatch")
         if isinstance(record, CompactionBoundary):
+            if record.manifest is not None:
+                from solakit.compaction import active_boundary, verify
+
+                manifest, _ = verify(self, record)
+                active = active_boundary(self, record.session_id)
+                if record.state != "prepared" or manifest.prior_boundary_id != (
+                    active.id if active else None
+                ):
+                    raise ValueError("compaction must prepare against the active boundary")
+                self._commit((record,))
+                return
+            if record.state != "committed":
+                raise ValueError("prepared compaction requires a manifest")
             for identity in (
                 *record.source_message_ids,
                 record.through_message_id,

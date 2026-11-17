@@ -1,6 +1,11 @@
 # Phase 8 — Context management and compaction
 
-Status: planned. Depends on [Phase 6](PHASE-06-run-loop.md), [Phase 7](PHASE-07-memory-migration.md), and immutable storage. Unlocks long-lived topics and background work using their context.
+Status: implemented and verified locally, including repeated live Qwen summaries.
+See the [context/manifest contract](../contracts/context-compaction.md) and
+[quality and recovery report](../validation/phase-08.md). Operator acceptance of
+broader conversational usefulness remains separate. Depends on
+[Phase 6](PHASE-06-run-loop.md), [Phase 7](PHASE-07-memory-migration.md), and immutable
+storage. Unlocks long-lived topics and background work using their context.
 
 ## Outcome
 

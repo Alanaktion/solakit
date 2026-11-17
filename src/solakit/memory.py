@@ -306,7 +306,17 @@ class MemoryService:
         notes = [
             MemoryNote.model_validate_json(r["body"]) for r in rows if r["kind"] == "memory_note"
         ]
-        selected = [m for m in messages if m.role in ("user", "assistant")]
+        summary_ids = {
+            row[0]
+            for row in self.store.db.execute(
+                "SELECT json_extract(body,'$.summary_message_id') FROM entities "
+                "WHERE kind='compaction' AND session_id=?",
+                (run.session_id,),
+            )
+        }
+        selected = [
+            m for m in messages if m.role in ("user", "assistant") and m.id not in summary_ids
+        ]
         payload = cast(
             tuple[dict[str, JsonValue], ...],
             tuple(

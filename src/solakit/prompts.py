@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TypedDict
 
 from pydantic import JsonValue
 
@@ -56,6 +57,23 @@ class PromptInput(Value):
     continuation: tuple[PromptTurn, ...] = ()
     disclosure: str = "eager-v1"
     tool_catalog: tuple[str, ...] = ()
+    compaction: dict[str, JsonValue] | None = None
+
+
+class ContextLimit(ValueError):
+    pass
+
+
+class Accounting(TypedDict):
+    kind: str
+    components: dict[str, int]
+    input_tokens: int
+    output_reserved: int
+    tool_result_reserved: int
+    tool_result_policy: str
+    safety_reserved: int
+    context_tokens: int
+    total_reserved: int
 
 
 @dataclass(frozen=True)
@@ -187,12 +205,11 @@ def assemble(profile: EffectiveProfile, frozen: PromptInput) -> PreparedPrompt:
         request["tools"] = tools
     if frozen.stream:
         request["stream_options"] = {"include_usage": True}
-    # shortcut: byte estimates cannot enforce exact tokens; replace after tokenizer verification.
-    estimated = (len(canonical({"messages": messages, "tools": tools})) + 3) // 4
-    estimated += 32 * len(messages)
-    headroom = (profile.budgets.tool_result_bytes + 3) // 4
-    if estimated + profile.budgets.output_tokens + headroom > profile.model_context_tokens:
-        raise ValueError("estimated context exceeds input/output/tool-result budget")
+    accounting = account(
+        profile, messages, tools, sections, tool_headroom=bool(tools or frozen.tool_catalog)
+    )
+    if accounting["total_reserved"] > profile.model_context_tokens:
+        raise ContextLimit("estimated context exceeds input/output/tool-result budget")
     body = canonical(request)
     manifest = {
         "version": 1,
@@ -215,19 +232,45 @@ def assemble(profile: EffectiveProfile, frozen: PromptInput) -> PreparedPrompt:
         "recall_sha256": digest(frozen.recall.encode()) if frozen.recall is not None else None,
         "disclosure": frozen.disclosure,
         "tools_sha256": digest(canonical(tools)),
-        "accounting": {
-            "kind": "estimate: UTF-8 bytes/4 plus 32/message; no verified tokenizer",
-            "input_tokens": estimated,
-            "output_reserved": profile.budgets.output_tokens,
-            "tool_result_reserved": headroom,
-            "context_tokens": profile.model_context_tokens,
-        },
+        "accounting": accounting,
     }
     if frozen.prior_turns or frozen.continuation:
         manifest["projected_record_ids"] = [
             turn.source_id for turn in (*frozen.prior_turns, *frozen.continuation)
         ]
+    if frozen.compaction is not None:
+        manifest["compaction"] = frozen.compaction
     return PreparedPrompt(body=body, manifest=canonical(manifest))
+
+
+def account(
+    profile: EffectiveProfile,
+    messages: list[dict[str, JsonValue]],
+    tools: list[dict[str, JsonValue]],
+    sections: list[dict[str, object]],
+    *,
+    tool_headroom: bool = True,
+) -> Accounting:
+    # shortcut: UTF-8 bytes plus framing is conservative; replace after tokenizer verification.
+    components: dict[str, int] = {}
+    for message, section in zip(messages, sections, strict=True):
+        name = str(section["section"])
+        components[name] = components.get(name, 0) + len(canonical(message)) + 32
+    estimated = len(canonical({"messages": messages, "tools": tools})) + 32 * len(messages)
+    headroom = min(profile.budgets.tool_result_bytes, profile.model_context_tokens // 8)
+    headroom = headroom if tool_headroom else 0
+    safety = (profile.model_context_tokens + 9) // 10
+    return {
+        "kind": "estimate: UTF-8 bytes plus 32/message; no verified tokenizer",
+        "components": components | {"tool_schemas": len(canonical(tools))},
+        "input_tokens": estimated,
+        "output_reserved": profile.budgets.output_tokens,
+        "tool_result_reserved": headroom,
+        "tool_result_policy": "expected headroom capped at window/8; actual results rechecked",
+        "safety_reserved": safety,
+        "context_tokens": profile.model_context_tokens,
+        "total_reserved": estimated + profile.budgets.output_tokens + headroom + safety,
+    }
 
 
 def inspect_prompt(prompt: PreparedPrompt, *, hashes: bool = False) -> dict[str, object]:

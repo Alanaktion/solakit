@@ -464,6 +464,9 @@ class ModelAdapter:
                         request_id=recorded.id,
                         failure=failure,
                         response=Artifact.model_validate(self.store.artifact(new_id(), bytes(raw))),
+                        purpose="compaction"
+                        if manifest.get("purpose") == "compaction"
+                        else "conversation",
                         **values,
                     )
                     self.store.append(step)

@@ -6,12 +6,13 @@ import re
 from collections.abc import Sequence
 from functools import partial
 
+from solakit.compaction import Compactor, select
 from solakit.config import ConfigError, EffectiveProfile, restrict_to_admission
 from solakit.dispatch import Dispatcher
 from solakit.evidence import StorageError, canonical
 from solakit.memory import MemoryService
 from solakit.model import ModelAdapter, ModelError
-from solakit.prompts import PromptInput, PromptTurn, assemble
+from solakit.prompts import ContextLimit, PromptInput, PromptTurn, assemble
 from solakit.records import (
     RUN_TRANSITIONS,
     ErrorCode,
@@ -128,6 +129,8 @@ def project_run(store: Store, run_id: str, cap: int) -> tuple[PromptTurn, ...]:
                 )
             )
         elif isinstance(record, ModelStep):
+            if record.purpose == "compaction":
+                continue
             if not record.content and not record.tool_calls:
                 continue
             turns.append(
@@ -370,6 +373,8 @@ class RunLoop:
                 reason = Failure(code=ErrorCode.CONFIGURATION, message="Admission no longer valid")
             elif isinstance(error, ModelError):
                 reason = Failure(code=error.code, message=str(error))
+            elif isinstance(error, ContextLimit):
+                reason = Failure(code=ErrorCode.CONTEXT_LIMIT, message=str(error))
             else:
                 reason = Failure(
                     code=ErrorCode.INVALID_MODEL_RESPONSE,
@@ -383,20 +388,11 @@ class RunLoop:
         tools = self.dispatcher.bind(run.id)
         source = records(self.store, run.id)
         user = next(r for r in source if isinstance(r, Message) and r.role == "user")
-        history: list[PromptTurn] = []
+        history: tuple[PromptTurn, ...] = ()
+        selection = None
         if admitted.mode != SessionMode.EPHEMERAL:
-            after = 0
-            while page := self.store.runs(run.session_id, after=after, limit=100):
-                for _, previous in page:
-                    if previous.id == run.id:
-                        break
-                    if previous.started_at is not None:
-                        history.extend(
-                            project_run(self.store, previous.id, admitted.budgets.tool_result_bytes)
-                        )
-                if any(previous.id == run.id for _, previous in page):
-                    break
-                after = page[-1][0]
+            selection = select(self.store, run, admitted.budgets.tool_result_bytes)
+            history = selection.turns
         recall = None
         if self.memory:
             query = (
@@ -444,7 +440,8 @@ class RunLoop:
             )
             self.store.append(note)
 
-        for index in range(1, admitted.budgets.model_calls + 1):
+        index = 1
+        while index <= admitted.budgets.model_calls:
             profile = self._profile(admitted)
             if (
                 index > profile.budgets.model_calls
@@ -452,24 +449,56 @@ class RunLoop:
             ):
                 raise RunFailure(ErrorCode.BUDGET_EXCEEDED, "Run budget exhausted")
             current = project_run(self.store, run.id, profile.budgets.tool_result_bytes)
-            prompt = assemble(
-                profile,
-                PromptInput(
-                    at=utc_now(),
-                    input=user,
-                    prior_turns=tuple(history),
-                    continuation=current[1:],
-                    enable_thinking=False,
-                    recall=recall if profile.memory_mode != "off" else None,
-                    tools=tools.schemas(deferred=hidden),
-                    tool_catalog=tuple(sorted(hidden & tools.eligible())),
-                    disclosure="deferred-experiment-v1" if self.deferred else "eager-v1",
-                ),
+            frozen = PromptInput(
+                at=utc_now(),
+                input=user,
+                prior_turns=tuple(history),
+                continuation=current[1:],
+                enable_thinking=False,
+                recall=recall if profile.memory_mode != "off" else None,
+                tools=tools.schemas(deferred=hidden),
+                tool_catalog=tuple(sorted(hidden & tools.eligible())),
+                disclosure="deferred-experiment-v1" if self.deferred else "eager-v1",
+                summary=selection.summary if selection else None,
+                context_boundary=selection.boundary.through_message_id
+                if selection and selection.boundary
+                else None,
+                compaction=selection.provenance if selection else None,
             )
+            if index == 1:
+                _, index = await Compactor(self.store, self.model, self._profile).prepare(
+                    profile,
+                    run,
+                    frozen,
+                    index,
+                )
+                profile = self._profile(admitted)
+                if selection is not None:
+                    selection = select(self.store, run, profile.budgets.tool_result_bytes)
+                    history = selection.turns
+                if index > profile.budgets.model_calls:
+                    raise RunFailure(ErrorCode.BUDGET_EXCEEDED, "Model call budget exhausted")
+                frozen = frozen.model_copy(
+                    update={
+                        "prior_turns": history,
+                        "summary": selection.summary if selection else None,
+                        "context_boundary": selection.boundary.through_message_id
+                        if selection and selection.boundary
+                        else None,
+                        "compaction": selection.provenance if selection else None,
+                        "recall": recall if profile.memory_mode != "off" else None,
+                        "tools": tools.schemas(deferred=hidden),
+                        "tool_catalog": tuple(sorted(hidden & tools.eligible())),
+                    }
+                )
+                prompt = assemble(profile, frozen)
+            else:
+                prompt = assemble(profile, frozen)
             async with asyncio.timeout(
                 profile.budgets.active_seconds - (asyncio.get_running_loop().time() - started)
             ):
                 result = await self.model.complete(prompt, run, index)
+            index += 1
             step = result.step
             if step.failure:
                 if step.tool_calls and step.failure.code == ErrorCode.INVALID_MODEL_RESPONSE:

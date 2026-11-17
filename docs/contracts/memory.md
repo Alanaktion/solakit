@@ -1,5 +1,9 @@
 # Semantic memory contract (Phase 7)
 
+Phase 8 context summaries are excluded from automatic extraction, including
+prepared and superseded summaries. Only original conversation and staged exact
+notes enter the memory payload; see [context compaction](context-compaction.md).
+
 OpenViking accepts stable **>=0.5.5,<0.6.0**, including four-part hotfix versions
 such as `0.5.5.1`. Older releases, prereleases, local version labels, and new minor
 versions require review. The verified live baseline remains **0.5.5**; accepting a

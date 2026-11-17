@@ -79,8 +79,10 @@ def test_estimates_reserve_output_and_tool_headroom_without_trimming() -> None:
     profile, frozen = golden()
     accounting = json.loads(assemble(profile, frozen).manifest)["accounting"]
     assert "estimate" in accounting["kind"] and "no verified tokenizer" in accounting["kind"]
-    assert accounting["tool_result_reserved"] == 16384
+    assert accounting["tool_result_reserved"] == 4096
     assert accounting["output_reserved"] == 4096
+    assert accounting["safety_reserved"] == 3277
+    assert accounting["components"]["tool_schemas"] > 0
     with pytest.raises(ValueError, match="budget"):
         assemble(profile.model_copy(update={"model_context_tokens": 1024}), frozen)
 

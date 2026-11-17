@@ -70,6 +70,13 @@ Read the [memory contract](../contracts/memory.md), [runbook](../memory.md), and
 fresh-session retrieval in the operator-approved `sola-test` account. Production
 configuration/data migration and cutover retain their Phase 13 gate.
 
+Phase 8 adds conservative component accounting, bounded local-Qwen summaries,
+whole-turn context boundaries and recoverable manifests without rewriting history.
+Read the [context contract](../contracts/context-compaction.md) and
+[Phase 8 evidence](../validation/phase-08.md). Repeated compaction and process-death
+recovery pass deterministic checks; a synthetic live session preserves identity,
+corrections, known facts and an unfinished commitment across two compactions.
+
 - One Sola, one operator, one runtime process, one event loop, one worker, one shared inference semaphore.
 - Pinned local Qwen served by oMLX. No silent model substitution.
 - Operator-owned SOUL, curated memory, and prompt fragments preserve identity. The harness supplies mechanics rather than personality policy.

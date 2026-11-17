@@ -56,7 +56,8 @@
     "request_id": null,
     "response": null,
     "usage": null,
-    "tool_calls": []
+    "tool_calls": [],
+    "purpose": "conversation"
   },
   "ToolCall": {
     "schema_version": 1,
@@ -157,7 +158,9 @@
     "summary_message_id": "00000000000000000000000000000004",
     "source_message_ids": [
       "0000000000000000000000000000000d"
-    ]
+    ],
+    "state": "committed",
+    "manifest": null
   },
   "ModelRequest": {
     "schema_version": 1,
