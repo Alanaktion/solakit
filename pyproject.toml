@@ -13,6 +13,7 @@ dependencies = [
     "httpx2>=2.16.2",
     "uvicorn>=0.54.0",
     "pydantic>=2.12",
+    "apscheduler>=3.11.3,<4",
 ]
 
 [project.scripts]

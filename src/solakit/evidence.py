@@ -14,17 +14,20 @@ from solakit.records import (
     CompactionBoundary,
     Delivery,
     DurableEvent,
+    Job,
     MemoryCommit,
     MemoryNote,
     MemoryRecall,
     Message,
     ModelRequest,
     ModelStep,
+    Occurrence,
     Record,
     RecordID,
     RecoveryNote,
     Run,
     RunState,
+    SchedulerControl,
     SchemaVersion,
     Session,
     ToolCall,
@@ -47,6 +50,9 @@ RECORDS: dict[str, type[Record]] = {
     "memory_recall": MemoryRecall,
     "compaction": CompactionBoundary,
     "recovery": RecoveryNote,
+    "job": Job,
+    "occurrence": Occurrence,
+    "scheduler": SchedulerControl,
 }
 SEGMENT = re.compile(r"^[0-9]{8}\.jsonl$")
 
@@ -151,6 +157,9 @@ class Entry(Value):
         "compaction",
         "recovery",
         "legacy",
+        "job",
+        "occurrence",
+        "scheduler",
     ]
     record: dict[str, object]
     event: DurableEvent | None = None
@@ -158,7 +167,9 @@ class Entry(Value):
 
     @model_validator(mode="after")
     def valid_record(self) -> Entry:
-        if (self.kind not in ("session", "legacy")) != (self.event is not None):
+        if (self.kind not in ("session", "legacy", "job", "occurrence", "scheduler")) != (
+            self.event is not None
+        ):
             raise ValueError("execution entries require an event; session/legacy entries have none")
         if self.kind in RECORDS:
             record = RECORDS[self.kind].model_validate_json(canonical(self.record))

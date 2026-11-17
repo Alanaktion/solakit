@@ -5,11 +5,13 @@ import contextvars
 import re
 from collections.abc import Sequence
 from functools import partial
+from typing import TYPE_CHECKING
 
 from solakit.compaction import Compactor, select
 from solakit.config import ConfigError, EffectiveProfile, restrict_to_admission
 from solakit.dispatch import Dispatcher
 from solakit.evidence import StorageError, canonical
+from solakit.lineage import current_run, deny_autonomous_successor
 from solakit.memory import MemoryService
 from solakit.model import ModelAdapter, ModelError
 from solakit.prompts import ContextLimit, PromptInput, PromptTurn, assemble
@@ -19,6 +21,7 @@ from solakit.records import (
     Failure,
     Message,
     ModelStep,
+    Origin,
     Record,
     RecoveryNote,
     Run,
@@ -29,6 +32,9 @@ from solakit.records import (
     utc_now,
 )
 from solakit.store import Store
+
+if TYPE_CHECKING:
+    from solakit.jobs import JobService
 
 _CURRENT_SESSION: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "sola_run_session", default=None
@@ -79,6 +85,9 @@ def requested_tools(text: str, names: Sequence[str]) -> set[str]:
             not ({"image", "images"} & set(re.split(r"[_.-]", name)))
             or image_target
             or name in text
+        )
+        and (
+            not name.startswith("jobs.") or bool(re.search(r"\b(?:jobs?|wakes?|schedule)\b", text))
         )
     }
 
@@ -194,6 +203,7 @@ class RunLoop:
             raise ValueError("queue and active bounds must be positive")
         self.store, self.model, self.dispatcher = store, model, dispatcher
         self.memory = memory
+        self.jobs: JobService | None = None
         self.max_pending, self.max_active, self.deferred = max_pending, max_active, deferred
         self.active: dict[str, asyncio.Task[None]] = {}
         self.sessions: set[str] = set()
@@ -233,6 +243,7 @@ class RunLoop:
     def submit(
         self, session_id: str, *, profile: EffectiveProfile, content: str, request_id: str
     ) -> Run:
+        deny_autonomous_successor()
         if not self.accepting or self.failure is not None:
             raise RuntimeError("run service unavailable")
         existing = self.store.request(request_id)
@@ -322,6 +333,15 @@ class RunLoop:
                         break
                     if run.session_id in self.sessions:
                         continue
+                    if self.jobs is not None and run.occurrence_id is not None:
+                        if not self.jobs.can_start(run):
+                            continue
+                        background = sum(
+                            self.store.run(identity).origin in (Origin.SCHEDULED, Origin.PROACTIVE)
+                            for identity in self.active
+                        )
+                        if background >= self.jobs.policy().background.max_active:
+                            continue
                     self.sessions.add(run.session_id)
                     task = asyncio.create_task(self._execute(run), name=f"sola-run-{run.id}")
                     self.active[run.id] = task
@@ -337,6 +357,7 @@ class RunLoop:
 
     async def _execute(self, queued: Run) -> None:
         token = _CURRENT_SESSION.set(queued.session_id)
+        lineage_token = current_run.set(queued)
         try:
             if self.store.run(queued.id).state != RunState.QUEUED:
                 return
@@ -344,6 +365,8 @@ class RunLoop:
                 canonical(self.store.admission_profile(queued.id))
             )
             self._profile(admitted)
+            if self.jobs is not None:
+                self.jobs.validate_execution(queued)
             if self.store.session(queued.session_id).archived:
                 raise RunFailure(ErrorCode.INVALID_INPUT, "Session was archived before execution")
             run = self.store.transition_run(queued.id, RunState.RUNNING)
@@ -382,6 +405,7 @@ class RunLoop:
                 )
             self.store.transition_run(queued.id, RunState.FAILED, reason=reason)
         finally:
+            current_run.reset(lineage_token)
             _CURRENT_SESSION.reset(token)
 
     async def _cycle(self, run: Run, admitted: EffectiveProfile) -> None:
@@ -541,6 +565,14 @@ class RunLoop:
                         name=proposed.name,
                         arguments=proposed.arguments,
                     )
+                    declared = self.dispatcher.registry.tools.get(call.name)
+                    if (
+                        self.jobs is not None
+                        and declared is not None
+                        and declared.consequential
+                        and call.name in tools.eligible()
+                    ):
+                        await self.jobs.wait_for_effect(run, call.name)
                     receipt = await tools.dispatch(call)
                     attempted.add(call.name)
                     self.store.append(
@@ -609,20 +641,23 @@ class RunLoop:
                     raise RunFailure(
                         ErrorCode.INVALID_MODEL_RESPONSE, "Malformed calls were not repaired"
                     )
-                self.store.append(
-                    Message(
-                        origin=run.origin,
-                        session_id=run.session_id,
-                        run_id=run.id,
-                        role="assistant",
-                        content=step.content,
+                if self.jobs is not None and run.occurrence_id is not None:
+                    self.jobs.finish(run, step.content, sticky)
+                else:
+                    self.store.append(
+                        Message(
+                            origin=run.origin,
+                            session_id=run.session_id,
+                            run_id=run.id,
+                            role="assistant",
+                            content=step.content,
+                        )
                     )
-                )
-                self.store.transition_run(
-                    run.id,
-                    RunState.FAILED if sticky else RunState.COMPLETED,
-                    reason=sticky,
-                )
+                    self.store.transition_run(
+                        run.id,
+                        RunState.FAILED if sticky else RunState.COMPLETED,
+                        reason=sticky,
+                    )
                 if self.memory:
                     self.memory.changed.set()
                 return

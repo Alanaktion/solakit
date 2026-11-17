@@ -79,7 +79,9 @@ def harness(
 ) -> tuple[ApplicationContext, list[dict[str, Any]]]:
     context = compose(profile)
     assert context.tools and context.model
-    context.tools.registry = Registry((*TOOLS, *extra))
+    context.tools.registry = Registry(
+        (*(tool for tool in TOOLS if not tool.name.startswith("jobs.")), *extra)
+    )
     names = frozenset(context.tools.registry.tools)
     context.profile = profile.model_copy(
         update={

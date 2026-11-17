@@ -77,6 +77,12 @@ Read the [context contract](../contracts/context-compaction.md) and
 recovery pass deterministic checks; a synthetic live session preserves identity,
 corrections, known facts and an unfinished commitment across two compactions.
 
+Phase 9 adds SQLite-owned job definitions/occurrence claims, APScheduler wakes,
+durable quiet-hour local delivery and bounded proactive work. The real scheduled
+Qwen → bound topic → OpenViking extraction gate passed in the approved test account.
+Read the [job contract](../contracts/jobs.md) and [Phase 9 evidence](../validation/phase-09.md).
+Job HTTP/CLI/UI surfaces and production job migration remain later gates.
+
 - One Sola, one operator, one runtime process, one event loop, one worker, one shared inference semaphore.
 - Pinned local Qwen served by oMLX. No silent model substitution.
 - Operator-owned SOUL, curated memory, and prompt fragments preserve identity. The harness supplies mechanics rather than personality policy.

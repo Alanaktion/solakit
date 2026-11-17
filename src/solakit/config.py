@@ -5,6 +5,7 @@ from fnmatch import fnmatchcase
 from pathlib import Path
 from typing import Annotated, Literal
 from urllib.parse import urlsplit
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import Field, ValidationError, field_validator
 
@@ -116,6 +117,27 @@ class MemorySettings(Value):
         return roots
 
 
+class BackgroundSettings(Value):
+    timezone: str = "America/Denver"
+    quiet_start: Annotated[int, Field(ge=0, le=23)] = 22
+    quiet_end: Annotated[int, Field(ge=0, le=23)] = 8
+    topic_cooldown_seconds: Annotated[int, Field(ge=1, le=86400)] = 3600
+    hourly_runs: Count = 4
+    daily_runs: Annotated[int, Field(ge=1, le=10000)] = 24
+    max_active: Count = 1
+    max_pending: Count = 8
+    notification_ttl_seconds: Seconds = 86400
+
+    @field_validator("timezone")
+    @classmethod
+    def iana_timezone(cls, value: str) -> str:
+        try:
+            ZoneInfo(value)
+        except ValueError, ZoneInfoNotFoundError:
+            raise ValueError("background timezone must be an IANA timezone") from None
+        return value
+
+
 class OperatorConfig(Value):
     schema_version: SchemaVersion = 1
     data_dir: str = "~/.local/share/sola"
@@ -129,6 +151,7 @@ class OperatorConfig(Value):
     defaults: ProfileSettings = Field(default_factory=ProfileSettings)
     profiles: dict[Name, ProfileSettings] = Field(default_factory=dict)
     proactive_budgets: BudgetOverrides = Field(default_factory=BudgetOverrides)
+    background: BackgroundSettings = Field(default_factory=BackgroundSettings)
 
 
 class EffectiveProfile(Value):
@@ -147,6 +170,8 @@ class EffectiveProfile(Value):
     shutdown_timeout_seconds: int
     workspace_roots: tuple[Path, ...]
     memory: MemorySettings = Field(default_factory=MemorySettings)
+    background: BackgroundSettings = Field(default_factory=BackgroundSettings)
+    proactive_budgets: BudgetOverrides = Field(default_factory=BudgetOverrides)
     tool_modules: tuple[str, ...] = ()
     loaded_tools: frozenset[str]
     granted_tools: frozenset[str]
@@ -275,7 +300,7 @@ def resolve_profile(
     if mode != SessionMode.SHARED:
         memory = "off"
         sources["memory_mode"] = f"session mode: {mode}"
-    if origin == Origin.PROACTIVE:
+    if origin in (Origin.SCHEDULED, Origin.PROACTIVE):
         changes = {"model_calls": 8, "tool_calls": 12, "active_seconds": 600}
         changes.update(config.proactive_budgets.model_dump(exclude_none=True))
         values = {key: min(getattr(budgets, key), value) for key, value in changes.items()}
@@ -306,6 +331,8 @@ def resolve_profile(
         ("soul_file", "soul_file"),
         ("curated_memory_file", "curated_memory_file"),
         ("memory", "memory"),
+        ("background", "background"),
+        ("proactive_budgets", "proactive_budgets"),
         ("loaded_tools", "loaded_tools"),
         ("tool_modules", "tool_modules"),
         ("shutdown_timeout_seconds", "shutdown_timeout_seconds"),
@@ -339,6 +366,8 @@ def resolve_profile(
         shutdown_timeout_seconds=config.shutdown_timeout_seconds,
         workspace_roots=roots,
         memory=config.memory,
+        background=config.background,
+        proactive_budgets=config.proactive_budgets,
         tool_modules=tuple(config.tool_modules),
         loaded_tools=frozenset(config.loaded_tools),
         granted_tools=grants,

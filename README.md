@@ -60,7 +60,7 @@ uv run --locked python scripts/smoke_wheel.py
 ```
 
 See [evaluation instructions](evals/README.md), the [phase plans](docs/plans/README.md),
-and [validation evidence](docs/validation/phase-08.md). The
+and [validation evidence](docs/validation/phase-09.md). The
 [tool SDK and access matrix](docs/contracts/tools.md) describe explicit pack loading,
 guarded file access, transcript search, status, and scoped memory tools.
 The separately installable [example pack](examples/phase5_pack/) demonstrates
@@ -71,5 +71,7 @@ exact note staging, restart-safe extraction observation, and copied-configuratio
 migration. Setup, isolated live probes and reconciliation are in the
 [memory runbook](docs/memory.md). Phase 8 adds
 [context compaction](docs/contracts/context-compaction.md), private summary provenance,
-and restart recovery while preserving original searchable history.
-Scheduling, UI and production cutover retain later gates.
+and restart recovery while preserving original searchable history. Phase 9 adds
+[durable scheduled/proactive jobs](docs/contracts/jobs.md), bounded wake-ups,
+quiet-hour delivery and inspectable occurrence outcomes through `context.jobs`.
+UI, authenticated job endpoints and production cutover retain later gates.

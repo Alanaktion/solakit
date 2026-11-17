@@ -105,7 +105,17 @@
     "timezone": "America/Denver",
     "session_id": "00000000000000000000000000000001",
     "mode": "shared",
-    "enabled": false
+    "enabled": false,
+    "version": 1,
+    "generation": 1,
+    "paused": false,
+    "deleted": false,
+    "next_due": null,
+    "consumed": false,
+    "tools": null,
+    "workspace_roots": null,
+    "budgets": {},
+    "delivery": "session"
   },
   "Occurrence": {
     "schema_version": 1,
@@ -116,7 +126,14 @@
     "due_at": "2026-11-16T12:00:00Z",
     "state": "failed",
     "run_id": "00000000000000000000000000000002",
-    "reason": null
+    "reason": null,
+    "generation": 1,
+    "trigger": "scheduled",
+    "definition": {},
+    "local_slot": "",
+    "coalesced_from": null,
+    "decision": "pending",
+    "explanation": ""
   },
   "Delivery": {
     "schema_version": 1,
@@ -127,7 +144,10 @@
     "run_id": "00000000000000000000000000000002",
     "message_id": "00000000000000000000000000000004",
     "state": "pending",
-    "reason": null
+    "reason": null,
+    "content": null,
+    "not_before": null,
+    "expires_at": null
   },
   "MemoryCommit": {
     "schema_version": 1,

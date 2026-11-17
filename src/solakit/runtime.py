@@ -14,6 +14,7 @@ from solakit.store import Store
 
 if TYPE_CHECKING:
     from solakit.dispatch import Dispatcher
+    from solakit.jobs import JobService
     from solakit.memory import MemoryService
     from solakit.model import ModelAdapter
     from solakit.run_loop import RunLoop
@@ -74,6 +75,7 @@ class ApplicationContext:
     tools: Dispatcher | None = None
     runs: RunLoop | None = None
     memory: MemoryService | None = None
+    jobs: JobService | None = None
     inference: asyncio.Semaphore = field(default_factory=lambda: asyncio.Semaphore(1), init=False)
     state: str = field(default="stopped", init=False)
     _active: list[Resource] = field(default_factory=list, init=False, repr=False)
@@ -154,6 +156,7 @@ def compose(
 ) -> ApplicationContext:
     """Resources are supplied in dependency order, closed in reverse order."""
     from solakit.dispatch import Dispatcher, load_registry
+    from solakit.jobs import JobService
     from solakit.memory import MemoryService, OpenViking
     from solakit.model import ModelAdapter
     from solakit.redaction import Redactor
@@ -163,10 +166,26 @@ def compose(
     context = ApplicationContext(profile=profile, store=store)
     redactor = Redactor()
     context.model = ModelAdapter(profile, store, context.inference, redactor=redactor)
+
+    def current(admitted: EffectiveProfile) -> EffectiveProfile:
+        from solakit.config import ConfigError
+
+        if admitted.name != context.profile.name:
+            raise ConfigError("profile requires an operator configuration resolver")
+        return context.profile.model_copy(
+            update={
+                "origin": admitted.origin,
+                "mode": admitted.mode,
+                "memory_mode": context.profile.memory_mode
+                if admitted.mode.value == "shared"
+                else "off",
+            }
+        )
+
     context.tools = Dispatcher(
         store,
         load_registry(profile),
-        current_profile or (lambda admitted: context.profile),
+        current_profile or current,
         redactor=redactor,
     )
     context.memory = MemoryService(
@@ -176,5 +195,15 @@ def compose(
     )
     context.tools.memory = context.memory
     context.runs = RunLoop(store, context.model, context.tools, memory=context.memory)
-    context.resources = (store, context.model, context.memory, *resources, context.runs)
+    context.jobs = JobService(store, context.runs, lambda: context.profile)
+    context.tools.jobs = context.jobs
+    context.runs.jobs = context.jobs
+    context.resources = (
+        store,
+        context.model,
+        context.memory,
+        *resources,
+        context.runs,
+        context.jobs,
+    )
     return context

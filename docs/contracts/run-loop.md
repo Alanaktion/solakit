@@ -22,8 +22,9 @@ with the same session/profile/origin/input returns the original run, even after
 configuration changes or terminal completion; changed input conflicts. A retry
 never gets a fresh authority ceiling through the same key. Low-level Store
 methods remain available to maintenance/tests; application callers use this service.
-Scheduled/proactive admission still requires Phase 9 occurrence claims and is
-refused here. No job-management, shell or delegation executor was added.
+Scheduled/proactive admission requires the atomic occurrence claims supplied by
+`context.jobs`, rather than `runs.submit`; see the [job contract](jobs.md).
+Shell and delegation remain deferred.
 
 ## State and evidence
 
@@ -93,7 +94,9 @@ run rejoins behind already waiting calls on its next model step. Tools and waits
 hold the session slot but release the inference permit. Tests measure one concurrent
 inference and a maximum eight-position interval between turns under mixed-origin
 load. Compaction uses this same permit, run deadline and model-call budget.
-Durable scheduled/wake fairness remains a Phase 9 integration gate.
+Phase 9 additionally limits automatic scheduled/proactive work to one active run
+and eight pending by default, with durable topic/hour/day admission caps. Interactive
+work remains eligible in the other slots; the same FIFO inference permit is shared.
 
 `wait` observes state and does not own execution. Its timeout, cancellation, or a
 future HTTP disconnection leaves admitted work running. A wait from within a tool

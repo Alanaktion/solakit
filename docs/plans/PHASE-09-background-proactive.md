@@ -1,6 +1,9 @@
 # Phase 9 — Durable jobs, background work, and proactive actions
 
-Status: planned. Depends on [Phases 6–8](README.md). Milestone: Sola continues bounded personal-agent work without an open client.
+Status: implemented; deterministic checks and the live scheduled-run/extraction gate passed.
+See the [job contract](../contracts/jobs.md) and [evidence](../validation/phase-09.md).
+Operator acceptance and production migration/soak remain later gates.
+Depends on [Phases 6–8](README.md). Milestone: Sola continues bounded personal-agent work without an open client.
 
 ## Outcome
 

@@ -270,6 +270,16 @@ class Job(Record):
     session_id: RecordID | None = None
     mode: SessionMode = SessionMode.SHARED
     enabled: bool = False
+    version: Annotated[int, Field(ge=1)] = 1
+    generation: Annotated[int, Field(ge=1)] = 1
+    paused: bool = False
+    deleted: bool = False
+    next_due: Timestamp | None = None
+    consumed: bool = False
+    tools: tuple[str, ...] | None = None
+    workspace_roots: tuple[str, ...] | None = None
+    budgets: dict[str, int] = Field(default_factory=dict)
+    delivery: Literal["session", "none"] = "session"
 
     @model_validator(mode="after")
     def target(self) -> Self:
@@ -284,6 +294,17 @@ class Occurrence(Record):
     state: Literal["pending", "claimed", "completed", "failed", "skipped", "uncertain"] = "pending"
     run_id: RecordID | None = None
     reason: Failure | None = None
+    generation: Annotated[int, Field(ge=1)] = 1
+    trigger: Literal["scheduled", "manual"] = "scheduled"
+    definition: dict[str, JsonValue] = Field(default_factory=dict)
+    local_slot: str = ""
+    coalesced_from: Timestamp | None = None
+    decision: Literal["pending", "no_action", "work", "message", "failed", "skipped"] = "pending"
+    explanation: str = ""
+
+
+class SchedulerControl(Record):
+    paused: bool = False
 
 
 class DeliveryState(StrEnum):
@@ -311,6 +332,9 @@ class Delivery(Record):
     message_id: RecordID
     state: DeliveryState = DeliveryState.PENDING
     reason: Failure | None = None
+    content: str | None = None
+    not_before: Timestamp | None = None
+    expires_at: Timestamp | None = None
 
     def transition(self, state: DeliveryState, *, reason: Failure | None = None) -> Self:
         allowed = {

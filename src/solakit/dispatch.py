@@ -31,6 +31,7 @@ from solakit.store import Store
 from solakit.tools import TOOLS
 
 if TYPE_CHECKING:
+    from solakit.jobs import JobService
     from solakit.memory import MemoryService
 
 MAX_ARGUMENT_BYTES = 65536
@@ -49,6 +50,7 @@ class Dispatcher:
         self.store, self.registry, self.current = store, registry, current
         self.redactor = redactor or Redactor()
         self.memory: MemoryService | None = None
+        self.jobs: JobService | None = None
         package = Path(__file__).resolve().parent
         checkout = package.parent.parent
         self.protected: tuple[Path, ...] = (
@@ -261,12 +263,29 @@ class Invocation:
             raise ToolError("Tool run budget exhausted", ErrorCode.BUDGET_EXCEEDED)
         if time.monotonic() - self.call_started >= profile.budgets.tool_timeout_seconds:
             raise ToolError("Tool execution timed out", ErrorCode.TIMEOUT)
-        if service == "files.write" and not tool.consequential:
+        if service in ("files.write", "effect") and not tool.consequential:
             raise ToolError("Tool did not declare writes", ErrorCode.TOOL_DENIED)
+        run = store.run(self.run_id)
+        if (
+            service == "files.write"
+            and tool.name != "memory.remember"
+            and run.occurrence_id is not None
+            and store.occurrence(run.occurrence_id).definition.get("workspace_roots") is None
+        ):
+            raise ToolError(
+                "Background file writes require an explicit job artifact root",
+                ErrorCode.TOOL_DENIED,
+            )
+        if (
+            tool.consequential
+            and self.dispatcher.jobs is not None
+            and not self.dispatcher.jobs.effect_allowed(store.run(self.run_id), tool.name)
+        ):
+            raise ToolError("Outbound effect deferred by quiet hours", ErrorCode.TOOL_DENIED)
         return profile
 
     def begin_effect(self, credentials: tuple[str, ...] = ()) -> None:
-        self.authority("files.write")
+        self.authority("effect")
         self.dispatcher.redactor.register(*credentials)
         self.effect = "uncertain"
 
@@ -305,6 +324,12 @@ class Invocation:
             "tool_attempts": self.dispatcher.store.tool_attempts(self.run_id),
             "search": self.dispatcher.store.search_status,
             "memory": self.dispatcher.memory.status() if self.dispatcher.memory else "unavailable",
+            "background": {
+                "paused": self.dispatcher.jobs.control().paused,
+                "failure": self.dispatcher.jobs.failure,
+            }
+            if self.dispatcher.jobs
+            else None,
         }
 
     async def recall(self, query: str) -> JsonValue:
@@ -337,6 +362,31 @@ class Invocation:
         note = self.dispatcher.memory.stage(self.run_id, self.call.id, content)
         self.confirm_effect()
         return {"status": "staged", "note_id": note.id, "run_id": note.run_id}
+
+    def jobs(self, action: str, arguments: dict[str, JsonValue]) -> JsonValue:
+        profile = self.authority()
+        if "jobs." + action not in profile.tools or self.dispatcher.jobs is None:
+            raise ToolError("Job operation is outside current authority", ErrorCode.TOOL_DENIED)
+        if action != "list" and profile.origin != Origin.INTERACTIVE:
+            raise ToolError("Autonomous work cannot manage wake-ups", ErrorCode.TOOL_DENIED)
+        if action != "list":
+            self.begin_effect()
+        try:
+            result = self.dispatcher.jobs.invoke(
+                action,
+                arguments,
+                self.dispatcher.store.run(self.run_id),
+                profile,
+            )
+        except ValueError, KeyError:
+            # Validation precedes mutations; a failed store still retains uncertainty.
+            if self.dispatcher.store.failed:
+                raise StorageError("Job mutation failed; recover before retry") from None
+            self.effect = "none"
+            raise ToolError("Invalid job operation or target", ErrorCode.INVALID_INPUT) from None
+        if action != "list":
+            self.confirm_effect()
+        return result
 
 
 def load_registry(profile: EffectiveProfile) -> Registry:

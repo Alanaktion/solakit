@@ -29,6 +29,14 @@ Initial engineering defaults, configurable downward/upward by the operator: one 
 
 A wake sees its explicit task/commitment, bound-session context and relevant scoped recall. It cannot scan all private topics or resources simply because it is proactive. Allowed outputs stay in that bound topic or a specifically configured artifact root. No external notification channel is required for v1. No-action is a successful evaluated wake with evidence, not an empty user-facing chat message.
 
+Phase 9 selects eight pending autonomous admissions, 24 admissions per rolling
+24 hours, one-hour cron misfire grace with coalescing, and 24-hour notification
+expiry. These are reversible engineering defaults in `[background]`; hourly,
+daily and topic counters survive restart. Both automatic scheduled and proactive
+origins share these bounds. Explicit run-now is separately attributed and bypasses
+automatic admission-rate and quiet-hour limits while retaining grants, run budgets,
+pause and overlap controls. See the [job contract](contracts/jobs.md).
+
 ## Durability and honest outcomes
 
 Immutable JSONL owns conversation/execution evidence, state.db owns operational coordination, and disposable search.db is rebuilt entirely from JSONL. Backups must include state.db and the evidence tree. Compaction selects a summary plus recent context without changing source evidence. Archives remain readable/searchable; archival does not delete data.

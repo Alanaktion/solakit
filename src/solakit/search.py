@@ -52,7 +52,7 @@ def _document(entry: Entry) -> tuple[str, str, str, str, str]:
     if entry.kind == "legacy":
         return entry.id, "", "", entry.kind, canonical(entry.record).decode()
     identity = str(entry.record["id"])
-    session = identity if entry.kind == "session" else str(entry.record["session_id"])
+    session = identity if entry.kind == "session" else str(entry.record.get("session_id") or "")
     run = identity if entry.kind == "run" else str(entry.record.get("run_id", ""))
     text = entry.record.get("content")
     if not isinstance(text, str):

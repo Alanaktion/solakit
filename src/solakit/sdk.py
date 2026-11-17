@@ -58,6 +58,8 @@ class Services(Protocol):
 
     def remember(self, content: str) -> JsonValue: ...
 
+    def jobs(self, action: str, arguments: dict[str, JsonValue]) -> JsonValue: ...
+
 
 @dataclass(frozen=True)
 class ToolContext:

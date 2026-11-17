@@ -28,6 +28,7 @@ from solakit.records import (
     DurableEvent,
     ErrorCode,
     Failure,
+    Job,
     MemoryCommit,
     MemoryNote,
     MemoryRecall,
@@ -35,12 +36,14 @@ from solakit.records import (
     Message,
     ModelRequest,
     ModelStep,
+    Occurrence,
     Origin,
     Record,
     RecordID,
     RecoveryNote,
     Run,
     RunState,
+    SchedulerControl,
     Session,
     SessionMode,
     Timestamp,
@@ -64,6 +67,9 @@ type StoredRecord = (
     | MemoryCommit
     | CompactionBoundary
     | RecoveryNote
+    | Job
+    | Occurrence
+    | SchedulerControl
 )
 
 SCHEMA = """
@@ -216,7 +222,7 @@ class Store:
                 raise CorruptionError("operational snapshot differs from evidence")
             record = RECORDS[row["kind"]].model_validate_json(canonical(latest_entry.record))
             session_id = (
-                record.id if isinstance(record, Session) else latest_entry.record["session_id"]
+                record.id if isinstance(record, Session) else latest_entry.record.get("session_id")
             )
             run_id = record.id if isinstance(record, Run) else latest_entry.record.get("run_id")
             if (
@@ -271,13 +277,16 @@ class Store:
 
     def _entry(self, record: StoredRecord, details: dict[str, object]) -> Entry:
         kind = next(name for name, cls in RECORDS.items() if isinstance(record, cls))
-        session_id = record.id if isinstance(record, Session) else str(record.session_id)
+        session_id = (
+            record.id if isinstance(record, Session) else getattr(record, "session_id", None)
+        )
         event = None
-        sequence = self.db.execute(
-            "SELECT sequence FROM sessions WHERE id=?", (session_id,)
-        ).fetchone()[0]
+        sequence = 0
         entry_id = new_id()
-        if not isinstance(record, Session):
+        if not isinstance(record, (Session, Job, Occurrence, SchedulerControl)):
+            sequence = self.db.execute(
+                "SELECT sequence FROM sessions WHERE id=?", (session_id,)
+            ).fetchone()[0]
             sequence += 1
             self.db.execute("UPDATE sessions SET sequence=? WHERE id=?", (sequence, session_id))
             event = DurableEvent.model_validate(
@@ -357,6 +366,22 @@ class Store:
 
     def run(self, identity: str) -> Run:
         return self._load("run", identity, Run)
+
+    def job(self, identity: str) -> Job:
+        return self._load("job", identity, Job)
+
+    def occurrence(self, identity: str) -> Occurrence:
+        return self._load("occurrence", identity, Occurrence)
+
+    def jobs(self, *, include_deleted: bool = False) -> list[Job]:
+        return [
+            self.job(row[0])
+            for row in self.db.execute(
+                "SELECT id FROM entities WHERE kind='job' "
+                "AND (? OR NOT json_extract(body,'$.deleted')) ORDER BY created_at,id",
+                (include_deleted,),
+            ).fetchall()
+        ]
 
     def admission_profile(self, run_id: str) -> dict[str, object]:
         self.run(run_id)
@@ -466,7 +491,11 @@ class Store:
         job_id: str | None = None,
         occurrence_id: str | None = None,
         retry_of: str | None = None,
+        claim: tuple[Job, Occurrence, Job] | None = None,
     ) -> Run:
+        from solakit.lineage import deny_autonomous_successor
+
+        deny_autonomous_successor()
         session = self.session(session_id)
         valid_id(request_id)
         details: dict[str, object] = {
@@ -488,7 +517,32 @@ class Store:
                 raise ValueError("idempotency key reused with different admission")
             return self.run(existing["run_id"])
         if origin in (Origin.SCHEDULED, Origin.PROACTIVE):
-            raise ValueError("scheduled admission requires Phase 9 occurrence claiming")
+            if claim is None:
+                raise ValueError("scheduled admission requires an occurrence claim")
+            job, occurrence, advanced = claim
+            if (
+                (job_id, occurrence_id, origin, profile)
+                != (job.id, occurrence.id, job.origin, job.profile)
+                or occurrence.job_id != job.id
+                or occurrence.generation != job.generation
+                or occurrence.definition != job.model_dump(mode="json")
+                or (advanced.id, advanced.version, advanced.generation)
+                != (job.id, job.version, job.generation)
+                or self.job(job.id) != job
+                or job.deleted
+                or (job.session_id is not None and job.session_id != session_id)
+                or job.mode != session.mode
+                or (
+                    occurrence.trigger == "scheduled"
+                    and (not job.enabled or job.paused or job.consumed)
+                )
+                or self.db.execute(
+                    "SELECT 1 FROM entities WHERE kind='occurrence' AND id=?", (occurrence.id,)
+                ).fetchone()
+            ):
+                raise ValueError("invalid or already claimed occurrence")
+        elif claim is not None:
+            raise ValueError("only scheduled admission may claim occurrences")
         if session.archived:
             raise ValueError("archived sessions cannot admit work")
         if (
@@ -518,14 +572,35 @@ class Store:
                 "INSERT INTO admissions VALUES (?,?,?)", (request_id, fingerprint, run.id)
             )
 
-        self._commit((run, message), details=details, prepare=prepare)
+        claimed: tuple[StoredRecord, ...] = ()
+        if claim is not None:
+            job, occurrence, advanced = claim
+            occurrence = Occurrence.model_validate(
+                occurrence.model_dump() | {"run_id": run.id, "state": "claimed"}
+            )
+            claimed = (occurrence, advanced)
+        self._commit((*claimed, run, message), details=details, prepare=prepare)
         return run
 
     def transition_run(
         self, identity: str, state: RunState, *, reason: Failure | None = None
     ) -> Run:
         run = self.run(identity).transition(state, at=utc_now(), reason=reason)
-        self._commit((run,))
+        records: tuple[StoredRecord, ...] = (run,)
+        if run.occurrence_id is not None and state not in (RunState.QUEUED, RunState.RUNNING):
+            occurrence = self.occurrence(run.occurrence_id)
+            occurrence = Occurrence.model_validate(
+                occurrence.model_dump()
+                | {
+                    "state": "completed"
+                    if state == RunState.COMPLETED
+                    else ("uncertain" if state == RunState.INTERRUPTED else "failed"),
+                    "decision": occurrence.decision if state == RunState.COMPLETED else "failed",
+                    "reason": reason,
+                }
+            )
+            records += (occurrence,)
+        self._commit(records)
         return run
 
     def append(
@@ -595,7 +670,8 @@ class Store:
             ):
                 raise ValueError("model response differs from its request")
         if isinstance(record, Delivery):
-            self._same_run(self._load("message", record.message_id, Message), record)
+            if record.content is None:
+                self._same_run(self._load("message", record.message_id, Message), record)
             if record.state != DeliveryState.PENDING:
                 raise ValueError("delivery must start pending")
         if isinstance(record, MemoryNote):
@@ -698,6 +774,12 @@ class Store:
             raise ValueError("cursor must be a nonnegative sequence")
         rows = self.db.execute(
             "SELECT id,sequence FROM entities WHERE kind=? AND session_id=? AND sequence>? "
+            "AND (kind!='message' OR json_extract(body,'$.origin') "
+            "NOT IN ('scheduled','proactive') "
+            "OR (json_extract(body,'$.role')='assistant' AND EXISTS ("
+            "SELECT 1 FROM entities AS delivery WHERE delivery.kind='delivery' "
+            "AND json_extract(delivery.body,'$.message_id')=entities.id "
+            "AND json_extract(delivery.body,'$.state')='delivered'))) "
             "ORDER BY sequence,id LIMIT ?",
             (kind, session_id, after, limit),
         ).fetchall()
