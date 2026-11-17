@@ -1,21 +1,278 @@
+import { LitElement, html, nothing, render as renderTemplate } from './lit-core.min.js';
 import { markdown } from './markdown.js';
 
 const $ = (id) => document.getElementById(id);
 const active = (run) => ['queued', 'running'].includes(run.state);
 const uid = () =>
-  Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('');
-const node = (tag, text, className) => {
-  const result = document.createElement(tag);
-  if (text !== undefined) result.textContent = text;
-  if (className) result.className = className;
-  return result;
+  Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) =>
+    b.toString(16).padStart(2, '0')
+  ).join('');
+
+// Light DOM keeps the shared stylesheet, labels and fragment links working across components.
+class SolaElement extends LitElement {
+  createRenderRoot() {
+    return this;
+  }
+}
+
+class SolaApp extends SolaElement {
+  render() {
+    return html`
+      <a class="skip" href="#draft">Skip to message</a>
+      <aside class="sidebar" aria-label="Topics">
+        <div class="brand">Sola <span>Your ongoing conversation</span></div>
+        <button @click=${newTopic} id="new-topic">＋ New topic</button>
+        <nav id="topics" aria-label="Choose a topic"></nav>
+        <button @click=${action(() => loadTopics(true))} id="more-topics" hidden>
+          More topics
+        </button>
+        <label class="archive-toggle"
+          ><input @change=${action(() => loadTopics())} id="archived-topics" type="checkbox" />
+          Archived topics</label
+        >
+        <div class="sidebar-footer">
+          <button @click=${action(openSettings)} id="settings-open">Settings</button
+          ><button
+            @click=${action(async () => {
+              await api('/auth/logout', { method: 'POST' });
+              requireLogin();
+            })}
+            id="logout"
+          >
+            Sign out
+          </button>
+        </div>
+      </aside>
+      <main>
+        <header class="topbar">
+          <div>
+            <h1 id="topic-title">Conversation</h1>
+            <p id="topic-mode">A little room to think.</p>
+          </div>
+          <button @click=${editTopic} id="topic-edit" disabled>Topic details</button>
+        </header>
+        <p id="connection" role="status" aria-live="polite">Connecting…</p>
+        <div id="notice" role="alert" hidden>
+          <span id="notice-message"></span
+          ><button
+            @click=${() => {
+              $('notice').hidden = true;
+            }}
+            id="notice-dismiss"
+          >
+            Dismiss
+          </button>
+        </div>
+        <section @scroll=${historyScroll} id="history" aria-label="Conversation" tabindex="0">
+          <button @click=${action(older)} id="older" hidden>Load older conversation</button>
+          <div id="empty">
+            <h2>What’s on your mind?</h2>
+            <p id="empty-hint">Start a topic, then send Sola a message.</p>
+            <button @click=${newTopic} id="empty-new-topic" class="primary">Start a topic</button>
+          </div>
+          <div id="turns"></div>
+        </section>
+        <button @click=${jumpLatest} id="latest" hidden>Jump to latest ↓</button>
+        <div id="outbox" aria-label="Submissions awaiting confirmation"></div>
+        <form @submit=${submit} id="composer">
+          <label class="sr-only" for="draft">Message Sola</label>
+          <textarea
+            @keydown=${draftKeydown}
+            @input=${saveDraft}
+            id="draft"
+            rows="3"
+            maxlength="32768"
+            placeholder="Message Sola…"
+            aria-describedby="compose-hint"
+            required
+          ></textarea>
+          <div class="composer-actions">
+            <span id="compose-hint">Enter to send · Shift + Enter for a new line</span>
+            <label
+              >Profile
+              <select @change=${saveDraft} id="profile">
+                <option value="">Server default</option>
+              </select></label
+            >
+            <button class="primary" id="send" type="submit" aria-label="Send message" disabled>
+              Send ↑
+            </button>
+          </div>
+        </form>
+      </main>
+      <dialog
+        @cancel=${(event) => event.preventDefault()}
+        id="login-dialog"
+        aria-labelledby="login-title"
+      >
+        <form @submit=${login} id="login-form">
+          <h2 id="login-title">Welcome to Sola</h2>
+          <p id="login-reason">Sign in with your operator password.</p>
+          <label for="password">Password</label
+          ><input id="password" type="password" autocomplete="current-password" required />
+          <p id="login-error" role="alert"></p>
+          <button class="primary">Sign in</button>
+        </form>
+      </dialog>
+      <dialog id="topic-dialog" aria-labelledby="topic-dialog-title">
+        <form @submit=${saveTopic} id="topic-form">
+          <h2 id="topic-dialog-title">New topic</h2>
+          <p id="topic-error" role="alert"></p>
+          <label for="topic-name">Title</label
+          ><input id="topic-name" maxlength="256" autocomplete="off" autofocus />
+          <label for="mode">Memory mode</label
+          ><select id="mode">
+            <option value="shared">Shared memory</option>
+            <option value="isolated">Isolated — no shared memory</option>
+            <option value="ephemeral">Ephemeral — one run, evidence retained</option>
+          </select>
+          <label><input type="checkbox" id="pinned" /> Pin topic</label
+          ><label><input type="checkbox" id="archived" /> Archive topic</label>
+          <div class="actions">
+            <button
+              type="button"
+              data-close="topic-dialog"
+              @click=${() => $('topic-dialog').close()}
+            >
+              Cancel</button
+            ><button class="primary">Save topic</button>
+          </div>
+        </form>
+      </dialog>
+      <dialog id="settings" class="wide" aria-labelledby="settings-title">
+        <header>
+          <h2 id="settings-title">Settings</h2>
+          <button data-close="settings" @click=${() => $('settings').close()}>
+            Close Settings
+          </button>
+        </header>
+        <p>
+          Authority and credentials are managed in your operator configuration. Changes below use
+          your signed-in authority.
+        </p>
+        <details open>
+          <summary>Scheduled &amp; proactive work</summary>
+          <div class="actions">
+            <button @click=${action(() => loadJobs())} id="jobs-refresh">Refresh jobs</button
+            ><button
+              @click=${action(async () => {
+                await api('/jobs/control', { method: 'PUT', body: { paused: !schedulerPaused } });
+                await loadJobs();
+              })}
+              id="scheduler-toggle"
+            >
+              Pause all schedules
+            </button>
+          </div>
+          <p id="jobs-empty" class="meta" hidden>No jobs yet. Create one below when you need it.</p>
+          <div id="jobs"></div>
+          <button @click=${action(() => loadJobs(true))} id="more-jobs" hidden>More jobs</button>
+          <form @submit=${saveJob} id="job-form">
+            <h3 id="job-form-title">Create a job</h3>
+            <p id="job-topic-hint" class="meta" hidden>
+              Create a shared or isolated topic before scheduling work.
+            </p>
+            <label for="job-task">Task</label
+            ><textarea id="job-task" required maxlength="32768" rows="3"></textarea>
+            <div class="fields">
+              <div>
+                <label for="job-schedule">Schedule (cron: or once:)</label
+                ><input id="job-schedule" required placeholder="cron:0 9 * * *" />
+              </div>
+              <div>
+                <label for="job-zone">Time zone</label
+                ><input id="job-zone" value="America/Denver" required />
+              </div>
+            </div>
+            <label for="job-topic">Topic</label
+            ><select id="job-topic" required></select>
+            <label for="job-origin">Kind</label
+            ><select id="job-origin">
+              <option value="scheduled">Scheduled task</option>
+              <option value="proactive">Proactive wake-up</option>
+            </select>
+            <label><input id="job-enabled" type="checkbox" /> Enable wake-ups for this job</label>
+            <p>
+              Saving an enabled job authorizes automatic work in its topic, within the selected
+              profile’s permissions.
+            </p>
+            <div class="actions">
+              <button type="button" @click=${() => fillJob()} id="job-reset">Clear</button
+              ><button class="primary">Save job</button>
+            </div>
+          </form>
+        </details>
+        <details>
+          <summary>Memory</summary>
+          <button @click=${action(refreshMemory)} id="memory-refresh">Refresh memory status</button>
+          <pre id="memory-status"></pre>
+          <p>
+            Staged notes are waiting for extraction. Only completed extraction is reported as saved
+            memory. Inspect a run to reconcile failed or ambiguous extraction with a verified
+            provider task ID.
+          </p>
+        </details>
+        <details>
+          <summary>Profiles, tools &amp; workspace roots</summary>
+          <div id="profiles"></div>
+          <label for="tool-profile">Tools for profile</label
+          ><select @change=${action(loadTools)} id="tool-profile"></select>
+          <pre id="tools"></pre>
+        </details>
+        <details>
+          <summary>Credential references</summary>
+          <p>
+            Credential values are never loaded into this page. References in profile diagnostics are
+            redacted; configure their environment variables outside the browser.
+          </p>
+        </details>
+        <details>
+          <summary>Search conversation evidence</summary>
+          <form @submit=${search} id="search-form">
+            <label for="search-query">Search</label
+            ><input id="search-query" required maxlength="4096" /><label
+              ><input type="checkbox" id="search-topic" checked /> Current topic only</label
+            ><button>Search</button>
+          </form>
+          <div id="search-results"></div>
+        </details>
+        <details>
+          <summary>Diagnostics</summary>
+          <label
+            ><input @change=${connect} id="poll-only" type="checkbox" /> Use polling instead of
+            streaming</label
+          ><button @click=${action(refreshHealth)} id="health-refresh">Refresh health</button>
+          <pre id="health"></pre>
+          <p id="transport-detail"></p>
+        </details>
+        <p id="settings-status" role="status"></p>
+        <p id="settings-error" role="alert"></p>
+      </dialog>
+      <dialog id="evidence" class="wide" aria-labelledby="evidence-title">
+        <header>
+          <h2 id="evidence-title">Run evidence</h2>
+          <button data-close="evidence" @click=${() => $('evidence').close()}>
+            Close evidence
+          </button>
+        </header>
+        <div id="evidence-records"></div>
+        <button @click=${action(moreEvidence)} id="more-evidence">Load more records</button>
+        <p id="evidence-error" role="alert"></p>
+      </dialog>
+    `;
+  }
+
+  firstUpdated() {
+    initialize();
+  }
+}
+
+const action = (callback) => (event) => {
+  Promise.resolve()
+    .then(() => callback(event))
+    .catch(showError);
 };
-const button = (text, action) => {
-  const b = node('button', text);
-  b.type = 'button';
-  b.addEventListener('click', () => action().catch(showError));
-  return b;
-};
+
 const text = (element, value) => {
   if (element.textContent !== value) element.textContent = value;
 };
@@ -146,40 +403,126 @@ function merge(kind, rows) {
     }
   }
 }
-function turnFor(id) {
-  if (turns.has(id)) return turns.get(id);
-  const root = node('article', undefined, 'turn');
-  root.dataset.runId = id;
-  const content = node('div'),
-    work = node('div', undefined, 'work');
-  const preview = node('div', undefined, 'preview');
-  preview.hidden = true;
-  const bar = node('div', undefined, 'run-bar'),
-    state = node('span'),
-    elapsed = node('span');
-  const cancel = button('Cancel run', async () => {
-    const run = await api(`/runs/${id}/cancel`, { method: 'POST' });
-    merge('run', [{ ...runs.get(id), record: run }]);
-    render();
-  });
-  const inspect = button('Inspect evidence', async () => openEvidence(id));
-  state.setAttribute('role', 'status');
-  state.setAttribute('aria-live', 'polite');
-  bar.append(state, elapsed, cancel, inspect);
-  root.append(content, work, preview, bar);
-  const turn = {
-    root,
-    content,
-    work,
-    preview,
-    state,
-    elapsed,
-    cancel,
-    messageNodes: new Map(),
-    workNodes: new Map()
+class SolaTurn extends SolaElement {
+  static properties = {
+    run: { attribute: false },
+    messageRows: { attribute: false },
+    workEntries: { attribute: false },
+    preview: { state: true },
+    elapsed: { state: true }
   };
-  turns.set(id, turn);
-  return turn;
+
+  constructor() {
+    super();
+    this.messageRows = [];
+    this.workEntries = new Map();
+    this.messageNodes = new Map();
+    this.preview = '';
+    this.elapsed = '';
+  }
+
+  renderMessage(row) {
+    const m = row.record;
+    if (!this.messageNodes.has(m.id)) {
+      const author =
+        m.role === 'user'
+          ? 'You'
+          : m.origin === 'proactive'
+            ? 'Sola · proactive message'
+            : m.origin === 'scheduled'
+              ? 'Sola · scheduled message'
+              : 'Sola';
+      const message = document.createElement('div');
+      message.className = `message ${m.role}`;
+      message.dataset.messageId = m.id;
+      renderTemplate(
+        html`
+          <div class="author">${author}</div>
+          <div>
+            ${markdown(m.content || (row.truncated ? 'Large message — inspect evidence.' : ''))}
+          </div>
+        `,
+        message
+      );
+      this.messageNodes.set(m.id, message);
+    }
+    return this.messageNodes.get(m.id);
+  }
+
+  render() {
+    const run = this.run;
+    const origin = ['proactive', 'scheduled'].includes(run?.origin)
+      ? `${run.origin === 'proactive' ? 'Proactive wake-up' : 'Scheduled task'} · `
+      : '';
+    return html`
+      <div>${this.messageRows.map((row) => this.renderMessage(row))}</div>
+      <div class="work">
+        ${[...this.workEntries.values()].map(
+          (entry) => html`
+            <details>
+              <summary>${entry.label}</summary>
+              <pre>${JSON.stringify(entry.body, null, 2)}</pre>
+              ${
+                entry.reconcile
+                  ? html`
+                      <form
+                        @submit=${(event) => {
+                          event.preventDefault();
+                          const providerTask = event.currentTarget.querySelector('input').value;
+                          action(async () => {
+                            await api(`/memory/${entry.id}/reconcile`, {
+                              method: 'POST',
+                              body: { provider_task_id: providerTask }
+                            });
+                            queueRefresh(this.dataset.runId);
+                          })();
+                        }}
+                      >
+                        <label for=${`reconcile-${entry.id}`}>Verified provider task ID</label>
+                        <input id=${`reconcile-${entry.id}`} required maxlength="256" />
+                        <button>Reconcile extraction</button>
+                      </form>
+                    `
+                  : nothing
+              }
+            </details>
+          `
+        )}
+      </div>
+      <div class="preview" ?hidden=${!this.preview}>${this.preview}</div>
+      <div class="run-bar">
+        <span role="status" aria-live="polite"
+          >${run ? `${origin}${run.state}${run.reason ? ` · ${run.reason.message}` : ''}` : ''}</span
+        >
+        <span>${this.elapsed}</span>
+        <button
+          type="button"
+          ?hidden=${!run || !active(run)}
+          @click=${action(async () => {
+            const id = this.dataset.runId;
+            const result = await api(`/runs/${id}/cancel`, { method: 'POST' });
+            merge('run', [{ ...runs.get(id), record: result }]);
+            render();
+          })}
+        >
+          Cancel run
+        </button>
+        <button type="button" @click=${action(() => openEvidence(this.dataset.runId))}>
+          Inspect evidence
+        </button>
+      </div>
+    `;
+  }
+}
+
+function turnFor(id) {
+  if (!turns.has(id)) {
+    const turn = document.createElement('sola-turn');
+    turn.className = 'turn';
+    turn.dataset.runId = id;
+    turns.set(id, turn);
+  }
+  return turns.get(id);
 }
 function renderWork(turn, id) {
   const rows = [...(records.get(id)?.values() || [])].sort((a, b) => a.sequence - b.sequence);
@@ -226,51 +569,10 @@ function renderWork(turn, id) {
       entries.push({ id: r.id, label: `Scheduled message · ${r.state}`, body: r });
     if (row.kind === 'recovery') entries.push({ id: r.id, label: 'Recovery note', body: r });
   }
-  for (const entry of entries) {
-    let view = turn.workNodes.get(entry.id);
-    if (!view) {
-      const detail = node('details'),
-        summary = node('summary'),
-        pre = node('pre');
-      detail.append(summary, pre);
-      view = { detail, summary, pre, signature: '' };
-      turn.workNodes.set(entry.id, view);
-      turn.work.append(detail);
-    }
-    text(view.summary, entry.label);
-    const signature = JSON.stringify(entry.body);
-    if (view.signature !== signature) {
-      text(view.pre, JSON.stringify(entry.body, null, 2));
-      view.signature = signature;
-    }
-    if (entry.reconcile && !view.form) {
-      const form = node('form'),
-        label = node('label', 'Verified provider task ID'),
-        input = node('input');
-      input.required = true;
-      input.maxLength = 256;
-      input.id = `reconcile-${entry.id}`;
-      label.htmlFor = input.id;
-      const submit = node('button', 'Reconcile extraction');
-      form.append(label, input, submit);
-      view.detail.append(form);
-      view.form = form;
-      form.addEventListener('submit', (event) => {
-        event.preventDefault();
-        api(`/memory/${entry.id}/reconcile`, {
-          method: 'POST',
-          body: { provider_task_id: input.value }
-        })
-          .then(() => queueRefresh(id))
-          .catch(showError);
-      });
-    }
-    if (!entry.reconcile && view.form) {
-      view.form.remove();
-      view.form = null;
-    }
-  }
+  for (const entry of entries) turn.workEntries.set(entry.id, entry);
+  turn.requestUpdate();
 }
+
 function render() {
   preserveScroll(() => {
     const ids = new Set([
@@ -291,59 +593,22 @@ function render() {
       const id = sorted[index],
         turn = turnFor(id),
         run = runs.get(id)?.record;
-      // Insert only new turns; settled DOM, selections and open disclosures stay in place.
-      if (!turn.root.isConnected) {
+      // Keep keyed turn elements in place so prepending history preserves selections.
+      if (!turn.isConnected) {
         const next = sorted
           .slice(index + 1)
-          .map((key) => turns.get(key)?.root)
+          .map((key) => turns.get(key))
           .find((root) => root?.isConnected);
-        $('turns').insertBefore(turn.root, next || null);
+        $('turns').insertBefore(turn, next || null);
       }
-      const rows = [...messages.values()]
+      turn.messageRows = [...messages.values()]
         .filter((row) => row.record.run_id === id && row.record.role !== 'tool')
         .sort((a, b) => a.sequence - b.sequence);
-      for (let i = 0; i < rows.length; i++) {
-        const row = rows[i],
-          m = row.record;
-        if (!turn.messageNodes.has(m.id)) {
-          const article = node('div', undefined, `message ${m.role}`);
-          article.dataset.messageId = m.id;
-          const author = node(
-            'div',
-            m.role === 'user'
-              ? 'You'
-              : m.origin === 'proactive'
-                ? 'Sola · proactive message'
-                : m.origin === 'scheduled'
-                  ? 'Sola · scheduled message'
-                  : 'Sola',
-            'author'
-          );
-          const body = node('div');
-          body.append(
-            markdown(m.content || (row.truncated ? 'Large message — inspect evidence.' : ''))
-          );
-          article.append(author, body);
-          turn.messageNodes.set(m.id, article);
-          const next = rows
-            .slice(i + 1)
-            .map((item) => turn.messageNodes.get(item.record.id))
-            .find(Boolean);
-          turn.content.insertBefore(article, next || null);
-        }
-      }
-      if (run) {
-        const origin = ['proactive', 'scheduled'].includes(run.origin)
-          ? `${run.origin === 'proactive' ? 'Proactive wake-up' : 'Scheduled task'} · `
-          : '';
-        text(turn.state, `${origin}${run.state}${run.reason ? ` · ${run.reason.message}` : ''}`);
-        turn.cancel.hidden = !active(run);
-        if (!active(run)) {
-          turn.preview.hidden = true;
-          turn.preview.textContent = '';
-        }
-      }
+      turn.run = run;
+      if (run && !active(run)) turn.preview = '';
       renderWork(turn, id);
+      // Flush Lit before measuring scroll anchors and following the latest content.
+      turn.performUpdate();
     }
     $('empty').hidden = ids.size > 0;
   });
@@ -354,7 +619,8 @@ function updateTimers() {
   for (const [id, turn] of turns) {
     const r = runs.get(id)?.record;
     if (!r?.started_at) {
-      text(turn.elapsed, '');
+      turn.elapsed = '';
+      turn.performUpdate();
       continue;
     }
     const seconds = Math.max(
@@ -363,7 +629,8 @@ function updateTimers() {
         ((r.ended_at ? Date.parse(r.ended_at) : Date.now()) - Date.parse(r.started_at)) / 1000
       )
     );
-    text(turn.elapsed, `${Math.floor(seconds / 60)}m ${seconds % 60}s`);
+    turn.elapsed = `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+    turn.performUpdate();
   }
 }
 async function loadRecords(id, token) {
@@ -498,8 +765,8 @@ function stopTransport() {
 function startPolling() {
   if (polling) return;
   for (const turn of turns.values()) {
-    turn.preview.textContent = '';
-    turn.preview.hidden = true;
+    turn.preview = '';
+    turn.performUpdate();
   }
   text(
     $('connection'),
@@ -533,8 +800,8 @@ function connect() {
     const data = JSON.parse(event.data);
     cursor = data.cursor;
     for (const turn of turns.values()) {
-      turn.preview.textContent = '';
-      turn.preview.hidden = true;
+      turn.preview = '';
+      turn.performUpdate();
     }
     topics.set(data.session.id, data.session);
     renderTopics();
@@ -565,8 +832,8 @@ function connect() {
       if (['model.recorded', 'run.terminal'].includes(type)) {
         const turn = turns.get(data.run_id);
         if (turn) {
-          turn.preview.textContent = '';
-          turn.preview.hidden = true;
+          turn.preview = '';
+          turn.performUpdate();
         }
       }
       queueRefresh(data.run_id);
@@ -579,8 +846,8 @@ function connect() {
     if (!run || !active(run)) return;
     const turn = turnFor(p.run_id);
     preserveScroll(() => {
-      text(turn.preview, `${p.truncated ? '…' : ''}${p.text}`);
-      turn.preview.hidden = false;
+      turn.preview = `${p.truncated ? '…' : ''}${p.text}`;
+      turn.performUpdate();
     });
   });
   stream.addEventListener('auth.expired', requireLogin);
@@ -680,21 +947,22 @@ async function selectTopic(id) {
   connect();
 }
 function renderTopics() {
-  for (const topic of topics.values()) {
-    let b = $(`topic-${topic.id}`);
-    if (!b) {
-      b = button('', async () => selectTopic(topic.id));
-      b.id = `topic-${topic.id}`;
-      $('topics').append(b);
-    }
-    text(
-      b,
-      `${topic.pinned ? '⌑ ' : ''}${topic.title || 'Untitled topic'}${topic.archived ? ' (archived)' : ''}`
-    );
-    b.hidden = topic.archived !== $('archived-topics').checked && topic.id !== selected;
-    if (topic.id === selected) b.setAttribute('aria-current', 'page');
-    else b.removeAttribute('aria-current');
-  }
+  renderTemplate(
+    [...topics.values()].map(
+      (topic) => html`
+        <button
+          type="button"
+          id=${`topic-${topic.id}`}
+          ?hidden=${topic.archived !== $('archived-topics').checked && topic.id !== selected}
+          aria-current=${topic.id === selected ? 'page' : nothing}
+          @click=${action(() => selectTopic(topic.id))}
+        >
+          ${`${topic.pinned ? '⌑ ' : ''}${topic.title || 'Untitled topic'}${topic.archived ? ' (archived)' : ''}`}
+        </button>
+      `
+    ),
+    $('topics')
+  );
   revealTopic();
 }
 function revealTopic() {
@@ -710,20 +978,23 @@ async function loadTopics(more = false) {
   renderTopics();
 }
 function renderOutbox() {
-  $('outbox').replaceChildren();
-  for (const item of outbox.filter((item) => item.session_id === selected)) {
-    const row = node('div', undefined, 'pending');
-    row.dataset.requestId = item.key;
-    row.append(
-      node(
-        'span',
-        `${item.sending ? 'Submitting' : 'Awaiting confirmation'} · ${item.content.slice(0, 80)}`
-      )
-    );
-    if (!item.sending) row.append(button('Retry same submission', async () => deliver(item)));
-    $('outbox').append(row);
-  }
+  renderTemplate(
+    outbox
+      .filter((item) => item.session_id === selected)
+      .map(
+        (item) => html`
+          <div class="pending" data-request-id=${item.key}>
+            <span
+              >${`${item.sending ? 'Submitting' : 'Awaiting confirmation'} · ${item.content.slice(0, 80)}`}</span
+            >
+            ${item.sending ? nothing : html`<button type="button" @click=${action(() => deliver(item))}>Retry same submission</button>`}
+          </div>
+        `
+      ),
+    $('outbox')
+  );
 }
+
 async function deliver(item) {
   if (item.sending) return;
   item.sending = true;
@@ -778,72 +1049,107 @@ async function submit(event) {
 async function openEvidence(id) {
   evidenceRun = id;
   evidenceCursor = 0;
-  $('evidence-records').replaceChildren();
+  evidenceRows = [];
+  renderTemplate(nothing, $('evidence-records'));
   text($('evidence-error'), '');
   if (!$('evidence').open) $('evidence').showModal();
   await moreEvidence();
 }
-async function artifactChunks(run, reference, parent, offset = 0) {
-  const identity = reference.path.split('/').pop();
-  const response = await fetch(
-    `/api/v1/runs/${run}/artifacts/${identity}?offset=${offset}&limit=65536`,
-    { credentials: 'same-origin' }
-  );
-  if (response.status === 401) {
-    requireLogin();
-    throw new Error('Sign in to inspect artifacts.');
+class SolaArtifact extends SolaElement {
+  static properties = {
+    runId: { attribute: false },
+    reference: { attribute: false },
+    chunk: { state: true }
+  };
+
+  async load(offset = 0) {
+    const identity = this.reference.path.split('/').pop();
+    const response = await fetch(
+      `/api/v1/runs/${this.runId}/artifacts/${identity}?offset=${offset}&limit=65536`,
+      { credentials: 'same-origin' }
+    );
+    if (response.status === 401) {
+      requireLogin();
+      throw new Error('Sign in to inspect artifacts.');
+    }
+    if (!response.ok) throw new Error('Artifact could not be authorized or verified.');
+    this.chunk = {
+      bytes: await response.arrayBuffer(),
+      offset,
+      next: Number(response.headers.get('X-Next-Offset')),
+      length: Number(response.headers.get('X-Artifact-Length'))
+    };
   }
-  if (!response.ok) throw new Error('Artifact could not be authorized or verified.');
-  const bytes = await response.arrayBuffer(),
-    pre = node('pre', new TextDecoder().decode(bytes));
-  parent.replaceChildren(
-    node(
-      'p',
-      `Artifact bytes ${offset}–${offset + bytes.byteLength} of ${response.headers.get('X-Artifact-Length')}`
-    ),
-    pre
-  );
-  const download = button('Download this chunk', async () => {
+
+  download() {
+    const { bytes, offset } = this.chunk;
     const url = URL.createObjectURL(new Blob([bytes], { type: 'application/octet-stream' }));
-    const link = node('a');
+    const link = document.createElement('a');
     link.href = url;
-    link.download = `${identity}-${offset}.bin`;
+    link.download = `${this.reference.path.split('/').pop()}-${offset}.bin`;
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-  });
-  parent.append(download);
-  const next = Number(response.headers.get('X-Next-Offset'));
-  if (next < Number(response.headers.get('X-Artifact-Length')))
-    parent.append(button('Next chunk', async () => artifactChunks(run, reference, parent, next)));
+  }
+
+  render() {
+    const chunk = this.chunk;
+    return html`
+      <button type="button" @click=${action(() => this.load())}>
+        Inspect artifact · ${this.reference.length} bytes
+      </button>
+      ${
+        chunk
+          ? html`
+              <div>
+                <p>
+                  Artifact bytes ${chunk.offset}–${chunk.offset + chunk.bytes.byteLength} of
+                  ${chunk.length}
+                </p>
+                <pre>${new TextDecoder().decode(chunk.bytes)}</pre>
+                <button type="button" @click=${() => this.download()}>Download this chunk</button>
+                ${
+                  chunk.next < chunk.length
+                    ? html`
+                        <button type="button" @click=${action(() => this.load(chunk.next))}>
+                          Next chunk
+                        </button>
+                      `
+                    : nothing
+                }
+              </div>
+            `
+          : nothing
+      }
+    `;
+  }
 }
+
+let evidenceRows = [];
 async function moreEvidence() {
   const id = evidenceRun,
     result = await api(`/runs/${id}/records?after=${evidenceCursor}&limit=50`);
   if (id !== evidenceRun) return;
-  for (const row of result.items) {
-    const detail = node('details'),
-      summary = node(
-        'summary',
-        `${row.sequence} · ${row.kind}${row.truncated ? ' · large record' : ''}`
-      );
-    detail.append(summary, node('pre', JSON.stringify(row.record, null, 2)));
-    const artifacts = row.truncated
-      ? Object.values(row.record.artifacts || {})
-      : Object.values(row.record).filter(
-          (value) =>
-            value && typeof value === 'object' && /^artifacts\/[a-f0-9]{32}$/.test(value.path)
-        );
-    for (const reference of artifacts) {
-      const panel = node('div');
-      detail.append(
-        button(`Inspect artifact · ${reference.length} bytes`, async () =>
-          artifactChunks(id, reference, panel)
-        ),
-        panel
-      );
-    }
-    $('evidence-records').append(detail);
-  }
+  evidenceRows.push(...result.items);
+  renderTemplate(
+    evidenceRows.map((row) => {
+      const artifacts = row.truncated
+        ? Object.values(row.record.artifacts || {})
+        : Object.values(row.record).filter(
+            (value) =>
+              value && typeof value === 'object' && /^artifacts\/[a-f0-9]{32}$/.test(value.path)
+          );
+      return html`
+        <details>
+          <summary>
+            ${`${row.sequence} · ${row.kind}${row.truncated ? ' · large record' : ''}`}
+          </summary>
+          <pre>${JSON.stringify(row.record, null, 2)}</pre>
+          ${artifacts.map((reference) => html`<sola-artifact .runId=${id} .reference=${reference}></sola-artifact>`)}
+        </details>
+      `;
+    }),
+    $('evidence-records')
+  );
   evidenceCursor = result.next;
   $('more-evidence').hidden = !result.items.length;
 }
@@ -859,18 +1165,25 @@ async function loadTools() {
 }
 async function loadProfiles() {
   const result = await api('/profiles');
-  for (const p of result.items) {
-    for (const id of ['profile', 'tool-profile']) {
-      if (![...$(id).options].some((option) => option.value === p.name)) {
-        const option = node('option', p.name);
-        option.value = p.name;
-        $(id).append(option);
-      }
-    }
-    const detail = node('details');
-    detail.append(node('summary', p.name), node('pre', JSON.stringify(p, null, 2)));
-    $('profiles').append(detail);
+  for (const id of ['profile', 'tool-profile']) {
+    const value = $(id).value;
+    renderTemplate(
+      result.items.map((p) => html`<option value=${p.name}>${p.name}</option>`),
+      $(id)
+    );
+    if ([...$(id).options].some((option) => option.value === value)) $(id).value = value;
   }
+  renderTemplate(
+    result.items.map(
+      (p) => html`
+        <details>
+          <summary>${p.name}</summary>
+          <pre>${JSON.stringify(p, null, 2)}</pre>
+        </details>
+      `
+    ),
+    $('profiles')
+  );
   await loadTools();
 }
 async function refreshMemory() {
@@ -894,88 +1207,149 @@ async function loadJobs(more = false) {
   schedulerPaused = control.paused;
   $('jobs-empty').hidden = jobs.size > 0;
   text($('scheduler-toggle'), control.paused ? 'Resume all schedules' : 'Pause all schedules');
-  $('jobs').replaceChildren();
-  for (const job of jobs.values()) {
-    const article = node('article');
-    article.append(
-      node('h3', job.task.slice(0, 128)),
-      node(
-        'p',
-        `${job.enabled ? (job.paused ? 'Paused' : 'Enabled') : 'Disabled'} · ${job.schedule} · ${job.timezone}`,
-        'meta'
-      )
+  renderTemplate(
+    [...jobs.values()].map(
+      (job) => html` <sola-job .job=${job} .schedulerPaused=${schedulerPaused}></sola-job> `
+    ),
+    $('jobs')
+  );
+}
+
+class SolaJob extends SolaElement {
+  static properties = {
+    job: { attribute: false },
+    schedulerPaused: { attribute: false },
+    occurrences: { state: true },
+    occurrenceCursor: { state: true },
+    occurrencesDone: { state: true }
+  };
+
+  constructor() {
+    super();
+    this.occurrences = null;
+    this.occurrenceCursor = null;
+    this.occurrencesDone = false;
+  }
+
+  willUpdate(changed) {
+    if (changed.has('job') && changed.get('job')?.id !== this.job.id) {
+      this.occurrences = null;
+      this.occurrenceCursor = null;
+      this.occurrencesDone = false;
+    }
+  }
+
+  async loadOccurrences(reset = false) {
+    const id = this.job.id;
+    const after = reset ? null : this.occurrenceCursor;
+    const page = await api(
+      `/jobs/${id}/occurrences?limit=25${after ? `&after=${encodeURIComponent(after)}` : ''}`
     );
-    article.append(
-      button('Edit', async () => fillJob(job)),
-      button(job.paused ? 'Resume' : 'Pause', async () => {
-        await api(`/jobs/${job.id}`, { method: 'PATCH', body: { paused: !job.paused } });
-        await loadJobs();
-      })
-    );
-    const runKey = `sola.job-run.${job.id}`;
-    const runButton = button(read(runKey, null) ? 'Retry run now' : 'Run now', async () => {
-      const key = read(runKey, null) || uid();
-      write(runKey, key);
-      const occurrence = await api(`/jobs/${job.id}/run`, {
-        method: 'POST',
-        headers: { 'Idempotency-Key': key }
-      });
-      write(runKey, null);
-      text(
-        $('settings-status'),
-        `Manual run accepted · ${occurrence.state}. Inspect Occurrences for its outcome.`
-      );
+    if (id !== this.job.id) return;
+    this.occurrences = [...(reset ? [] : this.occurrences || []), ...page.items];
+    this.occurrenceCursor = page.next;
+    this.occurrencesDone = !page.items.length;
+  }
+
+  async runNow() {
+    const runKey = `sola.job-run.${this.job.id}`;
+    const key = read(runKey, null) || uid();
+    write(runKey, key);
+    const occurrence = await api(`/jobs/${this.job.id}/run`, {
+      method: 'POST',
+      headers: { 'Idempotency-Key': key }
     });
-    runButton.disabled = job.paused || schedulerPaused;
-    article.append(runButton);
-    article.append(
-      button('Delete job', async () => {
-        if (
-          !window.confirm(
-            'Delete this job and stop future wake-ups? Existing evidence is retained.'
-          )
-        )
-          return;
-        await api(`/jobs/${job.id}`, { method: 'DELETE' });
-        await loadJobs();
-      })
+    write(runKey, null);
+    text(
+      $('settings-status'),
+      `Manual run accepted · ${occurrence.state}. Inspect Occurrences for its outcome.`
     );
-    const occurrences = node('div');
-    article.append(
-      button('Occurrences', async () => {
-        occurrences.replaceChildren();
-        let after = null;
-        const more = async () => {
-          const page = await api(
-            `/jobs/${job.id}/occurrences?limit=25${after ? `&after=${encodeURIComponent(after)}` : ''}`
-          );
-          for (const occurrence of page.items) {
-            const detail = node('details');
-            detail.append(
-              node(
-                'summary',
-                `${occurrence.state} · ${occurrence.decision === 'no_action' ? 'No action needed' : occurrence.decision} · ${occurrence.due_at}`
-              ),
-              node('pre', JSON.stringify(occurrence, null, 2))
-            );
-            if (occurrence.run_id)
-              detail.append(
-                button('Inspect run evidence', async () => openEvidence(occurrence.run_id))
-              );
-            occurrences.append(detail);
-          }
-          after = page.next;
-          moreButton.hidden = !page.items.length;
-        };
-        const moreButton = button('Older / more occurrences', more);
-        occurrences.append(moreButton);
-        await more();
-      }),
-      occurrences
-    );
-    $('jobs').append(article);
+    this.requestUpdate();
+  }
+
+  render() {
+    const job = this.job;
+    return html`
+      <article>
+        <h3>${job.task.slice(0, 128)}</h3>
+        <p class="meta">
+          ${`${job.enabled ? (job.paused ? 'Paused' : 'Enabled') : 'Disabled'} · ${job.schedule} · ${job.timezone}`}
+        </p>
+        <button type="button" @click=${() => fillJob(job)}>Edit</button>
+        <button
+          type="button"
+          @click=${action(async () => {
+            await api(`/jobs/${job.id}`, { method: 'PATCH', body: { paused: !job.paused } });
+            await loadJobs();
+          })}
+        >
+          ${job.paused ? 'Resume' : 'Pause'}
+        </button>
+        <button
+          type="button"
+          ?disabled=${job.paused || this.schedulerPaused}
+          @click=${action(() => this.runNow())}
+        >
+          ${read(`sola.job-run.${job.id}`, null) ? 'Retry run now' : 'Run now'}
+        </button>
+        <button
+          type="button"
+          @click=${action(async () => {
+            if (
+              !window.confirm(
+                'Delete this job and stop future wake-ups? Existing evidence is retained.'
+              )
+            )
+              return;
+            await api(`/jobs/${job.id}`, { method: 'DELETE' });
+            await loadJobs();
+          })}
+        >
+          Delete job
+        </button>
+        <button type="button" @click=${action(() => this.loadOccurrences(true))}>
+          Occurrences
+        </button>
+        ${
+          this.occurrences
+            ? html`
+                <div>
+                  <button
+                    type="button"
+                    ?hidden=${this.occurrencesDone}
+                    @click=${action(() => this.loadOccurrences())}
+                  >
+                    Older / more occurrences
+                  </button>
+                  ${this.occurrences.map(
+                    (occurrence) => html`
+                      <details>
+                        <summary>
+                          ${`${occurrence.state} · ${occurrence.decision === 'no_action' ? 'No action needed' : occurrence.decision} · ${occurrence.due_at}`}
+                        </summary>
+                        <pre>${JSON.stringify(occurrence, null, 2)}</pre>
+                        ${
+                          occurrence.run_id
+                            ? html`<button
+                                type="button"
+                                @click=${action(() => openEvidence(occurrence.run_id))}
+                              >
+                                Inspect run evidence
+                              </button>`
+                            : nothing
+                        }
+                      </details>
+                    `
+                  )}
+                </div>
+              `
+            : nothing
+        }
+      </article>
+    `;
   }
 }
+
 function fillJob(job = null) {
   editingJob = job;
   text($('job-form-title'), job ? 'Edit job' : 'Create a job');
@@ -991,13 +1365,12 @@ async function openSettings() {
   $('settings').showModal();
   text($('settings-error'), '');
   text($('settings-status'), '');
-  $('job-topic').replaceChildren();
-  for (const topic of topics.values())
-    if (topic.mode !== 'ephemeral' && !topic.archived) {
-      const option = node('option', topic.title || 'Untitled topic');
-      option.value = topic.id;
-      $('job-topic').append(option);
-    }
+  renderTemplate(
+    [...topics.values()]
+      .filter((topic) => topic.mode !== 'ephemeral' && !topic.archived)
+      .map((topic) => html`<option value=${topic.id}>${topic.title || 'Untitled topic'}</option>`),
+    $('job-topic')
+  );
   $('job-topic-hint').hidden = $('job-topic').options.length > 0;
   $('job-form').querySelector('button.primary').disabled = !$('job-topic').options.length;
   fillJob();
@@ -1007,7 +1380,6 @@ async function boot() {
   await api('/auth/session');
   loggedIn = true;
   $('notice').hidden = true;
-  $('profiles').replaceChildren();
   await Promise.all([loadTopics(), loadProfiles()]);
   const saved = read('sola.selected', null);
   if (saved && !topics.has(saved)) {
@@ -1027,8 +1399,7 @@ async function boot() {
   }
 }
 
-$('login-dialog').addEventListener('cancel', (event) => event.preventDefault());
-$('login-form').addEventListener('submit', async (event) => {
+async function login(event) {
   event.preventDefault();
   const submit = $('login-form').querySelector('button');
   if (submit.disabled) return;
@@ -1049,37 +1420,28 @@ $('login-form').addEventListener('submit', async (event) => {
   } finally {
     submit.disabled = false;
   }
-});
-for (const item of outbox) item.sending = false;
-for (const b of document.querySelectorAll('[data-close]'))
-  b.addEventListener('click', () => $(b.dataset.close).close());
-$('composer').addEventListener('submit', submit);
-$('notice-dismiss').addEventListener('click', () => {
-  $('notice').hidden = true;
-});
-$('empty-new-topic').addEventListener('click', () => $('new-topic').click());
-$('draft').addEventListener('input', saveDraft);
-$('profile').addEventListener('change', saveDraft);
-$('draft').addEventListener('keydown', (event) => {
+}
+
+function draftKeydown(event) {
   if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
     event.preventDefault();
     if (!$('send').disabled) $('composer').requestSubmit();
   }
-});
-$('history').addEventListener('scroll', () => {
+}
+
+function historyScroll() {
   const h = $('history');
   following = h.scrollHeight - h.scrollTop - h.clientHeight < 64;
   $('latest').hidden = following;
-});
-$('latest').addEventListener('click', () => {
+}
+
+function jumpLatest() {
   following = true;
   $('history').scrollTop = $('history').scrollHeight;
   $('latest').hidden = true;
-});
-$('older').addEventListener('click', () => older().catch(showError));
-$('archived-topics').addEventListener('change', () => loadTopics().catch(showError));
-$('more-topics').addEventListener('click', () => loadTopics(true).catch(showError));
-$('new-topic').addEventListener('click', () => {
+}
+
+function newTopic() {
   editingTopic = false;
   text($('topic-error'), '');
   text($('topic-dialog-title'), 'New topic');
@@ -1087,8 +1449,9 @@ $('new-topic').addEventListener('click', () => {
   $('mode').disabled = false;
   $('pinned').disabled = $('archived').disabled = true;
   $('topic-dialog').showModal();
-});
-$('topic-edit').addEventListener('click', () => {
+}
+
+function editTopic() {
   editingTopic = true;
   text($('topic-error'), '');
   const topic = topics.get(selected);
@@ -1100,8 +1463,9 @@ $('topic-edit').addEventListener('click', () => {
   $('pinned').checked = topic.pinned;
   $('archived').checked = topic.archived;
   $('topic-dialog').showModal();
-});
-$('topic-form').addEventListener('submit', async (event) => {
+}
+
+async function saveTopic(event) {
   event.preventDefault();
   const submit = $('topic-form').querySelector('button.primary');
   if (submit.disabled) return;
@@ -1126,24 +1490,9 @@ $('topic-form').addEventListener('submit', async (event) => {
   } finally {
     submit.disabled = false;
   }
-});
-$('logout').addEventListener('click', () =>
-  api('/auth/logout', { method: 'POST' }).then(requireLogin).catch(showError)
-);
-$('settings-open').addEventListener('click', () => openSettings().catch(showError));
-$('poll-only').addEventListener('change', connect);
-$('tool-profile').addEventListener('change', () => loadTools().catch(showError));
-$('memory-refresh').addEventListener('click', () => refreshMemory().catch(showError));
-$('health-refresh').addEventListener('click', () => refreshHealth().catch(showError));
-$('jobs-refresh').addEventListener('click', () => loadJobs().catch(showError));
-$('more-jobs').addEventListener('click', () => loadJobs(true).catch(showError));
-$('scheduler-toggle').addEventListener('click', () =>
-  api('/jobs/control', { method: 'PUT', body: { paused: !schedulerPaused } })
-    .then(() => loadJobs())
-    .catch(showError)
-);
-$('job-reset').addEventListener('click', () => fillJob());
-$('job-form').addEventListener('submit', async (event) => {
+}
+
+async function saveJob(event) {
   event.preventDefault();
   try {
     const topic = topics.get($('job-topic').value);
@@ -1168,28 +1517,37 @@ $('job-form').addEventListener('submit', async (event) => {
   } catch (error) {
     showError(error);
   }
-});
-$('search-form').addEventListener('submit', async (event) => {
+}
+
+async function search(event) {
   event.preventDefault();
   try {
     const result = await api(
       `/search?q=${encodeURIComponent($('search-query').value)}${$('search-topic').checked && selected ? `&session_id=${selected}` : ''}`
     );
-    $('search-results').replaceChildren(node('pre', JSON.stringify(result.items, null, 2)));
+    renderTemplate(html`<pre>${JSON.stringify(result.items, null, 2)}</pre>`, $('search-results'));
   } catch (error) {
     showError(error);
   }
-});
-$('more-evidence').addEventListener('click', () => moreEvidence().catch(showError));
-window.addEventListener('online', connect);
-window.addEventListener('resize', revealTopic);
-window.addEventListener('offline', () => {
-  stopTransport();
-  startPolling();
-});
-window.addEventListener('pagehide', saveDraft);
-setInterval(updateTimers, 1000);
-boot().catch((error) => {
-  if (loggedIn) showError(error);
-  else requireLogin();
-});
+}
+
+function initialize() {
+  for (const item of outbox) item.sending = false;
+  window.addEventListener('online', connect);
+  window.addEventListener('resize', revealTopic);
+  window.addEventListener('offline', () => {
+    stopTransport();
+    startPolling();
+  });
+  window.addEventListener('pagehide', saveDraft);
+  setInterval(updateTimers, 1000);
+  boot().catch((error) => {
+    if (loggedIn) showError(error);
+    else requireLogin();
+  });
+}
+
+customElements.define('sola-artifact', SolaArtifact);
+customElements.define('sola-job', SolaJob);
+customElements.define('sola-turn', SolaTurn);
+customElements.define('sola-app', SolaApp);

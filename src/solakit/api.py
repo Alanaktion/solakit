@@ -143,7 +143,13 @@ class Boundary:
             public = request.url.path == "/health" or (
                 request.method in ("GET", "HEAD")
                 and request.url.path
-                in ("/", "/assets/chat.css", "/assets/chat.js", "/assets/markdown.js")
+                in (
+                    "/",
+                    "/assets/chat.css",
+                    "/assets/chat.js",
+                    "/assets/markdown.js",
+                    "/assets/lit-core.min.js",
+                )
             )
             login_route = request.url.path == "/api/v1/auth/login"
             mutation = request.method not in ("GET", "HEAD", "OPTIONS")
@@ -336,7 +342,7 @@ def create_app(
 
     @app.get("/assets/{name}", include_in_schema=False)
     async def asset(name: str) -> FileResponse:
-        if name not in ("chat.css", "chat.js", "markdown.js"):
+        if name not in ("chat.css", "chat.js", "markdown.js", "lit-core.min.js"):
             raise HTTPException(404)
         return FileResponse(FilePath(__file__).parent / "web" / name)
 

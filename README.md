@@ -7,10 +7,19 @@ The core wheel contains `solakit` only; developer evaluations and future packs a
 
 ```sh
 uv sync --locked
+```
+
+Copy [config.example.toml](config.example.toml) to `~/.config/sola/config.toml` and set
+`model.pin` and `defaults.workspace_roots` before the configured commands below.
+The example records built-in effective defaults and is unconfigured until edited.
+The [configuration reference](docs/config.md) covers every value, range and
+inheritance rule. Keep it and the example current when changing configuration.
+
+```sh
 uv run sola check --explain
-uv run sola check --config config.example.toml --explain
-uv run sola check --config config.example.toml --live
-uv run sola serve --config config.example.toml
+uv run sola check --config ~/.config/sola/config.toml --explain
+uv run sola check --config ~/.config/sola/config.toml --live
+uv run sola serve --config ~/.config/sola/config.toml
 ```
 
 `serve` validates configuration and owns the data-directory lock for `/health`
@@ -43,10 +52,10 @@ Prompt inspection uses the same assembler as model execution, without creating
 the server or model client. Output contains private prompt content:
 
 ```sh
-uv run sola prompt 'Hello' --config config.example.toml --hashes
-uv run sola prompt --config config.example.toml --frozen /private/selection.json
+uv run sola prompt 'Hello' --config ~/.config/sola/config.toml --hashes
+uv run sola prompt --config ~/.config/sola/config.toml --frozen /private/selection.json
 uv run sola prompt --request-body /private/body --manifest /private/manifest --hashes
-uv run python scripts/probe_model.py --output /tmp/sola-model-probe
+uv run python scripts/probe_model.py --config ~/.config/sola/config.toml --output /tmp/sola-model-probe
 ```
 
 The developer probe uses disposable evidence, loads the selected credential from

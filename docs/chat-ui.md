@@ -2,8 +2,11 @@
 
 Start `sola serve` with your normal configuration and the environment variable
 named by `http.password_env` set. Open `http://127.0.0.1:8765/` (or your explicitly
-configured origin) and sign in. The server serves the HTML, CSS and vanilla
-JavaScript from the core wheel; there is no frontend build or external CDN.
+configured origin) and sign in. The server serves the HTML, CSS and Lit components
+from the core wheel. Components import the bundled `lit-core.min.js` locally;
+there is no frontend build, package installation or external CDN. The app shell,
+conversation turns, job cards and artifact viewer use light DOM to share the
+stylesheet and preserve native labels, keyboard navigation and fragment links.
 See [HTTP authentication and deployment](contracts/api.md) for LAN HTTP and remote HTTPS setup.
 
 The interface follows your system light or dark appearance through

@@ -43,6 +43,8 @@ Statuses distinguish operator-confirmed requirements, implementer-selected rever
 
 | V2-33 | Confirmed / operator, 2026-11-17 | Allow direct LAN HTTP through exact private IP origins (IPv4 RFC 1918 and IPv6 ULA) with insecure cookies. Preserve exact Host/scheme/port matching, authentication and CSRF; public IPs and hostnames retain HTTPS/Secure-cookie requirements. Origins identify server URLs, not client subnets; no CIDR/wildcard matching. Use browser getRandomValues for admission keys on LAN HTTP. Supersedes V2-31's HTTPS requirement for private LAN IP origins only | 10/11: [deployment](contracts/api.md), config/API regression tests and browser fixture; real LAN deployment remains unverified |
 
+| V2-34 | Confirmed / operator, 2026-11-17 | Rework the web UI as Lit components using the local `lit-core.min.js` module. Package and serve it with the existing explicit static assets; keep the authenticated API, restrictive CSP and no frontend build/CDN. Light DOM preserves the shared stylesheet, labels and fragment links. Keep ID-keyed settled nodes, drafts, retries and SSE/polling recovery. Supersedes V2-32's vanilla-JavaScript/no-framework choice only | 11 onward: [UI guide](chat-ui.md), [Lit verification](validation/phase-11-lit.md) |
+
 ## Unavailable references and remaining verification
 
 The outline refers to D1–D6 and companion source specifications that are not present in this checkout. Similarly named legacy refactor IDs are unrelated. Their absence is recorded; these v2 contracts replace the ambiguity for this release. Newly supplied requirements should become explicit decision changes, not retroactive assumptions.

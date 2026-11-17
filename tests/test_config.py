@@ -194,6 +194,26 @@ def test_empty_config_and_missing_roots(tmp_path: Path) -> None:
         resolve_profile(load_config(path), base=tmp_path)
 
 
+def test_example_matches_effective_defaults(tmp_path: Path) -> None:
+    example = load_config(Path(__file__).resolve().parents[1] / "config.example.toml")
+    assert example.model.pin == ""
+    assert example.defaults.workspace_roots == []
+    with pytest.raises(ConfigError, match="workspace root"):
+        resolve_profile(example, base=tmp_path)
+
+    # Supply only the required setup so all remaining effective defaults can be compared.
+    def configured(config: OperatorConfig) -> OperatorConfig:
+        values = config.model_dump()
+        values["model"]["pin"] = "fixture-qwen"
+        values["defaults"]["workspace_roots"] = [str(tmp_path)]
+        return OperatorConfig.model_validate(values)
+
+    for origin in Origin:
+        expected = resolve_profile(configured(OperatorConfig()), base=tmp_path, origin=origin)
+        actual = resolve_profile(configured(example), base=tmp_path, origin=origin)
+        assert actual.model_dump(exclude={"sources"}) == expected.model_dump(exclude={"sources"})
+
+
 def test_cli_explain_is_offline_and_read_only(tmp_path: Path) -> None:
     path = write_config(tmp_path)
     script = (

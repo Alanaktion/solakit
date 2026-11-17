@@ -137,8 +137,11 @@ to have survived.
 
 ## Configuration and effective authority
 
-Use [config.example.toml](../../config.example.toml), or the default operator file
-`~/.config/sola/config.toml`. All paths are relative to the config file's directory;
+Copy [config.example.toml](../../config.example.toml) to the default operator file
+`~/.config/sola/config.toml` or select an edited copy with `--config`. Set the model
+pin and workspace roots before use; the example records built-in effective
+defaults. See the [configuration reference](../config.md) for every setting.
+All paths are relative to the config file's directory;
 `~` expands explicitly. Check resolves existing directories/fragments without
 creating them, constructing the server, opening databases, acquiring ownership,
 or contacting any service. An empty TOML parses for initialization but cannot

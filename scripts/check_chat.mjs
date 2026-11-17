@@ -25,7 +25,9 @@ const context = await browser.newContext({
   colorScheme: 'light'
 });
 // LAN HTTP has getRandomValues but no secure-context randomUUID API.
-await context.addInitScript(() => Object.defineProperty(crypto, 'randomUUID', { value: undefined }));
+await context.addInitScript(() =>
+  Object.defineProperty(crypto, 'randomUUID', { value: undefined })
+);
 const page = await context.newPage();
 const errors = [],
   report = {
@@ -210,6 +212,60 @@ try {
     assert.equal(safe.list, 2);
     assert(safe.code.includes('<script>'));
   });
+  await check(
+    'local Lit components preserve disclosure inputs and settled nodes during updates',
+    async () => {
+      const state = await page.evaluate(async () => {
+        const { LitElement } = await import('/assets/lit-core.min.js');
+        const app = document.querySelector('sola-app');
+        const turn = [...document.querySelectorAll('sola-turn')].find((el) =>
+          el.querySelector('.work input')
+        );
+        const input = turn.querySelector('.work input');
+        const detail = input.closest('details');
+        const message = turn.querySelector('[data-message-id]');
+        const content = message.textContent;
+        detail.open = true;
+        input.value = 'provider-task-in-progress';
+        input.focus();
+        const selection = getSelection();
+        const range = document.createRange();
+        range.selectNodeContents(message);
+        selection.removeAllRanges();
+        selection.addRange(range);
+        const selected = selection.toString();
+        for (const preview of ['First update', '<img src=x onerror="window.PWNED=true">']) {
+          turn.preview = preview;
+          turn.requestUpdate();
+          await turn.updateComplete;
+        }
+        const result = {
+          components: app instanceof LitElement && turn instanceof LitElement,
+          lightDOM: app.renderRoot === app && turn.renderRoot === turn,
+          input:
+            input.isConnected &&
+            document.activeElement === input &&
+            input.value === 'provider-task-in-progress',
+          disclosure: detail.open,
+          message:
+            message.isConnected &&
+            message.textContent === content &&
+            selection.toString() === selected,
+          escaped:
+            !turn.querySelector('.preview img') &&
+            turn.querySelector('.preview').textContent.includes('<img'),
+          imports: performance
+            .getEntriesByType('resource')
+            .some((r) => r.name.endsWith('/assets/lit-core.min.js'))
+        };
+        turn.preview = '';
+        await turn.updateComplete;
+        detail.open = false;
+        return result;
+      });
+      assert(Object.values(state).every(Boolean), JSON.stringify(state));
+    }
+  );
   await page.locator('#topic-' + fixture.other).click();
   await page.getByText('An interrupted fixture', { exact: true }).waitFor();
   await page.locator('#new-topic').click();

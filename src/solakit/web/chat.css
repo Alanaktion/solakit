@@ -40,6 +40,8 @@
 }
 body {
   margin: 0;
+}
+sola-app {
   height: 100dvh;
   display: grid;
   grid-template-columns: 256px minmax(0, 1fr);
@@ -154,7 +156,12 @@ input[type='checkbox'] {
 }
 .brand {
   font:
-    600 30px/1.3 Georgia,
+    600 30px/1.3 Superclarendon,
+    'Bookman Old Style',
+    'URW Bookman',
+    'URW Bookman L',
+    'Georgia Pro',
+    Georgia,
     serif;
   padding: 0 8px 16px;
 }
@@ -269,6 +276,7 @@ main {
   color: var(--muted);
 }
 .turn {
+  display: block;
   margin: 0 0 32px;
   min-width: 0;
 }
@@ -501,7 +509,7 @@ dialog > details > summary {
   }
 }
 @media (max-width: 800px) {
-  body {
+  sola-app {
     grid-template-columns: 192px minmax(0, 1fr);
   }
   .topbar {
@@ -515,7 +523,7 @@ dialog > details > summary {
   }
 }
 @media (max-width: 560px) {
-  body {
+  sola-app {
     display: flex;
     flex-direction: column;
   }

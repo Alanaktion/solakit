@@ -798,17 +798,19 @@ def test_omitted_profile_uses_server_selection(
 def test_chat_shell_is_public_but_runtime_stays_authenticated(client: TestClient) -> None:
     response = client.get("/")
     assert response.status_code == 200
-    assert 'id="draft"' in response.text
+    assert "<sola-app></sola-app>" in response.text
     assert PASSWORD not in response.text
     assert "script-src 'self'" in response.headers["content-security-policy"]
     assert "frame-ancestors 'none'" in response.headers["content-security-policy"]
     assert response.headers["cache-control"] == "no-store"
-    for asset in ("chat.js", "chat.css", "markdown.js"):
+    for asset in ("chat.js", "chat.css", "markdown.js", "lit-core.min.js"):
         response = client.get("/assets/" + asset)
         assert response.status_code == 200
         assert response.headers["x-content-type-options"] == "nosniff"
     assert client.get("/api/v1/profiles").status_code == 401
     assert client.get("/assets/other.js").status_code == 401
+    assert client.head("/assets/lit-core.min.js").status_code == 405
+    assert client.post("/assets/lit-core.min.js").status_code == 401
     assert client.post("/assets/chat.js").status_code == 401
     assert client.get("/", headers={"Host": "evil.invalid"}).status_code == 400
     assert client.get("/", headers={"Origin": "https://evil.invalid"}).status_code == 403

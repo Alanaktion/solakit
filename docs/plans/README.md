@@ -94,7 +94,7 @@ The operator subsequently enabled direct LAN HTTP for exact private IP origins;
 see V2-33 in the [decision register](../decisions.md) and the
 [deployment guide](../contracts/api.md). CIDR/wildcard origins remain unsupported.
 
-Phase 11 adds the packaged chat/Settings shell, stable vanilla-JavaScript rendering,
+Phase 11 adds the packaged chat/Settings shell, stable Lit component rendering,
 bounded backward history, durable browser retries and shared SSE/polling recovery.
 Its UX follow-up adds system light/dark appearance, clearer empty/disabled states,
 compact mobile controls and configured-server Qwen browser verification.
@@ -114,7 +114,7 @@ an explicit acceptance gate; browser automation does not stand in for it.
 
 ## Shared implementation conventions
 
-Suggested boundaries are `core/` for records and orchestration, `adapters/` for model/memory/storage, `tools/` for built-in tools, `registry.py` for registration, `api/` for HTTP, and `web/` for server-rendered templates and vanilla JavaScript. Names are proposals, not a requirement to create empty abstraction layers. `sdk.py` is the supported pack surface. Keep composition small enough to read in one sitting.
+Suggested boundaries are `core/` for records and orchestration, `adapters/` for model/memory/storage, `tools/` for built-in tools, `registry.py` for registration, `api/` for HTTP, and `web/` for the HTML shell, local Lit components and shared CSS. Names are proposals, not a requirement to create empty abstraction layers. `sdk.py` is the supported pack surface. Keep composition small enough to read in one sitting.
 
 The public executable is `sola`, with exactly `serve`, `check`, `prompt`, and `search`. Phase 1 replaces the bootstrap's `solakit` entry point; prompt/search behavior remains assigned to its later phases. Evaluation, migration, index rebuild, and live probes are developer scripts, not extra public commands. The skeleton's `check --explain` reports installation status; Phase 2 adds effective configuration without revealing secrets. Offline commands must not construct the server or live clients.
 

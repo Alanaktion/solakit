@@ -136,9 +136,11 @@ These remain labelled estimates. The run service can select a durable summary
 and whole-turn tail before inference; the assembler never trims supplied context.
 See the [context/manifest contract](context-compaction.md).
 
+Use an operator config prepared with the [configuration guide](../config.md):
+
 ```sh
-uv run sola prompt 'Hello' --config config.example.toml --hashes
-uv run sola prompt --config config.example.toml --frozen /private/selection.json --hashes
+uv run sola prompt 'Hello' --config ~/.config/sola/config.toml --hashes
+uv run sola prompt --config ~/.config/sola/config.toml --frozen /private/selection.json --hashes
 uv run sola prompt --request-body /private/artifacts/BODY_ID \
   --manifest /private/artifacts/MANIFEST_ID --hashes
 ```

@@ -1,4 +1,6 @@
-# Paths are relative to this file. Copy and edit; no services are contacted by check.
+# Built-in effective defaults; see docs/config.md for every setting.
+# Copy and set model.pin and defaults.workspace_roots before use.
+# Paths are relative to this file. No services are contacted by check.
 schema_version = 1
 data_dir = "~/.local/share/sola"
 # Explicit import modules for installed trusted packs; loading grants no access.
@@ -12,7 +14,8 @@ shutdown_timeout_seconds = 5
 # curated_memory_file = "MEMORY.md"
 
 [model]
-pin = "Qwen3.6-35B-A3B-mxfp4"
+# Required: exact oMLX model ID, e.g. "Qwen3.6-35B-A3B-mxfp4".
+pin = ""
 base_url = "http://127.0.0.1:8000/v1"
 # OPENAI_API_KEY is used by default; .env is only loaded by the developer probe.
 # api_key_env = "SOLA_MODEL_API_KEY"
@@ -38,31 +41,41 @@ enabled = false
 base_url = "http://127.0.0.1:1933"
 account = "default"
 user = "default"
-roots = ["viking://user/default/memories"]
+# Required when enabled: ["viking://user/default/memories"] for user "default".
+roots = []
 # api_key_env = "OPENVIKING_API_KEY"
 timeout_seconds = 15
 backlog_cap = 128
 
 [defaults]
-workspace_roots = ["."]
+# Required: at least one existing directory, e.g. ["."] beside this file.
+workspace_roots = []
 # Exact names or * / ? patterns, expanded only against loaded_tools.
 tools = []
 memory_mode = "optional"
 fragments = []
 
-[profiles.short]
-# Profiles inherit default; they may only narrow grants and budgets.
-tools = []
+[defaults.budgets]
+model_calls = 16
+tool_calls = 32
+active_seconds = 900
+output_tokens = 4096
+tool_result_bytes = 65536
+tool_timeout_seconds = 60
 
-[profiles.short.budgets]
-model_calls = 4
-tool_calls = 8
-active_seconds = 300
+# Optional child profile; inherits default and may only narrow grants/budgets.
+# [profiles.short]
+# tools = []
+# [profiles.short.budgets]
+# model_calls = 4
+# tool_calls = 8
+# active_seconds = 300
 
 [proactive_budgets]
-model_calls = 8
-tool_calls = 12
-active_seconds = 600
+# Omitted overrides use these automatic ceilings, capped by profile budgets.
+# model_calls = 8
+# tool_calls = 12
+# active_seconds = 600
 
 # Applies to automatic scheduled/proactive work. Jobs themselves live in state.db.
 [background]
