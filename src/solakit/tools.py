@@ -16,6 +16,10 @@ class Write(Read):
     overwrite: bool = False
 
 
+class Note(ToolArguments):
+    content: Annotated[str, Field(min_length=1, max_length=2000)]
+
+
 class Query(ToolArguments):
     query: Annotated[str, Field(min_length=1, max_length=4096)]
     limit: Annotated[int, Field(ge=1, le=100)] = 20
@@ -43,6 +47,10 @@ async def memory(context: ToolContext, args: Query) -> ToolResult:
     return ToolResult(data=await context.services.recall(args.query))
 
 
+async def remember(context: ToolContext, args: Note) -> ToolResult:
+    return ToolResult(data=context.services.remember(args.content))
+
+
 TOOLS = (
     Tool("files.read", "Read a UTF-8 file in a granted workspace.", Read, read),
     Tool(
@@ -54,5 +62,12 @@ TOOLS = (
     ),
     Tool("transcripts.search", "Search permitted conversation evidence.", Query, transcripts),
     Tool("runtime.status", "Inspect this run and local service status.", ToolArguments, status),
+    Tool(
+        "memory.remember",
+        "Stage an exact note locally; extraction follows a completed run.",
+        Note,
+        remember,
+        True,
+    ),
     Tool("memory.recall", "Recall scoped semantic memory, when available.", Query, memory),
 )

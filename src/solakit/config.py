@@ -80,6 +80,42 @@ class ModelSettings(Value):
         return value
 
 
+class MemorySettings(Value):
+    enabled: bool = False
+    base_url: str = "http://127.0.0.1:1933"
+    account: Name = "default"
+    user: Name = "default"
+    roots: tuple[str, ...] = ()
+    api_key_env: Annotated[str, Field(pattern=r"^[A-Za-z_][A-Za-z0-9_]*$")] | None = Field(
+        default=None, repr=False
+    )
+    timeout_seconds: Annotated[int, Field(ge=1, le=300)] = 15
+    backlog_cap: Annotated[int, Field(ge=1, le=10000)] = 128
+
+    @field_validator("base_url")
+    @classmethod
+    def endpoint(cls, value: str) -> str:
+        return ModelSettings.endpoint(value)
+
+    @field_validator("roots", mode="before")
+    @classmethod
+    def root_sequence(cls, value: object) -> object:
+        return tuple(value) if isinstance(value, list) else value
+
+    @field_validator("roots")
+    @classmethod
+    def canonical_roots(cls, values: tuple[str, ...]) -> tuple[str, ...]:
+        import re
+
+        roots = tuple(dict.fromkeys(value.rstrip("/") for value in values))
+        if any(
+            not re.fullmatch(r"viking://user/[A-Za-z0-9_][A-Za-z0-9_.-]*/memories", r)
+            for r in roots
+        ):
+            raise ValueError("memory roots must be canonical managed user memory roots")
+        return roots
+
+
 class OperatorConfig(Value):
     schema_version: SchemaVersion = 1
     data_dir: str = "~/.local/share/sola"
@@ -87,6 +123,7 @@ class OperatorConfig(Value):
     curated_memory_file: str | None = None
     shutdown_timeout_seconds: Annotated[int, Field(ge=1, le=60)] = 5
     model: ModelSettings = Field(default_factory=ModelSettings)
+    memory: MemorySettings = Field(default_factory=MemorySettings)
     tool_modules: list[Name] = Field(default_factory=list)
     loaded_tools: list[Name] = Field(default_factory=list)
     defaults: ProfileSettings = Field(default_factory=ProfileSettings)
@@ -109,6 +146,7 @@ class EffectiveProfile(Value):
     model_api_key_env: str | None = Field(repr=False)
     shutdown_timeout_seconds: int
     workspace_roots: tuple[Path, ...]
+    memory: MemorySettings = Field(default_factory=MemorySettings)
     tool_modules: tuple[str, ...] = ()
     loaded_tools: frozenset[str]
     granted_tools: frozenset[str]
@@ -123,6 +161,7 @@ class EffectiveProfile(Value):
         for key in ("loaded_tools", "granted_tools", "tools"):
             values[key] = sorted(values[key])
         values["model_api_key_env"] = "<redacted>" if self.model_api_key_env else None
+        values["memory"]["api_key_env"] = "<redacted>" if self.memory.api_key_env else None
         return {"values": values, "sources": dict(self.sources)}
 
 
@@ -171,6 +210,10 @@ def resolve_profile(
 ) -> EffectiveProfile:
     """Profiles inherit defaults and may only narrow authority and budgets."""
     base = (base or Path.cwd()).resolve()
+    if config.memory.enabled and config.memory.roots != (
+        f"viking://user/{config.memory.user}/memories",
+    ):
+        raise ConfigError("enabled memory requires exactly its selected user's managed root")
     chain: list[tuple[str, ProfileSettings]] = []
     seen: set[str] = set()
     parent = name
@@ -262,6 +305,7 @@ def resolve_profile(
         ("model_generation_timeout_seconds", "model.generation_timeout_seconds"),
         ("soul_file", "soul_file"),
         ("curated_memory_file", "curated_memory_file"),
+        ("memory", "memory"),
         ("loaded_tools", "loaded_tools"),
         ("tool_modules", "tool_modules"),
         ("shutdown_timeout_seconds", "shutdown_timeout_seconds"),
@@ -294,6 +338,7 @@ def resolve_profile(
         model_api_key_env=config.model.api_key_env,
         shutdown_timeout_seconds=config.shutdown_timeout_seconds,
         workspace_roots=roots,
+        memory=config.memory,
         tool_modules=tuple(config.tool_modules),
         loaded_tools=frozenset(config.loaded_tools),
         granted_tools=grants,
@@ -315,6 +360,8 @@ def restrict_to_admission(
         admitted.data_dir,
     ):
         raise ConfigError("runtime/model identity changed; a new admission is required")
+    if current.memory != admitted.memory:
+        raise ConfigError("memory service/scope changed; a new admission is required")
     roots = tuple(
         dict.fromkeys(
             inner

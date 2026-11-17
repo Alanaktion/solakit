@@ -9,6 +9,7 @@ from functools import partial
 from solakit.config import ConfigError, EffectiveProfile, restrict_to_admission
 from solakit.dispatch import Dispatcher
 from solakit.evidence import StorageError, canonical
+from solakit.memory import MemoryService
 from solakit.model import ModelAdapter, ModelError
 from solakit.prompts import PromptInput, PromptTurn, assemble
 from solakit.records import (
@@ -184,10 +185,12 @@ class RunLoop:
         max_pending: int = 64,
         max_active: int = 8,
         deferred: frozenset[str] = frozenset(),
+        memory: MemoryService | None = None,
     ) -> None:
         if max_pending < 1 or max_active < 1:
             raise ValueError("queue and active bounds must be positive")
         self.store, self.model, self.dispatcher = store, model, dispatcher
+        self.memory = memory
         self.max_pending, self.max_active, self.deferred = max_pending, max_active, deferred
         self.active: dict[str, asyncio.Task[None]] = {}
         self.sessions: set[str] = set()
@@ -338,11 +341,6 @@ class RunLoop:
                 canonical(self.store.admission_profile(queued.id))
             )
             self._profile(admitted)
-            if admitted.memory_mode == "required":
-                raise RunFailure(
-                    ErrorCode.MEMORY_UNAVAILABLE,
-                    "Required semantic memory is unavailable until Phase 7",
-                )
             if self.store.session(queued.session_id).archived:
                 raise RunFailure(ErrorCode.INVALID_INPUT, "Session was archived before execution")
             run = self.store.transition_run(queued.id, RunState.RUNNING)
@@ -399,6 +397,25 @@ class RunLoop:
                 if any(previous.id == run.id for _, previous in page):
                     break
                 after = page[-1][0]
+        recall = None
+        if self.memory:
+            query = (
+                "\n".join(turn.content for turn in history if turn.role in ("user", "assistant"))[
+                    -2000:
+                ]
+                + "\n"
+                + user.content
+            )
+            observation = await self.memory.recall(run, self._profile(admitted), query[-1000:])
+            recall = canonical(observation.model_dump(mode="json")).decode()
+            if admitted.mode != SessionMode.SHARED or admitted.memory_mode == "off":
+                recall = None
+            if admitted.memory_mode == "required" and observation.status != "ok":
+                raise RunFailure(
+                    ErrorCode.MEMORY_UNAVAILABLE, "Required memory recall is unavailable"
+                )
+        elif admitted.memory_mode == "required":
+            raise RunFailure(ErrorCode.MEMORY_UNAVAILABLE, "Required memory service is unavailable")
         hidden = self.deferred
         attempted: set[str] = set()
         requested = requested_tools(user.content, tuple(self.dispatcher.registry.tools))
@@ -443,6 +460,7 @@ class RunLoop:
                     prior_turns=tuple(history),
                     continuation=current[1:],
                     enable_thinking=False,
+                    recall=recall if profile.memory_mode != "off" else None,
                     tools=tools.schemas(deferred=hidden),
                     tool_catalog=tuple(sorted(hidden & tools.eligible())),
                     disclosure="deferred-experiment-v1" if self.deferred else "eager-v1",
@@ -576,6 +594,8 @@ class RunLoop:
                     RunState.FAILED if sticky else RunState.COMPLETED,
                     reason=sticky,
                 )
+                if self.memory:
+                    self.memory.changed.set()
                 return
             await asyncio.sleep(0)
         raise RunFailure(ErrorCode.BUDGET_EXCEEDED, "Model call budget exhausted")

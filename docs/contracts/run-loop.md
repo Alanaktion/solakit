@@ -141,8 +141,9 @@ An uncertain effect immediately fails the run and stops further model/tool work.
 Other tool failures/denials and refusals leaving requested work unexecuted remain
 a failed run even if the model produces a final answer. A schema/argument repair may resolve invalid input; optional memory
 unavailability may yield a completed degraded conversation with its failure receipt.
-Profiles requiring semantic memory fail before inference until Phase 7 supplies
-a recall service; required recall is never silently omitted. No model transport retry or uncertain
+Phase 7 supplies recorded recall once at run start and asynchronous completed-run
+extraction. Profiles requiring memory fail before inference when recall is unavailable;
+required recall is never silently omitted. See the [memory contract](memory.md). No model transport retry or uncertain
 non-idempotent retry is added. A model's deliberate repeated valid effect requests
 are still observable effects, not an exactly-once guarantee; the evaluator rejects
 duplicates and incorrect intermediate writes even if the final artifact is correct.

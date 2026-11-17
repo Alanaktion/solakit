@@ -236,3 +236,14 @@ def test_wildcards_expand_loaded_names_and_children_only_narrow(tmp_path: Path) 
     )
     assert "files.new" in resolve_profile(added).tools
     assert "files.new" not in restrict_to_admission(resolve_profile(added), admitted).tools
+
+
+def test_memory_credential_reference_is_redacted(profile: EffectiveProfile) -> None:
+    from solakit.config import MemorySettings
+
+    selected = profile.model_copy(
+        update={"memory": MemorySettings(api_key_env="PRIVATE_MEMORY_KEY")}
+    )
+    explanation = str(selected.explain())
+    assert "PRIVATE_MEMORY_KEY" not in explanation
+    assert "<redacted>" in explanation

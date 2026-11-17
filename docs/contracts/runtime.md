@@ -73,11 +73,13 @@ proactive no-action result; publication is not required.
 Delivery: `pending -> sending | cancelled`, then
 `sending -> delivered | failed | uncertain`. Each resulting terminal state is
 immutable. Uncertain delivery cannot be retried as a new send without explicit
-reconciliation/provider idempotency. Memory: `pending -> running | skipped`, then
-`running -> completed | failed`. A later retry uses a new linked operation in its
-own service, not a reopened historical record. A completed reply can retain pending
-delivery or extraction; neither lifecycle rewrites the run outcome. Eligibility
-checks before extraction belong to Phase 7.
+reconciliation/provider idempotency. Phase 7 memory extends its initial skeleton:
+`pending -> running -> accepted -> completed | failed`, with `ambiguous` for lost
+submission acceptance and explicit operator reconciliation to attach a verified
+provider task. Pending preflight and accepted observation retain bounded persisted
+backoff. No ambiguous submission is replayed. A completed reply can retain pending
+delivery or extraction; neither lifecycle rewrites the run outcome. See the
+[memory contract](memory.md) for eligibility, caps and recovery.
 
 Tool receipts distinguish `succeeded`, `failed`, `denied`, `cancelled`, and
 `uncertain`; non-success requires failure details. Effect certainty is separately

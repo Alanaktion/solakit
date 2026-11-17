@@ -29,6 +29,8 @@ from solakit.records import (
     ErrorCode,
     Failure,
     MemoryCommit,
+    MemoryNote,
+    MemoryRecall,
     MemoryState,
     Message,
     ModelRequest,
@@ -57,6 +59,8 @@ type StoredRecord = (
     | ToolCall
     | ToolReceipt
     | Delivery
+    | MemoryNote
+    | MemoryRecall
     | MemoryCommit
     | CompactionBoundary
     | RecoveryNote
@@ -529,6 +533,8 @@ class Store:
         | ToolCall
         | ToolReceipt
         | Delivery
+        | MemoryNote
+        | MemoryRecall
         | MemoryCommit
         | CompactionBoundary
         | RecoveryNote,
@@ -589,8 +595,26 @@ class Store:
             self._same_run(self._load("message", record.message_id, Message), record)
             if record.state != DeliveryState.PENDING:
                 raise ValueError("delivery must start pending")
-        if isinstance(record, MemoryCommit) and record.state != MemoryState.PENDING:
-            raise ValueError("memory work must start pending")
+        if isinstance(record, MemoryNote):
+            tool = self._load("tool", record.tool_call_id, ToolCall)
+            if tool.run_id != record.run_id or run.state != RunState.RUNNING:
+                raise ValueError("staged note requires its running tool")
+            if self.db.execute(
+                "SELECT 1 FROM entities WHERE kind='memory_note' "
+                "AND json_extract(body,'$.tool_call_id')=?",
+                (record.tool_call_id,),
+            ).fetchone():
+                raise ValueError("tool already staged a note")
+        if isinstance(record, MemoryCommit):
+            if record.state != MemoryState.PENDING:
+                raise ValueError("memory work must start pending")
+            if self.db.execute(
+                "SELECT 1 FROM entities WHERE kind='memory' AND run_id=?",
+                (record.run_id,),
+            ).fetchone():
+                raise ValueError("run already has a memory commit")
+            if record.payload and record.payload_sha256 != digest(canonical(record.payload)):
+                raise ValueError("memory payload hash mismatch")
         if isinstance(record, CompactionBoundary):
             for identity in (
                 *record.source_message_ids,
@@ -636,9 +660,10 @@ class Store:
         return record
 
     def transition_memory(
-        self, identity: str, state: MemoryState, *, reason: Failure | None = None
+        self, identity: str, state: MemoryState, *, reason: Failure | None = None, **changes: object
     ) -> MemoryCommit:
         record = self._load("memory", identity, MemoryCommit).transition(state, reason=reason)
+        record = MemoryCommit.model_validate(record.model_dump() | changes)
         self._commit((record,))
         return record
 
@@ -732,7 +757,7 @@ class Store:
             elif row["kind"] == "memory":
                 memory = self._load("memory", row["id"], MemoryCommit)
                 if memory.state == MemoryState.RUNNING:
-                    self.transition_memory(memory.id, MemoryState.FAILED, reason=reason)
+                    self.transition_memory(memory.id, MemoryState.AMBIGUOUS, reason=reason)
 
         for row in self.db.execute(
             "SELECT body FROM entities AS tool WHERE kind='tool' AND NOT EXISTS ("

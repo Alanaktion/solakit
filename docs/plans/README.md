@@ -63,6 +63,13 @@ results are reported separately. The final eager candidate passes the declared
 reliability thresholds; deferred disclosure fails its paired gate and stays disabled
 in production.
 
+Phase 7 adds OpenViking recall (stable >=0.5.5,<0.6.0; live baseline 0.5.5), exact note staging, asynchronous durable
+commit/extraction observation, copied-configuration migration and reconciliation.
+Read the [memory contract](../contracts/memory.md), [runbook](../memory.md), and
+[Phase 7 evidence](../validation/phase-07.md). The live test passes extraction and
+fresh-session retrieval in the operator-approved `sola-test` account. Production
+configuration/data migration and cutover retain their Phase 13 gate.
+
 - One Sola, one operator, one runtime process, one event loop, one worker, one shared inference semaphore.
 - Pinned local Qwen served by oMLX. No silent model substitution.
 - Operator-owned SOUL, curated memory, and prompt fragments preserve identity. The harness supplies mechanics rather than personality policy.

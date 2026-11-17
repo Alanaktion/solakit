@@ -1,6 +1,6 @@
 # Phase 7 — Semantic memory and configuration migration
 
-Status: planned. Depends on [Phase 6](PHASE-06-run-loop.md) and Phase 0 session-mode decisions. Unlocks persistent recall and memory-backed workflows.
+Status: implemented and locally/live verified; production migration remains Phase 13. Depends on [Phase 6](PHASE-06-run-loop.md) and Phase 0 session-mode decisions. Unlocks persistent recall and memory-backed workflows.
 
 ## Outcome
 
@@ -22,3 +22,18 @@ Test scope boundaries, staged-note exactness, commit deduplication, crash before
 Run a live test in an isolated test memory root: recall, state a distinctive fact, commit, wait for extraction, then recall from a fresh session without repeating the fact. Record actual retrieval separately from provider completion. Verify no live test fact enters production memory.
 
 Deliver adapter, memory tools/tracker, migration script and authority diff, outage/reconciliation runbook, and live evidence. Exit requires the complete live path; mocks cannot satisfy it.
+
+## Implementation evidence
+
+The 0.5.5 adapter, recorded recall, exact staged notes, durable extraction tracker,
+restart observer, copied-config migration/diff and reconciliation scripts are
+implemented. Read the [memory contract](../contracts/memory.md),
+[runbook](../memory.md), and [Phase 7 verification](../validation/phase-07.md).
+The live gate uses account `sola-test`, user `default`, isolated from the default
+account. Arbitrary extraction subdirectories are not supported by 0.5.5; the
+operator approved the dedicated test account instead. Production config/data and
+semantic memory were not migrated.
+
+The version check now accepts stable `>=0.5.5,<0.6.0`, including four-part
+hotfixes, instead of requiring exactly 0.5.5. Version 0.5.5 remains the live-tested
+baseline. See decision V2-28 and the [version-policy follow-up](../validation/phase-07-version-policy.md).

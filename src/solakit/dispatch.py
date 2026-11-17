@@ -4,7 +4,7 @@ import asyncio
 import time
 from collections.abc import Callable
 from pathlib import Path
-from typing import Literal, cast
+from typing import TYPE_CHECKING, Literal, cast
 
 from pydantic import JsonValue, ValidationError
 
@@ -30,6 +30,9 @@ from solakit.search import search
 from solakit.store import Store
 from solakit.tools import TOOLS
 
+if TYPE_CHECKING:
+    from solakit.memory import MemoryService
+
 MAX_ARGUMENT_BYTES = 65536
 MAX_ARTIFACT_BYTES = 1024 * 1024
 
@@ -45,6 +48,7 @@ class Dispatcher:
     ) -> None:
         self.store, self.registry, self.current = store, registry, current
         self.redactor = redactor or Redactor()
+        self.memory: MemoryService | None = None
         package = Path(__file__).resolve().parent
         checkout = package.parent.parent
         self.protected: tuple[Path, ...] = (
@@ -89,7 +93,7 @@ class ToolSession:
             for name in profile.tools
             if name in self.dispatcher.registry.tools
             and profile.origin in self.dispatcher.registry.tools[name].origins
-            and (name != "memory.recall" or profile.memory_mode != "off")
+            and (not name.startswith("memory.") or profile.memory_mode != "off")
         )
 
     async def dispatch(self, call: ToolCall) -> ToolReceipt:
@@ -300,16 +304,39 @@ class Invocation:
             "state": self.dispatcher.store.run(self.run_id).state.value,
             "tool_attempts": self.dispatcher.store.tool_attempts(self.run_id),
             "search": self.dispatcher.store.search_status,
-            "memory": "unavailable",
+            "memory": self.dispatcher.memory.status() if self.dispatcher.memory else "unavailable",
         }
 
     async def recall(self, query: str) -> JsonValue:
         profile = self.authority()
         if profile.mode != SessionMode.SHARED or profile.memory_mode == "off":
             raise ToolError("Memory is disabled for this run", ErrorCode.TOOL_DENIED)
-        raise ToolError(
-            "Semantic memory is unavailable until Phase 7", ErrorCode.MEMORY_UNAVAILABLE
-        )
+        if self.dispatcher.memory is None:
+            raise ToolError("Semantic memory is unavailable", ErrorCode.MEMORY_UNAVAILABLE)
+        run = self.dispatcher.store.run(self.run_id)
+        observation = await self.dispatcher.memory.recall(run, profile, query)
+        if observation.status != "ok":
+            raise ToolError("Semantic memory recall is degraded", ErrorCode.MEMORY_UNAVAILABLE)
+        return observation.model_dump(mode="json")
+
+    def remember(self, content: str) -> JsonValue:
+        profile = self.authority("files.write")
+        if profile.mode != SessionMode.SHARED or profile.memory_mode == "off":
+            raise ToolError("Memory is disabled for this run", ErrorCode.TOOL_DENIED)
+        if self.dispatcher.memory is None:
+            raise ToolError("Semantic memory is unavailable", ErrorCode.MEMORY_UNAVAILABLE)
+        from solakit.memory import MemoryError
+
+        try:
+            self.dispatcher.memory.adapter.check(profile)
+        except MemoryError:
+            raise ToolError(
+                "Semantic memory is unavailable", ErrorCode.MEMORY_UNAVAILABLE
+            ) from None
+        self.begin_effect()
+        note = self.dispatcher.memory.stage(self.run_id, self.call.id, content)
+        self.confirm_effect()
+        return {"status": "staged", "note_id": note.id, "run_id": note.run_id}
 
 
 def load_registry(profile: EffectiveProfile) -> Registry:

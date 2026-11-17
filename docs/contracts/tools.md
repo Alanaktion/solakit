@@ -192,7 +192,8 @@ opened directory trees or concurrently redefining Git metadata.
 | `files.read` / `files.write` | Tool grant + roots + guards | Same | Same | Same admitted narrower profile |
 | `transcripts.search` | Messages in shared sessions only | Own session only | Own run only | Bound session; own run if ephemeral |
 | `runtime.status` | Own run/service health | Own run | Own run | Own run |
-| `memory.recall` | Labelled unavailable until Phase 7 | Denied | Denied | Bound scope, unavailable until Phase 7 |
+| `memory.recall` | Recorded, scoped OpenViking 0.5 recall when enabled | Denied | Denied | Bound memory scope |
+| `memory.remember` | Exact local staging, extraction after completed runs | Denied | Denied | Bound memory scope; no wake creation |
 | Git metadata writes / managed file access | Denied | Denied | Denied | Denied |
 | Shell / process / delegation / wake creation | No provided service | No provided service | No provided service | No provided service |
 
@@ -202,3 +203,5 @@ filters to messages before applying the result limit, and exposes reference/hash
 provenance. An unavailable/corrupt projection produces an inspectable failure.
 The fake adapter in the external example writes SVG via the same guard; it does
 not exercise a real image endpoint. Phase 12 selects and verifies that workflow.
+
+Phase 7 memory lifecycle, limits and recovery are defined in the [memory contract](memory.md).

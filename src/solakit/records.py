@@ -294,6 +294,8 @@ class DeliveryState(StrEnum):
 
 
 class MemoryState(StrEnum):
+    ACCEPTED = "accepted"
+    AMBIGUOUS = "ambiguous"
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
@@ -328,15 +330,56 @@ class MemoryCommit(Record):
     state: MemoryState = MemoryState.PENDING
     reason: Failure | None = None
     provider_commit_id: ProviderID | None = None
+    payload: tuple[dict[str, JsonValue], ...] = ()
+    payload_sha256: str = ""
+    source_ids: tuple[RecordID, ...] = ()
+    note_ids: tuple[RecordID, ...] = ()
+    scope: dict[str, JsonValue] = Field(default_factory=dict)
+    attempts: Annotated[int, Field(ge=0)] = 0
+    next_check: Timestamp = Field(default_factory=utc_now)
 
     def transition(self, state: MemoryState, *, reason: Failure | None = None) -> Self:
         allowed = {
-            MemoryState.PENDING: (MemoryState.RUNNING, MemoryState.SKIPPED),
-            MemoryState.RUNNING: (MemoryState.COMPLETED, MemoryState.FAILED),
+            MemoryState.PENDING: (
+                MemoryState.PENDING,
+                MemoryState.RUNNING,
+                MemoryState.SKIPPED,
+                MemoryState.FAILED,
+            ),
+            MemoryState.RUNNING: (
+                MemoryState.ACCEPTED,
+                MemoryState.AMBIGUOUS,
+                MemoryState.COMPLETED,
+                MemoryState.FAILED,
+            ),
+            MemoryState.AMBIGUOUS: (MemoryState.ACCEPTED, MemoryState.FAILED),
+            MemoryState.FAILED: (MemoryState.ACCEPTED,),
+            MemoryState.ACCEPTED: (
+                MemoryState.ACCEPTED,
+                MemoryState.COMPLETED,
+                MemoryState.FAILED,
+            ),
         }
         if state not in allowed.get(self.state, ()):
             raise InvalidTransition(f"memory cannot transition from {self.state} to {state}")
         return type(self).model_validate(self.model_dump() | {"state": state, "reason": reason})
+
+
+class MemoryNote(Record):
+    session_id: RecordID
+    run_id: RecordID
+    tool_call_id: RecordID
+    content: Annotated[str, Field(min_length=1, max_length=2000)]
+
+
+class MemoryRecall(Record):
+    session_id: RecordID
+    run_id: RecordID
+    query: str
+    scope: dict[str, JsonValue] = Field(default_factory=dict)
+    status: Literal["ok", "degraded", "disabled"]
+    sources: tuple[dict[str, JsonValue], ...] = ()
+    elapsed_seconds: float = 0
 
 
 class CompactionBoundary(Record):

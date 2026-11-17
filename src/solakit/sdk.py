@@ -56,6 +56,8 @@ class Services(Protocol):
 
     async def recall(self, query: str) -> JsonValue: ...
 
+    def remember(self, content: str) -> JsonValue: ...
+
 
 @dataclass(frozen=True)
 class ToolContext:

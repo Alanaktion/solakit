@@ -683,7 +683,13 @@ def test_shared_inference_fifo_under_mixed_load(profile: EffectiveProfile) -> No
             nonlocal count, peak
             count += 1
             peak = max(count, peak)
-            order.append(next(m["content"] for m in body["messages"] if m["role"] == "user"))
+            order.append(
+                next(
+                    m["content"]
+                    for m in body["messages"]
+                    if m["role"] == "user" and m.get("name") != "recorded_recall"
+                )
+            )
             await asyncio.sleep(0.001)
             count -= 1
             if body["messages"][-1]["role"] == "user":
@@ -829,6 +835,113 @@ def test_required_memory_cannot_silently_run_without_recall(profile: EffectivePr
             assert outcome.state == RunState.FAILED and outcome.reason
             assert outcome.reason.code == ErrorCode.MEMORY_UNAVAILABLE
             assert not requests
+        finally:
+            await app.stop()
+
+    asyncio.run(scenario())
+
+
+def test_memory_reply_does_not_wait_for_extraction(profile: EffectiveProfile) -> None:
+    from solakit.config import MemorySettings
+    from solakit.records import MemoryRecall
+
+    async def scenario() -> None:
+        selected = profile.model_copy(
+            update={
+                "memory": MemorySettings(
+                    enabled=True,
+                    account="test",
+                    roots=("viking://user/default/memories",),
+                )
+            }
+        )
+        app, requests = harness(
+            selected,
+            [
+                reply("", calls=[call("memory.remember", '{"content":"precise λ"}')]),
+                reply("The note is staged."),
+            ],
+        )
+        assert app.memory
+        memory_requests: list[httpx2.Request] = []
+        submitting = asyncio.Event()
+        release = asyncio.Event()
+
+        async def respond(request: httpx2.Request) -> httpx2.Response:
+            memory_requests.append(request)
+            if request.url.path == "/health":
+                return httpx2.Response(200, json={"status": "ok", "version": "0.5.5"})
+            if request.url.path.endswith("/find"):
+                result: dict[str, Any] = {"memories": []}
+            elif request.url.path.endswith("/commit"):
+                submitting.set()
+                await release.wait()
+                result = {"task_id": "test-task"}
+            elif request.url.path == "/api/v1/sessions":
+                session = json.loads(request.content)["session_id"]
+                result = {
+                    "session_id": session,
+                    "uri": f"viking://user/default/sessions/{session}",
+                    "user": {"account_id": "test", "user_id": "default"},
+                }
+            else:
+                result = {"status": "completed"}
+            return httpx2.Response(200, json={"status": "ok", "result": result})
+
+        app.memory.adapter.transport = httpx2.MockTransport(respond)
+        await app.start()
+        assert app.store and app.runs
+        try:
+            topic = app.store.create_session()
+            run = app.runs.submit(
+                topic.id, profile=app.profile, content="Remember this note.", request_id=new_id()
+            )
+            assert (await app.runs.wait(run.id, timeout=2)).state == RunState.COMPLETED
+            await asyncio.wait_for(submitting.wait(), 2)
+            source = records(app.store, run.id)
+            assert sum(isinstance(r, MemoryRecall) for r in source) == 1
+            receipt = next(r for r in source if isinstance(r, ToolReceipt))
+            assert receipt.status == "succeeded" and "staged" in str(receipt.result)
+            assert sum(r.url.path.endswith("/find") for r in memory_requests) == 1
+            assert len(requests) == 2
+            recall = [m for m in requests[0]["messages"] if m.get("name") == "recorded_recall"]
+            assert json.loads(recall[0]["content"])["status"] == "ok"
+        finally:
+            release.set()
+            await app.stop()
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("required", [False, True])
+def test_memory_outage_is_recorded_separately_from_reply(
+    profile: EffectiveProfile, required: bool
+) -> None:
+    from solakit.config import MemorySettings
+    from solakit.records import MemoryRecall
+
+    async def scenario() -> None:
+        selected = profile.model_copy(
+            update={
+                "memory": MemorySettings(enabled=True, roots=("viking://user/default/memories",)),
+                "memory_mode": "required" if required else "optional",
+            }
+        )
+        app, requests = harness(selected, [reply("Hello.")])
+        assert app.memory
+        app.memory.adapter.transport = httpx2.MockTransport(lambda r: httpx2.Response(503))
+        await app.start()
+        assert app.store and app.runs
+        try:
+            session = app.store.create_session()
+            run = app.runs.submit(
+                session.id, profile=app.profile, content="Hello", request_id=new_id()
+            )
+            outcome = await app.runs.wait(run.id, timeout=2)
+            assert outcome.state == (RunState.FAILED if required else RunState.COMPLETED)
+            observation = next(r for r in records(app.store, run.id) if isinstance(r, MemoryRecall))
+            assert observation.status == "degraded"
+            assert len(requests) == (0 if required else 1)
         finally:
             await app.stop()
 

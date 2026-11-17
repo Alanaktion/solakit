@@ -3,7 +3,8 @@ schema_version = 1
 data_dir = "~/.local/share/sola"
 # Explicit import modules for installed trusted packs; loading grants no access.
 tool_modules = []
-# Built-ins: files.read, files.write, transcripts.search, runtime.status, memory.recall.
+# Built-ins: files.read, files.write, transcripts.search, runtime.status,
+# memory.recall, memory.remember.
 loaded_tools = []
 shutdown_timeout_seconds = 5
 # Operator-owned UTF-8 files, read verbatim; optional and never created by Sola.
@@ -18,6 +19,17 @@ base_url = "http://127.0.0.1:8000/v1"
 context_tokens = 32768
 connect_timeout_seconds = 5
 generation_timeout_seconds = 120
+
+# OpenViking stable >=0.5.5,<0.6.0; opt-in, with the selected user's managed root.
+[memory]
+enabled = false
+base_url = "http://127.0.0.1:1933"
+account = "default"
+user = "default"
+roots = ["viking://user/default/memories"]
+# api_key_env = "OPENVIKING_API_KEY"
+timeout_seconds = 15
+backlog_cap = 128
 
 [defaults]
 workspace_roots = ["."]

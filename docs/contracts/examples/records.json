@@ -137,7 +137,14 @@
     "run_id": "00000000000000000000000000000002",
     "state": "skipped",
     "reason": null,
-    "provider_commit_id": null
+    "provider_commit_id": null,
+    "payload": [],
+    "payload_sha256": "",
+    "source_ids": [],
+    "note_ids": [],
+    "scope": {},
+    "attempts": 0,
+    "next_check": "2026-11-16T12:00:00Z"
   },
   "CompactionBoundary": {
     "schema_version": 1,

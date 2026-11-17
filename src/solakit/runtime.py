@@ -14,6 +14,7 @@ from solakit.store import Store
 
 if TYPE_CHECKING:
     from solakit.dispatch import Dispatcher
+    from solakit.memory import MemoryService
     from solakit.model import ModelAdapter
     from solakit.run_loop import RunLoop
 
@@ -72,6 +73,7 @@ class ApplicationContext:
     model: ModelAdapter | None = None
     tools: Dispatcher | None = None
     runs: RunLoop | None = None
+    memory: MemoryService | None = None
     inference: asyncio.Semaphore = field(default_factory=lambda: asyncio.Semaphore(1), init=False)
     state: str = field(default="stopped", init=False)
     _active: list[Resource] = field(default_factory=list, init=False, repr=False)
@@ -152,6 +154,7 @@ def compose(
 ) -> ApplicationContext:
     """Resources are supplied in dependency order, closed in reverse order."""
     from solakit.dispatch import Dispatcher, load_registry
+    from solakit.memory import MemoryService, OpenViking
     from solakit.model import ModelAdapter
     from solakit.redaction import Redactor
     from solakit.run_loop import RunLoop
@@ -166,6 +169,12 @@ def compose(
         current_profile or (lambda admitted: context.profile),
         redactor=redactor,
     )
-    context.runs = RunLoop(store, context.model, context.tools)
-    context.resources = (store, context.model, *resources, context.runs)
+    context.memory = MemoryService(
+        store,
+        OpenViking(profile.memory, redactor),
+        context.tools.current,
+    )
+    context.tools.memory = context.memory
+    context.runs = RunLoop(store, context.model, context.tools, memory=context.memory)
+    context.resources = (store, context.model, context.memory, *resources, context.runs)
     return context

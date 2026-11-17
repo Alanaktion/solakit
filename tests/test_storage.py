@@ -314,7 +314,7 @@ def test_lineage_recovery_and_terminal_lifecycles(tmp_path: Path) -> None:
         )
         assert (
             next(record for record in records if isinstance(record, MemoryCommit)).state
-            == MemoryState.FAILED
+            == MemoryState.AMBIGUOUS
         )
         assert any(isinstance(record, ToolCall) for record in records)
         receipt = next(record for record in records if isinstance(record, ToolReceipt))
