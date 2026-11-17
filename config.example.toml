@@ -20,6 +20,16 @@ context_tokens = 32768
 connect_timeout_seconds = 5
 generation_timeout_seconds = 120
 
+[http]
+host = "127.0.0.1"
+port = 8765
+allowed_origins = ["http://127.0.0.1:8765", "http://localhost:8765"]
+# Set this environment variable before serve. The runtime does not load .env.
+password_env = "SOLA_OPERATOR_PASSWORD"
+secure_cookie = false
+session_seconds = 86400
+# Remote access: explicit https origins, secure_cookie=true, private backend + TLS proxy.
+
 # OpenViking stable >=0.5.5,<0.6.0; opt-in, with the selected user's managed root.
 [memory]
 enabled = false

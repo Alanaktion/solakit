@@ -3,38 +3,17 @@
 import argparse
 import asyncio
 import json
-from urllib.parse import quote
 
 from solakit.config import DEFAULT_CONFIG, load_config, resolve_profile
 from solakit.memory import MemoryService, OpenViking
-from solakit.records import MemoryCommit, MemoryState, utc_now
+from solakit.records import MemoryCommit
 from solakit.redaction import Redactor
 from solakit.runtime import DataDirectoryLock
 from solakit.store import Store
 
 
 async def reconcile(service: MemoryService, identity: str, task_id: str) -> MemoryCommit:
-    work = service.store._load("memory", identity, MemoryCommit)
-    if work.state not in (MemoryState.AMBIGUOUS, MemoryState.FAILED):
-        raise ValueError("only ambiguous or failed work needs manual reconciliation")
-    profile = service.profile(work.run_id)
-    service.adapter.check(profile)
-    await service.adapter.verify()
-    result = await service.adapter.request("GET", "/api/v1/tasks/" + quote(task_id, safe=""))
-    if (
-        not isinstance(result, dict)
-        or result.get("task_type") != "session_commit"
-        or result.get("resource_id") != "sola-" + work.id
-        or result.get("status") not in ("pending", "running", "completed", "failed", "cancelled")
-    ):
-        raise ValueError("provider task does not identify this commit's session")
-    return service.store.transition_memory(
-        identity,
-        MemoryState.ACCEPTED,
-        provider_commit_id=task_id,
-        attempts=0,
-        next_check=utc_now(),
-    )
+    return await service.reconcile(identity, task_id)
 
 
 async def run(args: argparse.Namespace) -> None:

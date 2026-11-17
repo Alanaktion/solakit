@@ -130,7 +130,7 @@ def restore(source: Path, destination: Path) -> None:
     try:
         if check.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
             raise CorruptionError("restored state integrity check failed")
-        if check.execute("PRAGMA user_version").fetchone()[0] != 1:
+        if check.execute("PRAGMA user_version").fetchone()[0] not in (1, 2):
             raise CorruptionError("unsupported backup state schema")
         # Reuse reconciliation read-only, without running startup recovery or indexing.
         check.row_factory = sqlite3.Row

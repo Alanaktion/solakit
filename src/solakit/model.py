@@ -3,7 +3,7 @@
 import asyncio
 import logging
 import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from typing import Any, cast
 
 import httpx2
@@ -11,6 +11,7 @@ from openai import APIError, APIStatusError, APITimeoutError, AsyncOpenAI
 from pydantic import Field, JsonValue
 
 from solakit.config import EffectiveProfile
+from solakit.events import Previews
 from solakit.evidence import canonical, checked_json
 from solakit.prompts import PreparedPrompt, inspect_prompt
 from solakit.records import (
@@ -19,6 +20,7 @@ from solakit.records import (
     Failure,
     ModelRequest,
     ModelStep,
+    Origin,
     ProviderID,
     Run,
     ToolProposal,
@@ -179,7 +181,12 @@ async def _events(chunks: AsyncIterator[bytes], raw: bytearray) -> AsyncIterator
     raise ModelError("Model stream ended without [DONE]")
 
 
-async def assemble_stream(chunks: AsyncIterator[bytes], pin: str, raw: bytearray) -> dict[str, Any]:
+async def assemble_stream(
+    chunks: AsyncIterator[bytes],
+    pin: str,
+    raw: bytearray,
+    preview: Callable[[str], None] | None = None,
+) -> dict[str, Any]:
     content, reasoning = "", ""
     calls: dict[int, dict[str, Any]] = {}
     finish = None
@@ -247,6 +254,8 @@ async def assemble_stream(chunks: AsyncIterator[bytes], pin: str, raw: bytearray
                     raise ModelError("Invalid streamed text")
                 if key == "content":
                     content += value
+                    if preview is not None and value:
+                        preview(content)
                 elif key != "reasoning" or delta.get("reasoning_content") is None:
                     reasoning += value
         fragments = delta.get("tool_calls")
@@ -299,6 +308,7 @@ class ModelAdapter:
         self.redactor = redactor or Redactor()
         self.transport = transport
         self.client: AsyncOpenAI | None = None
+        self.previews = Previews()
 
     async def start(self) -> None:
         if self.client is not None:
@@ -403,8 +413,16 @@ class ModelAdapter:
                         ),
                     )
                     if request["stream"]:
+
+                        def preview(text: str) -> None:
+                            if (
+                                run.origin == Origin.INTERACTIVE
+                                and manifest.get("purpose") != "compaction"
+                            ):
+                                self.previews.update(run.session_id, run.id, index, text)
+
                         data = await assemble_stream(
-                            response.aiter_bytes(), self.profile.model_pin, raw
+                            response.aiter_bytes(), self.profile.model_pin, raw, preview
                         )
                     else:
                         async for chunk in response.aiter_bytes():
@@ -470,4 +488,5 @@ class ModelAdapter:
                         **values,
                     )
                     self.store.append(step)
+                    self.previews.latest.pop(run.id, None)
             return ModelResult(step=step, calls=calls if failure is None else ())

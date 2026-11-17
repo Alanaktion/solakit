@@ -1,6 +1,12 @@
 # Phase 10 — API, authentication, CLI, and event transport
 
-Status: planned. Depends on [Phases 2–9](README.md). Unlocks the web client. No Android route/payload compatibility work is required.
+Status: implemented. Deterministic checks and the live pinned-Qwen HTTP gate are
+recorded in [Phase 10 evidence](../validation/phase-10.md). Operator acceptance,
+remote TLS deployment and browser usability remain pending. Depends on
+[Phases 2–9](README.md). Unlocks the web client. No Android route/payload
+compatibility work is required. Read the [API contract](../contracts/api.md),
+[event protocol](../contracts/events.md), [OpenAPI fixture](../contracts/examples/openapi.json)
+and [CLI documentation](../cli.md).
 
 ## Outcome
 

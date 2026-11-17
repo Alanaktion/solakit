@@ -12,7 +12,7 @@ from solakit.runtime import compose
 
 def test_health(profile: EffectiveProfile) -> None:
     context = compose(profile)
-    with TestClient(create_app(context)) as client:
+    with TestClient(create_app(context), base_url="http://127.0.0.1:8765") as client:
         response = client.get("/health")
         assert response.status_code == 200
         assert response.json() == {"status": "running", "phase": "run-loop"}

@@ -1,0 +1,306 @@
+"""Bounded operator views over the same headless services used by tools and jobs."""
+
+import asyncio
+import hashlib
+import os
+import stat
+from collections.abc import AsyncGenerator
+from typing import Any
+
+from solakit.auth import AuthService, Login, RequestError
+from solakit.config import EffectiveProfile
+from solakit.evidence import RECORDS, CorruptionError, canonical
+from solakit.prompts import PromptInput, assemble, inspect_prompt
+from solakit.records import (
+    Artifact,
+    Message,
+    ModelRequest,
+    Origin,
+    Record,
+    Run,
+    SessionMode,
+    new_id,
+)
+from solakit.runtime import ApplicationContext
+
+PAGE_BYTES = 512 * 1024
+RECORD_BYTES = 64 * 1024
+ARTIFACT_BYTES = 256 * 1024
+REPLAY_WINDOW = 1000
+MAX_STREAMS = 16
+HEARTBEAT_SECONDS = 15
+
+
+def record_view(sequence: int, record: Record) -> dict[str, Any]:
+    kind = next(name for name, cls in RECORDS.items() if isinstance(record, cls))
+    body = record.model_dump(mode="json")
+    size = len(canonical(body))
+    if size > RECORD_BYTES:
+        body = {key: body[key] for key in ("id", "run_id", "session_id") if key in body}
+        body["artifacts"] = {
+            name: value.model_dump(mode="json")
+            for name in type(record).model_fields
+            if isinstance(value := getattr(record, name), Artifact)
+        }
+    return {"sequence": sequence, "kind": kind, "record": body, "truncated": size > RECORD_BYTES}
+
+
+def page(rows: list[tuple[int, Record]], after: int) -> dict[str, Any]:
+    items: list[dict[str, Any]] = []
+    size = 0
+    for sequence, record in rows:
+        view = record_view(sequence, record)
+        length = len(canonical(view))
+        if items and size + length > PAGE_BYTES:
+            break
+        items.append(view)
+        size += length
+    return {"items": items, "next": items[-1]["sequence"] if items else after}
+
+
+def frame(event: str, data: object, cursor: str | None = None) -> bytes:
+    prefix = f"id: {cursor}\n" if cursor is not None else ""
+    return prefix.encode() + f"event: {event}\ndata: ".encode() + canonical(data) + b"\n\n"
+
+
+class ClientService:
+    def __init__(self, context: ApplicationContext, profiles: tuple[str, ...] = ()) -> None:
+        assert context.store and context.runs and context.tools and context.model
+        self.context = context
+        self.store, self.runs, self.tools, self.model = (
+            context.store,
+            context.runs,
+            context.tools,
+            context.model,
+        )
+        self.profiles = tuple(dict.fromkeys((context.profile.name, *profiles)))
+        self.streams = 0
+
+    def profile(self, name: str | None, mode: SessionMode) -> EffectiveProfile:
+        name = self.context.profile.name if name is None else name
+        if name not in self.profiles:
+            raise RequestError(422, "invalid_profile", "Unknown runtime profile")
+        return self.tools.current(
+            self.context.profile.model_copy(
+                update={"name": name, "mode": mode, "origin": Origin.INTERACTIVE}
+            )
+        )
+
+    async def submit(
+        self, session_id: str, name: str | None, content: str, request_id: str, wait: float
+    ) -> Run:
+        name = self.context.profile.name if name is None else name
+        if not content.strip() or len(content.encode()) > 32768:
+            raise RequestError(422, "invalid_input", "Content must contain 1–32768 UTF-8 bytes")
+        existing = self.store.request(request_id)
+        if existing is not None:
+            if existing.profile != name or existing.origin != Origin.INTERACTIVE:
+                raise RequestError(409, "conflict", "Idempotency key belongs to another submission")
+            profile = EffectiveProfile.model_validate_json(
+                canonical(self.store.admission_profile(existing.id))
+            )
+        else:
+            profile = self.profile(name, self.store.session(session_id).mode)
+        run = self.runs.submit(session_id, profile=profile, content=content, request_id=request_id)
+        if wait:
+            try:
+                return await self.runs.wait(run.id, timeout=wait)
+            except TimeoutError:
+                return self.store.run(run.id)
+        return run
+
+    def job_page(
+        self, after: tuple[str, str] | None, limit: int, job_id: str | None = None
+    ) -> dict[str, Any]:
+        from solakit.records import Job, Occurrence
+
+        kind = "occurrence" if job_id else "job"
+        if job_id:
+            self.store.job(job_id)
+        rows = self.store.db.execute(
+            "SELECT id FROM entities WHERE kind=? AND (created_at,id)>(?,?) "
+            "AND (? IS NULL OR json_extract(body,'$.job_id')=?) "
+            "AND (kind!='job' OR NOT json_extract(body,'$.deleted')) "
+            "ORDER BY created_at,id LIMIT ?",
+            (kind, *(after or ("", "")), job_id, job_id, limit),
+        ).fetchall()
+        items: list[dict[str, Any]] = []
+        size = 0
+        cursor = f"{after[0]},{after[1]}" if after else None
+        for row in rows:
+            record = self.store._load(kind, row[0], Occurrence if job_id else Job)
+            body = record.model_dump(mode="json")
+            length = len(canonical(body))
+            if items and size + length > PAGE_BYTES:
+                break
+            items.append(body)
+            size += length
+            cursor = f"{record.created_at.isoformat()},{record.id}"
+        return {"items": items, "next": cursor}
+
+    def snapshot(self, session_id: str) -> dict[str, Any]:
+        session, sequence = self.store.snapshot(session_id)
+        messages = self.store.db.execute(
+            "SELECT id,sequence FROM entities WHERE kind='message' AND session_id=? "
+            "AND json_extract(body,'$.origin') NOT IN ('scheduled','proactive') "
+            "OR kind='message' AND session_id=? AND EXISTS (SELECT 1 FROM entities AS d "
+            "WHERE d.kind='delivery' AND json_extract(d.body,'$.message_id')=entities.id "
+            "AND json_extract(d.body,'$.state')='delivered') ORDER BY sequence DESC LIMIT 50",
+            (session_id, session_id),
+        ).fetchall()
+        runs = self.store.db.execute(
+            "SELECT id FROM entities WHERE kind='run' AND session_id=? "
+            "ORDER BY sequence DESC LIMIT 50",
+            (session_id,),
+        ).fetchall()
+        return {
+            "session": session.model_dump(mode="json") | {"title": session.title[:256]},
+            "cursor": f"{session_id}:{sequence}",
+            "messages": [{"id": row[0], "sequence": row[1]} for row in reversed(messages)],
+            "runs": [
+                {"id": run.id, "state": run.state, "request_id": run.request_id}
+                for row in reversed(runs)
+                for run in (self.store.run(row[0]),)
+            ],
+            "replace_previews": True,
+        }
+
+    def event_cursor(self, session_id: str, cursor: str | None) -> int | None:
+        self.store.session(session_id)
+        if cursor is None:
+            return None
+        scope, separator, number = cursor.partition(":")
+        if (
+            scope != session_id
+            or not separator
+            or not number.isascii()
+            or not number.isdecimal()
+            or len(number) > 18
+        ):
+            raise RequestError(422, "invalid_cursor", "Cursor must belong to this session")
+        return int(number)
+
+    async def events(
+        self, session_id: str, after: int | None, auth: AuthService, login: Login
+    ) -> AsyncGenerator[bytes]:
+        snapshot = self.snapshot(session_id)
+        high = int(snapshot["cursor"].split(":")[1])
+        reset = after is not None and (after > high or high - after > REPLAY_WINDOW)
+        cursor = high if after is None or reset else after
+        yield frame("reset" if reset else "snapshot", snapshot, f"{session_id}:{cursor}")
+        preview_version = 0
+        heartbeat = asyncio.get_running_loop().time()
+        while True:
+            try:
+                auth.validate(login)
+            except RequestError:
+                yield frame("auth.expired", {})
+                return
+            _, high = self.store.snapshot(session_id)
+            events = self.store.events(session_id, after=cursor, limit=100)
+            gap = any(event.sequence != cursor + i + 1 for i, event in enumerate(events))
+            if high - cursor > REPLAY_WINDOW or gap or (high > cursor and not events):
+                snapshot = self.snapshot(session_id)
+                cursor = int(snapshot["cursor"].split(":")[1])
+                yield frame("reset", snapshot, f"{session_id}:{cursor}")
+                preview_version = self.model.previews.version
+                continue
+            for event in events:
+                cursor = event.sequence
+                yield frame(event.type, event.model_dump(mode="json"), f"{session_id}:{cursor}")
+            for preview in tuple(self.model.previews.latest.values()):
+                if preview["session_id"] == session_id and preview["version"] > preview_version:
+                    yield frame("preview", preview)
+            preview_version = self.model.previews.version
+            now = asyncio.get_running_loop().time()
+            if now - heartbeat >= HEARTBEAT_SECONDS:
+                yield b": heartbeat\n\n"
+                heartbeat = now
+            await asyncio.sleep(0 if len(events) == 100 else 0.1)
+
+    def artifact(
+        self, run_id: str, identity: str, offset: int, limit: int
+    ) -> tuple[bytes, Artifact]:
+        from solakit.store import valid_id
+
+        valid_id(identity)
+        if not 1 <= limit <= ARTIFACT_BYTES or offset < 0:
+            raise RequestError(422, "invalid_range", "Invalid artifact offset or byte limit")
+        # A guessed artifact ID is insufficient: it must be linked by this run's evidence.
+        self.store.run(run_id)
+        row = self.store.db.execute(
+            "SELECT kind,id FROM entities WHERE run_id=? AND ("
+            "json_extract(body,'$.body.path')=? OR json_extract(body,'$.manifest.path')=? OR "
+            "json_extract(body,'$.response.path')=? OR json_extract(body,'$.artifact.path')=?) "
+            "LIMIT 1",
+            (run_id, *([f"artifacts/{identity}"] * 4)),
+        ).fetchone()
+        if row is None:
+            raise KeyError(identity)
+        record = self.store._load(row[0], row[1], RECORDS[row[0]])
+        artifact = next(
+            value
+            for name in type(record).model_fields
+            if isinstance(value := getattr(record, name), Artifact)
+            and value.path == f"artifacts/{identity}"
+        )
+        path = self.store.root / artifact.path
+        if path.parent.is_symlink():
+            raise CorruptionError("artifact directory cannot be a symlink")
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+        with os.fdopen(fd, "rb") as source:
+            metadata = os.fstat(source.fileno())
+            if (
+                not stat.S_ISREG(metadata.st_mode)
+                or metadata.st_nlink != 1
+                or metadata.st_size != artifact.length
+            ):
+                raise CorruptionError("invalid artifact file")
+            checksum = hashlib.sha256()
+            while chunk := source.read(65536):
+                checksum.update(chunk)
+            if checksum.hexdigest() != artifact.sha256:
+                raise CorruptionError("artifact hash mismatch")
+            if offset > artifact.length:
+                raise RequestError(416, "invalid_range", "Offset exceeds artifact length")
+            source.seek(offset)
+            return source.read(limit), artifact
+
+    def prompt(self, name: str | None, content: str, hashes: bool) -> dict[str, Any]:
+        if not content.strip() or len(content.encode()) > 32768:
+            raise RequestError(422, "invalid_input", "Content must contain 1–32768 UTF-8 bytes")
+        from solakit.records import utc_now
+
+        profile = self.profile(name, SessionMode.SHARED)
+        prepared = assemble(
+            profile,
+            PromptInput(
+                at=utc_now(),
+                input=Message(
+                    origin=Origin.INTERACTIVE,
+                    session_id=new_id(),
+                    run_id=new_id(),
+                    role="user",
+                    content=content,
+                ),
+                tools=self.tools.registry.visible(profile.tools),
+                enable_thinking=False,
+            ),
+        )
+        result = inspect_prompt(prepared, hashes=hashes)
+        if len(canonical(result)) > PAGE_BYTES:
+            raise RequestError(
+                413, "inspection_too_large", "Use hashes or recorded artifact retrieval"
+            )
+        return result
+
+    def prompts(self, run_id: str, after: int, limit: int) -> dict[str, Any]:
+        self.store.run(run_id)
+        rows = self.store.db.execute(
+            "SELECT id,sequence FROM entities WHERE kind='request' AND run_id=? AND sequence>? "
+            "ORDER BY sequence LIMIT ?",
+            (run_id, after, limit),
+        ).fetchall()
+        return page(
+            [(row[1], self.store._load("request", row[0], ModelRequest)) for row in rows], after
+        )

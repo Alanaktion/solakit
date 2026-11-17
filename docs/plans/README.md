@@ -83,6 +83,14 @@ Qwen → bound topic → OpenViking extraction gate passed in the approved test 
 Read the [job contract](../contracts/jobs.md) and [Phase 9 evidence](../validation/phase-09.md).
 Job HTTP/CLI/UI surfaces and production job migration remain later gates.
 
+Phase 10 adds persistent operator authentication, exact Host/origin/CSRF checks,
+versioned resources over shared services, bounded SSE snapshots/replay/previews,
+authorized artifact chunks and opt-in live CLI health checks. A disposable live
+pinned-Qwen conversation passed over authenticated HTTP. Read the
+[API contract](../contracts/api.md), [event protocol](../contracts/events.md),
+[CLI guide](../cli.md) and [Phase 10 evidence](../validation/phase-10.md).
+Browser usability, remote TLS deployment and production cutover retain later gates.
+
 - One Sola, one operator, one runtime process, one event loop, one worker, one shared inference semaphore.
 - Pinned local Qwen served by oMLX. No silent model substitution.
 - Operator-owned SOUL, curated memory, and prompt fragments preserve identity. The harness supplies mechanics rather than personality policy.

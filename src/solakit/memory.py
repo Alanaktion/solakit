@@ -478,3 +478,27 @@ class MemoryService:
             )
         }
         return {"observer": "failed" if self.failure else "running", "commits": counts}
+
+    async def reconcile(self, identity: str, task_id: str) -> MemoryCommit:
+        work = self.store._load("memory", identity, MemoryCommit)
+        if work.state not in (MemoryState.AMBIGUOUS, MemoryState.FAILED):
+            raise ValueError("only ambiguous or failed work needs manual reconciliation")
+        profile = self.profile(work.run_id)
+        self.adapter.check(profile)
+        await self.adapter.verify()
+        result = await self.adapter.request("GET", "/api/v1/tasks/" + quote(task_id, safe=""))
+        if (
+            not isinstance(result, dict)
+            or result.get("task_type") != "session_commit"
+            or result.get("resource_id") != "sola-" + work.id
+            or result.get("status")
+            not in ("pending", "running", "completed", "failed", "cancelled")
+        ):
+            raise ValueError("provider task does not identify this commit's session")
+        return self.store.transition_memory(
+            identity,
+            MemoryState.ACCEPTED,
+            provider_commit_id=task_id,
+            attempts=0,
+            next_check=utc_now(),
+        )

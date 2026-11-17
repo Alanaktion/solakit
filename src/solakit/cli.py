@@ -27,6 +27,7 @@ def main() -> None:
         command.add_argument("--config", type=Path)
         command.add_argument("--profile", default="default")
     check.add_argument("--explain", action="store_true")
+    check.add_argument("--live", action="store_true", help="contact model/memory health only")
     prompt = commands.add_parser("prompt", help="offline prompt inspection (private content)")
     prompt.add_argument("text", nargs="?")
     prompt.add_argument("--config", type=Path)
@@ -60,26 +61,33 @@ def main() -> None:
             )
 
         try:
+            config = load_config(args.config)
             profile = resolve_profile(
-                load_config(args.config),
+                config,
                 args.profile,
                 base=(args.config or DEFAULT_CONFIG).resolve().parent,
             )
         except ConfigError as error:
             parser.error(str(error))
         uvicorn.run(
-            create_app(compose(profile, current_profile=current_profile)),
-            host="127.0.0.1",
-            port=8765,
+            create_app(
+                compose(profile, current_profile=current_profile),
+                profile_names=tuple(config.profiles),
+            ),
+            host=profile.http.host,
+            port=profile.http.port,
             workers=1,
+            proxy_headers=False,
+            access_log=False,
         )
     elif args.command == "check":
         report: dict[str, object] = {
-            "phase": "run-loop",
+            "phase": "api-cli-events",
             "python": platform.python_version(),
             "packages": {name: version(name) for name in ("solakit", "fastapi", "openai")},
             "runtime_configured": False,
         }
+        live_results: dict[str, dict[str, str]] = {}
         try:
             profile = resolve_profile(
                 load_config(args.config),
@@ -92,8 +100,22 @@ def main() -> None:
             report["runtime_configured"] = True
             if args.explain:
                 report["effective_config"] = profile.explain()
+            if args.live:
+                import asyncio
+
+                live_results = asyncio.run(live_check(profile))
+                report["live"] = live_results
         report["verification"] = "Local validation only; no services started or contacted."
+        if args.live:
+            report["verification"] = (
+                "Live health/model-ID checks only; no worker, scheduler or inference started."
+            )
         print(json.dumps(report, indent=2))
+        if args.live and (
+            not report["runtime_configured"]
+            or any(value.get("status") == "failed" for value in live_results.values())
+        ):
+            raise SystemExit(2)
         if not report["runtime_configured"] and (
             args.config is not None or DEFAULT_CONFIG.exists()
         ):
@@ -170,3 +192,43 @@ def main() -> None:
         print(json.dumps({"status": "available", "results": results}, ensure_ascii=False, indent=2))
     else:
         parser.error(f"{args.command} is not implemented yet; see its phase plan")
+
+
+async def live_check(profile: EffectiveProfile) -> dict[str, dict[str, str]]:
+    import asyncio
+
+    from solakit.memory import OpenViking
+    from solakit.model import ModelAdapter
+    from solakit.redaction import Redactor
+    from solakit.store import Store
+
+    redactor = Redactor()
+    model = ModelAdapter(profile, Store(profile.data_dir), asyncio.Semaphore(1), redactor=redactor)
+    memory = OpenViking(profile.memory, redactor)
+    results: dict[str, dict[str, str]] = {}
+    try:
+        try:
+            await model.start()
+            await model.verify()
+            results["model"] = {"status": "available", "pin": profile.model_pin}
+        except Exception:
+            results["model"] = {"status": "failed", "error": "Model health/pin check failed"}
+        if profile.memory.enabled:
+            try:
+                await memory.start()
+                verified = await memory.verify()
+                results["memory"] = {"status": "available", "version": str(verified["version"])}
+            except Exception:
+                results["memory"] = {
+                    "status": "failed",
+                    "error": "Memory health/version check failed",
+                }
+        else:
+            results["memory"] = {"status": "disabled"}
+    finally:
+        for name, adapter in (("memory", memory), ("model", model)):
+            try:
+                await adapter.stop()
+            except Exception:
+                results[name] = {"status": "failed", "error": "Client cleanup failed"}
+    return results

@@ -7,7 +7,7 @@ from typing import Annotated, Literal
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import Field, ValidationError, field_validator
+from pydantic import Field, ValidationError, field_validator, model_validator
 
 from solakit.records import Origin, SchemaVersion, SessionMode, Value
 
@@ -138,6 +138,45 @@ class BackgroundSettings(Value):
         return value
 
 
+class HTTPSettings(Value):
+    host: str = "127.0.0.1"
+    port: Annotated[int, Field(ge=1, le=65535)] = 8765
+    allowed_origins: tuple[str, ...] = ("http://127.0.0.1:8765", "http://localhost:8765")
+    secure_cookie: bool = False
+    password_env: Annotated[str, Field(pattern=r"^[A-Za-z_][A-Za-z0-9_]*$")] = Field(
+        default="SOLA_OPERATOR_PASSWORD", repr=False
+    )
+    session_seconds: Annotated[int, Field(ge=60, le=2592000)] = 86400
+
+    @field_validator("allowed_origins", mode="before")
+    @classmethod
+    def origins(cls, values: object) -> tuple[str, ...]:
+        if not isinstance(values, (list, tuple)) or not values:
+            raise ValueError("explicit allowed origins are required")
+        for value in values:
+            if not isinstance(value, str):
+                raise ValueError("invalid origin")
+            ModelSettings.endpoint(value)
+            url = urlsplit(value)
+            if url.path or url.netloc != url.netloc.lower():
+                raise ValueError("origins must be canonical scheme and authority only")
+        return tuple(dict.fromkeys(values))
+
+    @model_validator(mode="after")
+    def transport(self) -> HTTPSettings:
+        import ipaddress
+
+        for origin in self.allowed_origins:
+            url = urlsplit(origin)
+            try:
+                loopback = ipaddress.ip_address(url.hostname or "").is_loopback
+            except ValueError:
+                loopback = url.hostname == "localhost"
+            if not loopback and (url.scheme != "https" or not self.secure_cookie):
+                raise ValueError("remote origins require HTTPS and secure cookies")
+        return self
+
+
 class OperatorConfig(Value):
     schema_version: SchemaVersion = 1
     data_dir: str = "~/.local/share/sola"
@@ -152,6 +191,7 @@ class OperatorConfig(Value):
     profiles: dict[Name, ProfileSettings] = Field(default_factory=dict)
     proactive_budgets: BudgetOverrides = Field(default_factory=BudgetOverrides)
     background: BackgroundSettings = Field(default_factory=BackgroundSettings)
+    http: HTTPSettings = Field(default_factory=HTTPSettings)
 
 
 class EffectiveProfile(Value):
@@ -171,6 +211,7 @@ class EffectiveProfile(Value):
     workspace_roots: tuple[Path, ...]
     memory: MemorySettings = Field(default_factory=MemorySettings)
     background: BackgroundSettings = Field(default_factory=BackgroundSettings)
+    http: HTTPSettings = Field(default_factory=HTTPSettings)
     proactive_budgets: BudgetOverrides = Field(default_factory=BudgetOverrides)
     tool_modules: tuple[str, ...] = ()
     loaded_tools: frozenset[str]
@@ -187,6 +228,7 @@ class EffectiveProfile(Value):
             values[key] = sorted(values[key])
         values["model_api_key_env"] = "<redacted>" if self.model_api_key_env else None
         values["memory"]["api_key_env"] = "<redacted>" if self.memory.api_key_env else None
+        values["http"]["password_env"] = "<redacted>"
         return {"values": values, "sources": dict(self.sources)}
 
 
@@ -332,6 +374,7 @@ def resolve_profile(
         ("curated_memory_file", "curated_memory_file"),
         ("memory", "memory"),
         ("background", "background"),
+        ("http", "http"),
         ("proactive_budgets", "proactive_budgets"),
         ("loaded_tools", "loaded_tools"),
         ("tool_modules", "tool_modules"),
@@ -367,6 +410,7 @@ def resolve_profile(
         workspace_roots=roots,
         memory=config.memory,
         background=config.background,
+        http=config.http,
         proactive_budgets=config.proactive_budgets,
         tool_modules=tuple(config.tool_modules),
         loaded_tools=frozenset(config.loaded_tools),

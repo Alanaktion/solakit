@@ -9,13 +9,19 @@ The core wheel contains `solakit` only; developer evaluations and future packs a
 uv sync --locked
 uv run sola check --explain
 uv run sola check --config config.example.toml --explain
+uv run sola check --config config.example.toml --live
 uv run sola serve --config config.example.toml
 ```
 
 `serve` validates configuration and owns the data-directory lock for `/health`
 at `http://127.0.0.1:8765` with one worker. Set the data directory and workspace
 roots before using the example; relative paths resolve beside the TOML file.
-It opens/reconciles the evidence store and owns a pinned oMLX client before serving
+Set the `SOLA_OPERATOR_PASSWORD` environment variable before serving to enable
+operator login. Phase 10 exposes the [authenticated HTTP API](docs/contracts/api.md),
+[SSE transport](docs/contracts/events.md) and [four-command CLI](docs/cli.md).
+The default bind is localhost; remote origins require explicit HTTPS/Secure-cookie
+configuration and a private backend behind a TLS proxy. It opens/reconciles the
+evidence store and owns a pinned oMLX client before serving
 health; startup contacts oMLX only when resuming queued work. Phase 6 adds the
 [headless run service](docs/contracts/run-loop.md): durable bounded queues,
 model/tool turns, cancellation, recovery and inspectable outcomes.
@@ -47,7 +53,9 @@ See the [model/prompt contract](docs/contracts/model-prompts.md) for exact place
 request artifacts, timeouts, reasoning fields and estimated token accounting.
 
 `check` validates installation/configuration without starting services or reading
-credentials. `--explain` includes effective authority and each value's source,
+credentials. `--live` explicitly checks model/memory health without inference,
+operational state or background tasks. `--explain` includes effective authority
+and each value's source,
 with credential references redacted. The default config path is
 `~/.config/sola/config.toml`; a missing default reports an unconfigured installation.
 
@@ -60,7 +68,7 @@ uv run --locked python scripts/smoke_wheel.py
 ```
 
 See [evaluation instructions](evals/README.md), the [phase plans](docs/plans/README.md),
-and [validation evidence](docs/validation/phase-09.md). The
+and [validation evidence](docs/validation/phase-10.md). The
 [tool SDK and access matrix](docs/contracts/tools.md) describe explicit pack loading,
 guarded file access, transcript search, status, and scoped memory tools.
 The separately installable [example pack](examples/phase5_pack/) demonstrates
@@ -74,4 +82,5 @@ migration. Setup, isolated live probes and reconciliation are in the
 and restart recovery while preserving original searchable history. Phase 9 adds
 [durable scheduled/proactive jobs](docs/contracts/jobs.md), bounded wake-ups,
 quiet-hour delivery and inspectable occurrence outcomes through `context.jobs`.
-UI, authenticated job endpoints and production cutover retain later gates.
+Phase 10 exposes authenticated job controls and headless conversation over HTTP.
+Browser UI and production cutover retain their later gates.

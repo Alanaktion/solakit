@@ -7,7 +7,7 @@ loop; there is no extra worker or independent SQLite writer.
 
 ## Layout and framing
 
-`state.db` (SQLite schema/user_version 1, WAL, synchronous FULL) owns operational
+`state.db` (SQLite schema/user_version 2, WAL, synchronous FULL) owns operational
 records, admission keys, per-session sequences and the evidence outbox.
 `evidence/00000001.jsonl` and subsequent numbered segments contain versioned
 entries with stable IDs, a typed record, optional per-session durable event, and
@@ -66,6 +66,11 @@ Snapshots pair records and the session high-water sequence in one SQLite read
 transaction. Evidence references contain segment, byte offset, length, SHA-256
 and entry ID; reads verify bytes and identity rather than trusting cached offsets.
 These operator services do not grant model-callable cross-session access.
+
+Phase 10 upgrades schema 1 transactionally by adding hashed login sessions,
+expiry/revocation and the persistent login throttle. These are operational state,
+outside JSONL/search. Existing evidence and admission keys are unchanged. Coherent
+backup/restore supports schemas 1 and 2; opening restored schema 1 upgrades it.
 
 Search schema/projection version 1 uses FTS5 with bound, literal phrase queries,
 source hashes, byte offsets, record IDs, entry IDs, checkpoints and snippets.

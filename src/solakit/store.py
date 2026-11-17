@@ -97,6 +97,16 @@ PRAGMA user_version=1;
 ID_ADAPTER = TypeAdapter(RecordID)
 TIME_ADAPTER = TypeAdapter(Timestamp)
 
+AUTH_SCHEMA = """
+CREATE TABLE login_sessions (
+ token_hash TEXT PRIMARY KEY, csrf_hash TEXT NOT NULL, expires_at REAL NOT NULL,
+ revoked INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE login_throttle (id INTEGER PRIMARY KEY CHECK(id=1),
+ failures INTEGER NOT NULL, window_start REAL NOT NULL);
+PRAGMA user_version=2;
+"""
+
 
 def valid_id(value: str) -> str:
     return ID_ADAPTER.validate_python(value)
@@ -155,8 +165,10 @@ class Store:
                     raise CorruptionError("unversioned operational database")
                 self.db.executescript("BEGIN IMMEDIATE;\n" + SCHEMA + "\nCOMMIT;")
                 sync_directory(self.root)
-            elif version != 1:
+            elif version not in (1, 2):
                 raise CorruptionError("unsupported state schema version")
+            if version in (0, 1):
+                self.db.executescript("BEGIN IMMEDIATE;\n" + AUTH_SCHEMA + "\nCOMMIT;")
             if self.db.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
                 raise CorruptionError("state integrity check failed")
             self.log.recover()
