@@ -1,6 +1,6 @@
 # Phase 11 — Chat-first web UI
 
-Status: planned. Depends on [Phase 10](PHASE-10-api-cli-events.md). Unlocks browser/operator acceptance of the daily-use candidate.
+Status: implemented; automated verification is recorded in [Phase 11 evidence](../validation/phase-11.md). Operator acceptance remains pending. Depends on [Phase 10](PHASE-10-api-cli-events.md). Unlocks browser/operator acceptance of the daily-use candidate.
 
 ## Outcome
 

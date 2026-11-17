@@ -91,6 +91,12 @@ pinned-Qwen conversation passed over authenticated HTTP. Read the
 [CLI guide](../cli.md) and [Phase 10 evidence](../validation/phase-10.md).
 Browser usability, remote TLS deployment and production cutover retain later gates.
 
+Phase 11 adds the packaged chat/Settings shell, stable vanilla-JavaScript rendering,
+bounded backward history, durable browser retries and shared SSE/polling recovery.
+Read the [UI guide](../chat-ui.md) and [Phase 11 evidence](../validation/phase-11.md).
+Operator completion of the conversation/tool/scheduled/recovery journeys remains
+an explicit acceptance gate; browser automation does not stand in for it.
+
 - One Sola, one operator, one runtime process, one event loop, one worker, one shared inference semaphore.
 - Pinned local Qwen served by oMLX. No silent model substitution.
 - Operator-owned SOUL, curated memory, and prompt fragments preserve identity. The harness supplies mechanics rather than personality policy.

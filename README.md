@@ -17,7 +17,8 @@ uv run sola serve --config config.example.toml
 at `http://127.0.0.1:8765` with one worker. Set the data directory and workspace
 roots before using the example; relative paths resolve beside the TOML file.
 Set the `SOLA_OPERATOR_PASSWORD` environment variable before serving to enable
-operator login. Phase 10 exposes the [authenticated HTTP API](docs/contracts/api.md),
+operator login. Open `/` for the [chat and Settings UI](docs/chat-ui.md).
+Phase 10 exposes the [authenticated HTTP API](docs/contracts/api.md),
 [SSE transport](docs/contracts/events.md) and [four-command CLI](docs/cli.md).
 The default bind is localhost; remote origins require explicit HTTPS/Secure-cookie
 configuration and a private backend behind a TLS proxy. It opens/reconciles the
@@ -68,7 +69,7 @@ uv run --locked python scripts/smoke_wheel.py
 ```
 
 See [evaluation instructions](evals/README.md), the [phase plans](docs/plans/README.md),
-and [validation evidence](docs/validation/phase-10.md). The
+and [validation evidence](docs/validation/phase-11.md). The
 [tool SDK and access matrix](docs/contracts/tools.md) describe explicit pack loading,
 guarded file access, transcript search, status, and scoped memory tools.
 The separately installable [example pack](examples/phase5_pack/) demonstrates
@@ -84,3 +85,7 @@ and restart recovery while preserving original searchable history. Phase 9 adds
 quiet-hour delivery and inspectable occurrence outcomes through `context.jobs`.
 Phase 10 exposes authenticated job controls and headless conversation over HTTP.
 Browser UI and production cutover retain their later gates.
+
+Phase 11 adds chat/Settings, bounded history, stable streamed turns, durable browser
+submission retries and recovery controls. See the [UI guide](docs/chat-ui.md) for
+use and disposable browser acceptance; operator acceptance remains separate.

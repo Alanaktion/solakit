@@ -50,6 +50,10 @@ integration is a separate deployment verification, not claimed by local tests.
 
 ## Browser request matrix
 
+The public chat shell at `/` and its three explicit `/assets/` files permit GET
+without login; they contain no runtime data or credential values. All API paths
+retain the authentication matrix below.
+
 All paths, including health, require Host to match an authority in
 `http.allowed_origins`. Duplicate Host, Origin, Authorization, CSRF and length
 headers and duplicate login cookies are rejected. Scheme/authority origins are
@@ -129,6 +133,15 @@ sequence pages contain `sequence`, `kind`, `record`, and `truncated`. Run update
 do not move their admission position: use GET or events to refresh their state.
 Search is a bounded ranked query, without a pagination cursor. Metadata catalogs
 are bounded single responses.
+
+Messages, session runs and run records additionally accept `before=0` for their
+newest bounded page, or `before=<sequence>` for strictly older records. They
+return items in ascending display order and `next` as the oldest returned
+sequence to use as the next `before` cursor. An empty page ends backward paging.
+Do not combine a nonzero `after` with `before`. Existing forward paging is
+unchanged. Limits and byte caps apply before reversing a backward page, so large
+records cannot skip unseen history. Truncated message/receipt views retain
+origin, role and tool-call correlation; content stays bounded or artifact-backed.
 
 Sequence pages stop around 512 KiB of canonical data, even before the requested
 count. Individual execution records above 64 KiB return IDs and directly linked

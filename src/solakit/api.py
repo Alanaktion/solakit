@@ -4,13 +4,14 @@ import asyncio
 from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
+from pathlib import Path as FilePath
 from typing import Annotated, Any, Literal, cast
 from urllib.parse import urlsplit
 
 from fastapi import FastAPI, Path, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.openapi.utils import get_openapi
-from fastapi.responses import JSONResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt
 from starlette.exceptions import HTTPException
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
@@ -55,6 +56,13 @@ def bounded(result: dict[str, Any]) -> dict[str, Any]:
         raise RequestError(
             413, "response_too_large", "Narrow the query or retrieve recorded artifacts"
         )
+    return result
+
+
+def history_page(rows: list[tuple[int, Any]], after: int, before: int | None) -> dict[str, Any]:
+    result = page(rows, after if before is None else before)
+    if before is not None:
+        result["items"].reverse()
     return result
 
 
@@ -132,7 +140,11 @@ class Boundary:
             authorization = request.headers.get("authorization")
             if cookie is not None and authorization is not None:
                 raise RequestError(400, "ambiguous_auth", "Use cookie or bearer authentication")
-            public = request.url.path == "/health"
+            public = request.url.path == "/health" or (
+                request.method in ("GET", "HEAD")
+                and request.url.path
+                in ("/", "/assets/chat.css", "/assets/chat.js", "/assets/markdown.js")
+            )
             login_route = request.url.path == "/api/v1/auth/login"
             mutation = request.method not in ("GET", "HEAD", "OPTIONS")
             if login_route:
@@ -310,6 +322,24 @@ def create_app(
     app.state.context, app.state.service, app.state.auth = context, service, auth
     app.add_middleware(Boundary, auth=auth)
 
+    @app.get("/", include_in_schema=False)
+    async def chat() -> FileResponse:
+        return FileResponse(
+            FilePath(__file__).parent / "web" / "index.html",
+            headers={
+                "Content-Security-Policy": "default-src 'self'; script-src 'self'; "
+                "style-src 'self'; img-src 'self'; connect-src 'self'; "
+                "object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
+                "Referrer-Policy": "no-referrer",
+            },
+        )
+
+    @app.get("/assets/{name}", include_in_schema=False)
+    async def asset(name: str) -> FileResponse:
+        if name not in ("chat.css", "chat.js", "markdown.js"):
+            raise HTTPException(404)
+        return FileResponse(FilePath(__file__).parent / "web" / name)
+
     @app.exception_handler(HTTPException)
     async def http_error(request: Request, error: HTTPException) -> JSONResponse:
         return failure(error.status_code, "http_error", "HTTP resource or method unavailable")
@@ -432,12 +462,26 @@ def create_app(
         return store.update_session(session_id, **body.model_dump(exclude_unset=True))
 
     @app.get("/api/v1/sessions/{session_id}/messages")
-    async def messages(session_id: ID, after: After = 0, limit: Limit = 50) -> dict[str, Any]:
-        return page(list(store.messages(session_id, after=after, limit=limit)), after)
+    async def messages(
+        session_id: ID,
+        after: After = 0,
+        limit: Limit = 50,
+        before: Annotated[int | None, Query(ge=0)] = None,
+    ) -> dict[str, Any]:
+        return history_page(
+            store.messages(session_id, after=after, limit=limit, before=before), after, before
+        )
 
     @app.get("/api/v1/sessions/{session_id}/runs")
-    async def session_runs(session_id: ID, after: After = 0, limit: Limit = 50) -> dict[str, Any]:
-        return page(list(store.runs(session_id, after=after, limit=limit)), after)
+    async def session_runs(
+        session_id: ID,
+        after: After = 0,
+        limit: Limit = 50,
+        before: Annotated[int | None, Query(ge=0)] = None,
+    ) -> dict[str, Any]:
+        return history_page(
+            store.runs(session_id, after=after, limit=limit, before=before), after, before
+        )
 
     @app.post("/api/v1/runs")
     async def submit(
@@ -466,8 +510,15 @@ def create_app(
         return runs.cancel(run_id)
 
     @app.get("/api/v1/runs/{run_id}/records")
-    async def records(run_id: ID, after: After = 0, limit: Limit = 50) -> dict[str, Any]:
-        return page(store.run_records(run_id, after=after, limit=limit), after)
+    async def records(
+        run_id: ID,
+        after: After = 0,
+        limit: Limit = 50,
+        before: Annotated[int | None, Query(ge=0)] = None,
+    ) -> dict[str, Any]:
+        return history_page(
+            store.run_records(run_id, after=after, limit=limit, before=before), after, before
+        )
 
     @app.get("/api/v1/runs/{run_id}/prompts")
     async def prompts(run_id: ID, after: After = 0, limit: Limit = 50) -> dict[str, Any]:

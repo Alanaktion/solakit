@@ -19,6 +19,8 @@ from solakit.records import (
     Record,
     Run,
     SessionMode,
+    ToolCall,
+    ToolReceipt,
     new_id,
 )
 from solakit.runtime import ApplicationContext
@@ -36,7 +38,19 @@ def record_view(sequence: int, record: Record) -> dict[str, Any]:
     body = record.model_dump(mode="json")
     size = len(canonical(body))
     if size > RECORD_BYTES:
-        body = {key: body[key] for key in ("id", "run_id", "session_id") if key in body}
+        body = {
+            key: body[key]
+            for key in ("id", "run_id", "session_id", "origin", "created_at")
+            if key in body
+        }
+        if isinstance(record, Message):
+            body.update(role=record.role, tool_call_id=record.tool_call_id)
+        if isinstance(record, ToolCall):
+            body["name"] = record.name[:256]
+        if isinstance(record, ToolReceipt):
+            body.update(
+                tool_call_id=record.tool_call_id, status=record.status, effect=record.effect
+            )
         body["artifacts"] = {
             name: value.model_dump(mode="json")
             for name in type(record).model_fields

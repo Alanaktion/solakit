@@ -765,3 +765,93 @@ def test_omitted_profile_uses_server_selection(
             json={"session_id": session, "task": "Hello", "schedule": "cron:0 12 * * *"},
         )
         assert job.status_code == 201 and job.json()["profile"] == "short"
+
+
+def test_chat_shell_is_public_but_runtime_stays_authenticated(client: TestClient) -> None:
+    response = client.get("/")
+    assert response.status_code == 200
+    assert 'id="draft"' in response.text
+    assert PASSWORD not in response.text
+    assert "script-src 'self'" in response.headers["content-security-policy"]
+    assert "frame-ancestors 'none'" in response.headers["content-security-policy"]
+    assert response.headers["cache-control"] == "no-store"
+    for asset in ("chat.js", "chat.css", "markdown.js"):
+        response = client.get("/assets/" + asset)
+        assert response.status_code == 200
+        assert response.headers["x-content-type-options"] == "nosniff"
+    assert client.get("/api/v1/profiles").status_code == 401
+    assert client.get("/assets/other.js").status_code == 401
+    assert client.post("/assets/chat.js").status_code == 401
+    assert client.get("/", headers={"Host": "evil.invalid"}).status_code == 400
+    assert client.get("/", headers={"Origin": "https://evil.invalid"}).status_code == 403
+
+
+def test_recent_history_pages_backwards_without_changing_forward_clients(
+    client: TestClient, app: FastAPI
+) -> None:
+    login(client)
+    identity = client.post("/api/v1/sessions", json={}).json()["id"]
+
+    def seed() -> None:
+        store = app.state.context.store
+        for i in range(60):
+            run = store.admit(identity, request_id=new_id(), content=f"Turn {i}", profile="default")
+            store.transition_run(run.id, RunState.CANCELLED)
+
+    assert client.portal
+    client.portal.call(seed)
+    for kind in ("messages", "runs"):
+        path = f"/api/v1/sessions/{identity}/{kind}"
+        recent = client.get(path, params={"before": 0, "limit": 25}).json()
+        assert len(recent["items"]) == 25
+        sequences = [item["sequence"] for item in recent["items"]]
+        assert sequences == sorted(sequences)
+        assert recent["next"] == min(sequences)
+        middle = client.get(path, params={"before": recent["next"], "limit": 25}).json()
+        oldest = client.get(path, params={"before": middle["next"], "limit": 25}).json()
+        assert len(oldest["items"]) == 10
+        combined = oldest["items"] + middle["items"] + recent["items"]
+        assert len({item["record"]["id"] for item in combined}) == 60
+        assert client.get(path, params={"before": oldest["next"]}).json()["items"] == []
+        forward = client.get(path, params={"limit": 100}).json()
+        assert combined == forward["items"]
+        assert client.get(path, params={"before": -1}).status_code == 422
+        assert client.get(path, params={"before": 10, "after": 1}).status_code == 409
+    run_id = forward["items"][-1]["record"]["id"]
+    path = f"/api/v1/runs/{run_id}/records"
+    recent = client.get(path, params={"before": 0, "limit": 1}).json()
+    older = client.get(path, params={"before": recent["next"], "limit": 1}).json()
+    assert older["items"][0]["sequence"] < recent["items"][0]["sequence"]
+    assert client.get(path, params={"before": -1}).status_code == 422
+    assert client.get(path, params={"before": 10, "after": 1}).status_code == 409
+
+
+def test_large_chat_records_keep_attribution_and_tool_correlation() -> None:
+    from solakit.client import record_view
+    from solakit.records import ToolReceipt
+
+    message = Message(
+        origin=Origin.SCHEDULED,
+        session_id=new_id(),
+        run_id=new_id(),
+        role="user",
+        content="private scheduled input" * 5000,
+    )
+    view = record_view(1, message)
+    assert view["truncated"]
+    assert view["record"]["origin"] == "scheduled"
+    assert view["record"]["role"] == "user"
+    assert "content" not in view["record"]
+    receipt = ToolReceipt(
+        origin=Origin.INTERACTIVE,
+        session_id=new_id(),
+        run_id=new_id(),
+        tool_call_id=new_id(),
+        status="succeeded",
+        result="long result" * 10000,
+    )
+    view = record_view(2, receipt)
+    assert view["truncated"]
+    assert view["record"]["tool_call_id"] == receipt.tool_call_id
+    assert view["record"]["status"] == "succeeded"
+    assert "result" not in view["record"]

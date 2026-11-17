@@ -772,41 +772,56 @@ class Store:
         return record
 
     def messages(
-        self, session_id: str, *, after: int = 0, limit: int = 50
+        self, session_id: str, *, after: int = 0, limit: int = 50, before: int | None = None
     ) -> list[tuple[int, Message]]:
-        return cast(list[tuple[int, Message]], self._page("message", session_id, after, limit))
+        return cast(
+            list[tuple[int, Message]], self._page("message", session_id, after, limit, before)
+        )
 
-    def runs(self, session_id: str, *, after: int = 0, limit: int = 50) -> list[tuple[int, Run]]:
-        return cast(list[tuple[int, Run]], self._page("run", session_id, after, limit))
+    def runs(
+        self, session_id: str, *, after: int = 0, limit: int = 50, before: int | None = None
+    ) -> list[tuple[int, Run]]:
+        return cast(list[tuple[int, Run]], self._page("run", session_id, after, limit, before))
 
-    def _page(self, kind: str, session_id: str, after: int, limit: int) -> list[tuple[int, Record]]:
+    def _page(
+        self, kind: str, session_id: str, after: int, limit: int, before: int | None = None
+    ) -> list[tuple[int, Record]]:
         self.session(session_id)
         page_limit(limit)
         if type(after) is not int or after < 0:
             raise ValueError("cursor must be a nonnegative sequence")
+        if before is not None and (type(before) is not int or before < 0 or after):
+            raise ValueError("use either after or a nonnegative before cursor")
+        direction = "DESC" if before is not None else "ASC"
         rows = self.db.execute(
             "SELECT id,sequence FROM entities WHERE kind=? AND session_id=? AND sequence>? "
+            "AND (? IS NULL OR ?=0 OR sequence<?) "
             "AND (kind!='message' OR json_extract(body,'$.origin') "
             "NOT IN ('scheduled','proactive') "
             "OR (json_extract(body,'$.role')='assistant' AND EXISTS ("
             "SELECT 1 FROM entities AS delivery WHERE delivery.kind='delivery' "
             "AND json_extract(delivery.body,'$.message_id')=entities.id "
             "AND json_extract(delivery.body,'$.state')='delivered'))) "
-            "ORDER BY sequence,id LIMIT ?",
-            (kind, session_id, after, limit),
+            f"ORDER BY sequence {direction},id LIMIT ?",
+            (kind, session_id, after, before, before, before, limit),
         ).fetchall()
         return [(row["sequence"], self._load(kind, row["id"], RECORDS[kind])) for row in rows]
 
     def run_records(
-        self, run_id: str, *, after: int = 0, limit: int = 50
+        self, run_id: str, *, after: int = 0, limit: int = 50, before: int | None = None
     ) -> list[tuple[int, Record]]:
         self.run(run_id)
         page_limit(limit)
         if type(after) is not int or after < 0:
             raise ValueError("cursor must be a nonnegative sequence")
+        if before is not None and (type(before) is not int or before < 0 or after):
+            raise ValueError("use either after or a nonnegative before cursor")
+        direction = "DESC" if before is not None else "ASC"
         rows = self.db.execute(
-            "SELECT * FROM entities WHERE run_id=? AND sequence>? ORDER BY sequence,id LIMIT ?",
-            (run_id, after, limit),
+            "SELECT * FROM entities WHERE run_id=? AND sequence>? "
+            "AND (? IS NULL OR ?=0 OR sequence<?) "
+            f"ORDER BY sequence {direction},id LIMIT ?",
+            (run_id, after, before, before, before, limit),
         ).fetchall()
         return [
             (row["sequence"], self._load(row["kind"], row["id"], RECORDS[row["kind"]]))
