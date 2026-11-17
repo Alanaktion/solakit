@@ -28,7 +28,9 @@ allowed_origins = ["http://127.0.0.1:8765", "http://localhost:8765"]
 password_env = "SOLA_OPERATOR_PASSWORD"
 secure_cookie = false
 session_seconds = 86400
-# Remote access: explicit https origins, secure_cookie=true, private backend + TLS proxy.
+# LAN HTTP: bind 0.0.0.0 and add the server's exact private IP and port, e.g.
+# allowed_origins = ["http://192.168.1.20:8765"] with secure_cookie=false.
+# Public IPs/hostnames: explicit https origins, secure_cookie=true, private backend + TLS proxy.
 
 # OpenViking stable >=0.5.5,<0.6.0; opt-in, with the selected user's managed root.
 [memory]

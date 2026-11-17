@@ -90,6 +90,9 @@ pinned-Qwen conversation passed over authenticated HTTP. Read the
 [API contract](../contracts/api.md), [event protocol](../contracts/events.md),
 [CLI guide](../cli.md) and [Phase 10 evidence](../validation/phase-10.md).
 Browser usability, remote TLS deployment and production cutover retain later gates.
+The operator subsequently enabled direct LAN HTTP for exact private IP origins;
+see V2-33 in the [decision register](../decisions.md) and the
+[deployment guide](../contracts/api.md). CIDR/wildcard origins remain unsupported.
 
 Phase 11 adds the packaged chat/Settings shell, stable vanilla-JavaScript rendering,
 bounded backward history, durable browser retries and shared SSE/polling recovery.

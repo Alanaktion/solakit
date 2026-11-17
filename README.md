@@ -20,8 +20,10 @@ Set the `SOLA_OPERATOR_PASSWORD` environment variable before serving to enable
 operator login. Open `/` for the [chat and Settings UI](docs/chat-ui.md).
 Phase 10 exposes the [authenticated HTTP API](docs/contracts/api.md),
 [SSE transport](docs/contracts/events.md) and [four-command CLI](docs/cli.md).
-The default bind is localhost; remote origins require explicit HTTPS/Secure-cookie
-configuration and a private backend behind a TLS proxy. It opens/reconciles the
+The default bind is localhost. Explicit private LAN IP origins support HTTP;
+public IPs and hostnames require HTTPS/Secure-cookie configuration and a private
+backend behind a TLS proxy. See [LAN setup](docs/contracts/api.md#deployment-and-login).
+It opens/reconciles the
 evidence store and owns a pinned oMLX client before serving
 health; startup contacts oMLX only when resuming queued work. Phase 6 adds the
 [headless run service](docs/contracts/run-loop.md): durable bounded queues,

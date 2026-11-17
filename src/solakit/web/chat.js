@@ -2,7 +2,8 @@ import { markdown } from './markdown.js';
 
 const $ = (id) => document.getElementById(id);
 const active = (run) => ['queued', 'running'].includes(run.state);
-const uid = () => crypto.randomUUID().replaceAll('-', '');
+const uid = () =>
+  Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('');
 const node = (tag, text, className) => {
   const result = document.createElement(tag);
   if (text !== undefined) result.textContent = text;

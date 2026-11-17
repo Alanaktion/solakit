@@ -674,6 +674,34 @@ def test_secure_cookie_and_remote_configuration(
         assert client.get("/api/v1/auth/session").status_code == 200
 
 
+@pytest.mark.parametrize("origin", ["http://192.168.1.20:8382", "http://[fd12::1]:8382"])
+def test_lan_cookie_login_and_exact_host_origin_checks(
+    profile: EffectiveProfile, monkeypatch: pytest.MonkeyPatch, origin: str
+) -> None:
+    monkeypatch.setenv("SOLA_OPERATOR_PASSWORD", PASSWORD)
+    selected = profile.model_copy(update={"http": HTTPSettings(allowed_origins=(origin,))})
+    with TestClient(create_app(compose(selected)), base_url=origin) as client:
+        response = client.post(
+            "/api/v1/auth/login", headers={"Origin": origin}, json={"password": PASSWORD}
+        )
+        assert response.status_code == 200
+        assert "; Secure" not in response.headers.get_list("set-cookie")[0]
+        assert client.get("/api/v1/auth/session").status_code == 200
+        assert client.post("/api/v1/sessions", json={}).status_code == 403
+        client.headers.update({"Origin": origin, "X-CSRF-Token": response.json()["csrf_token"]})
+        assert client.post("/api/v1/sessions", json={}).status_code == 201
+        for foreign in ("http://192.168.1.21:8382", origin.replace(":8382", ":8383")):
+            assert client.get("/health", headers={"Host": foreign[7:]}).status_code == 400
+            assert (
+                client.post("/api/v1/sessions", json={}, headers={"Origin": foreign}).status_code
+                == 403
+            )
+        assert (
+            client.post("/api/v1/sessions", json={}, headers={"X-CSRF-Token": "wrong"}).status_code
+            == 403
+        )
+
+
 def test_slow_sse_send_releases_slot_and_does_not_block_runs(
     profile: EffectiveProfile, monkeypatch: pytest.MonkeyPatch
 ) -> None:

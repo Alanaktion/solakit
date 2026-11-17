@@ -2,6 +2,7 @@
 
 import tomllib
 from fnmatch import fnmatchcase
+from ipaddress import ip_address, ip_network
 from pathlib import Path
 from typing import Annotated, Literal
 from urllib.parse import urlsplit
@@ -164,16 +165,21 @@ class HTTPSettings(Value):
 
     @model_validator(mode="after")
     def transport(self) -> HTTPSettings:
-        import ipaddress
-
+        lan_networks = tuple(
+            ip_network(cidr)
+            for cidr in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7")
+        )
         for origin in self.allowed_origins:
             url = urlsplit(origin)
             try:
-                loopback = ipaddress.ip_address(url.hostname or "").is_loopback
+                address = ip_address(url.hostname or "")
+                local = address.is_loopback or any(address in network for network in lan_networks)
             except ValueError:
-                loopback = url.hostname == "localhost"
-            if not loopback and (url.scheme != "https" or not self.secure_cookie):
-                raise ValueError("remote origins require HTTPS and secure cookies")
+                local = url.hostname == "localhost"
+            if not local and (url.scheme != "https" or not self.secure_cookie):
+                raise ValueError(
+                    "origins outside loopback/private LAN IPs require HTTPS and secure cookies"
+                )
         return self
 
 

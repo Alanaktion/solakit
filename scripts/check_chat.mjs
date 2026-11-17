@@ -21,6 +21,8 @@ const browser = await chromium.launch({
   ...(process.env.SOLA_BROWSER ? { executablePath: process.env.SOLA_BROWSER } : {})
 });
 const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+// LAN HTTP has getRandomValues but no secure-context randomUUID API.
+await context.addInitScript(() => Object.defineProperty(crypto, 'randomUUID', { value: undefined }));
 const page = await context.newPage();
 const errors = [],
   report = {

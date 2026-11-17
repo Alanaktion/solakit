@@ -9,12 +9,55 @@ from pydantic import ValidationError
 from solakit.config import (
     ConfigError,
     EffectiveProfile,
+    HTTPSettings,
     OperatorConfig,
     load_config,
     resolve_profile,
     restrict_to_admission,
 )
 from solakit.records import Origin, SessionMode
+
+
+@pytest.mark.parametrize(
+    "origin",
+    [
+        "http://10.0.0.1:8382",
+        "http://172.16.0.1:8382",
+        "http://172.31.255.254:8382",
+        "http://192.168.1.20:8382",
+        "http://[fd12::1]:8382",
+        "http://127.0.0.1:8382",
+        "http://localhost:8382",
+    ],
+)
+def test_explicit_lan_http_origins(origin: str) -> None:
+    settings = HTTPSettings(allowed_origins=(origin,))
+    assert settings.allowed_origins == (origin,)
+    assert not settings.secure_cookie
+
+
+@pytest.mark.parametrize(
+    "origin",
+    [
+        "http://172.15.255.255:8382",
+        "http://172.32.0.1:8382",
+        "http://8.8.8.8:8382",
+        "http://0.0.0.0:8382",
+        "http://169.254.1.2:8382",
+        "http://[2001:db8::1]:8382",
+        "http://sola.local:8382",
+        "http://192.168.1.0/24:8382",
+        "http://*.local:8382",
+        "http://user:pass@192.168.1.20:8382",
+        "http://192.168.1.20:8382/path",
+        "http://192.168.1.20:8382?query",
+        "http://192.168.1.20:8382#fragment",
+        "null",
+    ],
+)
+def test_lan_http_does_not_allow_other_origins(origin: str) -> None:
+    with pytest.raises(ValidationError):
+        HTTPSettings(allowed_origins=(origin,))
 
 
 def write_config(tmp_path: Path, extra: str = "") -> Path:

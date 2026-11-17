@@ -39,14 +39,36 @@ including the caller. These paths are under `/api/v1`. Five failed login attempt
 within a fixed 60-second global window block further attempts until that window
 ends. The counter persists across restart; forwarded client IPs cannot reset it.
 
-For tailnet access, configure exact HTTPS origins and `secure_cookie = true`.
+For direct LAN access, bind all interfaces and explicitly list the server's
+private IP address, scheme and port as used in the browser:
+
+```toml
+[http]
+host = "0.0.0.0"
+port = 8382
+allowed_origins = ["http://192.168.1.20:8382", "http://localhost:8382"]
+secure_cookie = false
+```
+
+HTTP is allowed for exact loopback and private LAN IP origins (IPv4 RFC 1918
+and IPv6 ULA, with brackets around IPv6 addresses). Entries identify the server
+URL, not client IPs; this is not a client-network firewall. CIDR ranges and
+wildcards are unsupported. Changing the listen port does not update allowed
+origins. Restart after editing configuration. Authentication and CSRF checks
+still apply. LAN HTTP sends credentials and conversation data without encryption;
+use it only on a trusted network.
+
+For public IPs, hostnames or tailnet access, configure exact HTTPS origins and
+`secure_cookie = true`.
 Terminate TLS in an operator-managed reverse proxy and preserve the configured
 Host; keep the direct HTTP backend private. Tailnet membership grants no login.
-Remote origins without HTTPS/Secure cookies are rejected by configuration.
+Origins outside loopback/private LAN IPs without HTTPS/Secure cookies are
+rejected by configuration.
 `serve` ignores proxy headers (`proxy_headers=False`); `Forwarded` and
 `X-Forwarded-*` never establish Host, origin or client identity. Direct localhost
-HTTP is the only intended insecure-cookie deployment. Remote TLS/browser
-integration is a separate deployment verification, not claimed by local tests.
+HTTP and explicitly configured private LAN HTTP support insecure cookies. Remote
+TLS/browser integration is a separate deployment verification, not claimed by
+local tests.
 
 ## Browser request matrix
 

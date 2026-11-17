@@ -4,7 +4,7 @@ Start `sola serve` with your normal configuration and the environment variable
 named by `http.password_env` set. Open `http://127.0.0.1:8765/` (or your explicitly
 configured origin) and sign in. The server serves the HTML, CSS and vanilla
 JavaScript from the core wheel; there is no frontend build or external CDN.
-See [HTTP authentication and deployment](contracts/api.md) for remote HTTPS setup.
+See [HTTP authentication and deployment](contracts/api.md) for LAN HTTP and remote HTTPS setup.
 
 Create a topic, choose its memory mode, and send a message. Enter sends;
 Shift+Enter inserts a newline. The composer remains editable while Sola works,
