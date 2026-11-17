@@ -187,7 +187,8 @@ async function loadRecords(id, token) {
 async function refresh(ids = []) {
   if (!selected || !loggedIn) return;
   const token = generation,
-    topic = selected;
+    topic = selected,
+    lastSequence = [...messages.values()].reduce((last, row) => Math.max(last, row.sequence), 0);
   const [messagePage, runPage] = await Promise.all([
     api(`/sessions/${topic}/messages?before=0&limit=25`),
     api(`/sessions/${topic}/runs?before=0&limit=25`)
@@ -230,6 +231,12 @@ async function refresh(ids = []) {
   );
   if (token !== generation) return;
   render();
+  const replies = [...messages.values()]
+    .filter((row) => row.sequence > lastSequence && row.record.role === 'assistant')
+    .sort((a, b) => a.sequence - b.sequence);
+  // Replacing the text also announces a new reply identical to the previous one.
+  if (replies.length)
+    $('reply-status').textContent = replies.map((row) => `Sola: ${row.record.content}`).join('\n\n');
 }
 function queueRefresh(id) {
   for (const identity of Array.isArray(id) ? id : id ? [id] : []) pendingRuns.add(identity);
@@ -461,6 +468,7 @@ async function selectTopic(id) {
   records.clear();
   turns.clear();
   $('turns').replaceChildren();
+  text($('reply-status'), '');
   olderMessages = olderRuns = 0;
   messagesDone = runsDone = false;
   following = true;
@@ -637,6 +645,7 @@ function historyScroll() {
 function jumpLatest() {
   following = true;
   $('history').scrollTop = $('history').scrollHeight;
+  if (document.activeElement === $('latest')) $('history').focus({ preventScroll: true });
   $('latest').hidden = true;
 }
 

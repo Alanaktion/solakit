@@ -32,7 +32,7 @@ export function createSettings({ topics, selected, refreshRuns }) {
         (p) => html`
           <details>
             <summary>${p.name}</summary>
-            <pre>${JSON.stringify(p, null, 2)}</pre>
+            <pre tabindex="0">${JSON.stringify(p, null, 2)}</pre>
           </details>
         `
       ),
@@ -138,7 +138,7 @@ export function createSettings({ topics, selected, refreshRuns }) {
         `/search?q=${encodeURIComponent($('search-query').value)}${$('search-topic').checked && selected() ? `&session_id=${selected()}` : ''}`
       );
       renderTemplate(
-        html`<pre>${JSON.stringify(result.items, null, 2)}</pre>`,
+        html`<pre tabindex="0">${JSON.stringify(result.items, null, 2)}</pre>`,
         $('search-results')
       );
     } catch (error) {

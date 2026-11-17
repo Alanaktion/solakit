@@ -5,6 +5,11 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const { chromium } = require(process.env.SOLA_PLAYWRIGHT_PATH || 'playwright');
+const { default: AxeBuilder } = require(
+  require.resolve('@axe-core/playwright', {
+    paths: [process.env.SOLA_PLAYWRIGHT_PATH || process.cwd()]
+  })
+);
 const options = Object.fromEntries(
   process.argv
     .slice(2)
@@ -47,8 +52,30 @@ const send = async (content) => {
   await page.locator('#draft').fill(content);
   await page.locator('#send').click();
 };
+const audit = async (name) => {
+  const result = await new AxeBuilder({ page })
+    .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
+    .analyze();
+  report.accessibility ??= {};
+  report.accessibility[name] = {
+    violations: result.violations,
+    incomplete: result.incomplete.map((rule) => rule.id)
+  };
+  assert.deepEqual(result.violations, [], `${name}: accessibility violations`);
+};
 try {
   await page.goto(fixture.origin);
+  await check(
+    'login has an accessible name, description and no automated WCAG violations',
+    async () => {
+      await page.locator('#login-dialog[open]').waitFor();
+      await audit('login');
+      assert.equal(await page.evaluate(() => document.activeElement.id), 'password');
+      assert(
+        (await page.locator('#password').getAttribute('aria-describedby')).includes('login-reason')
+      );
+    }
+  );
   await check('password login and recent 500-turn history', async () => {
     await page.locator('#password').fill('phase11-disposable-fixture');
     await page.locator('#login-form button').click();
@@ -143,13 +170,19 @@ try {
                 getComputedStyle(document.querySelector('#topic-error')).color,
                 root.backgroundColor
               )
-            }
+            },
+            controlContrast: contrast(
+              getComputedStyle(document.querySelector('#profile')).borderTopColor,
+              root.backgroundColor
+            )
           };
         });
         assert(theme.scheme.includes(colorScheme));
         assert(colorScheme === 'dark' ? theme.luminance < 0.1 : theme.luminance > 0.8);
         for (const [name, ratio] of Object.entries(theme.contrast))
           assert(ratio >= 4.5, `${colorScheme} ${name}: ${ratio}`);
+        assert(theme.controlContrast >= 3, `${colorScheme} control: ${theme.controlContrast}`);
+        await audit(`chat-${colorScheme}`);
         report.themes[colorScheme] = theme;
         if (colorScheme === 'dark')
           await page.screenshot({
@@ -159,6 +192,42 @@ try {
       }
     }
   );
+  await check('compact desktop controls, keyboard skip link and modal focus', async () => {
+    const sendBox = await page.locator('#send').boundingBox();
+    assert(sendBox.height >= 24 && sendBox.height < 44);
+    await page.locator('.skip').focus();
+    await page.keyboard.press('Enter');
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'draft');
+    const ring = await page.locator('#draft').evaluate((el) => {
+      const style = getComputedStyle(el);
+      return {
+        style: style.outlineStyle,
+        width: parseFloat(style.outlineWidth)
+      };
+    });
+    assert(ring.style !== 'none' && ring.width >= 2);
+    await page.locator('#settings-open').focus();
+    await page.keyboard.press('Enter');
+    for (let i = 0; i < 25; i++) {
+      await page.keyboard.press('Tab');
+      assert(
+        await page.evaluate(() =>
+          document.querySelector('#settings').contains(document.activeElement) ||
+          document.activeElement === document.body
+        )
+      );
+    }
+    await audit('settings-light');
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await audit('settings-dark');
+    await page.emulateMedia({ colorScheme: 'light' });
+    await page.keyboard.press('Escape');
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'settings-open');
+    await page.locator('#new-topic').click();
+    await audit('topic');
+    await page.keyboard.press('Escape');
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'new-topic');
+  });
   await check('older history is prepended with a preserved scroll anchor', async () => {
     await page.locator('#history').evaluate((h) => (h.scrollTop = 0));
     const anchor = page.locator('.turn').first();
@@ -166,9 +235,10 @@ try {
     const before = await anchor.boundingBox();
     report.anchorBefore = {
       box: before,
-      ...(await page
-        .locator('#history')
-        .evaluate((h) => ({ top: h.scrollTop, height: h.scrollHeight })))
+      ...(await page.locator('#history').evaluate((h) => ({
+        top: h.scrollTop,
+        height: h.scrollHeight
+      })))
     };
     await page.locator('#older').click();
     await page.waitForFunction(
@@ -178,12 +248,17 @@ try {
     const after = await page.locator(`[data-run-id="${identity}"]`).boundingBox();
     report.anchorAfter = {
       box: after,
-      ...(await page
-        .locator('#history')
-        .evaluate((h) => ({ top: h.scrollTop, height: h.scrollHeight })))
+      ...(await page.locator('#history').evaluate((h) => ({
+        top: h.scrollTop,
+        height: h.scrollHeight
+      })))
     };
     assert(Math.abs(before.y - after.y) < 4, `anchor moved ${before.y - after.y}px`);
     report.afterOlder = await page.locator('.turn').count();
+    assert.equal(await page.locator('#reply-status').textContent(), '');
+    await page.locator('#latest').focus();
+    await page.keyboard.press('Enter');
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'history');
   });
   await check('hostile strings, tool uncertainty, staged memory and compaction', async () => {
     const body = await page.locator('#turns').textContent();
@@ -356,6 +431,12 @@ try {
       await page.locator('#turns .message.user').filter({ hasText: 'second queued draft' }).count(),
       1
     );
+    await waitFor(() =>
+      document.querySelector('#reply-status').textContent.includes('second queued draft')
+    );
+    const announcement = await page.locator('#reply-status').textContent();
+    await page.waitForTimeout(1100);
+    assert.equal(await page.locator('#reply-status').textContent(), announcement);
   });
   await check('cancellation and explicit model failure', async () => {
     await send('tool cancellation check');
@@ -383,6 +464,7 @@ try {
       turns: document.querySelectorAll('.turn').length,
       nodes: document.querySelectorAll('*').length
     }));
+    assert.equal(await page.locator('#reply-status').textContent(), '');
   });
   await check(
     'offline recovery clears previews, preserves timers and avoids duplicate nodes',
@@ -444,7 +526,12 @@ try {
     await send('Receipt loss fixture');
     await page.locator('#notice-dismiss').click();
     assert(await page.locator('#notice').isHidden());
-    await page.getByRole('button', { name: 'Retry same submission', exact: true }).click();
+    await page
+      .getByRole('button', {
+        name: 'Retry same submission',
+        exact: true
+      })
+      .click();
     await retryConfirmed;
     await page.unroute('**/api/v1/runs', intercept);
     assert.equal(keys.length, 2);
@@ -552,6 +639,7 @@ try {
       .getByText(/Artifact bytes/)
       .first()
       .waitFor();
+    await audit('evidence');
     await page.getByRole('button', { name: 'Close evidence', exact: true }).click();
   });
   await check('auth expiry prompts for login and retains the editable draft', async () => {
@@ -561,7 +649,10 @@ try {
         .split('; ')
         .find((v) => v.startsWith('sola_csrf='))
         .split('=')[1];
-      await fetch('/api/v1/auth/sessions', { method: 'DELETE', headers: { 'X-CSRF-Token': csrf } });
+      await fetch('/api/v1/auth/sessions', {
+        method: 'DELETE',
+        headers: { 'X-CSRF-Token': csrf }
+      });
     });
     await page.locator('#login-dialog[open]').waitFor({ timeout: 15000 });
     await page.locator('#password').fill('phase11-disposable-fixture');
@@ -588,9 +679,12 @@ try {
     assert(bounds.scroll <= bounds.width);
     assert(bounds.main > 350);
     assert(bounds.composer <= 844);
-    assert(bounds.buttons.every((h) => h >= 44));
+    assert(bounds.buttons.every((h) => h >= 36));
     assert.equal(await page.getByRole('textbox', { name: 'Message Sola', exact: true }).count(), 1);
-    await page.screenshot({ path: path.join(options.output, 'chat-mobile.png'), fullPage: true });
+    await page.screenshot({
+      path: path.join(options.output, 'chat-mobile.png'),
+      fullPage: true
+    });
     await page.locator('#settings-open').click();
     await page.screenshot({
       path: path.join(options.output, 'settings-mobile.png'),
@@ -652,12 +746,83 @@ try {
           fullPage: true
         });
         await page.keyboard.press('Escape');
-        await page.getByRole('button', { name: 'Inspect evidence', exact: true }).last().click();
+        await page
+          .getByRole('button', {
+            name: 'Inspect evidence',
+            exact: true
+          })
+          .last()
+          .click();
         assert(await page.locator('#evidence').evaluate((el) => el.scrollWidth <= el.clientWidth));
         await page.keyboard.press('Escape');
       }
     }
   );
+  await check('touch targets, enlarged text, forced colors and short-screen reflow', async () => {
+    const touchContext = await browser.newContext({
+      viewport: { width: 390, height: 844 },
+      hasTouch: true,
+      storageState: await context.storageState()
+    });
+    try {
+      const touch = await touchContext.newPage();
+      await touch.addInitScript(
+        (id) => sessionStorage.setItem('sola.selected', JSON.stringify(id)),
+        fixture.topic
+      );
+      await touch.goto(fixture.origin);
+      await touch.locator('#topic-' + fixture.topic + '[aria-current=page]').waitFor();
+      const heights = await touch
+        .locator('button, select, summary, label:has(input[type=checkbox])')
+        .evaluateAll((elements) =>
+          elements
+            .filter(
+              (el) =>
+                el.getClientRects().length &&
+                !el.closest('dialog:not([open]), details:not([open]) > :not(summary)')
+            )
+            .map((el) => el.getBoundingClientRect().height)
+        );
+      assert(heights.length > 0 && heights.every((height) => height >= 44));
+    } finally {
+      await touchContext.close();
+    }
+    await page.setViewportSize({ width: 320, height: 568 });
+    await page.evaluate(() => {
+      const sheet = document.styleSheets[0];
+      sheet.insertRule(':root { font-size: 200%; }', sheet.cssRules.length);
+    });
+    assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+    await page.screenshot({ path: path.join(options.output, 'chat-large-text.png'), fullPage: true });
+    for (const selector of ['#draft', '#settings-open']) {
+      await page.locator(selector).focus();
+      assert(
+        await page.locator(selector).evaluate((el) => {
+          const box = el.getBoundingClientRect();
+          return box.left >= 0 && box.right <= innerWidth;
+        })
+      );
+    }
+    await page.locator('#settings-open').click();
+    assert(await page.locator('#settings').evaluate((el) => el.scrollWidth <= el.clientWidth));
+    await audit('settings-large-text');
+    await page.screenshot({ path: path.join(options.output, 'settings-large-text.png'), fullPage: true });
+    await page.keyboard.press('Escape');
+    await page.evaluate(() => {
+      const sheet = document.styleSheets[0];
+      sheet.deleteRule(sheet.cssRules.length - 1);
+    });
+    await page.emulateMedia({ forcedColors: 'active' });
+    const current = page.locator('#topics [aria-current=page]');
+    assert.equal(await current.evaluate((el) => getComputedStyle(el).outlineStyle), 'solid');
+    await page.emulateMedia({ forcedColors: 'none' });
+    await page.setViewportSize({ width: 320, height: 256 });
+    assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+    await page.locator('#draft').focus();
+    const box = await page.locator('#draft').boundingBox();
+    assert(box.y >= 0 && box.y < 256);
+    await page.setViewportSize({ width: 390, height: 844 });
+  });
   await check('single-use topics explain why another submission is unavailable', async () => {
     await page.locator('#new-topic').click();
     await page.locator('#topic-name').fill('Ephemeral browser verification');
@@ -681,7 +846,10 @@ try {
 } catch (error) {
   report.failure = error.message;
   report.errors = errors;
-  await page.screenshot({ path: path.join(options.output, 'failure.png'), fullPage: true });
+  await page.screenshot({
+    path: path.join(options.output, 'failure.png'),
+    fullPage: true
+  });
   throw error;
 } finally {
   await fs.writeFile(

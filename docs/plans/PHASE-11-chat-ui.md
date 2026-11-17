@@ -7,6 +7,10 @@ disabled states, compact mobile controls and expanded browser verification.
 Configured-server Qwen conversation, cancellation, recovery, Settings and manual
 scheduled delivery pass browser checks; synthetic tool/automatic-scheduler
 journeys remain separately identified in the evidence.
+The density/accessibility follow-up tightens desktop spacing, preserves touch
+targets, improves control contrast and reply announcements, and extends browser
+checks with axe, keyboard, enlarged-text and forced-colors coverage. See
+[follow-up evidence](../validation/phase-11-accessibility.md).
 
 ## Outcome
 

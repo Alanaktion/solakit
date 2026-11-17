@@ -33,12 +33,13 @@ class SolaTurn extends SolaElement {
             : m.origin === 'scheduled'
               ? 'Sola · scheduled message'
               : 'Sola';
-      const message = document.createElement('div');
+      const message = document.createElement('article');
       message.className = `message ${m.role}`;
       message.dataset.messageId = m.id;
+      message.setAttribute('aria-labelledby', `author-${m.id}`);
       renderTemplate(
         html`
-          <div class="author">${author}</div>
+          <div class="author" id=${`author-${m.id}`}>${author}</div>
           <div>
             ${markdown(m.content || (row.truncated ? 'Large message — inspect evidence.' : ''))}
           </div>
@@ -62,7 +63,7 @@ class SolaTurn extends SolaElement {
           (entry) => html`
             <details>
               <summary>${entry.label}</summary>
-              <pre>${JSON.stringify(entry.body, null, 2)}</pre>
+              <pre tabindex="0">${JSON.stringify(entry.body, null, 2)}</pre>
               ${
                 entry.reconcile
                   ? html`
@@ -103,7 +104,11 @@ class SolaTurn extends SolaElement {
         >
           Cancel run
         </button>
-        <button type="button" @click=${action(() => openEvidence(this.dataset.runId))}>
+        <button
+          type="button"
+          aria-haspopup="dialog"
+          @click=${action(() => openEvidence(this.dataset.runId))}
+        >
           Inspect evidence
         </button>
       </div>

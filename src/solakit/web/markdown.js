@@ -41,6 +41,7 @@ export function markdown(text) {
       if (code) code = null;
       else {
         const pre = document.createElement('pre');
+        pre.tabIndex = 0;
         code = document.createElement('code');
         pre.append(code);
         root.append(pre);

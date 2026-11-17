@@ -3,6 +3,7 @@
   --paper: hsl(45 30% 98%);
   --surface: hsl(42 24% 95%);
   --line: hsl(40 14% 84%);
+  --control-line: hsl(155 8% 48%);
   --ink: hsl(160 14% 16%);
   --muted: hsl(155 8% 36%);
   --accent: hsl(158 32% 28%);
@@ -11,12 +12,18 @@
   --tint: hsl(155 24% 91%);
   --danger: hsl(5 60% 34%);
   --backdrop: hsl(160 14% 10% / 0.45);
-  --radius: 8px;
-  font:
-    16px/1.6 -apple-system,
+  --radius: 6px;
+  --control-height: 36px;
+  --font-body:
+    16px/1.5 -apple-system,
     BlinkMacSystemFont,
     'Segoe UI',
-    sans-serif;
+    sans-serif,
+    'Apple Color Emoji',
+    'Segoe UI Emoji',
+    'Segoe UI Symbol',
+    'Noto Color Emoji';
+  font: var(--font-body);
   color: var(--ink);
   background: var(--paper);
 }
@@ -25,6 +32,7 @@
     --paper: hsl(160 10% 11%);
     --surface: hsl(160 9% 15%);
     --line: hsl(155 8% 32%);
+    --control-line: hsl(155 8% 54%);
     --ink: hsl(45 16% 91%);
     --muted: hsl(150 8% 69%);
     --accent: hsl(153 32% 70%);
@@ -42,9 +50,10 @@ body {
   margin: 0;
 }
 sola-app {
+  min-height: 100dvh;
   height: 100dvh;
   display: grid;
-  grid-template-columns: 256px minmax(0, 1fr);
+  grid-template-columns: 224px minmax(0, 1fr);
 }
 button,
 input,
@@ -54,15 +63,20 @@ select {
   color: inherit;
 }
 button,
+input,
+select {
+  font-size: 0.875rem;
+}
+button,
 select,
 input:not([type='checkbox']) {
-  min-height: 44px;
+  min-height: var(--control-height);
 }
 button {
   background: transparent;
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  padding: 8px 16px;
+  padding: 4px 12px;
   cursor: pointer;
 }
 button:hover:not(:disabled) {
@@ -99,29 +113,30 @@ p {
   margin: 0 0 12px;
 }
 h1 {
-  font-size: 20px;
+  font-size: 1.125rem;
   font-weight: 600;
 }
 h2 {
-  font-size: 24px;
+  font-size: 1.25rem;
   line-height: 1.3;
   font-weight: 600;
 }
 h3 {
-  font-size: 18px;
+  font-size: 1rem;
   font-weight: 600;
 }
 label {
   display: block;
   margin-top: 12px;
+  font-size: 0.875rem;
 }
 input:not([type='checkbox']),
 select,
 textarea {
   background: var(--paper);
-  border: 1px solid var(--line);
+  border: 1px solid var(--control-line);
   border-radius: var(--radius);
-  padding: 8px 12px;
+  padding: 4px 8px;
   width: 100%;
 }
 input[type='checkbox'] {
@@ -133,7 +148,7 @@ input[type='checkbox'] {
 label:has(input[type='checkbox']) {
   display: flex;
   align-items: center;
-  min-height: 44px;
+  min-height: var(--control-height);
 }
 textarea {
   resize: vertical;
@@ -147,37 +162,28 @@ input[type='checkbox'] {
   accent-color: var(--accent);
 }
 .sidebar {
-  padding: 32px 16px 16px;
+  padding: 16px 12px 12px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 8px;
   background: var(--surface);
   min-height: 0;
 }
 .brand {
   font:
-    600 30px/1.3 Superclarendon,
-    'Bookman Old Style',
-    'URW Bookman',
-    'URW Bookman L',
-    'Georgia Pro',
-    Georgia,
-    serif;
-  padding: 0 8px 16px;
-}
-.brand span {
-  display: block;
-  font:
-    14px/1.6 -apple-system,
-    BlinkMacSystemFont,
-    'Segoe UI',
-    sans-serif;
-  color: var(--muted);
-  margin-top: 8px;
+    400 1.5rem/1.3
+    Didot, 'Bodoni MT', 'Noto Serif Display', 'URW Palladio L', P052, Sylfaen, serif,
+    'Apple Color Emoji',
+    'Segoe UI Emoji',
+    'Segoe UI Symbol',
+    'Noto Color Emoji';
+  padding: 0 8px 8px;
 }
 #topics {
   flex: 1;
   overflow: auto;
+  padding: 4px;
+  scroll-padding: 4px;
 }
 #topics button {
   display: block;
@@ -190,9 +196,10 @@ input[type='checkbox'] {
 #topics button[aria-current='page'] {
   background: var(--tint);
   font-weight: 600;
+  box-shadow: inset 3px 0 var(--accent);
 }
 .archive-toggle {
-  font-size: 14px;
+  font-size: 0.875rem;
   color: var(--muted);
   margin: 0;
 }
@@ -202,8 +209,7 @@ input[type='checkbox'] {
 }
 .sidebar-footer button {
   flex: 1;
-  padding: 8px;
-  font-size: 14px;
+  padding: 4px 8px;
 }
 main {
   display: flex;
@@ -213,11 +219,11 @@ main {
   position: relative;
 }
 .topbar {
-  padding: 24px 32px 8px;
+  padding: 12px 24px 4px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 12px;
 }
 .topbar > div {
   min-width: 0;
@@ -230,7 +236,7 @@ main {
 #compose-hint,
 .meta {
   color: var(--muted);
-  font-size: 14px;
+  font-size: 0.875rem;
 }
 .topbar h1 {
   margin: 0;
@@ -240,13 +246,13 @@ main {
   margin: 0;
 }
 #connection {
-  padding: 0 32px;
-  margin: 0 0 8px;
-  min-height: 24px;
+  padding: 0 24px;
+  margin: 0 0 4px;
+  min-height: 1.5em;
 }
 #notice {
   color: var(--danger);
-  padding: 8px 32px;
+  padding: 4px 24px;
   display: flex;
   align-items: center;
   gap: 16px;
@@ -261,38 +267,40 @@ main {
 }
 #history {
   flex: 1;
+  min-height: 0;
   overflow: auto;
   overflow-anchor: none;
-  padding: 24px max(24px, calc((100% - 800px) / 2));
+  padding: 12px max(24px, calc((100% - 800px) / 2));
+  scroll-padding: 8px;
 }
 #empty {
-  margin: 64px 0;
+  margin: 32px 0;
 }
 #empty h2 {
   font-family: Georgia, serif;
-  font-size: clamp(24px, 4vw, 30px);
+  font-size: 1.5rem;
 }
 #empty p {
   color: var(--muted);
 }
 .turn {
   display: block;
-  margin: 0 0 32px;
+  margin: 0 0 20px;
   min-width: 0;
 }
 .message {
-  margin: 16px 0;
+  margin: 12px 0;
   overflow-wrap: anywhere;
 }
 .message .author {
-  font-size: 14px;
+  font-size: 0.875rem;
   font-weight: 600;
-  margin-bottom: 8px;
+  margin-bottom: 4px;
 }
 .message.user {
   background: var(--surface);
   border-radius: var(--radius);
-  padding: 16px 24px;
+  padding: 8px 12px;
 }
 .message p:last-child {
   margin-bottom: 0;
@@ -305,8 +313,8 @@ main {
 .message h1,
 .message h2,
 .message h3 {
-  font-size: 20px;
-  line-height: 1.6;
+  font-size: 1.125rem;
+  line-height: 1.5;
   font-weight: 600;
   margin-top: 16px;
 }
@@ -318,10 +326,10 @@ pre {
   padding: 12px;
   max-height: 320px;
   overflow: auto;
-  font-size: 14px;
+  font-size: 0.875rem;
 }
 code {
-  font-size: 14px;
+  font-size: 0.875rem;
   background: var(--surface);
 }
 .run-bar {
@@ -330,17 +338,16 @@ code {
   flex-wrap: wrap;
   gap: 8px;
   color: var(--muted);
-  font-size: 14px;
+  font-size: 0.875rem;
 }
 .run-bar button {
   border: 0;
-  padding: 8px;
-  font-size: 14px;
+  padding: 4px 8px;
 }
 .preview {
   color: var(--muted);
   white-space: pre-wrap;
-  padding: 12px 0;
+  padding: 8px 0;
 }
 .work details {
   margin: 8px 0;
@@ -350,8 +357,8 @@ code {
 }
 summary {
   cursor: pointer;
-  min-height: 44px;
-  padding: 8px 0;
+  min-height: var(--control-height);
+  padding: 4px 0;
   overflow-wrap: anywhere;
 }
 .work .warning {
@@ -361,11 +368,11 @@ summary {
   width: calc(100% - 48px);
   max-width: 800px;
   align-self: center;
-  margin: 12px 24px 24px;
-  border: 1px solid var(--line);
+  margin: 8px 24px 16px;
+  border: 1px solid var(--control-line);
   border-radius: var(--radius);
   background: var(--paper);
-  padding: 12px;
+  padding: 8px;
 }
 #composer:focus-within {
   border-color: var(--accent);
@@ -373,8 +380,9 @@ summary {
 #draft {
   border: 0;
   padding: 8px;
-  max-height: 192px;
-  min-height: 64px;
+  max-height: 12rem;
+  min-height: 3rem;
+  margin-bottom: 0.5rem;
 }
 #draft:focus-visible {
   outline-offset: 0;
@@ -383,28 +391,26 @@ summary {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 12px;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 .composer-actions label {
   margin: 0;
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 14px;
+  font-size: 0.875rem;
 }
 .composer-actions select {
   max-width: 160px;
 }
 #compose-hint {
   margin-right: auto;
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 #compose-hint.explanation {
   flex-basis: 100%;
-  font-size: 14px;
-}
-.composer-actions:has(.explanation) {
-  flex-wrap: wrap;
+  font-size: 0.875rem;
 }
 #outbox {
   max-height: 128px;
@@ -416,7 +422,7 @@ summary {
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
-  font-size: 14px;
+  font-size: 0.875rem;
 }
 #latest {
   align-self: center;
@@ -427,9 +433,12 @@ dialog {
   color: var(--ink);
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  padding: 32px;
+  padding: 16px;
   width: min(480px, calc(100% - 24px));
+  max-width: calc(100% - 24px);
   max-height: calc(100dvh - 32px);
+  overflow-wrap: anywhere;
+  scroll-padding: 8px;
 }
 dialog::backdrop {
   background: var(--backdrop);
@@ -439,10 +448,11 @@ dialog.wide {
 }
 dialog header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 24px;
+  margin-bottom: 16px;
 }
 dialog header h2 {
   margin: 0;
@@ -458,23 +468,23 @@ dialog > details > summary {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin: 16px 0;
+  margin: 12px 0;
 }
 .fields {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
 }
 #jobs article {
-  margin: 16px 0 24px;
+  margin: 12px 0 16px;
 }
 #jobs article > button {
   margin: 0 8px 8px 0;
 }
 #job-form {
   border-top: 1px solid var(--line);
-  padding-top: 24px;
-  margin-top: 24px;
+  padding-top: 16px;
+  margin-top: 16px;
 }
 #jobs h3 {
   margin: 0;
@@ -502,10 +512,19 @@ dialog > details > summary {
   z-index: 3;
   padding: 8px;
   background: var(--paper);
+  top: 8px;
+  left: 8px;
 }
 @media (max-width: 1100px) {
   #compose-hint:not(.explanation) {
-    display: none;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 }
 @media (max-width: 800px) {
@@ -513,13 +532,10 @@ dialog > details > summary {
     grid-template-columns: 192px minmax(0, 1fr);
   }
   .topbar {
-    padding: 16px;
+    padding: 8px 16px 4px;
   }
   #connection {
     padding: 0 16px;
-  }
-  .composer-actions {
-    flex-wrap: wrap;
   }
 }
 @media (max-width: 560px) {
@@ -530,34 +546,35 @@ dialog > details > summary {
   .sidebar {
     padding: 8px 12px;
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-columns: auto minmax(0, 1fr);
     align-items: center;
     gap: 8px;
   }
   .brand {
-    font-size: 20px;
+    font-size: 1.25rem;
     padding: 0;
   }
   .brand span {
     display: none;
   }
   .archive-toggle {
-    font-size: 12px;
-    grid-column: 3;
+    grid-column: 2;
     grid-row: 2;
+    justify-self: end;
   }
   #new-topic {
-    padding: 8px;
-    font-size: 14px;
+    grid-column: 1;
+    grid-row: 2;
+    padding: 4px 8px;
     justify-self: start;
     white-space: nowrap;
   }
   #topics {
     display: flex;
-    grid-column: 1 / 3;
-    grid-row: 2;
+    grid-column: 1 / -1;
+    grid-row: 3;
     min-width: 0;
-    max-height: 64px;
+    max-height: 72px;
     gap: 8px;
   }
   #topics button {
@@ -569,12 +586,12 @@ dialog > details > summary {
     overflow: hidden;
   }
   .sidebar-footer {
-    grid-column: 3;
+    grid-column: 2;
     grid-row: 1;
+    justify-self: end;
   }
   .sidebar-footer button {
-    padding: 8px;
-    font-size: 12px;
+    padding: 4px 8px;
   }
   #more-topics {
     grid-column: 1 / -1;
@@ -585,18 +602,11 @@ dialog > details > summary {
   main {
     flex: 1;
   }
-  .topbar h1 {
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-    overflow: hidden;
-  }
   .topbar > button {
-    font-size: 14px;
-    padding: 8px 12px;
+    padding: 4px 8px;
   }
   #history {
-    padding: 16px;
+    padding: 8px 12px;
   }
   #notice {
     padding: 8px 16px;
@@ -606,8 +616,7 @@ dialog > details > summary {
     width: calc(100% - 24px);
   }
   #draft {
-    min-height: 48px;
-    height: 64px;
+    height: 3rem;
   }
   .composer-actions {
     gap: 8px;
@@ -616,17 +625,47 @@ dialog > details > summary {
     max-width: 120px;
   }
   #send {
-    padding: 8px 12px;
+    padding: 4px 12px;
   }
   dialog {
-    padding: 24px;
+    padding: 16px;
   }
   .fields {
     grid-template-columns: 1fr;
     gap: 0;
   }
   .message.user {
-    padding: 12px 16px;
+    padding: 8px 12px;
+  }
+}
+@media (any-pointer: coarse) {
+  :root {
+    --control-height: 44px;
+  }
+  input,
+  select {
+    font-size: 1rem;
+  }
+}
+@media (max-height: 480px) and (max-width: 560px) {
+  sola-app {
+    height: auto;
+  }
+  .sidebar {
+    flex-shrink: 0;
+  }
+  #history {
+    flex: auto;
+    max-height: 60dvh;
+  }
+}
+@media (forced-colors: active) {
+  #topics button[aria-current='page'] {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+  .primary {
+    border-color: ButtonText;
   }
 }
 @media (prefers-reduced-motion: reduce) {

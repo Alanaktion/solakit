@@ -51,7 +51,7 @@ class SolaArtifact extends SolaElement {
                   Artifact bytes ${chunk.offset}–${chunk.offset + chunk.bytes.byteLength} of
                   ${chunk.length}
                 </p>
-                <pre>${new TextDecoder().decode(chunk.bytes)}</pre>
+                <pre tabindex="0">${new TextDecoder().decode(chunk.bytes)}</pre>
                 <button type="button" @click=${() => this.download()}>Download this chunk</button>
                 ${
                   chunk.next < chunk.length

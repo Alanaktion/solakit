@@ -33,8 +33,10 @@ export class SolaApp extends SolaElement {
     return html`
       <a class="skip" href="#draft">Skip to message</a>
       <aside class="sidebar" aria-label="Topics">
-        <div class="brand">Sola <span>Your ongoing conversation</span></div>
-        <button @click=${newTopic} id="new-topic">＋ New topic</button>
+        <div class="brand">🌙 Sola</div>
+        <button @click=${newTopic} id="new-topic">
+          <span aria-hidden="true">＋</span> New topic
+        </button>
         <nav id="topics" aria-label="Choose a topic"></nav>
         <button @click=${action(() => loadTopics(true))} id="more-topics" hidden>
           More topics
@@ -44,7 +46,8 @@ export class SolaApp extends SolaElement {
           Archived topics</label
         >
         <div class="sidebar-footer">
-          <button @click=${action(openSettings)} id="settings-open">Settings</button
+          <button @click=${action(openSettings)} id="settings-open" aria-haspopup="dialog">
+            Settings</button
           ><button @click=${action(logout)} id="logout">Sign out</button>
         </div>
       </aside>
@@ -54,9 +57,12 @@ export class SolaApp extends SolaElement {
             <h1 id="topic-title">Conversation</h1>
             <p id="topic-mode">A little room to think.</p>
           </div>
-          <button @click=${editTopic} id="topic-edit" disabled>Topic details</button>
+          <button @click=${editTopic} id="topic-edit" aria-haspopup="dialog" disabled>
+            Topic details
+          </button>
         </header>
         <p id="connection" role="status" aria-live="polite">Connecting…</p>
+        <p id="reply-status" class="sr-only" role="status" aria-atomic="true"></p>
         <div id="notice" role="alert" hidden>
           <span id="notice-message"></span
           ><button
@@ -77,22 +83,26 @@ export class SolaApp extends SolaElement {
           </div>
           <div id="turns"></div>
         </section>
-        <button @click=${jumpLatest} id="latest" hidden>Jump to latest ↓</button>
-        <div id="outbox" aria-label="Submissions awaiting confirmation"></div>
+        <button @click=${jumpLatest} id="latest" hidden>
+          Jump to latest <span aria-hidden="true">↓</span>
+        </button>
+        <div id="outbox" role="group" aria-label="Submissions awaiting confirmation"></div>
         <form @submit=${submit} id="composer">
           <label class="sr-only" for="draft">Message Sola</label>
           <textarea
             @keydown=${draftKeydown}
             @input=${saveDraft}
             id="draft"
-            rows="3"
+            rows="2"
             maxlength="32768"
             placeholder="Message Sola…"
             aria-describedby="compose-hint"
             required
           ></textarea>
           <div class="composer-actions">
-            <span id="compose-hint">Enter to send · Shift + Enter for a new line</span>
+            <span id="compose-hint" role="status"
+              >Enter to send · Shift + Enter for a new line</span
+            >
             <label
               >Profile
               <select @change=${saveDraft} id="profile">
@@ -100,7 +110,7 @@ export class SolaApp extends SolaElement {
               </select></label
             >
             <button class="primary" id="send" type="submit" aria-label="Send message" disabled>
-              Send ↑
+              Send <span aria-hidden="true">↑</span>
             </button>
           </div>
         </form>
@@ -114,7 +124,13 @@ export class SolaApp extends SolaElement {
           <h2 id="login-title">Welcome to Sola</h2>
           <p id="login-reason">Sign in with your operator password.</p>
           <label for="password">Password</label
-          ><input id="password" type="password" autocomplete="current-password" required />
+          ><input
+            id="password"
+            type="password"
+            autocomplete="current-password"
+            aria-describedby="login-reason login-error"
+            required
+          />
           <p id="login-error" role="alert"></p>
           <button class="primary">Sign in</button>
         </form>
@@ -184,14 +200,17 @@ export class SolaApp extends SolaElement {
               </div>
             </div>
             <label for="job-topic">Topic</label
-            ><select id="job-topic" required></select>
+            ><select id="job-topic" aria-describedby="job-topic-hint" required></select>
             <label for="job-origin">Kind</label
             ><select id="job-origin">
               <option value="scheduled">Scheduled task</option>
               <option value="proactive">Proactive wake-up</option>
             </select>
-            <label><input id="job-enabled" type="checkbox" /> Enable wake-ups for this job</label>
-            <p>
+            <label
+              ><input id="job-enabled" type="checkbox" aria-describedby="job-enabled-hint" /> Enable
+              wake-ups for this job</label
+            >
+            <p id="job-enabled-hint">
               Saving an enabled job authorizes automatic work in its topic, within the selected
               profile’s permissions.
             </p>
@@ -204,7 +223,7 @@ export class SolaApp extends SolaElement {
         <details>
           <summary>Memory</summary>
           <button @click=${action(refreshMemory)} id="memory-refresh">Refresh memory status</button>
-          <pre id="memory-status"></pre>
+          <pre id="memory-status" tabindex="0"></pre>
           <p>
             Staged notes are waiting for extraction. Only completed extraction is reported as saved
             memory. Inspect a run to reconcile failed or ambiguous extraction with a verified
@@ -216,7 +235,7 @@ export class SolaApp extends SolaElement {
           <div id="profiles"></div>
           <label for="tool-profile">Tools for profile</label
           ><select @change=${action(loadTools)} id="tool-profile"></select>
-          <pre id="tools"></pre>
+          <pre id="tools" tabindex="0"></pre>
         </details>
         <details>
           <summary>Credential references</summary>
@@ -241,7 +260,7 @@ export class SolaApp extends SolaElement {
             ><input @change=${connect} id="poll-only" type="checkbox" /> Use polling instead of
             streaming</label
           ><button @click=${action(refreshHealth)} id="health-refresh">Refresh health</button>
-          <pre id="health"></pre>
+          <pre id="health" tabindex="0"></pre>
           <p id="transport-detail"></p>
         </details>
         <p id="settings-status" role="status"></p>

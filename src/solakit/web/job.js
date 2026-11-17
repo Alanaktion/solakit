@@ -115,7 +115,7 @@ class SolaJob extends SolaElement {
                         <summary>
                           ${`${occurrence.state} · ${occurrence.decision === 'no_action' ? 'No action needed' : occurrence.decision} · ${occurrence.due_at}`}
                         </summary>
-                        <pre>${JSON.stringify(occurrence, null, 2)}</pre>
+                        <pre tabindex="0">${JSON.stringify(occurrence, null, 2)}</pre>
                         ${
                           occurrence.run_id
                             ? html`<button

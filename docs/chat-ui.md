@@ -71,7 +71,15 @@ resources. Tool output and evidence use text nodes. Artifact inspection checks
 normal API authorization and downloads chunks of at most 64 KiB. Details are
 collapsed and scrollable. The shell has a restrictive Content Security Policy,
 labelled controls, native keyboard dialogs, polite progress announcements,
-44-pixel controls and a narrow-screen layout. Timers do not announce every second.
+compact 36-pixel desktop controls and 44-pixel targets when a touch pointer is
+available. Conversation text stays at 16 pixels; supporting controls use relative
+font sizes. Form boundaries and focus rings remain visible in both themes,
+including a selected-topic outline in forced-colors mode. A skip link reaches
+the composer, dialogs retain native keyboard behavior, and jumping to the latest
+message keeps keyboard focus in the conversation. New settled replies have a
+dedicated polite announcement; previews, timers and loaded history do not repeat
+that announcement. Narrow screens reflow, and very short portrait windows allow
+page scrolling so the composer stays reachable.
 
 ## Web source layout
 
@@ -104,7 +112,7 @@ and run the script. Use the fixture-only password printed by the server for manu
 inspection. Never use this fixture password or configuration in production.
 
 ```sh
-npm install --prefix /tmp/sola-chat-browser --no-audit --no-fund playwright
+npm install --prefix /tmp/sola-chat-browser --no-audit --no-fund playwright @axe-core/playwright
 /tmp/sola-chat-browser/node_modules/.bin/playwright install chromium
 SOLA_PLAYWRIGHT_PATH=/tmp/sola-chat-browser/node_modules/playwright \
   node scripts/check_chat.mjs --fixture /tmp/sola-chat-fixture/fixture.json \
@@ -114,9 +122,13 @@ SOLA_PLAYWRIGHT_PATH=/tmp/sola-chat-browser/node_modules/playwright \
 `SOLA_BROWSER` can select an already-installed Chromium executable. The script
 creates its own conversation through the UI, so it can be rerun against the same
 fixture. It records payload/node measurements, results and desktop/mobile PNGs.
-It checks live appearance switching and text contrast in both themes, 320-pixel
-and 390-pixel portrait layouts, short landscape layouts, archive/restore,
-single-use topics, keyboard submission and composition input.
+It checks live appearance switching, text and form-boundary contrast in both
+themes, 320-pixel and 390-pixel portrait layouts, short landscape layouts,
+archive/restore, single-use topics, keyboard submission and composition input.
+The same script runs axe WCAG A/AA scans on login, chat, topic, Settings and
+evidence surfaces, plus keyboard focus, touch target, 200% text, forced-colors
+and short-window checks. The report retains axe rules needing manual review;
+passing automated checks is not a claim of full WCAG conformance.
 Stop the fixture with Ctrl+C when finished. Browser tooling is not a runtime or
 Python dependency.
 

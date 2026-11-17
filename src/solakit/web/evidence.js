@@ -33,7 +33,7 @@ export async function moreEvidence() {
           <summary>
             ${`${row.sequence} · ${row.kind}${row.truncated ? ' · large record' : ''}`}
           </summary>
-          <pre>${JSON.stringify(row.record, null, 2)}</pre>
+          <pre tabindex="0">${JSON.stringify(row.record, null, 2)}</pre>
           ${artifacts.map((reference) => html`<sola-artifact .runId=${id} .reference=${reference}></sola-artifact>`)}
         </details>
       `;
