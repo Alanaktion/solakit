@@ -73,6 +73,20 @@ collapsed and scrollable. The shell has a restrictive Content Security Policy,
 labelled controls, native keyboard dialogs, polite progress announcements,
 44-pixel controls and a narrow-screen layout. Timers do not announce every second.
 
+## Web source layout
+
+- `app.js`, `turn.js`, `job.js`, `artifact.js`: Lit components and their rendering.
+- `settings.js`: job forms/catalog, profiles/tools, memory status and evidence search.
+- `evidence.js`: paged run records and artifact panels.
+- `client.js`, `ui.js`: authenticated requests, tab storage, shared DOM/error helpers and the light-DOM base.
+- `chat.js`: conversation state, topics, drafts/outbox, SSE/polling and startup wiring.
+
+Components use explicit callbacks for conversation refresh/cancellation and job
+editing/refresh. Shared requests signal authentication expiry to the conversation
+controller. Imports flow toward helpers and components; components do not import
+`chat.js`. Every module is packaged in the wheel and explicitly allowlisted by the
+HTTP boundary. No bundler or external module source is required.
+
 ## Reproducible browser acceptance
 
 The fixture starts a real loopback HTTP server with the real runtime/services,

@@ -15,7 +15,21 @@ def main() -> None:
         (wheel,) = root.glob("*.whl")
         with ZipFile(wheel) as archive:
             assert all(name.startswith(("solakit/", "solakit-")) for name in archive.namelist())
-            for asset in ("index.html", "chat.css", "chat.js", "markdown.js", "lit-core.min.js"):
+            for asset in (
+                "index.html",
+                "chat.css",
+                "chat.js",
+                "app.js",
+                "turn.js",
+                "job.js",
+                "artifact.js",
+                "settings.js",
+                "evidence.js",
+                "client.js",
+                "ui.js",
+                "markdown.js",
+                "lit-core.min.js",
+            ):
                 assert archive.read(f"solakit/web/{asset}")
         environment = root / "venv"
         subprocess.run(["uv", "venv", "--python", "3.15", str(environment)], check=True)

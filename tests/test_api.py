@@ -803,7 +803,20 @@ def test_chat_shell_is_public_but_runtime_stays_authenticated(client: TestClient
     assert "script-src 'self'" in response.headers["content-security-policy"]
     assert "frame-ancestors 'none'" in response.headers["content-security-policy"]
     assert response.headers["cache-control"] == "no-store"
-    for asset in ("chat.js", "chat.css", "markdown.js", "lit-core.min.js"):
+    for asset in (
+        "chat.css",
+        "chat.js",
+        "app.js",
+        "turn.js",
+        "job.js",
+        "artifact.js",
+        "settings.js",
+        "evidence.js",
+        "client.js",
+        "ui.js",
+        "markdown.js",
+        "lit-core.min.js",
+    ):
         response = client.get("/assets/" + asset)
         assert response.status_code == 200
         assert response.headers["x-content-type-options"] == "nosniff"

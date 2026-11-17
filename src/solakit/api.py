@@ -46,6 +46,22 @@ Limit = Annotated[int, Query(ge=1, le=100)]
 After = Annotated[int, Query(ge=0)]
 SEND_TIMEOUT_SECONDS = 30
 
+WEB_ASSETS = (
+    "chat.css",
+    "chat.js",
+    "app.js",
+    "turn.js",
+    "job.js",
+    "artifact.js",
+    "settings.js",
+    "evidence.js",
+    "client.js",
+    "ui.js",
+    "markdown.js",
+    "lit-core.min.js",
+)
+PUBLIC_WEB_PATHS = {"/"} | {f"/assets/{name}" for name in WEB_ASSETS}
+
 
 def failure(status: int, code: str, message: str) -> JSONResponse:
     return JSONResponse({"error": {"code": code, "message": message}}, status_code=status)
@@ -141,15 +157,7 @@ class Boundary:
             if cookie is not None and authorization is not None:
                 raise RequestError(400, "ambiguous_auth", "Use cookie or bearer authentication")
             public = request.url.path == "/health" or (
-                request.method in ("GET", "HEAD")
-                and request.url.path
-                in (
-                    "/",
-                    "/assets/chat.css",
-                    "/assets/chat.js",
-                    "/assets/markdown.js",
-                    "/assets/lit-core.min.js",
-                )
+                request.method in ("GET", "HEAD") and request.url.path in PUBLIC_WEB_PATHS
             )
             login_route = request.url.path == "/api/v1/auth/login"
             mutation = request.method not in ("GET", "HEAD", "OPTIONS")
@@ -342,7 +350,7 @@ def create_app(
 
     @app.get("/assets/{name}", include_in_schema=False)
     async def asset(name: str) -> FileResponse:
-        if name not in ("chat.css", "chat.js", "markdown.js", "lit-core.min.js"):
+        if name not in WEB_ASSETS:
             raise HTTPException(404)
         return FileResponse(FilePath(__file__).parent / "web" / name)
 

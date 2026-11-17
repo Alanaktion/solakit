@@ -72,8 +72,8 @@ local tests.
 
 ## Browser request matrix
 
-The public chat shell at `/` and its four explicit `/assets/` files (`chat.css`,
-`chat.js`, `markdown.js`, and the local `lit-core.min.js`) permit GET without login; they contain no runtime data or credential values. All API paths
+The public chat shell at `/` and its explicitly allowlisted CSS and JavaScript
+modules under `/assets/` permit GET without login; they contain no runtime data or credential values. All API paths
 retain the authentication matrix below.
 
 All paths, including health, require Host to match an authority in
