@@ -34,3 +34,41 @@ fix the source issue and use a fresh destination (or remove the failed import).
 The source is never rewritten, and an active legacy runtime or uncheckpointed
 SQLite WAL causes the command to stop. Starting v2 and switching clients remain
 separate operator actions.
+
+## One-time OpenViking history import
+
+After migrating sessions, stop Sola and select the v2 config with memory enabled,
+the intended account/user/root, and a shared default profile with memory mode
+`optional` or `required` (see [memory setup](../memory.md)). Preview locally, then
+submit explicitly:
+
+```sh
+uv run --locked python -m scripts.import_memory_history \
+  --config ~/.config/sola/config.toml --dry-run
+uv run --locked python -m scripts.import_memory_history \
+  --config ~/.config/sola/config.toml
+```
+
+This imports every original user/assistant message in shared sessions, including
+archived and pre-compaction history and messages from unsuccessful runs. It reads
+the migrated v2 records, preserving their order within each session. Isolated and
+ephemeral sessions, tool output, reasoning, compaction summaries and image bytes
+are excluded. This is conversation-text extraction, not an OpenViking backup of
+all local evidence. Local history remains intact.
+
+Messages are submitted in batches of at most 100 parts and 64 KiB, with separate
+provider sessions for each batch. Long messages are split into consecutive parts
+without truncation; each part retains its source message ID. The JSON output counts
+parts and batches. Acceptance means a provider task was returned; extraction and
+later retrieval are separate checks. Task IDs are retained in private
+`imports/openviking-history/*.accepted.json` files. Inspect them through OpenViking
+in the same account/user. The runtime memory observer does not manage this manual
+import's tasks.
+
+Keep Sola stopped until submission finishes. Rerunning against the same history
+and destination skips accepted batches. History or scope changes are refused.
+Submission attempts are durably recorded before remote writes: a started batch
+without an acceptance receipt is uncertain and stops a rerun. Inspect its recorded
+`sola-...` provider session manually; do not delete receipts to force a retry.
+There is no automatic rollback or reconciliation with pre-existing OpenViking
+memory, so this can re-extract facts already present from legacy operation.

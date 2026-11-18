@@ -74,6 +74,9 @@ test data separately through OpenViking when desired.
 
 ## One-shot configuration migration
 
+For the separate manual conversation-history backfill after session migration,
+see [the OpenViking history import](migration/cutover.md#one-time-openviking-history-import).
+
 The importer understands legacy `path:`, `repo:` and `collection:` workspace
 scopes and checks collection containment. See the [Phase 13 runbook](migration/cutover.md)
 for consistent source snapshots, history/jobs migration and cutover checks.

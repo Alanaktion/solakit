@@ -104,6 +104,14 @@ existing output directory. Review the report and unsupported settings before usi
 the draft; migration is a rehearsal, not production cutover.
 
 The [runbook](../memory.md) covers setup, outage inspection, reconciliation and probes.
+
+The separate manual [history importer](../migration/cutover.md#one-time-openviking-history-import)
+can explicitly extract all original shared-session conversation text after migration,
+including archived history and unsuccessful runs. It never enqueues runtime memory
+work or replays legacy memory submissions. Its private submission/acceptance receipts
+live under `imports/openviking-history/`; uncertain batches require manual provider
+inspection. Automatic extraction rules above remain unchanged.
+
 The upstream contract was checked against [OpenViking v0.5.5 source](https://github.com/volcengine/OpenViking/tree/v0.5.5/openviking/server/routers)
 and the running service's OpenAPI schema. See [Phase 7 evidence](../validation/phase-07.md).
 
