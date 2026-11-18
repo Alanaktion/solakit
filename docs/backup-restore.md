@@ -71,6 +71,7 @@ See [the storage protocol](contracts/storage.md) and
 [Phase 3 verification](validation/phase-03.md) for tested boundaries.
 
 Real legacy trees use the [Phase 13 migration runbook](migration/cutover.md).
-It extracts jobs separately from the combined database, preserves history/config/
-identity, pauses scheduling and records rollback cursors. `import-fixture` remains
-a synthetic preservation probe.
+It imports directly into a new data directory, extracts jobs separately from the
+combined database and leaves scheduling paused. Existing backups and manual
+cleanup replace migration-specific checkpoints and rollback reports.
+`import-fixture` remains a synthetic preservation probe.

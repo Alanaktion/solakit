@@ -21,7 +21,7 @@ These plans expand [OUTLINE.md](OUTLINE.md) into fourteen implementation phases 
 | 12 | [Basic tools and image workflows](PHASE-12-packs-workflows.md) | Daily-use candidate |
 | 13 | [Migration and cutover](PHASE-13-migration-cutover.md) | Recoverable production transition |
 
-Execute in numbered order. Later-phase contracts can be drafted earlier, but their gates require their dependencies. Phase 6 is the headless milestone; Phase 9 adds durable personal agency; Phase 12 validates basic file/image workflows and produces the release candidate; Phase 13 completes migration and soak.
+Execute in numbered order. Later-phase contracts can be drafted earlier, but their gates require their dependencies. Phase 6 is the headless milestone; Phase 9 adds durable personal agency; Phase 12 validates basic file/image workflows and produces the release candidate; Phase 13 imports legacy data.
 
 ## Phase 0 contracts
 
@@ -121,11 +121,10 @@ operator browser acceptance also remains pending.
 Deferred integration trees are retained without loading or activating packs.
 Read the [workflow guide](../image-workflows.md) and [verification](../validation/phase-12.md).
 
-Phase 13 provides offline snapshots, resumable import, preservation verification
-and rollback reconciliation alongside existing config migration/backup helpers.
-See the [runbook](../migration/cutover.md) and [evidence](../validation/phase-13.md).
-Production cutover, outstanding release gates, operator acceptance and soak remain
-pending.
+Phase 13 provides a single direct importer from the stopped legacy runtime into
+new v2 data. The operator has backups and accepts manual cleanup; snapshot,
+checkpoint, verifier and rollback machinery has been removed. See the
+[import guide](../migration/cutover.md) and [checks](../validation/phase-13-simple.md).
 
 ## Shared implementation conventions
 

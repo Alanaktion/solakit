@@ -4,12 +4,10 @@ Scope: format inventory from copied reference source/tests/docs, not an export o
 
 ## Inventory and migration mapping
 
-The original Phase 0 inventory did not collect production paths, counts, volumes,
-credential references or memory roots. Phase 13 now supplies private checksummed
-snapshots and generated reports for `/Users/alan/.config/solakit/`; see the
-[runbook](cutover.md) and [validation](../validation/phase-13.md). External backup
-completeness and cutover remain separate gates. Synthetic examples below do not
-establish production completeness. Deferred integrations remain preserved.
+The operator supplied `/Users/alan/.config/solakit/`, has existing backups and
+accepts manual cleanup. The [direct importer](cutover.md) preserves historical
+files and maps sessions/runs/jobs without requiring inventories or rehearsal
+reports. The format inventory below is reference material.
 
 | Category / observed legacy location | Authority and format | V2 treatment / verification | Owner and backup |
 | --- | --- | --- | --- |
@@ -37,8 +35,9 @@ Legacy archival can rotate the active transcript into numbered segments while ma
 
 [fixtures/legacy-format/manifest.json](fixtures/legacy-format/manifest.json) inventories eleven deliberately synthetic examples: session metadata with an unknown field; active and archived JSONL; a tool-call/result group; run events; CRLF prompt bytes; tool schemas/receipt; a torn trailing record; authoritative job-row export with a tombstone; a consumed job journal; and an uncertain pack-operation intent. They are minimal format examples, not a full legacy-schema acceptance corpus or real SQLite backup. Phase 3 expands/validates them against full import requirements.
 
-## Production inventory handoff
+## Production import
 
-Before Phase 13 rehearsal, obtain a consistent copied evidence tree and SQLite backup plus independently backed-up pack resources and memory roots. For every category record source root, source format/version, record count, byte count, hashes, ordering key, ID namespace, outgoing references, unknown fields, anomalies, destination, and verification result. Credentials remain private and are inventoried by reference/availability only.
-
-Phase 3 may proceed with synthetic inputs. Actual production completeness and recovery gates remain pending until that copy exists. A source count alone is insufficient: verify hashes, stable IDs, ordering, references, consumed attempts, and uncertain effects. Search rebuild is never a repair strategy for lost state.db.
+Use the [direct import guide](cutover.md). Stop the old runtime and choose a new
+v2 data directory. Raw historical data is retained, jobs start disabled and search
+is rebuilt from JSONL. Configuration, identity and external memory/resources stay
+operator-owned; no new backup or audit workflow is required.
