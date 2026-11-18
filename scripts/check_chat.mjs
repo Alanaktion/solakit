@@ -549,6 +549,7 @@ try {
   });
   await check('Settings job creation, pause, manual message and no-action occurrence', async () => {
     await page.locator('#settings-open').click();
+    await page.locator('#job-new').click();
     await page.locator('#job-task').fill('A scheduled fixture message');
     await page.locator('#job-schedule').fill('cron:0 9 * * *');
     await page.locator('#job-topic').selectOption(fixture.other);
@@ -563,15 +564,17 @@ try {
     await page.waitForTimeout(5000);
     await job.getByRole('button', { name: 'Occurrences', exact: true }).click();
     await job.getByText(/completed · message/).waitFor();
+    const jobId = await job.getAttribute('data-job-id');
     await job.getByRole('button', { name: 'Edit', exact: true }).click();
     await page.locator('#job-task').fill('no action');
     await page.locator('#job-form button.primary').click();
-    const noAction = page.locator('#jobs article').filter({ hasText: 'no action' }).last();
+    const noAction = page.locator(`[data-job-id="${jobId}"]`);
+    await noAction.getByRole('heading', { name: 'no action', exact: true }).waitFor();
     await noAction.getByRole('button', { name: 'Run now', exact: true }).click();
     await page.waitForTimeout(1500);
     await noAction.getByRole('button', { name: 'Occurrences', exact: true }).click();
     await noAction.getByText(/completed · No action needed/).waitFor();
-    await page.locator('#job-reset').click();
+    await page.locator('#job-new').click();
     await page.locator('#job-task').fill('no action proactive fixture');
     await page.locator('#job-schedule').fill('cron:0 10 * * *');
     await page.locator('#job-origin').selectOption('proactive');
@@ -593,7 +596,7 @@ try {
       /^(Connected|Polling)/.test(document.querySelector('#connection').textContent)
     );
     await page.locator('#settings-open').click();
-    await page.locator('#job-reset').click();
+    await page.locator('#job-new').click();
     await page.locator('#job-task').fill('Automatic scheduled UI message');
     await page.locator('#job-schedule').fill(`once:${new Date(Date.now() + 2500).toISOString()}`);
     await page.locator('#job-enabled').check();
@@ -628,6 +631,122 @@ try {
       0
     );
   });
+  await check(
+    'Settings tabs, profile tools, prompt inspection, search and memory recovery',
+    async () => {
+      await page.locator('#settings-open').click();
+      await page.getByRole('tab', { name: 'Schedules', exact: true }).focus();
+      await page.keyboard.press('End');
+      assert.equal(
+        await page.evaluate(() => document.activeElement.id),
+        'settings-tab-security'
+      );
+      await page.locator('#login-status').filter({ hasText: 'expires' }).waitFor();
+      page.once('dialog', (dialog) => dialog.dismiss());
+      await page.locator('#revoke-logins').click();
+      assert(await page.locator('#settings').isVisible());
+      await page.getByRole('tab', { name: 'Security', exact: true }).focus();
+      await page.keyboard.press('Home');
+      assert.equal(
+        await page
+          .getByRole('tab', { name: 'Schedules', exact: true })
+          .getAttribute('aria-selected'),
+        'true'
+      );
+      await page.getByRole('tab', { name: 'Profiles & tools', exact: true }).click();
+      await page.locator('#tools summary').first().waitFor();
+      assert((await page.locator('#profiles').textContent()).includes('Workspace roots'));
+      await audit('settings-access');
+      await page.getByRole('tab', { name: 'Diagnostics', exact: true }).click();
+      await page.locator('#health').filter({ hasText: 'Healthy' }).waitFor();
+      await page.getByText('Inspect a draft prompt', { exact: true }).click();
+      await page.locator('#prompt-content').fill('Inspect without inference');
+      await page.locator('#prompt-hashes').check();
+      await page.locator('#prompt-form button').click();
+      await page
+        .locator('#prompt-result')
+        .filter({ hasText: 'Inspect without inference' })
+        .waitFor();
+      assert((await page.locator('#prompt-result').textContent()).includes('Content hashes'));
+      assert((await page.locator('#prompt-result').textContent()).includes('manifest'));
+      await audit('settings-diagnostics');
+      await page.getByRole('tab', { name: 'Search', exact: true }).click();
+      await page.locator('#search-query').fill('Automatic scheduled UI message');
+      await page.locator('#search-form button').click();
+      await page.locator('#search-results .search-result').first().waitFor();
+      await page
+        .locator('#search-results')
+        .getByRole('button', { name: 'Inspect run evidence', exact: true })
+        .first()
+        .click();
+      await page.locator('#evidence[open]').waitFor();
+      await page.keyboard.press('Escape');
+      await page.getByRole('tab', { name: 'Memory', exact: true }).click();
+      await page.locator('#memory-status').filter({ hasText: 'Extraction observer' }).waitFor();
+      await page.getByText('Reconcile failed or ambiguous extraction', { exact: true }).click();
+      await page.locator('#memory-commit').fill('0'.repeat(32));
+      await page.locator('#memory-task').fill('missing-task');
+      await page.locator('#memory-form button').click();
+      await page.locator('#settings-error').filter({ hasText: /.+/ }).waitFor();
+      assert(await page.locator('#memory-form button').isEnabled());
+      await page.getByRole('button', { name: 'Close Settings', exact: true }).click();
+    }
+  );
+  await check(
+    'job overrides survive editing, with independent profile and one-run targets',
+    async () => {
+      await page.locator('#settings-open').click();
+      await page.locator('#job-new').click();
+      await page.locator('#job-task').fill('Restricted one-run fixture');
+      await page.locator('#job-schedule').fill('cron:0 11 * * *');
+      await page.locator('#job-topic').selectOption('');
+      await page.locator('#job-profile').selectOption('default');
+      await page.locator('#job-delivery').selectOption('none');
+      await page.locator('#job-advanced summary').click();
+      await page.locator('#job-restrict-tools').check();
+      await page.locator('#job-restrict-roots').check();
+      await page.locator('#job-budget-model_calls').fill('2');
+      await page.locator('#job-budget-tool_calls').fill('2');
+      await page.locator('#job-budget-active_seconds').fill('30');
+      await audit('job-editor');
+      await page.locator('#job-tools').fill('ungranted.tool');
+      await page.locator('#job-form button.primary').click();
+      await page.locator('#job-error').filter({ hasText: /.+/ }).waitFor();
+      assert.equal(await page.locator('#job-task').inputValue(), 'Restricted one-run fixture');
+      assert(await page.locator('#job-form button.primary').isEnabled());
+      await page.locator('#job-tools').fill('');
+      await page.locator('#job-form button.primary').click();
+      await page.locator('#job-dialog').waitFor({ state: 'hidden' });
+      const job = page
+        .locator('#jobs article')
+        .filter({ hasText: 'Restricted one-run fixture' });
+      assert((await job.textContent()).includes('New one-run topic'));
+      await job.getByRole('button', { name: 'Edit', exact: true }).click();
+      assert.equal(await page.locator('#job-topic').inputValue(), '');
+      assert.equal(await page.locator('#job-profile').inputValue(), 'default');
+      assert.equal(await page.locator('#job-delivery').inputValue(), 'none');
+      assert(await page.locator('#job-restrict-tools').isChecked());
+      assert(await page.locator('#job-restrict-roots').isChecked());
+      assert.equal(await page.locator('#job-budget-model_calls').inputValue(), '2');
+      await page.locator('#job-task').fill('Restricted one-run edited');
+      await page.locator('#job-form button.primary').click();
+      await page.locator('#job-dialog').waitFor({ state: 'hidden' });
+      const edited = page
+        .locator('#jobs article')
+        .filter({ hasText: 'Restricted one-run edited' });
+      await edited.getByRole('button', { name: 'Run now', exact: true }).click();
+      await page.waitForTimeout(5000);
+      await edited.getByRole('button', { name: 'Occurrences', exact: true }).click();
+      await edited
+        .getByText(/completed/)
+        .first()
+        .waitFor();
+      page.once('dialog', (dialog) => dialog.accept());
+      await edited.getByRole('button', { name: 'Delete job', exact: true }).click();
+      await edited.waitFor({ state: 'hidden' });
+      await page.getByRole('button', { name: 'Close Settings', exact: true }).click();
+    }
+  );
   await check('authenticated evidence and artifact chunks are inspectable', async () => {
     await page.getByRole('button', { name: 'Inspect evidence', exact: true }).last().click();
     await page.locator('#evidence-records summary').filter({ hasText: 'request' }).first().click();
@@ -640,6 +759,11 @@ try {
       .first()
       .waitFor();
     await audit('evidence');
+    await page.getByRole('tab', { name: 'Model requests', exact: true }).click();
+    assert.equal(await page.getByText(/Artifact bytes/).count(), 0);
+    await page.locator('#evidence-records summary').first().waitFor();
+    assert((await page.locator('#evidence-records').textContent()).includes('request'));
+    await page.getByRole('tab', { name: 'All records', exact: true }).click();
     await page.getByRole('button', { name: 'Close evidence', exact: true }).click();
   });
   await check('auth expiry prompts for login and retains the editable draft', async () => {
@@ -660,6 +784,21 @@ try {
     await page.locator('#login-dialog').waitFor({ state: 'hidden' });
     await page.waitForTimeout(1000);
     assert.equal(await page.locator('#draft').inputValue(), 'Keep me after sign-in expires');
+  });
+  await check('Security signs out every device and preserves the current draft', async () => {
+    const draft = await page.locator('#draft').inputValue();
+    await page.locator('#settings-open').click();
+    await page.getByRole('tab', { name: 'Security', exact: true }).click();
+    page.once('dialog', (dialog) => dialog.accept());
+    await page.locator('#revoke-logins').click();
+    await page.locator('#login-dialog[open]').waitFor();
+    const status = await page.evaluate(async () => (await fetch('/api/v1/auth/session')).status);
+    assert.equal(status, 401);
+    await page.locator('#password').fill('phase11-disposable-fixture');
+    await page.locator('#login-form button').click();
+    await page.locator('#login-dialog').waitFor({ state: 'hidden' });
+    await waitFor(() => /^(Connected|Polling)/.test(document.querySelector('#connection').textContent));
+    assert.equal(await page.locator('#draft').inputValue(), draft);
   });
   await check('narrow layout, keyboard focus, labels and reduced motion', async () => {
     await page.setViewportSize({ width: 390, height: 844 });
@@ -692,6 +831,22 @@ try {
     });
     await page.keyboard.press('Escape');
     assert.equal(await page.evaluate(() => document.activeElement.id), 'settings-open');
+  });
+  await check('every Settings tab and the job editor fit a narrow viewport', async () => {
+    await page.setViewportSize({ width: 320, height: 568 });
+    await page.locator('#settings-open').click();
+    for (const name of ['Memory', 'Profiles & tools', 'Search', 'Diagnostics', 'Security', 'Schedules']) {
+      await page.getByRole('tab', { name, exact: true }).click();
+      assert(await page.locator('#settings').evaluate((el) => el.scrollWidth <= el.clientWidth));
+      assert(await page.locator('.settings-content').evaluate((el) => el.scrollWidth <= el.clientWidth));
+    }
+    await page.locator('#job-new').click();
+    await page.locator('#job-advanced summary').click();
+    assert(await page.locator('#job-dialog').evaluate((el) => el.scrollWidth <= el.clientWidth));
+    await audit('job-editor-mobile');
+    await page.screenshot({ path: path.join(options.output, 'job-editor-mobile.png'), fullPage: true });
+    await page.keyboard.press('Escape');
+    await page.keyboard.press('Escape');
   });
   await check(
     'light/dark mobile layouts, Settings and evidence fit narrow and short viewports',

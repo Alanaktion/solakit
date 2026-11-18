@@ -21,11 +21,13 @@ export const text = (element, value) => {
 export function showError(error) {
   const target = $('evidence').open
     ? $('evidence-error')
-    : $('settings').open
-      ? $('settings-error')
-      : $('topic-dialog').open
-        ? $('topic-error')
-        : $('notice-message');
+    : $('job-dialog').open
+      ? $('job-error')
+      : $('settings').open
+        ? $('settings-error')
+        : $('topic-dialog').open
+          ? $('topic-error')
+          : $('notice-message');
   text(target, error.message || 'Request failed. Please retry.');
   target.hidden = false;
   if (target.id === 'notice-message') $('notice').hidden = false;

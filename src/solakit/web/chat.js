@@ -1,7 +1,7 @@
 import { html, nothing, render as renderTemplate } from './lit-core.min.js';
 import { $, active, action, text, showError } from './ui.js';
 import { api, read, write, uid } from './client.js';
-import { openEvidence, moreEvidence } from './evidence.js';
+import { openEvidence, moreEvidence, switchEvidence } from './evidence.js';
 import { createSettings } from './settings.js';
 import { SolaApp } from './app.js';
 import './turn.js';
@@ -30,22 +30,16 @@ let refreshChain = Promise.resolve(),
   cursor = null;
 const pendingRuns = new Set();
 
-const {
-  loadTools,
-  loadProfiles,
-  refreshMemory,
-  refreshHealth,
-  loadJobs,
-  fillJob,
-  openSettings,
-  saveJob,
-  search,
-  toggleScheduler
-} = createSettings({
+const settings = createSettings({
   topics,
   selected: () => selected,
-  refreshRuns: () => queueRefresh([...runs.keys()])
+  refreshRuns: () => queueRefresh([...runs.keys()]),
+  selectTopic: async (id) => {
+    if (!topics.has(id)) topics.set(id, await api(`/sessions/${id}`));
+    await selectTopic(id);
+  }
 });
+const { loadProfiles, openSettings } = settings;
 
 function requireLogin() {
   loggedIn = false;
@@ -738,14 +732,8 @@ document.querySelector('sola-app').actions = {
   saveDraft,
   login,
   saveTopic,
-  loadJobs,
-  toggleScheduler,
-  saveJob,
-  fillJob,
-  refreshMemory,
-  loadTools,
-  search,
+  ...settings,
   connect,
-  refreshHealth,
-  moreEvidence
+  moreEvidence,
+  switchEvidence
 };

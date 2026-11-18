@@ -47,23 +47,44 @@ their drafts remain editable. Single-use topics require a new topic for another
 run. Error notices can be dismissed without removing an uncertain submission
 from the outbox. The selected topic stays visible in narrow-screen navigation.
 
-Settings contains:
+Settings uses six keyboard-accessible tabs, with a separate dialog for job
+creation and editing. Arrow keys move between tabs; Home/End select the first
+or last tab. Navigation stays visible while section content scrolls. On small
+screens, the tabs form a compact grid.
 
-- Job creation/editing, explicit enablement, pause/resume, run-now, deletion and
-  occurrence inspection. New jobs are disabled by default. Schedules use
-  `cron:<five fields>` or `once:<aware ISO timestamp>`. Run-now has its own durable
-  retry key. Resume a paused job before running it. Scheduled/proactive messages
-  carry their attribution; no-action decisions are visible in occurrences.
-- Read-only profile authority, tools and workspace roots. Configure permissions
-  and credential references in operator-owned configuration outside the browser.
-  Credential values never enter page source or profile diagnostics.
-- Memory status refresh; failed/ambiguous extraction cards expose reconciliation
-  with a verified provider task ID. This checks existing work without resubmitting
-  its content.
-- Conversation-evidence search, health and an explicit polling switch. Streaming
-  failure falls back to five-second polling and retries SSE. Both use the same
-  record maps and stable IDs. Authentication expiry asks for login and keeps the
-  draft and pending submissions.
+- **Schedules:** create/edit, enable/disable, pause/resume, run now, delete and
+  inspect occurrences. New jobs start disabled. Schedules use
+  `cron:<five fields>` or `once:<aware ISO timestamp>`. Each job chooses its own
+  profile, a shared/isolated topic or a fresh one-run target, and whether to
+  publish results or retain only execution evidence. **Permissions & limits**
+  optionally narrows tool names, workspace roots and all six budget fields.
+  Unchecked restrictions inherit the profile; checked empty lists allow none.
+  Blank limits inherit scheduled-work limits. The server enforces authority.
+  Run-now has its own durable retry key; resume paused jobs/schedules first.
+- **Memory:** readable observer/commit counts and manual reconciliation of
+  failed/ambiguous extraction using the memory commit ID and a verified provider
+  task ID. Run memory cards also offer reconciliation. This checks existing work
+  without resubmitting content.
+- **Profiles & tools:** read-only model, memory policy, workspace roots and
+  available tool descriptions/schemas. Effective configuration and provenance
+  remain inspectable in a disclosure. Permissions and credentials stay in
+  operator-owned configuration; credential values never enter this page.
+- **Search:** evidence-backed phrase search in the current topic or all topics,
+  with a bounded result limit, readable snippets, topic navigation and direct
+  run-evidence inspection. An empty result or failed search has explicit feedback.
+- **Diagnostics:** readable runtime health, streaming/polling controls and draft
+  prompt inspection, including optional hashes. Draft inspection assembles a
+  request without model inference, topic history or semantic recall; it can
+  include private operator prompt content.
+- **Security:** this login’s expiry and an explicit, confirmed action to revoke
+  every browser/API login, including the current one.
+
+The run-evidence dialog has **All records** and **Model requests** tabs, each with
+independent pagination and authorized artifact inspection. Settings loads each
+section on demand, so an unavailable diagnostic service does not block the other
+sections. Streaming failure still falls back to five-second polling and retries
+SSE; both transports use the same record maps and stable IDs. Sign-in expiry
+retains drafts and pending submissions.
 
 Markdown supports paragraphs, headings, emphasis, lists, quotations, code and
 explicit HTTP/HTTPS/mailto links. Raw HTML is text; images do not fetch remote
@@ -84,8 +105,8 @@ page scrolling so the composer stays reachable.
 ## Web source layout
 
 - `app.js`, `turn.js`, `job.js`, `artifact.js`: Lit components and their rendering.
-- `settings.js`: job forms/catalog, profiles/tools, memory status and evidence search.
-- `evidence.js`: paged run records and artifact panels.
+- `settings.js`: Settings/job-dialog templates and their API actions.
+- `evidence.js`: independently paged run records/model requests and artifact panels.
 - `client.js`, `ui.js`: authenticated requests, tab storage, shared DOM/error helpers and the light-DOM base.
 - `chat.js`: conversation state, topics, drafts/outbox, SSE/polling and startup wiring.
 

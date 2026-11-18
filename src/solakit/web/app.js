@@ -1,5 +1,6 @@
 import { html } from './lit-core.min.js';
 import { $, action, SolaElement } from './ui.js';
+import { settingsTemplate } from './settings.js';
 
 export class SolaApp extends SolaElement {
   static properties = { actions: { attribute: false } };
@@ -19,16 +20,9 @@ export class SolaApp extends SolaElement {
       saveDraft,
       login,
       saveTopic,
-      loadJobs,
-      toggleScheduler,
-      saveJob,
-      fillJob,
-      refreshMemory,
-      loadTools,
-      search,
-      connect,
-      refreshHealth,
-      moreEvidence
+      moreEvidence,
+      switchEvidence,
+      settingsKeydown
     } = this.actions;
     return html`
       <a class="skip" href="#draft">Skip to message</a>
@@ -79,7 +73,9 @@ export class SolaApp extends SolaElement {
           <div id="empty">
             <h2>What’s on your mind?</h2>
             <p id="empty-hint">Start a topic, then send Sola a message.</p>
-            <button @click=${newTopic} id="empty-new-topic" class="primary">Start a topic</button>
+            <button @click=${newTopic} id="empty-new-topic" class="primary">
+              Start a topic
+            </button>
           </div>
           <div id="turns"></div>
         </section>
@@ -160,112 +156,7 @@ export class SolaApp extends SolaElement {
           </div>
         </form>
       </dialog>
-      <dialog id="settings" class="wide" aria-labelledby="settings-title">
-        <header>
-          <h2 id="settings-title">Settings</h2>
-          <button data-close="settings" @click=${() => $('settings').close()}>
-            Close Settings
-          </button>
-        </header>
-        <p>
-          Authority and credentials are managed in your operator configuration. Changes below use
-          your signed-in authority.
-        </p>
-        <details open>
-          <summary>Scheduled &amp; proactive work</summary>
-          <div class="actions">
-            <button @click=${action(() => loadJobs())} id="jobs-refresh">Refresh jobs</button
-            ><button @click=${action(toggleScheduler)} id="scheduler-toggle">
-              Pause all schedules
-            </button>
-          </div>
-          <p id="jobs-empty" class="meta" hidden>No jobs yet. Create one below when you need it.</p>
-          <div id="jobs"></div>
-          <button @click=${action(() => loadJobs(true))} id="more-jobs" hidden>More jobs</button>
-          <form @submit=${saveJob} id="job-form">
-            <h3 id="job-form-title">Create a job</h3>
-            <p id="job-topic-hint" class="meta" hidden>
-              Create a shared or isolated topic before scheduling work.
-            </p>
-            <label for="job-task">Task</label
-            ><textarea id="job-task" required maxlength="32768" rows="3"></textarea>
-            <div class="fields">
-              <div>
-                <label for="job-schedule">Schedule (cron: or once:)</label
-                ><input id="job-schedule" required placeholder="cron:0 9 * * *" />
-              </div>
-              <div>
-                <label for="job-zone">Time zone</label
-                ><input id="job-zone" value="America/Denver" required />
-              </div>
-            </div>
-            <label for="job-topic">Topic</label
-            ><select id="job-topic" aria-describedby="job-topic-hint" required></select>
-            <label for="job-origin">Kind</label
-            ><select id="job-origin">
-              <option value="scheduled">Scheduled task</option>
-              <option value="proactive">Proactive wake-up</option>
-            </select>
-            <label
-              ><input id="job-enabled" type="checkbox" aria-describedby="job-enabled-hint" /> Enable
-              wake-ups for this job</label
-            >
-            <p id="job-enabled-hint">
-              Saving an enabled job authorizes automatic work in its topic, within the selected
-              profile’s permissions.
-            </p>
-            <div class="actions">
-              <button type="button" @click=${() => fillJob()} id="job-reset">Clear</button
-              ><button class="primary">Save job</button>
-            </div>
-          </form>
-        </details>
-        <details>
-          <summary>Memory</summary>
-          <button @click=${action(refreshMemory)} id="memory-refresh">Refresh memory status</button>
-          <pre id="memory-status" tabindex="0"></pre>
-          <p>
-            Staged notes are waiting for extraction. Only completed extraction is reported as saved
-            memory. Inspect a run to reconcile failed or ambiguous extraction with a verified
-            provider task ID.
-          </p>
-        </details>
-        <details>
-          <summary>Profiles, tools &amp; workspace roots</summary>
-          <div id="profiles"></div>
-          <label for="tool-profile">Tools for profile</label
-          ><select @change=${action(loadTools)} id="tool-profile"></select>
-          <pre id="tools" tabindex="0"></pre>
-        </details>
-        <details>
-          <summary>Credential references</summary>
-          <p>
-            Credential values are never loaded into this page. References in profile diagnostics are
-            redacted; configure their environment variables outside the browser.
-          </p>
-        </details>
-        <details>
-          <summary>Search conversation evidence</summary>
-          <form @submit=${search} id="search-form">
-            <label for="search-query">Search</label
-            ><input id="search-query" required maxlength="4096" /><label
-              ><input type="checkbox" id="search-topic" checked /> Current topic only</label
-            ><button>Search</button>
-          </form>
-          <div id="search-results"></div>
-        </details>
-        <details>
-          <summary>Diagnostics</summary>
-          <label
-            ><input @change=${connect} id="poll-only" type="checkbox" /> Use polling instead of
-            streaming</label
-          ><button @click=${action(refreshHealth)} id="health-refresh">Refresh health</button>
-          <pre id="health" tabindex="0"></pre>
-          <p id="transport-detail"></p>
-        </details>
-        <p id="settings-status" role="status"></p>
-        <p id="settings-error" role="alert"></p>
-      </dialog>
+      ${settingsTemplate(this.actions)}
       <dialog id="evidence" class="wide" aria-labelledby="evidence-title">
         <header>
           <h2 id="evidence-title">Run evidence</h2>
@@ -273,7 +164,38 @@ export class SolaApp extends SolaElement {
             Close evidence
           </button>
         </header>
-        <div id="evidence-records"></div>
+        <div
+          class="evidence-tabs"
+          role="tablist"
+          aria-label="Evidence view"
+          @keydown=${settingsKeydown}
+        >
+          <button
+            id="evidence-tab-records"
+            role="tab"
+            aria-selected="true"
+            aria-controls="evidence-records"
+            @click=${action(() => switchEvidence('records'))}
+          >
+            All records
+          </button>
+          <button
+            id="evidence-tab-prompts"
+            role="tab"
+            aria-selected="false"
+            aria-controls="evidence-records"
+            tabindex="-1"
+            @click=${action(() => switchEvidence('prompts'))}
+          >
+            Model requests
+          </button>
+        </div>
+        <div
+          id="evidence-records"
+          role="tabpanel"
+          aria-labelledby="evidence-tab-records"
+          tabindex="0"
+        ></div>
         <button @click=${action(moreEvidence)} id="more-evidence">Load more records</button>
         <p id="evidence-error" role="alert"></p>
       </dialog>

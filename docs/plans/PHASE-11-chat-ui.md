@@ -12,6 +12,12 @@ targets, improves control contrast and reply announcements, and extends browser
 checks with axe, keyboard, enlarged-text and forced-colors coverage. See
 [follow-up evidence](../validation/phase-11-accessibility.md).
 
+The API-coverage follow-up replaces the Settings accordion with six focused
+tabs and a separate job editor. It exposes job authority/budget/delivery/target
+controls, readable profile/tool and health views, search navigation, draft prompt
+inspection, a model-request evidence view and login revocation. See
+[coverage and verification](../validation/phase-11-settings.md).
+
 ## Outcome
 
 Sola's web interface centers the conversation, stays usable during long work, and exposes evidence without turning every turn into a diagnostic dashboard.

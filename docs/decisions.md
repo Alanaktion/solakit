@@ -45,6 +45,8 @@ Statuses distinguish operator-confirmed requirements, implementer-selected rever
 
 | V2-34 | Confirmed / operator, 2026-11-17 | Rework the web UI as Lit components using the local `lit-core.min.js` module. Package and serve it with the existing explicit static assets; keep the authenticated API, restrictive CSP and no frontend build/CDN. Light DOM preserves the shared stylesheet, labels and fragment links. Keep ID-keyed settled nodes, drafts, retries and SSE/polling recovery. Supersedes V2-32's vanilla-JavaScript/no-framework choice only | 11 onward: [UI guide](chat-ui.md), [Lit verification](validation/phase-11-lit.md) |
 
+| V2-35 | Confirmed / operator, 2026-11-17 | Cover reasonable API functionality in the web UI and reorganize Settings. Selected implementation: six tabs (Schedules, Memory, Profiles & tools, Search, Diagnostics, Security), separate job editor with all editable definition fields, independent job profile, optional narrowing controls, ephemeral targets/delivery, draft prompt and recorded-request inspection, readable search/status and revoke-all logins. Configuration/credential editing stays operator-owned; bearer-token issuance remains an API-client concern. Existing backend authority, idempotency and data contracts remain in force | 11 onward: [UI guide](chat-ui.md), [coverage and checks](validation/phase-11-settings.md) |
+
 ## Unavailable references and remaining verification
 
 The outline refers to D1–D6 and companion source specifications that are not present in this checkout. Similarly named legacy refactor IDs are unrelated. Their absence is recorded; these v2 contracts replace the ambiguity for this release. Newly supplied requirements should become explicit decision changes, not retroactive assumptions.

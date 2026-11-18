@@ -52,19 +52,36 @@ class SolaJob extends SolaElement {
       $('settings-status'),
       `Manual run accepted · ${occurrence.state}. Inspect Occurrences for its outcome.`
     );
+    if (this.occurrences) await this.loadOccurrences(true);
     this.requestUpdate();
   }
 
   render() {
     const job = this.job;
     return html`
-      <article>
+      <article data-job-id=${job.id}>
         <h3>${job.task.slice(0, 128)}</h3>
         <p class="meta">
-          ${`${job.enabled ? (job.paused ? 'Paused' : 'Enabled') : 'Disabled'} · ${job.schedule} · ${job.timezone}`}
+          ${`${job.consumed ? 'Finished' : job.enabled ? (job.paused ? 'Paused' : 'Enabled') : 'Disabled'} · ${job.schedule} · ${job.timezone}`}
         </p>
-        <button type="button" @click=${() => this.editJob(job)}>Edit</button>
+        <p class="meta">
+          ${job.origin === 'proactive' ? 'Proactive wake-up' : 'Scheduled task'} ·
+          ${job.profile} ·
+          ${job.mode === 'ephemeral' ? 'New one-run topic' : 'Bound topic'}${job.delivery === 'none' ? ' · Evidence only' : ''}${job.next_due ? ` · Next: ${new Date(job.next_due).toLocaleString()}` : ''}
+        </p>
+        <button type="button" @click=${action(() => this.editJob(job))}>Edit</button>
         <button
+          class="quiet"
+          type="button"
+          @click=${action(async () => {
+            await api(`/jobs/${job.id}`, { method: 'PATCH', body: { enabled: !job.enabled } });
+            await this.refreshJobs();
+          })}
+        >
+          ${job.enabled ? 'Disable' : 'Enable'}
+        </button>
+        <button
+          class="quiet"
           type="button"
           @click=${action(async () => {
             await api(`/jobs/${job.id}`, { method: 'PATCH', body: { paused: !job.paused } });
@@ -81,6 +98,7 @@ class SolaJob extends SolaElement {
           ${read(`sola.job-run.${job.id}`, null) ? 'Retry run now' : 'Run now'}
         </button>
         <button
+          class="quiet"
           type="button"
           @click=${action(async () => {
             if (
@@ -95,7 +113,7 @@ class SolaJob extends SolaElement {
         >
           Delete job
         </button>
-        <button type="button" @click=${action(() => this.loadOccurrences(true))}>
+        <button class="quiet" type="button" @click=${action(() => this.loadOccurrences(true))}>
           Occurrences
         </button>
         ${
