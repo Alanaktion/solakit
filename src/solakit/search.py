@@ -50,7 +50,13 @@ def _check(db: sqlite3.Connection) -> None:
 
 def _document(entry: Entry) -> tuple[str, str, str, str, str]:
     if entry.kind == "legacy":
-        return entry.id, "", "", entry.kind, canonical(entry.record).decode()
+        return (
+            entry.id,
+            str(entry.details.get("session_id", "")),
+            str(entry.details.get("run_id", "")),
+            entry.kind,
+            canonical(entry.record).decode(),
+        )
     identity = str(entry.record["id"])
     session = identity if entry.kind == "session" else str(entry.record.get("session_id") or "")
     run = identity if entry.kind == "run" else str(entry.record.get("run_id", ""))

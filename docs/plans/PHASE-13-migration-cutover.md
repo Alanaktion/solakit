@@ -1,6 +1,14 @@
 # Phase 13 — Migration rehearsal, cutover, and recovery
 
-Status: planned. Depends on all prior phase gates and operator acceptance. Milestone: Sola's recoverable production home.
+Status: offline scripts implemented; production cutover, live/operator acceptance
+and soak remain pending. Depends on all prior phase gates and operator acceptance.
+Milestone: Sola's recoverable production home.
+
+Use the [runbook, checklist and rollback worksheet](../migration/cutover.md).
+`scripts/migration.py` provides snapshots, inventory, resumable import, verification
+and reconciliation alongside the existing config migration and backup/restore
+scripts. See [implementation evidence](../validation/phase-13.md) for tested scope
+and outstanding gates. These scripts do not authorize production cutover.
 
 ## Outcome
 

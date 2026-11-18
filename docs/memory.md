@@ -74,6 +74,10 @@ test data separately through OpenViking when desired.
 
 ## One-shot configuration migration
 
+The importer understands legacy `path:`, `repo:` and `collection:` workspace
+scopes and checks collection containment. See the [Phase 13 runbook](migration/cutover.md)
+for consistent source snapshots, history/jobs migration and cutover checks.
+
 Work from a copied source tree so relative legacy paths still resolve correctly:
 
 ```sh

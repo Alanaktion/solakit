@@ -121,6 +121,12 @@ operator browser acceptance also remains pending.
 Deferred integration trees are retained without loading or activating packs.
 Read the [workflow guide](../image-workflows.md) and [verification](../validation/phase-12.md).
 
+Phase 13 provides offline snapshots, resumable import, preservation verification
+and rollback reconciliation alongside existing config migration/backup helpers.
+See the [runbook](../migration/cutover.md) and [evidence](../validation/phase-13.md).
+Production cutover, outstanding release gates, operator acceptance and soak remain
+pending.
+
 ## Shared implementation conventions
 
 Suggested boundaries are `core/` for records and orchestration, `adapters/` for model/memory/storage, `tools/` for built-in tools, `registry.py` for registration, `api/` for HTTP, and `web/` for the HTML shell, local Lit components and shared CSS. Names are proposals, not a requirement to create empty abstraction layers. `sdk.py` is the supported pack surface. Keep composition small enough to read in one sitting.

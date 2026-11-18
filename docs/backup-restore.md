@@ -69,3 +69,8 @@ of legacy sessions/jobs/logins; that mapping remains Phase 13 work.
 
 See [the storage protocol](contracts/storage.md) and
 [Phase 3 verification](validation/phase-03.md) for tested boundaries.
+
+Real legacy trees use the [Phase 13 migration runbook](migration/cutover.md).
+It extracts jobs separately from the combined database, preserves history/config/
+identity, pauses scheduling and records rollback cursors. `import-fixture` remains
+a synthetic preservation probe.

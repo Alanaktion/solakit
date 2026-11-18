@@ -289,6 +289,11 @@ class MemoryService:
         return note
 
     def enqueue(self, run: Run) -> None:
+        # Historical imports have no v2 admission and must never trigger extraction.
+        if not self.store.db.execute(
+            "SELECT 1 FROM admissions WHERE run_id=?", (run.id,)
+        ).fetchone():
+            return
         if self.store.db.execute(
             "SELECT 1 FROM entities WHERE kind='memory' AND run_id=?",
             (run.id,),

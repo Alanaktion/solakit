@@ -53,14 +53,33 @@ def migrate(
     def path(value: str) -> str:
         return str((base / Path(value).expanduser()).resolve())
 
+    def workspace(value: str) -> str:
+        if value.startswith("path:"):
+            target = Path(value[5:]).expanduser()
+            if not target.is_absolute():
+                raise ValueError("legacy path scopes require absolute paths")
+            return path(str(target))
+        if value.startswith("repo:"):
+            return path(legacy["repositories"][value[5:]])
+        if value.startswith("collection:"):
+            collection = legacy["collections"][value.removeprefix("collection:")]
+            root = Path(path(legacy["repositories"][collection["repository"]]))
+            target = (root / collection["directory"]).resolve()
+            if not target.is_relative_to(root):
+                raise ValueError("legacy collection escapes its repository")
+            return str(target)
+        return path(value)
+
     read_tier, write_tier = selected.get("read", "workspace"), selected.get("write", "none")
     roots = selected.get("workspace", selected.get("read_scopes", []))
     if not roots and read_tier != "none":
-        roots = [legacy.get("server", {}).get("cwd", ".")]
+        roots = ["repo:" + name for name in legacy.get("repositories", {})] or [
+            legacy.get("server", {}).get("cwd", ".")
+        ]
     write_roots = selected.get("write_workspace", selected.get("write_scopes"))
-    reads = [path(r) for r in roots] if read_tier != "none" else []
+    reads = [workspace(r) for r in roots] if read_tier != "none" else []
     writes = (
-        [path(r) for r in (write_roots if write_roots is not None else roots)]
+        [workspace(r) for r in (write_roots if write_roots is not None else roots)]
         if write_tier != "none" or selected.get("write_scopes")
         else []
     )

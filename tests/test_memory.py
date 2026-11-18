@@ -402,6 +402,51 @@ tools = ["files.*", "shell.*", "memory.*"]
         migrate(source, tmp_path / "resolved", tmp_path / "data")
 
 
+def test_migration_resolves_legacy_named_workspace_scopes(tmp_path: Path) -> None:
+    repository = tmp_path / "repository"
+    collection = repository / "notes"
+    collection.mkdir(parents=True)
+    source = tmp_path / "legacy.toml"
+    source.write_text(f'''enabled_tools = ["files"]
+[model]
+model_id = "fixture"
+[repositories]
+work = "{repository}"
+[collections.notes]
+repository = "work"
+directory = "notes"
+[profiles.interactive]
+workspace = ["repo:work", "collection:notes", "path:{tmp_path}"]
+write = "none"
+tools = ["files.read"]
+''')
+    report = migrate(source, tmp_path / "draft", tmp_path / "data")
+    assert set(report["authority_diff"]["roots"]["before"]) == {
+        str(repository),
+        str(collection),
+        str(tmp_path),
+    }
+    assert load_config(tmp_path / "draft/config.v2.toml").defaults.memory_mode == "off"
+    source.write_text(source.read_text().replace('directory = "notes"', 'directory = "../escape"'))
+    with pytest.raises(ValueError, match="escapes"):
+        migrate(source, tmp_path / "refused", tmp_path / "data")
+    assert not (tmp_path / "refused").exists()
+
+
+def test_migration_defaults_to_declared_repositories(tmp_path: Path) -> None:
+    source = tmp_path / "legacy.toml"
+    source.write_text(f'''enabled_tools = ["files"]
+[model]
+model_id = "fixture"
+[repositories]
+work = "{tmp_path}"
+[profiles.interactive]
+tools = ["files.read"]
+''')
+    report = migrate(source, tmp_path / "draft", tmp_path / "data")
+    assert report["authority_diff"]["roots"]["before"] == [str(tmp_path)]
+
+
 def test_manual_reconciliation_checks_task_ownership(profile: EffectiveProfile) -> None:
     from scripts.memory_work import reconcile
 

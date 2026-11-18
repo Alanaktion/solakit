@@ -4,7 +4,12 @@ Scope: format inventory from copied reference source/tests/docs, not an export o
 
 ## Inventory and migration mapping
 
-Actual production paths, record counts, byte volumes, credential reference names, and memory roots are **not collected**. Do not mistake the synthetic examples for production completeness. Preserve deferred integrations' data even though their tools will not load in v1.
+The original Phase 0 inventory did not collect production paths, counts, volumes,
+credential references or memory roots. Phase 13 now supplies private checksummed
+snapshots and generated reports for `/Users/alan/.config/solakit/`; see the
+[runbook](cutover.md) and [validation](../validation/phase-13.md). External backup
+completeness and cutover remain separate gates. Synthetic examples below do not
+establish production completeness. Deferred integrations remain preserved.
 
 | Category / observed legacy location | Authority and format | V2 treatment / verification | Owner and backup |
 | --- | --- | --- | --- |
