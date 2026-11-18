@@ -1,17 +1,17 @@
 :root {
   color-scheme: light dark;
-  --paper: hsl(45 30% 98%);
-  --surface: hsl(42 24% 95%);
-  --line: hsl(40 14% 84%);
-  --control-line: hsl(155 8% 48%);
-  --ink: hsl(160 14% 16%);
-  --muted: hsl(155 8% 36%);
-  --accent: hsl(158 32% 28%);
-  --on-accent: hsl(45 30% 98%);
-  --accent-hover: hsl(158 32% 22%);
-  --tint: hsl(155 24% 91%);
-  --danger: hsl(5 60% 34%);
-  --backdrop: hsl(160 14% 10% / 0.45);
+  --paper: oklch(0.987 0.003 91.437);
+  --surface: oklch(0.966 0.006 87.452);
+  --line: oklch(0.883 0.011 84.58);
+  --control-line: oklch(0.596 0.026 168.381);
+  --ink: oklch(0.291 0.017 172.749);
+  --muted: oklch(0.486 0.02 168.423);
+  --accent: oklch(0.445 0.058 167.835);
+  --on-accent: oklch(0.987 0.003 91.437);
+  --accent-hover: oklch(0.378 0.048 168.036);
+  --tint: oklch(0.938 0.013 169.268);
+  --danger: oklch(0.434 0.131 28.795);
+  --backdrop: oklch(0.223 0.011 172.992 / 0.45);
   --radius: 6px;
   --control-height: 36px;
   --font-body:
@@ -29,18 +29,18 @@
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --paper: hsl(160 10% 11%);
-    --surface: hsl(160 9% 15%);
-    --line: hsl(155 8% 32%);
-    --control-line: hsl(155 8% 54%);
-    --ink: hsl(45 16% 91%);
-    --muted: hsl(150 8% 69%);
-    --accent: hsl(153 32% 70%);
-    --on-accent: hsl(160 20% 12%);
-    --accent-hover: hsl(153 35% 79%);
-    --tint: hsl(155 18% 22%);
-    --danger: hsl(6 80% 77%);
-    --backdrop: hsl(160 14% 4% / 0.7);
+    --paper: oklch(0.232 0.009 173.407);
+    --surface: oklch(0.276 0.011 173.421);
+    --line: oklch(0.448 0.019 168.444);
+    --control-line: oklch(0.646 0.024 168.559);
+    --ink: oklch(0.937 0.008 91.48);
+    --muted: oklch(0.765 0.017 164.562);
+    --accent: oklch(0.801 0.06 165.542);
+    --on-accent: oklch(0.25 0.019 172.174);
+    --accent-hover: oklch(0.863 0.046 166.259);
+    --tint: oklch(0.36 0.029 167.087);
+    --danger: oklch(0.784 0.103 26.572);
+    --backdrop: oklch(0.149 0.005 173.852 / 0.7);
   }
 }
 * {
