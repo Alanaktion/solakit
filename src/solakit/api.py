@@ -213,6 +213,10 @@ class SessionPatch(Input):
     pinned: StrictBool | None = None
 
 
+class SessionArchive(Input):
+    session_ids: list[RecordID] = Field(min_length=1, max_length=100)
+
+
 class ImageReference(Input):
     run_id: str = Field(pattern=r"^[0-9a-f]{32}$")
     artifact_id: str = Field(pattern=r"^[0-9a-f]{32}$")
@@ -461,10 +465,17 @@ def create_app(
         after: str | None = None,
         archived: bool = False,
         include_ephemeral: bool = False,
+        q: Annotated[str, Query(max_length=256)] = "",
+        pinned: bool | None = None,
     ) -> dict[str, Any]:
         cursor = time_cursor(after)
         items = store.list_sessions(
-            after=cursor, limit=limit, archived=archived, include_ephemeral=include_ephemeral
+            after=cursor,
+            limit=limit,
+            archived=archived,
+            include_ephemeral=include_ephemeral,
+            q=q,
+            pinned=pinned,
         )
         return bounded(
             {
@@ -472,6 +483,10 @@ def create_app(
                 "next": f"{items[-1].created_at.isoformat()},{items[-1].id}" if items else after,
             }
         )
+
+    @app.post("/api/v1/sessions/archive")
+    async def archive_sessions(body: SessionArchive) -> dict[str, int]:
+        return {"archived": store.archive_sessions(body.session_ids)}
 
     @app.get("/api/v1/sessions/{session_id}")
     async def session(session_id: ID) -> Session:

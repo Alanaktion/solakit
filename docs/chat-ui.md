@@ -41,7 +41,13 @@ results are associated with their call IDs. Tool errors, uncertain effects,
 interrupted work, memory extraction state and staged notes have separate labels.
 A staged note is not a claim that memory extraction succeeded. Context summary
 markers retain original turns; topic details can rename, pin or archive a topic.
-The Archived topics checkbox makes archived topics available again.
+Use **Search topics** above the topic list to find a title/name by a partial,
+case-insensitive match, including topics beyond the first page. Pinned topics
+always appear first, including pins beyond the first page and pins whose titles
+do not match the search. Pins follow the Archived topics filter. **More topics**
+continues the filtered results. Clearing the field restores the list; searching
+keeps the current conversation and draft open. A message explains an empty result.
+The Archived topics checkbox searches/lists archived topics instead of active ones.
 Archived and already-used ephemeral topics explain why sending is unavailable;
 their drafts remain editable. Single-use topics require a new topic for another
 run. Error notices can be dismissed without removing an uncertain submission

@@ -112,8 +112,9 @@ means admission/login/event capacity, 413 means bounded input/output exceeded,
 
 | Resource | Operations and behavior |
 | --- | --- |
-| `/sessions` | POST creates shared/isolated/ephemeral topic, title <=256 characters; GET pages stable creation order |
+| `/sessions` | POST creates shared/isolated/ephemeral topic, title <=256 characters; GET pages stable creation order, optional `q` title and `pinned` filters |
 | `/sessions/{id}` | GET; PATCH title/archived/pinned; mode stays frozen |
+| `/sessions/archive` | POST `{ "session_ids": [id, ...] }` (1–100); returns `{ "archived": count }`; validates all IDs before one state transaction; duplicates/already archived sessions are no-ops |
 | `/sessions/{id}/messages` | GET public conversation pages; private background inputs/tools remain in run records |
 | `/sessions/{id}/runs` | GET admission-order run pages; current state in each record |
 | `/runs` | POST session_id, optional profile (server selection, normally `default`), content (1–32768 UTF-8 bytes), optional image reference `{run_id, artifact_id}`; required Idempotency-Key; optional wait=0..30 seconds |
@@ -135,6 +136,17 @@ means admission/login/event capacity, 413 means bounded input/output exceeded,
 | `/health` | GET authenticated runtime/queue/memory/scheduler health; unversioned `/health` is public coarse liveness |
 | `/search` | GET q, limit, optional session_id; independent evidence-backed search, no live memory call |
 | `/prompt` | POST profile, content, optional hashes; private draft inspection using the assembler/tools, no recall/history/inference |
+
+`GET /sessions?q=travel` matches a literal substring of the topic title/name,
+ignoring case with Unicode case folding. Queries are limited to 256 characters;
+leading/trailing whitespace is ignored and an empty query leaves the list unfiltered.
+Filtering happens before pagination and combines with `archived` and
+`include_ephemeral`; retain the same filters when following `next`. It searches
+topic metadata in `state.db`, without reading message bodies or requiring `search.db`.
+The optional `pinned=true` or `pinned=false` filter selects pinned or unpinned
+topics before pagination; omitting it includes both. The API retains creation
+order. The sidebar separately loads pins without a title query and places them
+before the paginated, title-filtered unpinned topics.
 
 Admission returns `{ "run": Run }` and Location. 202 means durably accepted and
 pending; 200 means terminal, including failed/cancelled outcomes. Wait timeouts

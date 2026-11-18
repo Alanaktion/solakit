@@ -125,6 +125,159 @@ try {
     assert(report.snapshot.runs <= 50);
     assert(report.snapshot.bytes < 20000);
   });
+  await check(
+    'topic title search, pagination, archives and clearing preserve the conversation',
+    async () => {
+      const tag = String(Date.now());
+      const ids = await page.evaluate(async (tag) => {
+        const csrf = decodeURIComponent(
+          document.cookie
+            .split('; ')
+            .find((part) => part.startsWith('sola_csrf='))
+            .split('=')[1]
+        );
+        const ids = [];
+        for (let i = 0; i < 52; i++) {
+          const response = await fetch('/api/v1/sessions', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-CSRF-Token': csrf
+            },
+            body: JSON.stringify({
+              title: `Topic search fixture ${tag} ${i}${i === 51 ? ` Straße & 100%_ ${tag}` : ''}`
+            })
+          });
+          if (!response.ok) throw new Error('Could not create search fixture');
+          ids.push((await response.json()).id);
+        }
+        return ids;
+      }, tag);
+      const search = page.getByRole('searchbox', {
+        name: 'Search topics by title'
+      });
+      const searchFor = async (query) => {
+        const response = page.waitForResponse((response) => {
+          const url = new URL(response.url());
+          return url.pathname === '/api/v1/sessions' && url.searchParams.get('q') === query;
+        });
+        await search.fill(query);
+        await response;
+      };
+      const setPins = async (pinned) => page.evaluate(async ({ ids, pinned }) => {
+        const csrf = document.cookie.split('; ')
+          .find((part) => part.startsWith('sola_csrf=')).split('=')[1];
+        for (const id of ids) {
+          const response = await fetch(`/api/v1/sessions/${id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+            body: JSON.stringify({ pinned })
+          });
+          if (!response.ok) throw new Error('Could not update fixture pins');
+        }
+      }, { ids: ids.slice(50), pinned });
+      await setPins(true);
+      await page.reload();
+      await page.locator('#topic-' + ids[51]).waitFor();
+      assert.deepEqual(await page.locator('#topics button').evaluateAll(
+        (buttons) => buttons.slice(0, 2).map((button) => button.id)
+      ), ids.slice(50).map((id) => 'topic-' + id));
+      await searchFor('no matching unpinned topic');
+      await waitFor(() => document.querySelectorAll('#topics button').length === 2);
+      await page.screenshot({ path: path.join(options.output, 'pinned-topics.png'), fullPage: true });
+      await searchFor(`TOPIC SEARCH FIXTURE ${tag}`);
+      await waitFor(() => document.querySelectorAll('#topics button').length === 52);
+      await page.locator('#more-topics').click();
+      await page.locator('#more-topics').waitFor({ state: 'hidden' });
+      assert.equal(await page.locator('#topic-' + ids[51]).count(), 1);
+      await page.locator('#topic-' + ids[50]).click();
+      await page.locator('#topic-edit').click();
+      await page.locator('#pinned').uncheck();
+      await page.locator('#topic-form button.primary').click();
+      await page.locator('#topic-dialog').waitFor({ state: 'hidden' });
+      await waitFor(() => document.querySelector('#topics button').textContent.trimStart().startsWith('⌑ '));
+      assert.equal(await page.locator('#topics button').first().getAttribute('id'), 'topic-' + ids[51]);
+      await searchFor('no matching unpinned topic');
+      await waitFor(() => document.querySelectorAll('#topics button').length === 1);
+      await page.locator('#archived-topics').check();
+      await page.getByRole('status').filter({ hasText: 'No matching topics.' }).waitFor();
+      await page.locator('#archived-topics').uncheck();
+      await page.locator('#topic-' + ids[51]).waitFor();
+      await setPins(false);
+      await searchFor('');
+      await page.locator('#topic-' + fixture.topic).click();
+      await page.locator('#draft').fill('Keep this draft during search');
+      await searchFor(` strasse & 100%_ ${tag} `);
+      await page.locator('#topic-' + ids[51]).waitFor();
+      assert.equal(await page.locator('#topics button').count(), 1);
+      assert.equal(await page.locator('#draft').inputValue(), 'Keep this draft during search');
+      assert.equal(
+        await page.locator('#topic-title').textContent(),
+        'A long conversation · 500 turns'
+      );
+      await page.screenshot({
+        path: path.join(options.output, 'topic-search-desktop.png'), fullPage: true
+      });
+      await searchFor(`TOPIC SEARCH FIXTURE ${tag}`);
+      await waitFor(() => document.querySelectorAll('#topics button').length === 50);
+      await page.locator('#more-topics').click();
+      await page.locator('#topic-' + ids[51]).waitFor();
+      assert.equal(await page.locator('#topics button').count(), 52);
+      assert(await page.locator('#more-topics').isHidden());
+      let release;
+      const held = new Promise((resolve) => {
+        release = resolve;
+      });
+      const staleRoute = async (route) => {
+        const response = await route.fetch();
+        await held;
+        await route.fulfill({ response });
+      };
+      const staleURL = /\/api\/v1\/sessions\?.*q=stale-search/;
+      await page.route(staleURL, staleRoute);
+      const requested = page.waitForRequest(staleURL);
+      await search.fill('stale-search');
+      await requested;
+      await searchFor(`100%_ ${tag}`);
+      await page.locator('#topic-' + ids[51]).waitFor();
+      const staleResponse = page.waitForResponse(staleURL);
+      release();
+      await staleResponse;
+      await page.unroute(staleURL, staleRoute);
+      assert.equal(await page.locator('#topics button').count(), 1);
+      await searchFor('no such topic fixture');
+      await page.getByRole('status').filter({ hasText: 'No matching topics.' }).waitFor();
+      assert.equal(await page.locator('#topics button').count(), 0);
+      await page.setViewportSize({ width: 390, height: 844 });
+      assert(await search.evaluate((el) => el.getBoundingClientRect().right <= innerWidth));
+      await page.screenshot({
+        path: path.join(options.output, 'topic-search-mobile.png'), fullPage: true
+      });
+      await page.setViewportSize({ width: 1440, height: 1000 });
+      await page.evaluate(async (ids) => {
+        const csrf = decodeURIComponent(
+          document.cookie.split('; ').find((part) => part.startsWith('sola_csrf=')).split('=')[1]
+        );
+        const response = await fetch('/api/v1/sessions/archive', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+          body: JSON.stringify({ session_ids: ids })
+        });
+        if (!response.ok) throw new Error('Could not archive search fixture');
+      }, ids);
+      await searchFor(`100%_ ${tag}`);
+      await page.getByRole('status').filter({ hasText: 'No matching topics.' }).waitFor();
+      await page.locator('#archived-topics').check();
+      await page.locator('#topic-' + ids[51]).waitFor();
+      assert.equal(await page.locator('#topics button').count(), 1);
+      await page.locator('#archived-topics').uncheck();
+      await searchFor('');
+      await page.locator('#topic-' + fixture.topic + '[aria-current=page]').waitFor();
+      assert(await page.locator('#topic-' + fixture.other).isVisible());
+      await page.locator('#draft').fill('');
+      await audit('topic-search');
+    }
+  );
   await page.screenshot({
     path: path.join(options.output, 'chat-desktop.png'),
     fullPage: true
@@ -136,11 +289,12 @@ try {
       for (const colorScheme of ['dark', 'light']) {
         await page.emulateMedia({ colorScheme });
         const theme = await page.evaluate(() => {
-          const rgb = (value) =>
-            value
-              .match(/[\d.]+/g)
-              .slice(0, 3)
-              .map(Number);
+          const rgb = (value) => {
+            const context = document.createElement('canvas').getContext('2d');
+            context.fillStyle = value;
+            context.fillRect(0, 0, 1, 1);
+            return [...context.getImageData(0, 0, 1, 1).data].slice(0, 3);
+          };
           const luminance = (color) =>
             rgb(color)
               .map((n) => {

@@ -110,6 +110,16 @@ CREATE TABLE login_throttle (id INTEGER PRIMARY KEY CHECK(id=1),
 PRAGMA user_version=2;
 """
 
+ARCHIVED_SESSIONS = (
+    "SELECT id FROM entities WHERE kind='session' AND json_extract(body,'$.archived')=1"
+)
+ARCHIVED_ENTRIES = (
+    "SELECT id FROM outbox WHERE delivered=1 "
+    "AND coalesce(json_extract(body,'$.event.session_id'),"
+    "CASE WHEN json_extract(body,'$.kind')='legacy' THEN "
+    "json_extract(body,'$.details.session_id') END) IN (" + ARCHIVED_SESSIONS + ")"
+)
+
 
 def valid_id(value: str) -> str:
     return ID_ADAPTER.validate_python(value)
@@ -159,6 +169,7 @@ class Store:
         path.touch(mode=0o600, exist_ok=True)
         self._connection = sqlite3.connect(path)
         self._connection.row_factory = sqlite3.Row
+        self._connection.create_function("casefold", 1, str.casefold, deterministic=True)
         try:
             self.db.execute("PRAGMA journal_mode=WAL")
             self.db.execute("PRAGMA synchronous=FULL")
@@ -174,8 +185,22 @@ class Store:
                 self.db.executescript("BEGIN IMMEDIATE;\n" + AUTH_SCHEMA + "\nCOMMIT;")
             if self.db.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
                 raise CorruptionError("state integrity check failed")
-            self.log.recover()
-            self._reconcile()
+            # shortcut: check archived payloads on reads/restore; rebuild offline for eager checks.
+            archived = tuple(
+                (
+                    Reference.model_validate_json(row[0]),
+                    row[1],
+                    row[2] or 0,
+                )
+                for row in self.db.execute(
+                    "SELECT reference,json_extract(body,'$.event.session_id'),"
+                    "json_extract(body,'$.event.sequence') FROM outbox WHERE id IN ("
+                    + ARCHIVED_ENTRIES
+                    + ")"
+                )
+            )
+            self.log.recover(archived=archived)
+            self._reconcile(active_only=True)
             self._flush()
             from solakit.compaction import recover
 
@@ -191,9 +216,13 @@ class Store:
             self._connection.close()
             self._connection = None
 
-    def _reconcile(self) -> None:
-        rows = self.db.execute("SELECT * FROM outbox ORDER BY ordinal").fetchall()
-        known = {row["id"] for row in rows}
+    def _reconcile(self, *, active_only: bool = False) -> None:
+        rows = self.db.execute(
+            "SELECT * FROM outbox "
+            + ("WHERE id NOT IN (" + ARCHIVED_ENTRIES + ") " if active_only else "")
+            + "ORDER BY ordinal"
+        ).fetchall()
+        known = {row[0] for row in self.db.execute("SELECT id FROM outbox")}
         if set(self.log.references) - known:
             raise CorruptionError("evidence absent from operational outbox; restore state")
         for row in rows:
@@ -224,7 +253,16 @@ class Store:
                 if event.sequence != sequences.get(event.session_id, 0) + 1:
                     raise CorruptionError("operational event sequence gap")
                 sequences[event.session_id] = event.sequence
-        entities = self.db.execute("SELECT * FROM entities").fetchall()
+        entities = self.db.execute(
+            "SELECT * FROM entities"
+            + (
+                " WHERE kind IN ('session','job') OR session_id IS NULL OR session_id NOT IN ("
+                + ARCHIVED_SESSIONS
+                + ")"
+                if active_only
+                else ""
+            )
+        ).fetchall()
         if len(entities) != len(latest):
             raise CorruptionError("operational record missing")
         for row in entities:
@@ -249,7 +287,15 @@ class Store:
                 raise CorruptionError("operational routing/cursor mismatch")
         actual_admissions = {
             row["request_id"]: (row["fingerprint"], row["run_id"])
-            for row in self.db.execute("SELECT * FROM admissions")
+            for row in self.db.execute(
+                "SELECT * FROM admissions"
+                + (
+                    " WHERE run_id NOT IN (SELECT id FROM entities WHERE kind='run' "
+                    "AND session_id IN (" + ARCHIVED_SESSIONS + "))"
+                    if active_only
+                    else ""
+                )
+            )
         }
         if actual_admissions != admissions:
             raise CorruptionError("admission ledger differs from evidence")
@@ -258,7 +304,12 @@ class Store:
             identity for kind, identity in latest if kind == "session"
         }:
             raise CorruptionError("session routing row missing")
+        archived_sessions = (
+            {session[0] for session in self.db.execute(ARCHIVED_SESSIONS)} if active_only else set()
+        )
         for row in session_rows:
+            if row["id"] in archived_sessions:
+                continue
             if row["sequence"] != sequences.get(row["id"], 0):
                 raise CorruptionError("session high-water mismatch")
 
@@ -473,6 +524,19 @@ class Store:
             self._commit((session,))
         return session
 
+    def archive_sessions(self, identities: list[str]) -> int:
+        if not 1 <= len(identities) <= 100:
+            raise ValueError("archive requires between 1 and 100 session IDs")
+        sessions = [self.session(identity) for identity in dict.fromkeys(identities)]
+        changed = tuple(
+            session.model_copy(update={"archived": True})
+            for session in sessions
+            if not session.archived
+        )
+        if changed:
+            self._commit(changed)
+        return len(changed)
+
     def list_sessions(
         self,
         *,
@@ -480,6 +544,8 @@ class Store:
         limit: int = 50,
         archived: bool = False,
         include_ephemeral: bool = False,
+        q: str = "",
+        pinned: bool | None = None,
     ) -> list[Session]:
         page_limit(limit)
         if after is not None:
@@ -489,8 +555,18 @@ class Store:
         rows = self.db.execute(
             "SELECT id FROM entities WHERE kind='session' AND (created_at,id)>(?,?) "
             "AND json_extract(body,'$.archived')=? "
-            "AND (? OR json_extract(body,'$.mode')!='ephemeral') ORDER BY created_at,id LIMIT ?",
-            (*(after or ("", "")), archived, include_ephemeral, limit),
+            "AND (? OR json_extract(body,'$.mode')!='ephemeral') "
+            "AND (? IS NULL OR json_extract(body,'$.pinned')=?) "
+            "AND instr(casefold(json_extract(body,'$.title')),?)>0 ORDER BY created_at,id LIMIT ?",
+            (
+                *(after or ("", "")),
+                archived,
+                include_ephemeral,
+                pinned,
+                pinned,
+                q.strip().casefold(),
+                limit,
+            ),
         ).fetchall()
         return [self.session(row[0]) for row in rows]
 
@@ -882,7 +958,10 @@ class Store:
             message="Process stopped before outcome was recorded",
         )
         for row in self.db.execute(
-            "SELECT kind,id FROM entities WHERE kind IN ('run','delivery','memory')"
+            "SELECT kind,id FROM entities WHERE "
+            "(kind='run' AND json_extract(body,'$.state')='running') OR "
+            "(kind='delivery' AND json_extract(body,'$.state')='sending') OR "
+            "(kind='memory' AND json_extract(body,'$.state')='running')"
         ).fetchall():
             if row["kind"] == "run" and self.run(row["id"]).state == RunState.RUNNING:
                 self.transition_run(row["id"], RunState.INTERRUPTED, reason=reason)

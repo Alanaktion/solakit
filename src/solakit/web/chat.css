@@ -565,10 +565,15 @@ dialog > details > summary {
     justify-self: start;
     white-space: nowrap;
   }
+  #topic-search {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    min-width: 0;
+  }
   #topics {
     display: flex;
     grid-column: 1 / -1;
-    grid-row: 3;
+    grid-row: 4;
     min-width: 0;
     max-height: 72px;
     gap: 8px;

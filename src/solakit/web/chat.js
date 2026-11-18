@@ -8,6 +8,8 @@ import './turn.js';
 
 const outbox = read('sola.outbox', []);
 const topics = new Map(),
+  topicIds = new Set(),
+  pinnedIds = new Set(),
   messages = new Map(),
   runs = new Map(),
   records = new Map(),
@@ -18,6 +20,7 @@ let selected = null,
   polling = null,
   retryStream = null;
 let loggedIn = false,
+  topicGeneration = 0,
   topicCursor = null,
   olderMessages = 0,
   olderRuns = 0;
@@ -484,8 +487,14 @@ async function selectTopic(id) {
   connect();
 }
 function renderTopics() {
+  const ids = new Set([...pinnedIds, ...topicIds]);
+  const visible = [...ids].map((id) => topics.get(id));
+  if (topics.has(selected) && !ids.has(selected) && !$('topic-search').value.trim())
+    visible.push(topics.get(selected));
+  visible.sort((a, b) => Number(b.pinned) - Number(a.pinned));
   renderTemplate(
-    [...topics.values()].map(
+    html`${visible.length ? nothing : html`<p class="meta" role="status">${$('topic-search').value.trim() ? 'No matching topics.' : 'No topics yet.'}</p>`}
+    ${visible.map(
       (topic) => html`
         <button
           type="button"
@@ -497,7 +506,7 @@ function renderTopics() {
           ${`${topic.pinned ? '⌑ ' : ''}${topic.title || 'Untitled topic'}${topic.archived ? ' (archived)' : ''}`}
         </button>
       `
-    ),
+    )}`,
     $('topics')
   );
   revealTopic();
@@ -505,11 +514,38 @@ function renderTopics() {
 function revealTopic() {
   $(`topic-${selected}`)?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 }
+async function loadPinnedTopics(archived) {
+  const items = [];
+  let after = null;
+  do {
+    const result = await api(
+      `/sessions?limit=100&include_ephemeral=true&pinned=true&archived=${archived}${after ? `&after=${encodeURIComponent(after)}` : ''}`
+    );
+    items.push(...result.items);
+    after = result.items.length === 100 ? result.next : null;
+  } while (after);
+  return items;
+}
 async function loadTopics(more = false) {
-  const result = await api(
-    `/sessions?limit=50&include_ephemeral=true&archived=${$('archived-topics').checked}${more && topicCursor ? `&after=${encodeURIComponent(topicCursor)}` : ''}`
-  );
-  for (const topic of result.items) topics.set(topic.id, topic);
+  const token = ++topicGeneration;
+  const archived = $('archived-topics').checked;
+  const [result, pinned] = await Promise.all([
+    api(`/sessions?limit=50&include_ephemeral=true&pinned=false&archived=${archived}&q=${encodeURIComponent($('topic-search').value)}${more && topicCursor ? `&after=${encodeURIComponent(topicCursor)}` : ''}`),
+    more ? [] : loadPinnedTopics(archived)
+  ]);
+  if (token !== topicGeneration) return;
+  if (!more) {
+    topicIds.clear();
+    pinnedIds.clear();
+    for (const topic of pinned) {
+      topics.set(topic.id, topic);
+      pinnedIds.add(topic.id);
+    }
+  }
+  for (const topic of result.items) {
+    topics.set(topic.id, topic);
+    topicIds.add(topic.id);
+  }
   topicCursor = result.next;
   $('more-topics').hidden = result.items.length < 50;
   renderTopics();
@@ -695,6 +731,7 @@ async function saveTopic(event) {
     topics.set(topic.id, topic);
     $('topic-dialog').close();
     await selectTopic(topic.id);
+    await loadTopics();
     $('draft').focus();
   } catch (error) {
     showError(error);

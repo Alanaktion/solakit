@@ -236,7 +236,10 @@ def finish(store: Store, boundary: CompactionBoundary) -> None:
 def recover(store: Store) -> None:
     for row in store.db.execute(
         "SELECT id FROM entities WHERE kind='compaction' "
-        "AND json_extract(body,'$.manifest') IS NOT NULL ORDER BY sequence"
+        "AND json_extract(body,'$.manifest') IS NOT NULL "
+        "AND (json_extract(body,'$.state')!='committed' OR session_id NOT IN ("
+        "SELECT id FROM entities WHERE kind='session' AND json_extract(body,'$.archived')=1)) "
+        "ORDER BY sequence"
     ).fetchall():
         boundary = store._load("compaction", row[0], CompactionBoundary)
         try:

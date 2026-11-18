@@ -323,6 +323,84 @@ def test_api_runs_tools_idempotency_artifacts_and_search(
     assert context.state == "stopped"
 
 
+def test_bulk_archive_endpoint(client: TestClient) -> None:
+    path = "/api/v1/sessions/archive"
+    assert client.post(path, json={"session_ids": [new_id()]}).status_code == 401
+    login(client)
+    identities = [client.post("/api/v1/sessions", json={}).json()["id"] for _ in range(2)]
+    assert (
+        client.post(
+            path, json={"session_ids": identities}, headers={"X-CSRF-Token": "wrong"}
+        ).status_code
+        == 403
+    )
+    for invalid in ([], ["bad"], [new_id()] * 101):
+        assert client.post(path, json={"session_ids": invalid}).status_code == 422
+    assert client.post(path, json={"session_ids": [identities[0], new_id()]}).status_code == 404
+    assert len(client.get("/api/v1/sessions").json()["items"]) == 2
+    response = client.post(path, json={"session_ids": identities + identities})
+    assert response.status_code == 200
+    assert response.json() == {"archived": 2}
+    assert client.post(path, json={"session_ids": identities}).json() == {"archived": 0}
+    assert client.get("/api/v1/sessions").json()["items"] == []
+    assert len(client.get("/api/v1/sessions?archived=true").json()["items"]) == 2
+    assert (
+        client.patch(f"/api/v1/sessions/{identities[0]}", json={"archived": False}).status_code
+        == 200
+    )
+
+
+def test_session_title_search_filters_before_pagination(client: TestClient) -> None:
+    login(client, bearer=True)
+    path = "/api/v1/sessions"
+    client.post(path, json={"title": "Unrelated topic"})
+    matches = [
+        client.post(path, json={"title": f"Travel plans {i}"}).json()["id"] for i in range(3)
+    ]
+    archived = client.post(path, json={"title": "Travel archive"}).json()["id"]
+    client.patch(f"{path}/{archived}", json={"archived": True})
+    ephemeral = client.post(path, json={"title": "Travel once", "mode": "ephemeral"}).json()["id"]
+    params: dict[str, str | int] = {"q": " TRAVEL ", "limit": 2}
+    first = client.get(path, params=params).json()
+    assert [item["id"] for item in first["items"]] == matches[:2]
+    second = client.get(path, params=params | {"after": first["next"]}).json()
+    assert [item["id"] for item in second["items"]] == matches[2:]
+    last = client.get(path, params=params | {"after": second["next"]}).json()
+    assert last == {"items": [], "next": second["next"]}
+    archived_page = client.get(path, params={"q": "travel", "archived": "true"}).json()
+    assert [item["id"] for item in archived_page["items"]] == [archived]
+    included = client.get(path, params={"q": "travel", "include_ephemeral": "true"}).json()
+    assert [item["id"] for item in included["items"]] == matches + [ephemeral]
+    assert client.get(path, params={"q": "missing"}).json()["items"] == []
+    assert client.get(path, params={"q": "x" * 257}).status_code == 422
+    assert client.get(path, params={"q": "travel", "after": "bad"}).status_code == 422
+
+
+def test_session_pinned_filter_preserves_creation_cursor_and_title_search(
+    client: TestClient,
+) -> None:
+    login(client, bearer=True)
+    path = "/api/v1/sessions"
+    identities = [client.post(path, json={"title": f"Topic {i}"}).json()["id"] for i in range(4)]
+    for identity in identities[1::2]:
+        assert client.patch(f"{path}/{identity}", json={"pinned": True}).status_code == 200
+    params: dict[str, str | int] = {"pinned": "true", "limit": 1}
+    first = client.get(path, params=params).json()
+    assert [item["id"] for item in first["items"]] == identities[1:2]
+    second = client.get(path, params=params | {"after": first["next"]}).json()
+    assert [item["id"] for item in second["items"]] == identities[3:4]
+    unpinned = client.get(path, params={"pinned": "false"}).json()
+    assert [item["id"] for item in unpinned["items"]] == identities[::2]
+    assert len(client.get(path).json()["items"]) == 4
+    assert client.get(path, params={"pinned": "true", "q": "Topic 0"}).json()["items"] == []
+    client.patch(f"{path}/{identities[3]}", json={"archived": True})
+    archived = client.get(path, params={"pinned": "true", "archived": "true"}).json()
+    assert [item["id"] for item in archived["items"]] == identities[3:4]
+    client.patch(f"{path}/{identities[1]}", json={"pinned": False})
+    assert client.get(path, params={"pinned": "true"}).json()["items"] == []
+    assert client.get(path, params={"pinned": "invalid"}).status_code == 422
+
+
 def test_session_pagination_is_separate_from_snapshot(client: TestClient, app: FastAPI) -> None:
     login(client)
     identities = [

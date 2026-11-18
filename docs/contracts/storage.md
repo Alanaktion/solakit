@@ -41,7 +41,7 @@ origin, lineage, input and frozen admission details, excluding generated IDs/tim
 Phase 3 admits interactive/system work only. Scheduled/proactive admissions are
 rejected until Phase 9 can verify authoritative job/occurrence claiming.
 
-On restart validate evidence, reconcile stable IDs and exact payloads, then drain
+On restart validate active evidence, reconcile stable IDs and exact payloads, then drain
 the outbox before allowing new mutations. Append-before-delivered reuses the
 existing entry after an fsync; it never emits a second logical event. A duplicate
 ID with different content, invalid complete line, sequence gap, stale offset, or
@@ -50,6 +50,23 @@ state is never silently reconstructed from evidence. A running run becomes
 interrupted; sending delivery becomes uncertain; running memory work becomes
 failed. Queued runs remain queued for the Phase 6 policy. Unreceipted tool intents
 remain visible and must not be automatically retried.
+
+Segments mix sessions. For delivered execution and legacy entries belonging to
+archived sessions, startup reuses references and event sequences from the SQLite
+outbox, seeks past their payloads, and omits their historical snapshot/admission
+reconciliation. Session metadata, global records and undelivered entries still
+receive full validation. Segment layout, cached offset boundaries and sealed tails
+remain checked, and whole-segment hashes are still computed for search and backup.
+Unfinished runs, deliveries, memory work and prepared compactions recover even in
+archived sessions; completed archived compactions skip startup revalidation.
+Archived payloads are verified when read, restored, or scanned for an offline
+search rebuild. Restore always reconciles all sessions. Restoring a topic makes
+its history eligible for full startup validation again.
+
+Bulk archive uses one state/outbox transaction for up to 100 requested session
+IDs, then drains and indexes the batch once. Missing IDs reject the entire batch;
+duplicates and already archived sessions make no additional evidence. As with
+other mutations, interrupted evidence publication finishes during recovery.
 
 A final incomplete line is preserved in place. Publish a recovery sidecar with
 segment, byte offset, tail hash, size and reason, seal that segment and append to

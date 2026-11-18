@@ -443,9 +443,11 @@ asyncio.run(scenario())
 
 
 @pytest.mark.parametrize("committed", [False, True])
+@pytest.mark.parametrize("archived", [False, True])
 def test_corrupt_summary_keeps_old_prepared_boundary_or_blocks_committed(
     profile: EffectiveProfile,
     committed: bool,
+    archived: bool,
 ) -> None:
     async def scenario() -> None:
         async def respond(body: dict[str, Any]) -> bytes:
@@ -477,16 +479,23 @@ def test_corrupt_summary_keeps_old_prepared_boundary_or_blocks_committed(
 
         boundary = CompactionBoundary.model_validate_json(row[0])
         summary = manifest_for(store, boundary).summary
+        if archived:
+            store.archive_sessions([session.id])
         await context.stop()
         (store.root / summary.path).write_bytes(b"corrupted")
         store.fault = lambda _: None
         try:
-            if committed:
+            if committed and not archived:
                 with pytest.raises(CorruptionError):
                     await store.start()
             else:
                 await store.start()
-                assert active_boundary(store, session.id) is None
+                assert bool(active_boundary(store, session.id)) == committed
+                if committed:
+                    store.update_session(session.id, archived=False)
+                    await store.stop()
+                    with pytest.raises(CorruptionError):
+                        await store.start()
         finally:
             await store.stop()
 
@@ -503,7 +512,10 @@ def test_corrupt_summary_keeps_old_prepared_boundary_or_blocks_committed(
         "compaction_committed",
     ],
 )
-def test_compaction_crash_recovery_once(profile: EffectiveProfile, stage: str) -> None:
+@pytest.mark.parametrize("archived", [False, True])
+def test_compaction_crash_recovery_once(
+    profile: EffectiveProfile, stage: str, archived: bool
+) -> None:
     async def scenario() -> None:
         async def respond(body: dict[str, Any]) -> bytes:
             source = material(body)
@@ -529,6 +541,8 @@ def test_compaction_crash_recovery_once(profile: EffectiveProfile, stage: str) -
             request_id=new_id(),
         )
         await context.runs.wait(run.id, timeout=5)
+        if archived:
+            store.archive_sessions([session.id])
         await context.stop()
         store.fault = lambda _: None
         for _ in range(2):

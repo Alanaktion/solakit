@@ -257,15 +257,41 @@ class EvidenceLog:
         else:
             raise CorruptionError("unsealed incomplete evidence tail; recovery required")
 
-    def scan(self, *, repair: bool = False) -> Iterator[tuple[Reference, Entry]]:
+    def scan(
+        self,
+        *,
+        repair: bool = False,
+        archived: tuple[tuple[Reference, str | None, int], ...] = (),
+    ) -> Iterator[tuple[Reference, Entry]]:
         seen: dict[str, str] = {}
         sequences: dict[str, int] = {}
+        cached = {(ref.segment, ref.offset): (ref, session, seq) for ref, session, seq in archived}
+        if len(cached) != len(archived):
+            raise CorruptionError("duplicate archived evidence offset")
         paths = self.paths()
         for path in paths:
             offset = 0
             torn = False
             with path.open("rb") as stream:
-                for data in stream:
+                while True:
+                    skipped = cached.pop((path.name, offset), None)
+                    if skipped is not None:
+                        ref, session, sequence = skipped
+                        if ref.entry_id in seen:
+                            raise CorruptionError("duplicate physical evidence entry")
+                        seen[ref.entry_id] = ref.sha256
+                        if session is not None:
+                            if sequence != sequences.get(session, 0) + 1:
+                                raise CorruptionError("evidence event sequence gap")
+                            sequences[session] = sequence
+                        stream.seek(offset + ref.length - 1)
+                        if stream.read(1) != b"\n":
+                            raise CorruptionError("acknowledged evidence missing")
+                        offset += ref.length
+                        continue
+                    data = stream.readline()
+                    if not data:
+                        break
                     if not data.endswith(b"\n"):
                         if (
                             path != paths[-1]
@@ -299,12 +325,17 @@ class EvidenceLog:
                     offset += len(data)
             if not torn and (self.root / "recovery" / f"{path.stem}.json").exists():
                 raise CorruptionError("sealed tail missing")
+        if cached:
+            raise CorruptionError("archived evidence offset missing")
         self.active = (
             f"{len(paths) + (1 if paths and torn else 0):08d}.jsonl" if paths else "00000001.jsonl"
         )
 
-    def recover(self) -> None:
-        self.references = {ref.entry_id: ref for ref, _ in self.scan(repair=True)}
+    def recover(self, *, archived: tuple[tuple[Reference, str | None, int], ...] = ()) -> None:
+        self.references = {ref.entry_id: ref for ref, _, _ in archived}
+        self.references.update(
+            (ref.entry_id, ref) for ref, _ in self.scan(repair=True, archived=archived)
+        )
         # Sync existing segments too: a prior writer may have died before its fsync.
         self.hashers.clear()
         self.sizes.clear()

@@ -31,6 +31,14 @@ export class SolaApp extends SolaElement {
         <button @click=${newTopic} id="new-topic">
           <span aria-hidden="true">＋</span> New topic
         </button>
+        <input
+          id="topic-search"
+          type="search"
+          aria-label="Search topics by title"
+          placeholder="Search topics…"
+          maxlength="256"
+          @input=${action(() => loadTopics())}
+        />
         <nav id="topics" aria-label="Choose a topic"></nav>
         <button @click=${action(() => loadTopics(true))} id="more-topics" hidden>
           More topics

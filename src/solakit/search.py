@@ -103,8 +103,14 @@ def update_index(log: EvidenceLog) -> None:
                 source = log.directory / segment
                 if offset > size:
                     raise CorruptionError("indexed evidence shortened")
-                if old and not log.index_checked and _fingerprint(source, offset) != old["sha256"]:
-                    raise CorruptionError("indexed evidence fingerprint changed")
+                if old and not log.index_checked:
+                    fingerprint = (
+                        log.hashers[segment].hexdigest()
+                        if offset == size
+                        else _fingerprint(source, offset)
+                    )
+                    if fingerprint != old["sha256"]:
+                        raise CorruptionError("indexed evidence fingerprint changed")
                 if offset == size:
                     continue
                 with source.open("rb") as stream:

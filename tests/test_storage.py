@@ -27,6 +27,7 @@ from solakit.records import (
     Delivery,
     DeliveryState,
     InvalidTransition,
+    Job,
     MemoryCommit,
     MemoryState,
     Message,
@@ -116,6 +117,139 @@ def test_sessions_admission_pages_events_and_restart(tmp_path: Path) -> None:
         assert len(list(store.log.scan())) == 13
     assert os.stat(root / "state.db").st_mode & 0o777 == 0o600
     assert os.stat(root / "evidence").st_mode & 0o777 == 0o700
+
+
+def test_session_title_search_survives_restart(tmp_path: Path) -> None:
+    root = tmp_path / "data"
+    with opened(root) as store:
+        titles = ["Planning", "Straße café 雪", "100%_done", "it's a title", ""]
+        sessions = [store.create_session(title=title) for title in titles]
+        for query, expected in [
+            (" PLAN ", [sessions[0]]),
+            ("STRASSE CAFÉ", [sessions[1]]),
+            ("雪", [sessions[1]]),
+            ("%_", [sessions[2]]),
+            ("it's", [sessions[3]]),
+            ("' OR 1=1 --", []),
+            ("missing", []),
+            ("   ", sessions),
+        ]:
+            assert store.list_sessions(q=query) == expected
+        store.update_session(sessions[0].id, title="Renamed")
+        assert store.list_sessions(q="planning") == []
+    with opened(root) as store:
+        assert store.list_sessions(q="STRASSE") == [sessions[1]]
+        assert store.list_sessions(q="renamed")[0].id == sessions[0].id
+
+
+def test_bulk_archive_is_atomic_idempotent_and_durable(tmp_path: Path) -> None:
+    root = tmp_path / "data"
+    with opened(root) as store:
+        first = store.create_session(title="Keep title", mode=SessionMode.ISOLATED)
+        second = store.create_session()
+        job = Job(
+            origin=Origin.SCHEDULED,
+            profile="default",
+            task="Keep job",
+            schedule="cron:0 12 * * *",
+            session_id=first.id,
+        )
+        store._commit((job,), details={"session_id": first.id})
+        store.update_session(first.id, pinned=True)
+        with pytest.raises(KeyError):
+            store.archive_sessions([first.id, new_id()])
+        assert not store.session(first.id).archived
+        assert store.archive_sessions([first.id, second.id, first.id]) == 2
+        assert store.archive_sessions([first.id, second.id]) == 0
+        assert store.session(first.id).pinned
+        assert store.session(first.id).mode == SessionMode.ISOLATED
+        assert store.session(first.id).title == "Keep title"
+    with opened(root) as store:
+        assert store.job(job.id) == job
+        assert store.list_sessions() == []
+        assert len(store.list_sessions(archived=True)) == 2
+        store.update_session(first.id, archived=False)
+        store.admit(first.id, request_id=new_id(), content="restored", profile="default")
+
+
+def test_restart_skips_archived_history_but_reads_still_verify(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import solakit.evidence as evidence
+
+    root = tmp_path / "data"
+    with opened(root) as store:
+        archived = store.create_session()
+        run = store.admit(
+            archived.id, request_id=new_id(), content="old history", profile="default"
+        )
+        store.transition_run(run.id, RunState.CANCELLED)
+        message = store.messages(archived.id)[0][1]
+        reference = store.log.references[
+            store.db.execute("SELECT entry_id FROM entities WHERE id=?", (message.id,)).fetchone()[
+                0
+            ]
+        ]
+        active = store.create_session()
+        store.admit(active.id, request_id=new_id(), content="current history", profile="default")
+        store.archive_sessions([archived.id])
+
+    parsed: list[Entry] = []
+
+    def counted(data: bytes) -> Entry:
+        entry = parse_entry(data)
+        parsed.append(entry)
+        return entry
+
+    monkeypatch.setattr(evidence, "parse_entry", counted)
+    with opened(root) as store:
+        assert not any(entry.event and entry.event.session_id == archived.id for entry in parsed)
+        assert any(entry.event and entry.event.session_id == active.id for entry in parsed)
+        assert store.search_status == "available"
+        assert store.messages(archived.id)[0][1] == message
+        assert search(root, "old history")
+        segment = root / "evidence" / reference.segment
+        with segment.open("r+b") as stream:
+            stream.seek(reference.offset)
+            raw = stream.read(reference.length)
+            stream.seek(reference.offset)
+            stream.write(raw.replace(b"old history", b"bad history"))
+        with pytest.raises(CorruptionError, match="corrupt evidence offset"):
+            store.messages(archived.id)
+
+
+def test_missing_archived_evidence_blocks_startup(tmp_path: Path) -> None:
+    root = tmp_path / "data"
+    with opened(root) as store:
+        session = store.create_session()
+        store.admit(session.id, request_id=new_id(), content="old", profile="default")
+        store.archive_sessions([session.id])
+    path = root / "evidence/00000001.jsonl"
+    lines = path.read_bytes().splitlines(keepends=True)
+    path.write_bytes(b"".join(lines[:1] + lines[2:]))
+    with pytest.raises(CorruptionError):
+        with opened(root):
+            pass
+
+
+@pytest.mark.parametrize(
+    "stage", ["state_commit", "append", "fsync", "outbox_complete", "acknowledge"]
+)
+def test_bulk_archive_recovers_the_whole_batch(tmp_path: Path, stage: str) -> None:
+    root = tmp_path / "data"
+    with opened(root) as store:
+        sessions = [store.create_session() for _ in range(2)]
+
+        def fail(current: str) -> None:
+            if current == stage:
+                raise OSError("process stopped")
+
+        store.fault = fail
+        with pytest.raises(OSError, match="process stopped"):
+            store.archive_sessions([session.id for session in sessions])
+    with opened(root) as store:
+        assert all(store.session(session.id).archived for session in sessions)
+        assert len(list(store.log.scan())) == 4
 
 
 @pytest.mark.parametrize(
@@ -251,7 +385,8 @@ def test_corruption_blocks_recovery(tmp_path: Path, damage: str) -> None:
             pass
 
 
-def test_lineage_recovery_and_terminal_lifecycles(tmp_path: Path) -> None:
+@pytest.mark.parametrize("archived", [False, True])
+def test_lineage_recovery_and_terminal_lifecycles(tmp_path: Path, archived: bool) -> None:
     root = tmp_path / "data"
     with opened(root) as store:
         session = store.create_session()
@@ -305,6 +440,8 @@ def test_lineage_recovery_and_terminal_lifecycles(tmp_path: Path) -> None:
                     source_message_ids=(store.messages(other.id)[0][1].id,),
                 )
             )
+        if archived:
+            store.archive_sessions([session.id])
     with opened(root) as store:
         assert store.run(run.id).state == RunState.INTERRUPTED
         records = [record for _, record in store.run_records(run.id)]
@@ -699,11 +836,16 @@ def test_maintenance_commands_and_cli_status(tmp_path: Path) -> None:
     assert not absent.exists()
 
 
-def test_restore_checks_state_evidence_consistency_before_publication(tmp_path: Path) -> None:
+@pytest.mark.parametrize("archived", [False, True])
+def test_restore_checks_state_evidence_consistency_before_publication(
+    tmp_path: Path, archived: bool
+) -> None:
     root = tmp_path / "data"
     checkpoint = tmp_path / "checkpoint"
     with opened(root) as store:
-        store.create_session()
+        session = store.create_session()
+        if archived:
+            store.archive_sessions([session.id])
         backup(store, checkpoint)
     with sqlite3.connect(checkpoint / "state.db") as db:
         db.execute("DELETE FROM sessions")

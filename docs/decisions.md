@@ -53,6 +53,8 @@ Statuses distinguish operator-confirmed requirements, implementer-selected rever
 
 | V2-38 | Confirmed / operator, 2026-11-17 | Use a simple direct import from the stopped legacy directory into new v2 data. Existing backups and manual cleanup replace migration-specific snapshot, audit, checkpoint, verifier and rollback machinery. Preserve raw history, keep imported jobs paused and never replay historical effects or memory submissions. Source data stays untouched | 13: [direct import](migration/cutover.md), [checks](validation/phase-13-simple.md) |
 
+| V2-39 | Confirmed direction / operator; implementation selected, 2026-11-17 | Restrict startup history validation to non-archived sessions and add bulk archiving. Shared JSONL segments remain immutable: reuse delivered archived references/sequences from the existing SQLite outbox, retain session/global/pending-work checks, verify archived payloads on reads and full restore/rebuild. Batch up to 100 IDs in one state/outbox transaction. Reuse startup segment hashes during search projection checks and only load unfinished work for recovery; no new database/cache authority | 3/10: [storage contract](contracts/storage.md), [startup validation](validation/session-startup.md) |
+
 ## Unavailable references and remaining verification
 
 The outline refers to D1–D6 and companion source specifications that are not present in this checkout. Similarly named legacy refactor IDs are unrelated. Their absence is recorded; these v2 contracts replace the ambiguity for this release. Newly supplied requirements should become explicit decision changes, not retroactive assumptions.
