@@ -1,6 +1,7 @@
 """Build and install the core wheel in a disposable clean environment."""
 
 import json
+import os
 import subprocess
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -15,6 +16,10 @@ def main() -> None:
         (wheel,) = root.glob("*.whl")
         with ZipFile(wheel) as archive:
             assert all(name.startswith(("solakit/", "solakit-")) for name in archive.namelist())
+            assert (
+                archive.read("solakit/image-workflow.json")
+                == (checkout / "examples/image-workflow.json").read_bytes()
+            )
             for asset in (
                 "index.html",
                 "chat.css",
@@ -125,6 +130,18 @@ def main() -> None:
             check=True,
         )
         subprocess.run([str(python), str(checkout / "scripts/pack_smoke.py")], cwd=root, check=True)
+        selected = root / "selected-workspace"
+        subprocess.run(
+            ["uv", "sync", "--frozen", "--all-packages", "--no-dev"],
+            cwd=checkout,
+            env=os.environ | {"UV_PROJECT_ENVIRONMENT": str(selected)},
+            check=True,
+        )
+        subprocess.run(
+            [str(selected / "bin/python"), str(checkout / "scripts/pack_smoke.py")],
+            cwd=root,
+            check=True,
+        )
         subprocess.run(
             [
                 str(python),

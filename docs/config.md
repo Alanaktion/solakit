@@ -66,23 +66,25 @@ Names used for modules, loaded tools, profile names and memory account/user must
 match `[A-Za-z0-9_][A-Za-z0-9_.-]*` and contain at most 128 characters. Module names
 must also be importable Python modules.
 
-Built-ins currently include `files.read`, `files.write`, `transcripts.search`,
+Built-ins currently include `files.list`, `files.read`, `files.search`, `files.write`,
+`images.generate`, `transcripts.search`,
 `runtime.status`, `memory.recall`, `memory.remember`, and `jobs.list`, `jobs.create`,
 `jobs.update`, `jobs.pause`, `jobs.resume`, `jobs.run_now`, `jobs.delete`,
 `jobs.pause_all`. Enable names in both `loaded_tools` and the selected profile's
 `tools`. There are no separate `resources` or `effects` settings. See the
 [tool contract](contracts/tools.md) for protected paths and pack permissions.
 
-The other supported top-level keys are tables: `model`, `http`, `memory`,
+The other supported top-level keys are tables: `model`, `http`, `memory`, `images`,
 `defaults`, `profiles`, `proactive_budgets` and `background`, described below.
-There is no image-service configuration table yet; the example pack's image
-adapter is a fixture.
+The example pack's image adapter remains a fixture; the optional built-in image
+service uses the fixed [ComfyUI workflow](image-workflows.md).
 
 ## `[model]`
 
 | Key | Type / built-in default | Meaning and constraints |
 | --- | --- | --- |
 | `model.pin` | string: `""` | Exact model ID. A nonblank explicit pin is required for a runnable profile; no automatic model substitution. The tested pin is `Qwen3.6-35B-A3B-mxfp4`. |
+| `model.image_inputs` | boolean: `false` | Enable same-topic generated PNG attachments only after verifying the exact pin's image capability. Unsupported attachments return an explicit 422; no model substitution. |
 | `model.base_url` | string: `"http://127.0.0.1:8000/v1"` | oMLX OpenAI-compatible API base URL, including its API path. |
 | `model.context_tokens` | integer: `32768` | Request context ceiling, 1024–1048576 tokens. Conservative accounting reserves completion, tool-result and safety headroom; this does not change the server's actual model window. |
 | `model.connect_timeout_seconds` | integer: `5` | Connection timeout, 1–60 seconds. |
@@ -94,6 +96,21 @@ port if specified. They reject embedded credentials, query strings and fragments
 Environment-variable names match `[A-Za-z_][A-Za-z0-9_]*`.
 See the [model/prompt contract](contracts/model-prompts.md) and
 [context contract](contracts/context-compaction.md) for request accounting.
+
+## `[images]`
+
+| Key | Type / built-in default | Meaning and constraints |
+| --- | --- | --- |
+| `images.enabled` | boolean: `false` | Start the optional ComfyUI observer/client. Execution also requires `images.generate` in loaded tools and profile grants. |
+| `images.base_url` | string: `"http://127.0.0.1:8188"` | Explicit operator endpoint, with the same URL restrictions as the model. No endpoint or workflow argument is exposed to the model. |
+| `images.timeout_seconds` | integer: `15` | Whole HTTP request deadline, 1–60 seconds. No submission retries or redirects. |
+| `images.poll_seconds` | integer: `2` | Delay between observation passes, 1–60 seconds. |
+| `images.max_checks` | integer: `300` | Persisted observation limit, 1–600. Exhaustion leaves uncertainty and blocks new generation until reconciliation. |
+
+One unfinished generation is allowed globally. Set `defaults.budgets.tool_timeout_seconds`
+high enough for the selected endpoint (for example 600, within `active_seconds`).
+The usual run deadline still applies. Cancellation stops waiting; provider work
+may continue and is observed separately. See [recovery](image-workflows.md).
 
 ## `[http]`
 

@@ -5,6 +5,7 @@ import stat
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import cast
 
 from pydantic import JsonValue
 
@@ -74,11 +75,13 @@ class GuardedFiles:
         protected: tuple[Path, ...],
         begin_effect: Callable[[tuple[str, ...]], None],
         confirm_effect: Callable[[], None],
+        record_artifact: Callable[[bytes], None] | None = None,
     ) -> None:
         self.authority = authority
         self.protected = protected
         self.begin_effect = begin_effect
         self.confirm_effect = confirm_effect
+        self.record_artifact = record_artifact
 
     @contextmanager
     def _parent(self, raw: str, *, write: bool) -> Iterator[tuple[int, str]]:
@@ -149,6 +152,104 @@ class GuardedFiles:
         except UnicodeError:
             raise ToolError("File is not UTF-8 text", ErrorCode.INVALID_INPUT) from None
 
+    def list_directory(self, path: str, *, limit: int = 100) -> JsonValue:
+        if type(limit) is not int or not 1 <= limit <= 100:
+            raise ToolError("Invalid listing limit", ErrorCode.INVALID_INPUT)
+        entries: list[dict[str, JsonValue]] = []
+        truncated = False
+        with self._parent(path, write=False) as (parent, name):
+            fd = os.open(name, DIRECTORY, dir_fd=parent)
+            try:
+                with os.scandir(fd) as children:
+                    for index, child in enumerate(children):
+                        if index >= 2000:
+                            truncated = True
+                            break
+                        info = child.stat(follow_symlinks=False)
+                        if child.is_symlink() or not (
+                            stat.S_ISDIR(info.st_mode)
+                            or (stat.S_ISREG(info.st_mode) and info.st_nlink == 1)
+                        ):
+                            continue
+                        try:
+                            with self._parent(str(Path(path) / child.name), write=False):
+                                pass
+                        except ToolError:
+                            continue
+                        entries.append(
+                            {
+                                "name": child.name,
+                                "kind": "directory" if stat.S_ISDIR(info.st_mode) else "file",
+                                "bytes": info.st_size,
+                            }
+                        )
+            finally:
+                os.close(fd)
+        entries.sort(key=lambda entry: str(entry["name"]))
+        return cast(
+            JsonValue, {"entries": entries[:limit], "truncated": truncated or len(entries) > limit}
+        )
+
+    def search_text(self, path: str, query: str, *, limit: int = 20) -> JsonValue:
+        if not query or len(query) > 4096 or type(limit) is not int or not 1 <= limit <= 100:
+            raise ToolError("Invalid search query or limit", ErrorCode.INVALID_INPUT)
+        matches: list[JsonValue] = []
+        pending = [path]
+        scanned = total_bytes = visited = skipped = 0
+        truncated = False
+        while pending:
+            directory = pending.pop()
+            with self._parent(directory, write=False) as (parent, name):
+                fd = os.open(name, DIRECTORY, dir_fd=parent)
+                try:
+                    with os.scandir(fd) as children:
+                        for child in children:
+                            visited += 1
+                            if visited > 2000:
+                                truncated = True
+                                break
+                            target = str(Path(directory) / child.name)
+                            if child.is_symlink():
+                                skipped += 1
+                                continue
+                            try:
+                                with self._parent(target, write=False):
+                                    pass
+                                if child.is_dir(follow_symlinks=False):
+                                    pending.append(target)
+                                    continue
+                                info = child.stat(follow_symlinks=False)
+                                self._regular(info)
+                                if total_bytes + info.st_size > 16 * MAX_FILE_BYTES:
+                                    truncated = True
+                                    break
+                                total_bytes += info.st_size
+                                text = self.read_text(target)
+                            except ToolError, OSError:
+                                skipped += 1
+                                continue
+                            scanned += 1
+                            for number, line in enumerate(text.splitlines(), 1):
+                                if query in line:
+                                    matches.append(
+                                        {"path": target, "line": number, "text": line[:1000]}
+                                    )
+                                    if len(matches) >= limit:
+                                        truncated = True
+                                        break
+                            if truncated:
+                                break
+                finally:
+                    os.close(fd)
+            if truncated:
+                break
+        return {
+            "matches": matches,
+            "truncated": truncated,
+            "scanned_files": scanned,
+            "skipped": skipped,
+        }
+
     def write_text(
         self, path: str, content: str, *, overwrite: bool = False
     ) -> dict[str, JsonValue]:
@@ -182,6 +283,8 @@ class GuardedFiles:
                     )
                 self.confirm_effect()
                 os.fsync(parent)
+                if self.record_artifact is not None:
+                    self.record_artifact(raw)
             finally:
                 try:
                     os.unlink(temporary, dir_fd=parent)

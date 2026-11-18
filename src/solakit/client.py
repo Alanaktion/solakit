@@ -101,7 +101,13 @@ class ClientService:
         )
 
     async def submit(
-        self, session_id: str, name: str | None, content: str, request_id: str, wait: float
+        self,
+        session_id: str,
+        name: str | None,
+        content: str,
+        request_id: str,
+        wait: float,
+        image: tuple[str, str] | None = None,
     ) -> Run:
         name = self.context.profile.name if name is None else name
         if not content.strip() or len(content.encode()) > 32768:
@@ -115,7 +121,21 @@ class ClientService:
             )
         else:
             profile = self.profile(name, self.store.session(session_id).mode)
-        run = self.runs.submit(session_id, profile=profile, content=content, request_id=request_id)
+        reference = None
+        if image is not None:
+            if not profile.model_image_inputs:
+                raise RequestError(
+                    422, "unsupported_image", "Image inputs are not enabled for this model"
+                )
+            source_run, identity = image
+            if self.store.run(source_run).session_id != session_id:
+                raise RequestError(403, "image_scope", "Image must belong to this topic")
+            _, reference = self.artifact(source_run, identity, 0, 1)
+            if reference.media_type != "image/png" or reference.length > 16 * 1024 * 1024:
+                raise RequestError(422, "invalid_image", "Attach a generated PNG image")
+        run = self.runs.submit(
+            session_id, profile=profile, content=content, request_id=request_id, image=reference
+        )
         if wait:
             try:
                 return await self.runs.wait(run.id, timeout=wait)
@@ -245,9 +265,10 @@ class ClientService:
         row = self.store.db.execute(
             "SELECT kind,id FROM entities WHERE run_id=? AND ("
             "json_extract(body,'$.body.path')=? OR json_extract(body,'$.manifest.path')=? OR "
-            "json_extract(body,'$.response.path')=? OR json_extract(body,'$.artifact.path')=?) "
+            "json_extract(body,'$.response.path')=? OR json_extract(body,'$.artifact.path')=? OR "
+            "json_extract(body,'$.image.path')=?) "
             "LIMIT 1",
-            (run_id, *([f"artifacts/{identity}"] * 4)),
+            (run_id, *([f"artifacts/{identity}"] * 5)),
         ).fetchone()
         if row is None:
             raise KeyError(identity)

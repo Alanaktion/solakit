@@ -18,7 +18,8 @@
     "run_id": "00000000000000000000000000000002",
     "role": "assistant",
     "content": "The fixture write failed; no artifact was created.",
-    "tool_call_id": null
+    "tool_call_id": null,
+    "image": null
   },
   "Run": {
     "schema_version": 1,
@@ -85,14 +86,14 @@
     "status": "failed",
     "effect": "none",
     "result": null,
-    "failure": {
-      "code": "tool_failed",
-      "message": "Disposable fixture failure; no write occurred."
-    },
     "artifact": null,
     "truncated": false,
     "result_bytes": 0,
-    "result_sha256": null
+    "result_sha256": null,
+    "failure": {
+      "code": "tool_failed",
+      "message": "Disposable fixture failure; no write occurred."
+    }
   },
   "Job": {
     "schema_version": 1,
@@ -194,12 +195,14 @@
     "body": {
       "path": "artifacts/0000000000000000000000000000000f",
       "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
-      "length": 2
+      "length": 2,
+      "media_type": "application/octet-stream"
     },
     "manifest": {
       "path": "artifacts/00000000000000000000000000000010",
       "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
-      "length": 2
+      "length": 2,
+      "media_type": "application/octet-stream"
     }
   },
   "RecoveryNote": {

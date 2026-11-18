@@ -99,12 +99,22 @@ class Session(Record):
     pinned: bool = False
 
 
+class Artifact(Value):
+    path: Annotated[str, Field(pattern=r"^artifacts/[0-9a-f]{32}$")]
+    sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    length: Annotated[int, Field(ge=0)]
+    media_type: Literal["application/octet-stream", "text/plain", "image/png"] = (
+        "application/octet-stream"
+    )
+
+
 class Message(Record):
     session_id: RecordID
     run_id: RecordID
     role: Literal["user", "assistant", "tool"]
     content: str
     tool_call_id: RecordID | None = None
+    image: Artifact | None = None
 
     @model_validator(mode="after")
     def tool_link(self) -> Self:
@@ -183,10 +193,24 @@ class Run(Record):
         return type(self).model_validate(self.model_dump() | changes)
 
 
-class Artifact(Value):
-    path: Annotated[str, Field(pattern=r"^artifacts/[0-9a-f]{32}$")]
-    sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
-    length: Annotated[int, Field(ge=0)]
+class ImageGeneration(Record):
+    session_id: RecordID
+    run_id: RecordID
+    tool_call_id: RecordID
+    endpoint: str
+    workflow_sha256: str
+    parameters: dict[str, JsonValue]
+    fingerprint: str
+    body: Artifact
+    requested_id: str
+    submission_id: str | None = None
+    state: Literal["intent", "submitted", "completed", "downloaded", "failed", "uncertain"] = (
+        "intent"
+    )
+    checks: Annotated[int, Field(ge=0)] = 0
+    output: dict[str, str] | None = None
+    artifact: Artifact | None = None
+    error: str | None = None
 
 
 class ModelRequest(Record):
@@ -438,6 +462,7 @@ class DurableEvent(Value):
         "memory.changed",
         "delivery.changed",
         "recovery.noted",
+        "image.changed",
     ]
     payload: dict[str, JsonValue]
 

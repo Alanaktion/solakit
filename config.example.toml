@@ -5,7 +5,8 @@ schema_version = 1
 data_dir = "~/.local/share/sola"
 # Explicit import modules for installed trusted packs; loading grants no access.
 tool_modules = []
-# Built-ins: files.read, files.write, transcripts.search, runtime.status,
+# Built-ins: files.list, files.read, files.search, files.write, images.generate,
+# transcripts.search, runtime.status,
 # memory.recall, memory.remember; jobs.list/create/update/pause/resume/run_now/delete/pause_all.
 loaded_tools = []
 shutdown_timeout_seconds = 5
@@ -16,12 +17,24 @@ shutdown_timeout_seconds = 5
 [model]
 # Required: exact oMLX model ID, e.g. "Qwen3.6-35B-A3B-mxfp4".
 pin = ""
+# Enable only after verifying image input support for this exact model pin.
+image_inputs = false
 base_url = "http://127.0.0.1:8000/v1"
 # OPENAI_API_KEY is used by default; .env is only loaded by the developer probe.
 # api_key_env = "SOLA_MODEL_API_KEY"
 context_tokens = 32768
 connect_timeout_seconds = 5
 generation_timeout_seconds = 120
+
+# Optional one-image ComfyUI workflow; enabling still requires a tool grant.
+[images]
+enabled = false
+base_url = "http://127.0.0.1:8188"
+timeout_seconds = 15
+poll_seconds = 2
+max_checks = 300
+# Image jobs also require explicit job workspace_roots. Give generation enough time:
+# [defaults.budgets] tool_timeout_seconds = 600 (within active_seconds).
 
 [http]
 host = "127.0.0.1"

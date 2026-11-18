@@ -22,12 +22,14 @@ from solakit.evidence import (
     sync_directory,
 )
 from solakit.records import (
+    Artifact,
     CompactionBoundary,
     Delivery,
     DeliveryState,
     DurableEvent,
     ErrorCode,
     Failure,
+    ImageGeneration,
     Job,
     MemoryCommit,
     MemoryNote,
@@ -70,6 +72,7 @@ type StoredRecord = (
     | Job
     | Occurrence
     | SchedulerControl
+    | ImageGeneration
 )
 
 SCHEMA = """
@@ -504,6 +507,7 @@ class Store:
         occurrence_id: str | None = None,
         retry_of: str | None = None,
         claim: tuple[Job, Occurrence, Job] | None = None,
+        image: Artifact | None = None,
     ) -> Run:
         from solakit.lineage import deny_autonomous_successor
 
@@ -520,6 +524,8 @@ class Store:
             "occurrence_id": occurrence_id,
             "retry_of": retry_of,
         }
+        if image is not None:
+            details["image"] = image.model_dump(mode="json")
         fingerprint = digest(canonical(details))
         existing = self.db.execute(
             "SELECT * FROM admissions WHERE request_id=?", (request_id,)
@@ -576,7 +582,12 @@ class Store:
             retry_of=retry_of,
         )
         message = Message(
-            origin=origin, session_id=session_id, run_id=run.id, role="user", content=content
+            origin=origin,
+            session_id=session_id,
+            run_id=run.id,
+            role="user",
+            content=content,
+            image=image,
         )
 
         def prepare() -> None:

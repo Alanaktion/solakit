@@ -609,6 +609,10 @@ def test_confirmed_effect_survives_later_timeout_and_errors_are_redacted(tmp_pat
         assert receipt.status == "failed" and receipt.effect == "confirmed"
         assert receipt.failure and receipt.failure.code == ErrorCode.TIMEOUT
         assert (h.root / "effect").read_text() == "confirmed before timeout"
+        assert receipt.artifact
+        assert (
+            h.profile.data_dir / receipt.artifact.path
+        ).read_text() == "confirmed before timeout"
         assert h.dispatch("secret").result == '{"nested":["<redacted>"]}'
         receipt = h.dispatch("error")
         assert receipt.failure and receipt.failure.message == "<redacted>"
@@ -679,3 +683,49 @@ def test_search_projection_cannot_forge_shared_session_authority(tmp_path: Path)
         receipt = h.dispatch("transcripts.search", query="needle")
         assert receipt.status == "failed" and receipt.result is None
         assert receipt.failure and receipt.failure.code == ErrorCode.CORRUPTION
+
+
+def test_file_workflow_list_search_unicode_and_artifact(tmp_path: Path) -> None:
+    with opened(tmp_path) as h:
+        (h.root / "nested").mkdir()
+        (h.root / "brief.txt").write_text("Use violet and cream.\n")
+        (h.root / "nested" / "café.txt").write_text("猫 likes violet.\n")
+        listing = h.dispatch("files.list")
+        assert listing.status == "succeeded"
+        assert {entry["name"] for entry in json.loads(str(listing.result))["entries"]} == {
+            "brief.txt",
+            "nested",
+        }
+        found = h.dispatch("files.search", query="violet")
+        assert found.status == "succeeded"
+        matches = json.loads(str(found.result))["matches"]
+        assert len(matches) == 2 and {m["line"] for m in matches} == {1}
+        for match in matches:
+            assert h.dispatch("files.read", path=match["path"]).status == "succeeded"
+        output = h.dispatch("files.write", path="result.txt", content="猫: violet and cream")
+        assert output.status == "succeeded" and output.artifact
+        retained = (h.profile.data_dir / output.artifact.path).read_bytes()
+        assert retained == (h.root / "result.txt").read_bytes()
+        assert output.artifact.sha256 == json.loads(str(output.result))["sha256"]
+        assert h.dispatch("files.write", path="result.txt", content="bad").status == "failed"
+        assert (
+            h.dispatch("files.write", path="missing/result.txt", content="bad").status == "denied"
+        )
+
+
+def test_file_scans_are_bounded_and_skip_protected_aliases(tmp_path: Path) -> None:
+    with opened(tmp_path, identity=True) as h:
+        (h.root / "secret-link").symlink_to(h.root / "SOUL.md")
+        (h.root / "huge.txt").write_bytes(b"x" * (MAX_FILE_BYTES + 1))
+        (h.root / "binary.bin").write_bytes(b"\xff")
+        (h.root / "matches.txt").write_text("needle\n" * 25)
+        listing = json.loads(str(h.dispatch("files.list", limit=1).result))
+        assert listing["truncated"] and len(listing["entries"]) == 1
+        names = {
+            entry["name"] for entry in json.loads(str(h.dispatch("files.list").result))["entries"]
+        }
+        assert "SOUL.md" not in names and "secret-link" not in names
+        found = json.loads(str(h.dispatch("files.search", query="needle", limit=2).result))
+        assert found["truncated"] and len(found["matches"]) == 2
+        assert h.dispatch("files.list", path="../").status == "denied"
+        assert h.dispatch("files.search", path="secret-link", query="needle").status == "denied"

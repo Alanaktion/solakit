@@ -53,6 +53,7 @@ class ProfileSettings(Value):
 
 class ModelSettings(Value):
     pin: str = ""
+    image_inputs: bool = False
     base_url: str = "http://127.0.0.1:8000/v1"
     context_tokens: Annotated[int, Field(ge=1024, le=1048576)] = 32768
     connect_timeout_seconds: Annotated[int, Field(ge=1, le=60)] = 5
@@ -80,6 +81,19 @@ class ModelSettings(Value):
         ):
             raise ValueError("model endpoint must not contain credentials, query, or fragment")
         return value
+
+
+class ImageSettings(Value):
+    enabled: bool = False
+    base_url: str = "http://127.0.0.1:8188"
+    timeout_seconds: Annotated[int, Field(ge=1, le=60)] = 15
+    poll_seconds: Annotated[int, Field(ge=1, le=60)] = 2
+    max_checks: Annotated[int, Field(ge=1, le=600)] = 300
+
+    @field_validator("base_url")
+    @classmethod
+    def endpoint(cls, value: str) -> str:
+        return ModelSettings.endpoint(value).rstrip("/")
 
 
 class MemorySettings(Value):
@@ -191,6 +205,7 @@ class OperatorConfig(Value):
     shutdown_timeout_seconds: Annotated[int, Field(ge=1, le=60)] = 5
     model: ModelSettings = Field(default_factory=ModelSettings)
     memory: MemorySettings = Field(default_factory=MemorySettings)
+    images: ImageSettings = Field(default_factory=ImageSettings)
     tool_modules: list[Name] = Field(default_factory=list)
     loaded_tools: list[Name] = Field(default_factory=list)
     defaults: ProfileSettings = Field(default_factory=ProfileSettings)
@@ -206,6 +221,7 @@ class EffectiveProfile(Value):
     mode: SessionMode
     data_dir: Path
     model_pin: str
+    model_image_inputs: bool = False
     model_base_url: str
     model_context_tokens: int = 32768
     model_connect_timeout_seconds: int = 5
@@ -216,6 +232,7 @@ class EffectiveProfile(Value):
     shutdown_timeout_seconds: int
     workspace_roots: tuple[Path, ...]
     memory: MemorySettings = Field(default_factory=MemorySettings)
+    images: ImageSettings = Field(default_factory=ImageSettings)
     background: BackgroundSettings = Field(default_factory=BackgroundSettings)
     http: HTTPSettings = Field(default_factory=HTTPSettings)
     proactive_budgets: BudgetOverrides = Field(default_factory=BudgetOverrides)
@@ -371,6 +388,7 @@ def resolve_profile(
     for field, setting in (
         ("data_dir", "data_dir"),
         ("model_pin", "model.pin"),
+        ("model_image_inputs", "model.image_inputs"),
         ("model_base_url", "model.base_url"),
         ("model_api_key_env", "model.api_key_env"),
         ("model_context_tokens", "model.context_tokens"),
@@ -379,6 +397,7 @@ def resolve_profile(
         ("soul_file", "soul_file"),
         ("curated_memory_file", "curated_memory_file"),
         ("memory", "memory"),
+        ("images", "images"),
         ("background", "background"),
         ("http", "http"),
         ("proactive_budgets", "proactive_budgets"),
@@ -401,6 +420,7 @@ def resolve_profile(
         mode=mode,
         data_dir=data_dir,
         model_pin=config.model.pin,
+        model_image_inputs=config.model.image_inputs,
         model_base_url=config.model.base_url,
         model_context_tokens=config.model.context_tokens,
         model_connect_timeout_seconds=config.model.connect_timeout_seconds,
@@ -415,6 +435,7 @@ def resolve_profile(
         shutdown_timeout_seconds=config.shutdown_timeout_seconds,
         workspace_roots=roots,
         memory=config.memory,
+        images=config.images,
         background=config.background,
         http=config.http,
         proactive_budgets=config.proactive_budgets,
@@ -441,6 +462,8 @@ def restrict_to_admission(
         raise ConfigError("runtime/model identity changed; a new admission is required")
     if current.memory != admitted.memory:
         raise ConfigError("memory service/scope changed; a new admission is required")
+    if current.images != admitted.images:
+        raise ConfigError("image service changed; a new admission is required")
     roots = tuple(
         dict.fromkeys(
             inner
@@ -451,6 +474,7 @@ def restrict_to_admission(
         )
     )
     changes = {
+        "model_image_inputs": current.model_image_inputs and admitted.model_image_inputs,
         "workspace_roots": roots,
         "loaded_tools": current.loaded_tools & admitted.loaded_tools,
         "granted_tools": current.granted_tools & admitted.granted_tools,

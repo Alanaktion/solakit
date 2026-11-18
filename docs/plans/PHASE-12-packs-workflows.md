@@ -1,6 +1,13 @@
 # Phase 12 — Basic tools and image workflows
 
-Status: planned. Depends on [Phases 5–11](README.md) and [confirmed release scope](../product.md). Milestone: a daily-use candidate built around a small reliable tool set. This phase supersedes the outline's broad domain-pack port sequence.
+Status: implemented, with deterministic checks, live Qwen/ComfyUI workflows,
+scheduled test-account extraction and browser automation verified. **The release
+gate remains failed:** the configured AntiLoop model fails the frozen Phase 1/6
+exact-write reliability corpus. Operator browser acceptance also remains pending.
+See [implementation/recovery](../image-workflows.md) and
+[validation](../validation/phase-12.md). Depends on [Phases 5–11](README.md) and
+[confirmed release scope](../product.md). Milestone: a daily-use candidate built around
+a small reliable tool set. This phase supersedes the outline's broad domain-pack port sequence.
 
 ## Outcome
 

@@ -31,6 +31,7 @@ from solakit.store import Store
 from solakit.tools import TOOLS
 
 if TYPE_CHECKING:
+    from solakit.images import ImageService
     from solakit.jobs import JobService
     from solakit.memory import MemoryService
 
@@ -51,6 +52,7 @@ class Dispatcher:
         self.redactor = redactor or Redactor()
         self.memory: MemoryService | None = None
         self.jobs: JobService | None = None
+        self.images: ImageService | None = None
         package = Path(__file__).resolve().parent
         checkout = package.parent.parent
         self.protected: tuple[Path, ...] = (
@@ -133,6 +135,7 @@ class ToolSession:
                     self.dispatcher.protected,
                     invocation.begin_effect,
                     invocation.confirm_effect,
+                    invocation.record_artifact,
                 ),
                 invocation,
                 invocation.begin_effect,
@@ -205,6 +208,7 @@ class ToolSession:
             )
         finally:
             invocation.closed = True
+        artifact = invocation.artifact or artifact
         if invocation.effect == "uncertain":
             status = "uncertain"
             failure = Failure(
@@ -228,6 +232,8 @@ class ToolSession:
             result_sha256=result_sha256,
         )
         store.append(receipt)
+        if call.name == "images.generate":
+            store.fault("image_receipt")
         if cancelled:
             raise asyncio.CancelledError
         return receipt
@@ -242,6 +248,7 @@ class Invocation:
         self.effect: Literal["none", "confirmed", "uncertain"] = "none"
         self.call_started = time.monotonic()
         self.closed = False
+        self.artifact: Artifact | None = None
 
     def authority(self, service: str = "") -> EffectiveProfile:
         if self.closed:
@@ -296,6 +303,33 @@ class Invocation:
             raise ToolError("Effect must be started before confirmation")
         self.effect = "confirmed"
 
+    def record_artifact(self, raw: bytes) -> None:
+        self.authority("files.write")
+        self.artifact = Artifact.model_validate(
+            self.dispatcher.store.artifact(
+                new_id(), self.dispatcher.redactor.redact(raw.decode()).encode()
+            )
+            | {"media_type": "text/plain"}
+        )
+
+    async def generate_image(self, prompt: str, width: int, height: int, seed: int) -> JsonValue:
+        self.authority("files.write")
+        if self.dispatcher.images is None:
+            raise ToolError("ComfyUI image generation is unavailable")
+        from solakit.tools import GenerateImage
+
+        args = GenerateImage(
+            prompt=prompt,
+            width=width,
+            height=height,
+            seed=seed,
+        )
+        generation = await self.dispatcher.images.generate(
+            self.call, args, self.begin_effect, self.confirm_effect
+        )
+        self.artifact = generation.artifact
+        return self.dispatcher.images.result(generation)
+
     def transcript_search(self, query: str, *, limit: int = 20) -> JsonValue:
         profile = self.authority()
         cross_session = profile.mode == SessionMode.SHARED and profile.origin == Origin.INTERACTIVE
@@ -323,6 +357,7 @@ class Invocation:
             "state": self.dispatcher.store.run(self.run_id).state.value,
             "tool_attempts": self.dispatcher.store.tool_attempts(self.run_id),
             "search": self.dispatcher.store.search_status,
+            "images": self.dispatcher.images.failure if self.dispatcher.images else "unavailable",
             "memory": self.dispatcher.memory.status() if self.dispatcher.memory else "unavailable",
             "background": {
                 "paused": self.dispatcher.jobs.control().paused,

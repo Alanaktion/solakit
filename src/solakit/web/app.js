@@ -84,6 +84,7 @@ export class SolaApp extends SolaElement {
         </button>
         <div id="outbox" role="group" aria-label="Submissions awaiting confirmation"></div>
         <form @submit=${submit} id="composer">
+          <div id="draft-image" role="status"></div>
           <label class="sr-only" for="draft">Message Sola</label>
           <textarea
             @keydown=${draftKeydown}

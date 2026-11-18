@@ -1,5 +1,6 @@
 """Frozen prompt assembly and offline inspection; no model or server imports."""
 
+import base64
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TypedDict
@@ -8,7 +9,7 @@ from pydantic import JsonValue
 
 from solakit.config import EffectiveProfile
 from solakit.evidence import canonical, checked_json, digest
-from solakit.records import Message, RecordID, SessionMode, Timestamp, ToolProposal, Value
+from solakit.records import Artifact, Message, RecordID, SessionMode, Timestamp, ToolProposal, Value
 
 
 class PromptTurn(Value):
@@ -16,6 +17,7 @@ class PromptTurn(Value):
     session_id: RecordID
     role: str
     content: str
+    image: Artifact | None = None
     tool_calls: tuple[ToolProposal, ...] = ()
     tool_call_id: str | None = None
 
@@ -109,6 +111,37 @@ def assemble(profile: EffectiveProfile, frozen: PromptInput) -> PreparedPrompt:
     messages: list[dict[str, JsonValue]] = []
     sections: list[dict[str, object]] = []
     fragments: list[dict[str, object]] = []
+    images: list[dict[str, object]] = []
+
+    def attach(image: Artifact | None) -> None:
+        if image is None:
+            return
+        if not profile.model_image_inputs:
+            raise ValueError("Image inputs are unsupported for the configured model")
+        if any(existing["sha256"] == image.sha256 for existing in images):
+            return
+        from solakit.images import MAX_IMAGE_BYTES, validate_png
+
+        path = profile.data_dir / image.path
+        if image.media_type != "image/png" or image.length > MAX_IMAGE_BYTES or path.is_symlink():
+            raise ValueError("Invalid image artifact")
+        with path.open("rb") as stream:
+            raw = stream.read(MAX_IMAGE_BYTES + 1)
+        if len(raw) != image.length or digest(raw) != image.sha256:
+            raise ValueError("Image artifact hash mismatch")
+        width = int.from_bytes(raw[16:20])
+        height = int.from_bytes(raw[20:24])
+        if not 64 <= width <= 2048 or not 64 <= height <= 2048:
+            raise ValueError("Image dimensions exceed input bounds")
+        validate_png(raw, width, height)
+        messages[-1]["content"] = [
+            {"type": "text", "text": messages[-1]["content"]},
+            {
+                "type": "image_url",
+                "image_url": {"url": "data:image/png;base64," + base64.b64encode(raw).decode()},
+            },
+        ]
+        images.append(image.model_dump(mode="json") | {"width": width, "height": height})
 
     def add(section: str, role: str, content: str) -> None:
         sections.append({"section": section, "message_index": len(messages)})
@@ -138,6 +171,7 @@ def assemble(profile: EffectiveProfile, frozen: PromptInput) -> PreparedPrompt:
                     raise ValueError("duplicate projected tool ID")
             sections.append({"section": section, "message_index": len(messages)})
             messages.append(turn.message())
+            attach(turn.image)
         if pending:
             raise ValueError("projected tool exchange is incomplete")
 
@@ -151,6 +185,7 @@ def assemble(profile: EffectiveProfile, frozen: PromptInput) -> PreparedPrompt:
         add("summary", "assistant", frozen.summary.content)
     for message in frozen.history:
         add("history", message.role, message.content)
+        attach(message.image)
     project("history", frozen.prior_turns)
     if frozen.recall is not None:
         add("recorded_recall", "user", frozen.recall)
@@ -176,6 +211,7 @@ def assemble(profile: EffectiveProfile, frozen: PromptInput) -> PreparedPrompt:
             + ". Request an identifiable tool to disclose its schema before execution.",
         )
     add("input", "user", frozen.input.content)
+    attach(frozen.input.image)
     project("continuation", frozen.continuation)
     named_tools = []
     for tool in frozen.tools:
@@ -240,6 +276,8 @@ def assemble(profile: EffectiveProfile, frozen: PromptInput) -> PreparedPrompt:
         ]
     if frozen.compaction is not None:
         manifest["compaction"] = frozen.compaction
+    if images:
+        manifest["images"] = images
     return PreparedPrompt(body=body, manifest=canonical(manifest))
 
 
@@ -253,16 +291,36 @@ def account(
 ) -> Accounting:
     # shortcut: UTF-8 bytes plus framing is conservative; replace after tokenizer verification.
     components: dict[str, int] = {}
+    messages = [dict(message) for message in messages]
+    image_reserve = 0
+    for message in messages:
+        if isinstance(message["content"], list):
+            parts = message["content"]
+            image_reserve += 16384 * sum(
+                isinstance(part, dict) and part.get("type") == "image_url" for part in parts
+            )
+            message["content"] = [
+                part
+                for part in parts
+                if not isinstance(part, dict) or part.get("type") != "image_url"
+            ]
     for message, section in zip(messages, sections, strict=True):
         name = str(section["section"])
         components[name] = components.get(name, 0) + len(canonical(message)) + 32
-    estimated = len(canonical({"messages": messages, "tools": tools})) + 32 * len(messages)
+    estimated = (
+        len(canonical({"messages": messages, "tools": tools})) + 32 * len(messages) + image_reserve
+    )
     headroom = min(profile.budgets.tool_result_bytes, profile.model_context_tokens // 8)
     headroom = headroom if tool_headroom else 0
     safety = (profile.model_context_tokens + 9) // 10
     return {
-        "kind": "estimate: UTF-8 bytes plus 32/message; no verified tokenizer",
-        "components": components | {"tool_schemas": len(canonical(tools))},
+        "kind": "estimate: UTF-8 bytes plus 32/message; no verified tokenizer"
+        + ("; 16384/image unverified reserve" if image_reserve else ""),
+        "components": components
+        | {
+            "tool_schemas": len(canonical(tools)),
+            **({"images": image_reserve} if image_reserve else {}),
+        },
         "input_tokens": estimated,
         "output_reserved": profile.budgets.output_tokens,
         "tool_result_reserved": headroom,

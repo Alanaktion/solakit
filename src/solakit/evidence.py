@@ -14,6 +14,7 @@ from solakit.records import (
     CompactionBoundary,
     Delivery,
     DurableEvent,
+    ImageGeneration,
     Job,
     MemoryCommit,
     MemoryNote,
@@ -53,6 +54,7 @@ RECORDS: dict[str, type[Record]] = {
     "job": Job,
     "occurrence": Occurrence,
     "scheduler": SchedulerControl,
+    "image": ImageGeneration,
 }
 SEGMENT = re.compile(r"^[0-9]{8}\.jsonl$")
 
@@ -136,6 +138,7 @@ def event_type(kind: str, record: Record) -> str:
         "delivery": "delivery.changed",
         "compaction": "compaction.recorded",
         "recovery": "recovery.noted",
+        "image": "image.changed",
     }[kind]
 
 
@@ -160,6 +163,7 @@ class Entry(Value):
         "job",
         "occurrence",
         "scheduler",
+        "image",
     ]
     record: dict[str, object]
     event: DurableEvent | None = None

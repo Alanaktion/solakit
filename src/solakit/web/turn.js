@@ -42,6 +42,7 @@ class SolaTurn extends SolaElement {
           <div class="author" id=${`author-${m.id}`}>${author}</div>
           <div>
             ${markdown(m.content || (row.truncated ? 'Large message — inspect evidence.' : ''))}
+            ${m.image ? html`<sola-artifact .runId=${m.run_id} .reference=${m.image}></sola-artifact>` : nothing}
           </div>
         `,
         message
@@ -64,6 +65,7 @@ class SolaTurn extends SolaElement {
             <details>
               <summary>${entry.label}</summary>
               <pre tabindex="0">${JSON.stringify(entry.body, null, 2)}</pre>
+              ${entry.body.artifact ? html`<sola-artifact .runId=${this.dataset.runId} .reference=${entry.body.artifact}></sola-artifact>` : nothing}
               ${
                 entry.reconcile
                   ? html`
@@ -160,6 +162,7 @@ class SolaTurn extends SolaElement {
       if (row.kind === 'delivery')
         entries.push({ id: r.id, label: `Scheduled message · ${r.state}`, body: r });
       if (row.kind === 'recovery') entries.push({ id: r.id, label: 'Recovery note', body: r });
+      if (row.kind === 'image') entries.push({ id: r.id, label: `Image generation · ${r.state}`, body: r });
     }
     for (const entry of entries) this.workEntries.set(entry.id, entry);
     this.requestUpdate();

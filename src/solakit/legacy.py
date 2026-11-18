@@ -3,8 +3,66 @@
 from pathlib import Path
 from uuid import NAMESPACE_URL, uuid5
 
-from solakit.evidence import Entry, checked_json, digest, publish
+from solakit.evidence import (
+    Entry,
+    canonical,
+    checked_json,
+    digest,
+    ensure_directory,
+    publish,
+    sync_directory,
+)
 from solakit.store import Store
+
+
+def retain_tree(store: Store, source: Path) -> dict[str, object]:
+    """Retain a copied legacy tree without loading code or activating configuration."""
+    from solakit.backup import _copy
+
+    if source.is_symlink() or not source.is_dir():
+        raise ValueError("retention source must be a copied directory, without symlinks")
+    source = source.resolve()
+    if source.is_relative_to(store.root.resolve()):
+        raise ValueError("retention source must be outside runtime data")
+    sources = []
+    for path in sorted(source.rglob("*")):
+        if path.is_symlink() or not (path.is_file() or path.is_dir()):
+            raise ValueError("retention sources must contain only directories and regular files")
+        if path.is_file():
+            sources.append(path)
+    metadata = {
+        str(path.relative_to(source)): {
+            "length": path.stat().st_size,
+            "sha256": digest(path.read_bytes()),
+        }
+        for path in sources
+    }
+    manifest = canonical({"source_root": str(source), "files": metadata, "activation": "none"})
+    destination = store.root / "imports" / ("retained-" + digest(manifest))
+    ensure_directory(destination)
+    for path in sources:
+        relative = str(path.relative_to(source))
+        target = destination / "files" / relative
+        if target.exists():
+            actual = {"length": target.stat().st_size, "sha256": digest(target.read_bytes())}
+        else:
+            actual = _copy(path, target)
+        if actual != metadata[relative] or target.is_symlink():
+            raise ValueError("retention copy changed or conflicts; inspect before continuing")
+    marker = destination / "manifest.json"
+    for directory in sorted(destination.rglob("*"), reverse=True):
+        if directory.is_dir():
+            sync_directory(directory)
+    if not marker.exists():
+        publish(marker, manifest)
+    elif marker.read_bytes() != manifest:
+        raise ValueError("retention manifest conflict")
+    return {
+        "files": len(sources),
+        "manifest": str(marker.relative_to(store.root)),
+        "sha256": digest(manifest),
+        "activation": "none",
+    }
 
 
 def import_fixture(store: Store, path: Path) -> int:

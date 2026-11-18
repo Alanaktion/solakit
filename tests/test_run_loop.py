@@ -269,6 +269,27 @@ def test_explicit_status_tool_request(text: str, expected: str) -> None:
     assert requested_tools(text, ("runtime.status", "runtime_info")) == {expected}
 
 
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("Use files.search to find a phrase in brief.txt.", {"files.search"}),
+        (
+            "Read brief.txt, search evidence with transcripts.search, then write result.txt.",
+            {"files.read", "transcripts.search", "files.write"},
+        ),
+        (
+            "Search using files.search and transcripts.search for brief.txt.",
+            {"files.search", "transcripts.search"},
+        ),
+    ],
+)
+def test_explicit_tool_names_resolve_shared_verbs(text: str, expected: set[str]) -> None:
+    assert (
+        requested_tools(text, ("files.read", "files.search", "files.write", "transcripts.search"))
+        == expected
+    )
+
+
 @pytest.mark.parametrize("after_effect", [False, True])
 def test_cancellation_and_uncertainty(profile: EffectiveProfile, after_effect: bool) -> None:
     async def scenario() -> None:

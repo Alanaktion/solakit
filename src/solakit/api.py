@@ -213,10 +213,16 @@ class SessionPatch(Input):
     pinned: StrictBool | None = None
 
 
+class ImageReference(Input):
+    run_id: str = Field(pattern=r"^[0-9a-f]{32}$")
+    artifact_id: str = Field(pattern=r"^[0-9a-f]{32}$")
+
+
 class Submission(Input):
     session_id: RecordID
     profile: str | None = Field(default=None, min_length=1, max_length=128)
     content: str = Field(min_length=1, max_length=32768)
+    image: ImageReference | None = None
 
 
 class JobPatch(Input):
@@ -342,7 +348,7 @@ def create_app(
             FilePath(__file__).parent / "web" / "index.html",
             headers={
                 "Content-Security-Policy": "default-src 'self'; script-src 'self'; "
-                "style-src 'self'; img-src 'self'; connect-src 'self'; "
+                "style-src 'self'; img-src 'self' blob:; connect-src 'self'; "
                 "object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
                 "Referrer-Policy": "no-referrer",
             },
@@ -502,7 +508,12 @@ def create_app(
         body: Submission, request: Request, wait: Annotated[float, Query(ge=0, le=30)] = 0
     ) -> Response:
         run = await service.submit(
-            body.session_id, body.profile, body.content, idempotency(request), wait
+            body.session_id,
+            body.profile,
+            body.content,
+            idempotency(request),
+            wait,
+            image=(body.image.run_id, body.image.artifact_id) if body.image else None,
         )
         return JSONResponse(
             {"run": run.model_dump(mode="json")},

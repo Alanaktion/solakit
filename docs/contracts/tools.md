@@ -1,6 +1,7 @@
 # Tool SDK, dispatch, and workspace access
 
-Phase 5 implementation. See [validation](../validation/phase-05.md) and the
+Phase 5 SDK/dispatch implementation, extended by [Phase 12 file/image workflows](../image-workflows.md).
+See [validation](../validation/phase-05.md) and the
 [external example pack](../../examples/phase5_pack/src/sola_example/__init__.py).
 The supported extension surface is `solakit.sdk`. It imports neither FastAPI nor
 provider SDKs. No general shell, process, job-management, or delegation service is
@@ -202,6 +203,11 @@ Built-in tools call these application services directly, never HTTP routes.
 filters to messages before applying the result limit, and exposes reference/hash
 provenance. An unavailable/corrupt projection produces an inspectable failure.
 The fake adapter in the external example writes SVG via the same guard; it does
-not exercise a real image endpoint. Phase 12 selects and verifies that workflow.
+not exercise a real image endpoint. Phase 12 supplies one optional built-in ComfyUI
+service, bounded file listing/search and immutable write artifacts; see the
+[workflow and recovery contract](../image-workflows.md). Image artifacts use the
+same authenticated run linkage, with a separate 16 MiB PNG limit. SDK file writes
+retain at most the existing 1 MiB text bound. Installing/selecting the example pack
+does not load or grant it.
 
 Phase 7 memory lifecycle, limits and recovery are defined in the [memory contract](memory.md).

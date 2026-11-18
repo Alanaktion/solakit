@@ -996,6 +996,29 @@ try {
     assert(await page.locator('#send').isDisabled());
     assert.equal(await page.locator('.message.user').count(), 1);
   });
+  if (fixture.image_topic) await check('authorized PNG preview, download and image attachment survive reload', async () => {
+    await page.locator('#topic-' + fixture.image_topic).click();
+    const view = page.getByRole('button', { name: /View generated image/ }).first();
+    await view.click();
+    await page.waitForFunction(() => [...document.querySelectorAll('img.artifact-image')].some((img) => img.complete && img.naturalWidth));
+    const dimensions = await page.locator('img.artifact-image').first().evaluate((img) => [img.naturalWidth, img.naturalHeight]);
+    assert.deepEqual(dimensions, [fixture.image_width, fixture.image_height]);
+    await page.locator('img.artifact-image').first().scrollIntoViewIfNeeded();
+    await page.screenshot({ path: path.join(options.output, 'image-preview-mobile.png'), fullPage: true });
+    const download = page.waitForEvent('download');
+    await page.getByRole('link', { name: 'Download image', exact: true }).first().click();
+    assert.equal((await download).suggestedFilename(), 'sola-image.png');
+    await page.getByRole('button', { name: 'Use image in next message', exact: true }).first().click();
+    await page.locator('#draft').fill('Describe this attached image.');
+    await page.reload();
+    await waitFor(() => document.querySelector('#connection').textContent === 'Connected');
+    assert((await page.locator('#draft-image').textContent()).includes('Image attached'));
+    await page.locator('#send').click();
+    await page.locator('.run-bar').filter({ hasText: 'completed' }).waitFor({ timeout: 30000 });
+    assert.equal(await page.locator('#draft-image').textContent(), '');
+    await page.screenshot({ path: path.join(options.output, 'image-mobile.png'), fullPage: true });
+    await audit('image-attachment');
+  });
   report.errors = errors;
   assert.deepEqual(errors, []);
 } catch (error) {

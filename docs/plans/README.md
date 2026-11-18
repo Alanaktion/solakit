@@ -112,6 +112,15 @@ an explicit acceptance gate; browser automation does not stand in for it.
 - Web UI and HTTP API are the clients. Android compatibility, Discord parity, general shell access, browser/computer control, and a general multi-agent platform are outside this release unless separately selected.
 - Trusted Python workspace packs extend tools through the public SDK. Installing or loading a pack does not grant authority.
 
+Phase 12 adds bounded file listing/search, immutable write artifacts and one optional
+ComfyUI workflow with durable intent, read-only recovery and authorized PNG preview/
+same-topic attachments. Live Qwen file/image, compaction, scheduled revision and
+test-account extraction checks passed. The configured AntiLoop model fails the
+frozen exact-write reliability corpus, so the release gate remains failed;
+operator browser acceptance also remains pending.
+Deferred integration trees are retained without loading or activating packs.
+Read the [workflow guide](../image-workflows.md) and [verification](../validation/phase-12.md).
+
 ## Shared implementation conventions
 
 Suggested boundaries are `core/` for records and orchestration, `adapters/` for model/memory/storage, `tools/` for built-in tools, `registry.py` for registration, `api/` for HTTP, and `web/` for the HTML shell, local Lit components and shared CSS. Names are proposals, not a requirement to create empty abstraction layers. `sdk.py` is the supported pack surface. Keep composition small enough to read in one sitting.

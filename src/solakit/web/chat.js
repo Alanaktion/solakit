@@ -26,6 +26,7 @@ let messagesDone = false,
   following = true,
   refreshTimer = null;
 let editingTopic = false;
+let draftImage = null;
 let refreshChain = Promise.resolve(),
   cursor = null;
 const pendingRuns = new Set();
@@ -352,7 +353,8 @@ function connect() {
     'memory.changed',
     'delivery.changed',
     'compaction.recorded',
-    'recovery.noted'
+    'recovery.noted',
+    'image.changed'
   ]) {
     stream.addEventListener(type, (event) => {
       if (token !== generation) return;
@@ -401,11 +403,14 @@ function saveDraft() {
   if (selected)
     write(`sola.draft.${selected}`, {
       content: $('draft').value,
-      profile: $('profile').value
+      profile: $('profile').value,
+      image: draftImage
     });
   updateComposer();
 }
 function updateComposer() {
+  renderTemplate(draftImage ? html`<span>Image attached</span>
+    <button type="button" @click=${() => { draftImage = null; saveDraft(); }}>Remove image</button>` : nothing, $('draft-image'));
   const topic = topics.get(selected);
   const used =
     topic?.mode === 'ephemeral' &&
@@ -469,6 +474,7 @@ async function selectTopic(id) {
   const draft = read(`sola.draft.${id}`, {});
   $('draft').value = draft.content || '';
   $('profile').value = draft.profile || '';
+  draftImage = draft.image || null;
   setTopicHeading();
   renderTopics();
   renderOutbox();
@@ -537,6 +543,7 @@ async function deliver(item) {
       body: {
         session_id: item.session_id,
         content: item.content,
+        ...(item.image ? { image: item.image } : {}),
         ...(item.profile ? { profile: item.profile } : {})
       }
     });
@@ -568,11 +575,13 @@ async function submit(event) {
     session_id: selected,
     profile: $('profile').value,
     content: $('draft').value,
+    image: draftImage,
     sending: false
   };
   outbox.push(item);
   write('sola.outbox', outbox);
   $('draft').value = '';
+  draftImage = null;
   saveDraft();
   $('draft').focus();
   await deliver(item);
@@ -716,6 +725,13 @@ async function logout() {
 }
 
 document.addEventListener('sola-auth-required', requireLogin);
+document.addEventListener('sola-image-selected', (event) => {
+  if (!selected || topics.get(selected)?.archived) return;
+  draftImage = event.detail;
+  saveDraft();
+  if ($('evidence').open) $('evidence').close();
+  $('draft').focus();
+});
 customElements.define('sola-app', SolaApp);
 document.querySelector('sola-app').actions = {
   initialize,

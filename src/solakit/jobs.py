@@ -225,7 +225,7 @@ class JobService:
             ):
                 raise ValueError("job roots exceed current profile roots")
         else:
-            tools -= {"files.write"}
+            tools -= {"files.write", "images.generate"}
         changes = {"model_calls": 8, "tool_calls": 12, "active_seconds": 600}
         changes.update(selected.proactive_budgets.model_dump(exclude_none=True))
         changes = {

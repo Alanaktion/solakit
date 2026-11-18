@@ -18,6 +18,7 @@ from solakit.api import create_app
 from solakit.config import OperatorConfig, resolve_profile
 from solakit.evidence import canonical
 from solakit.records import (
+    Artifact,
     CompactionBoundary,
     ErrorCode,
     Failure,
@@ -68,6 +69,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--port", type=int, default=8877)
+    parser.add_argument(
+        "--image-fixture", type=Path, help="Optional saved PNG; never contacts an image provider"
+    )
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=False)
     os.environ["SOLA_CHAT_FIXTURE_PASSWORD"] = PASSWORD
@@ -80,6 +84,7 @@ def main() -> None:
                     "pin": "fixture-qwen",
                     "generation_timeout_seconds": 30,
                     "context_tokens": 1048576,
+                    "image_inputs": True,
                 },
                 "defaults": {"workspace_roots": [str(args.output)], "memory_mode": "off"},
                 "background": {
@@ -110,6 +115,8 @@ def main() -> None:
             return httpx2.Response(200, json={"data": [{"id": "fixture-qwen"}]})
         body = json.loads(request.content)
         latest = next(m["content"] for m in reversed(body["messages"]) if m["role"] == "user")
+        if isinstance(latest, list):
+            latest = next(part["text"] for part in latest if part.get("type") == "text")
         if latest.startswith("fail"):
             return httpx2.Response(503)
         tool = latest.startswith("tool") and body["messages"][-1]["role"] != "tool"
@@ -240,11 +247,36 @@ def main() -> None:
                     message="Process stopped; effects require inspection.",
                 ),
             )
-            (args.output / "fixture.json").write_text(
-                json.dumps(
-                    {"origin": origin, "topic": topic.id, "other": other.id, "turns": 500}, indent=2
+            metadata = {"origin": origin, "topic": topic.id, "other": other.id, "turns": 500}
+            if args.image_fixture:
+                from solakit.images import validate_png
+
+                raw = args.image_fixture.read_bytes()
+                width, height = int.from_bytes(raw[16:20]), int.from_bytes(raw[20:24])
+                validate_png(raw, width, height)
+                image_topic = store.create_session(title="Saved image fixture")
+                image_run = store.admit(
+                    image_topic.id,
+                    request_id=new_id(),
+                    content="Saved synthetic test image",
+                    profile="default",
                 )
-            )
+                artifact = Artifact.model_validate(
+                    store.artifact(new_id(), raw) | {"media_type": "image/png"}
+                )
+                store.append(
+                    Message(
+                        origin=Origin.INTERACTIVE,
+                        session_id=image_topic.id,
+                        run_id=image_run.id,
+                        role="user",
+                        content="Saved image for browser verification",
+                        image=artifact,
+                    )
+                )
+                store.transition_run(image_run.id, RunState.CANCELLED)
+                metadata.update(image_topic=image_topic.id, image_width=width, image_height=height)
+            (args.output / "fixture.json").write_text(json.dumps(metadata, indent=2))
             print(f"Browser fixture ready at {origin}; password: {PASSWORD}", flush=True)
             yield
 

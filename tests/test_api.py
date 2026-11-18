@@ -481,6 +481,74 @@ def test_openapi_contract(client: TestClient, app: FastAPI) -> None:
     assert schema == fixture
 
 
+def test_image_attachment_scope_idempotency_and_unsupported(
+    client: TestClient, app: FastAPI
+) -> None:
+    from test_images import png
+
+    from solakit.records import Artifact
+
+    login(client, bearer=True)
+    topic = client.post("/api/v1/sessions", json={}).json()["id"]
+    source = client.post(
+        "/api/v1/runs?wait=5",
+        json={"session_id": topic, "content": "Hello"},
+        headers={"Idempotency-Key": new_id()},
+    ).json()["run"]["id"]
+    assert client.portal
+
+    def seed_image() -> str:
+        store = app.state.context.store
+        artifact = Artifact.model_validate(
+            store.artifact(new_id(), png(64, 64)) | {"media_type": "image/png"}
+        )
+        store.append(
+            Message(
+                origin=Origin.INTERACTIVE,
+                session_id=topic,
+                run_id=source,
+                role="user",
+                content="Synthetic input image",
+                image=artifact,
+            )
+        )
+        return artifact.path.split("/")[-1]
+
+    identity = client.portal.call(seed_image)
+    image = {"run_id": source, "artifact_id": identity}
+    key = {"Idempotency-Key": new_id()}
+    body = {"session_id": topic, "content": "Describe the image.", "image": image}
+    assert client.post("/api/v1/runs", json=body, headers=key).status_code == 422
+
+    def enable() -> None:
+        app.state.context.profile = app.state.context.profile.model_copy(
+            update={"model_image_inputs": True}
+        )
+
+    client.portal.call(enable)
+    first = client.post("/api/v1/runs?wait=5", json=body, headers=key)
+    assert first.status_code == 200 and first.json()["run"]["state"] == "completed", first.text
+    assert (
+        client.post("/api/v1/runs", json=body, headers=key).json()["run"]["id"]
+        == first.json()["run"]["id"]
+    )
+    assert client.post("/api/v1/runs", json=body | {"image": None}, headers=key).status_code == 409
+    other = client.post("/api/v1/sessions", json={"mode": "isolated"}).json()["id"]
+    assert (
+        client.post(
+            "/api/v1/runs", json=body | {"session_id": other}, headers={"Idempotency-Key": new_id()}
+        ).status_code
+        == 403
+    )
+    prompts = client.get(f"/api/v1/runs/{first.json()['run']['id']}/prompts").json()["items"]
+    reference = prompts[0]["record"]["body"]
+    raw = client.get(f"/api/v1/runs/{first.json()['run']['id']}/{reference['path']}").content
+    messages = json.loads(raw)["messages"]
+    assert any(
+        isinstance(m["content"], list) and m["content"][-1]["type"] == "image_url" for m in messages
+    )
+
+
 def test_http_disconnect_wait_timeout_reconnect_and_completion(
     profile: EffectiveProfile, monkeypatch: pytest.MonkeyPatch
 ) -> None:

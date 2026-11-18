@@ -23,7 +23,7 @@ sola = "solakit.cli:main"
 dev = ["pytest>=9.2", "ruff>=0.17.5", "mypy>=2.4.1"]
 
 [tool.uv.workspace]
-members = []
+members = ["examples/phase5_pack"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

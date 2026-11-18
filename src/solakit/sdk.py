@@ -42,6 +42,10 @@ class ToolError(Exception):
 
 
 class Files(Protocol):
+    def list_directory(self, path: str, *, limit: int = 100) -> JsonValue: ...
+
+    def search_text(self, path: str, query: str, *, limit: int = 20) -> JsonValue: ...
+
     def read_text(self, path: str) -> str: ...
 
     def write_text(
@@ -50,6 +54,10 @@ class Files(Protocol):
 
 
 class Services(Protocol):
+    async def generate_image(
+        self, prompt: str, width: int, height: int, seed: int
+    ) -> JsonValue: ...
+
     def transcript_search(self, query: str, *, limit: int = 20) -> JsonValue: ...
 
     def status(self) -> JsonValue: ...

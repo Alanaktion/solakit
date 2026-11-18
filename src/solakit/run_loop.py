@@ -17,6 +17,7 @@ from solakit.model import ModelAdapter, ModelError
 from solakit.prompts import ContextLimit, PromptInput, PromptTurn, assemble
 from solakit.records import (
     RUN_TRANSITIONS,
+    Artifact,
     ErrorCode,
     Failure,
     Message,
@@ -76,10 +77,17 @@ def requested_tools(text: str, names: Sequence[str]) -> set[str]:
     image_target = bool(re.search(r"\b(?:images?|photos?|pictures?|illustration)\b", text))
     if "create" in actions and image_target:
         actions.add("generate")
+    explicit = {
+        name
+        for name in names
+        if re.search(rf"(?<![\w.-]){re.escape(name.lower())}(?![\w-]|\.[\w-])", text)
+    }
+    # A named tool resolves shared verbs such as files.search/transcripts.search.
+    actions -= {part for name in explicit for part in re.split(r"[_.-]", name)}
     return {
         name
         for name in names
-        if (actions.intersection(re.split(r"[_.-]", name)) or name in text)
+        if (actions.intersection(re.split(r"[_.-]", name)) or name in explicit)
         and (not ({"file", "files"} & set(re.split(r"[_.-]", name))) or file_target or name in text)
         and (
             not ({"image", "images"} & set(re.split(r"[_.-]", name)))
@@ -135,6 +143,7 @@ def project_run(store: Store, run_id: str, cap: int) -> tuple[PromptTurn, ...]:
                     session_id=record.session_id,
                     role="user",
                     content=record.content,
+                    image=record.image,
                 )
             )
         elif isinstance(record, ModelStep):
@@ -241,7 +250,13 @@ class RunLoop:
         self._notify()
 
     def submit(
-        self, session_id: str, *, profile: EffectiveProfile, content: str, request_id: str
+        self,
+        session_id: str,
+        *,
+        profile: EffectiveProfile,
+        content: str,
+        request_id: str,
+        image: Artifact | None = None,
     ) -> Run:
         deny_autonomous_successor()
         if not self.accepting or self.failure is not None:
@@ -269,6 +284,7 @@ class RunLoop:
                 profile=profile.name,
                 admission=admission,
                 origin=profile.origin,
+                image=image,
             )
         except BaseException as error:
             if self.store.failed:

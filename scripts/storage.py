@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 from solakit.backup import backup, restore
-from solakit.legacy import import_fixture
+from solakit.legacy import import_fixture, retain_tree
 from solakit.runtime import DataDirectoryLock
 from solakit.search import rebuild
 from solakit.store import Store
@@ -30,6 +30,8 @@ async def run(args: argparse.Namespace) -> dict[str, object]:
             if args.command == "backup":
                 backup(store, args.destination.resolve())
                 return {"status": "backed_up", "destination": str(args.destination)}
+            if args.command == "retain-tree":
+                return {"status": "retained", **retain_tree(store, args.source)}
             return {"status": "imported", "entries": import_fixture(store, args.source)}
         finally:
             await store.stop()
@@ -40,12 +42,12 @@ async def run(args: argparse.Namespace) -> dict[str, object]:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
-    for name in ("rebuild", "backup", "import-fixture"):
+    for name in ("rebuild", "backup", "import-fixture", "retain-tree"):
         command = commands.add_parser(name)
         command.add_argument("--data-dir", required=True, type=Path)
         if name == "backup":
             command.add_argument("destination", type=Path)
-        elif name == "import-fixture":
+        elif name in ("import-fixture", "retain-tree"):
             command.add_argument("source", type=Path)
     command = commands.add_parser("restore")
     command.add_argument("source", type=Path)

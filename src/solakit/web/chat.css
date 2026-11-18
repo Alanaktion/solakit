@@ -664,6 +664,11 @@ dialog > details > summary {
     border-color: ButtonText;
   }
 }
+
+.artifact-image {
+  max-width: 100%;
+  height: auto;
+}
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

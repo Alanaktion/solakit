@@ -1,5 +1,6 @@
 """Initial tools: thin calls into guarded application services."""
 
+import secrets
 from typing import Annotated, Literal
 
 from pydantic import Field
@@ -15,6 +16,25 @@ class Read(ToolArguments):
 class Write(Read):
     content: str
     overwrite: bool = False
+
+
+class ListFiles(ToolArguments):
+    path: Annotated[str, Field(min_length=1, max_length=4096)] = "."
+    limit: Annotated[int, Field(ge=1, le=100)] = 100
+
+
+class SearchFiles(ListFiles):
+    query: Annotated[str, Field(min_length=1, max_length=4096)]
+    limit: Annotated[int, Field(ge=1, le=100)] = 20
+
+
+class GenerateImage(ToolArguments):
+    prompt: Annotated[str, Field(min_length=1, max_length=16000)]
+    width: Annotated[int, Field(ge=64, le=2048, multiple_of=16)] = 768
+    height: Annotated[int, Field(ge=64, le=2048, multiple_of=16)] = 768
+    seed: Annotated[int, Field(ge=0, le=18446744073709551615)] = Field(
+        default_factory=lambda: secrets.randbits(52) + 2**52
+    )
 
 
 class Note(ToolArguments):
@@ -65,6 +85,20 @@ class JobPauseAll(ToolArguments):
 
 async def read(context: ToolContext, args: Read) -> ToolResult:
     return ToolResult(data=context.files.read_text(args.path))
+
+
+async def list_files(context: ToolContext, args: ListFiles) -> ToolResult:
+    return ToolResult(data=context.files.list_directory(args.path, limit=args.limit))
+
+
+async def search_files(context: ToolContext, args: SearchFiles) -> ToolResult:
+    return ToolResult(data=context.files.search_text(args.path, args.query, limit=args.limit))
+
+
+async def generate_image(context: ToolContext, args: GenerateImage) -> ToolResult:
+    return ToolResult(
+        data=await context.services.generate_image(args.prompt, args.width, args.height, args.seed)
+    )
 
 
 async def write(context: ToolContext, args: Write) -> ToolResult:
@@ -120,12 +154,31 @@ async def delete_job(context: ToolContext, args: JobTarget) -> ToolResult:
 
 
 TOOLS = (
+    Tool(
+        "files.list",
+        "List a granted workspace directory; bounded, no symlinks.",
+        ListFiles,
+        list_files,
+    ),
+    Tool(
+        "files.search",
+        "Search literal UTF-8 text under a granted directory.",
+        SearchFiles,
+        search_files,
+    ),
     Tool("files.read", "Read a UTF-8 file in a granted workspace.", Read, read),
     Tool(
         "files.write",
         "Atomically write UTF-8; existing files require overwrite=true.",
         Write,
         write,
+        True,
+    ),
+    Tool(
+        "images.generate",
+        "Generate one image with the configured ComfyUI workflow; returns an artifact and seed.",
+        GenerateImage,
+        generate_image,
         True,
     ),
     Tool("transcripts.search", "Search permitted conversation evidence.", Query, transcripts),

@@ -155,8 +155,10 @@ so later fragment/config edits cannot change the earlier inspected request.
 The developer probe covers text, tools and reasoning in both transport modes, plus
 a separate synthetic image capability experiment. Image requests retain exact
 multimodal bytes and explicitly label image accounting unverified. Production
-attachment admission and image-token accounting remain Phase 12; unsupported
-attachments must be rejected there rather than causing model substitution.
+attachment admission was deferred to Phase 12. [Phase 12](../image-workflows.md)
+now admits same-topic generated PNG references for explicitly enabled verified
+pins, with private exact data-URL evidence and an unverified 16,384-token reserve
+per unique image. Unsupported inputs fail explicitly without model substitution.
 
 
 Phase 6 extends `PromptInput` with validated prior/continuation turns. Complete

@@ -80,11 +80,14 @@ uv run --locked python scripts/smoke_wheel.py
 ```
 
 See [evaluation instructions](evals/README.md), the [phase plans](docs/plans/README.md),
-and [validation evidence](docs/validation/phase-11.md). The
+and [validation evidence](docs/validation/phase-12.md). The
 [tool SDK and access matrix](docs/contracts/tools.md) describe explicit pack loading,
 guarded file access, transcript search, status, and scoped memory tools.
 The separately installable [example pack](examples/phase5_pack/) demonstrates
-reads, writes, and fake image generation. No real image endpoint is used here.
+reads, writes, and fake image generation. The optional built-in ComfyUI adapter
+provides the real [file/image workflows](docs/image-workflows.md), durable generation
+receipts/recovery, PNG previews and same-topic image attachments. Installation
+alone enables no tool actions.
 Live task reliability is measured separately from deterministic checks; see the
 Phase 6 report. Phase 7 adds [OpenViking memory (stable >=0.5.5,<0.6.0)](docs/contracts/memory.md),
 exact note staging, restart-safe extraction observation, and copied-configuration

@@ -116,7 +116,7 @@ means admission/login/event capacity, 413 means bounded input/output exceeded,
 | `/sessions/{id}` | GET; PATCH title/archived/pinned; mode stays frozen |
 | `/sessions/{id}/messages` | GET public conversation pages; private background inputs/tools remain in run records |
 | `/sessions/{id}/runs` | GET admission-order run pages; current state in each record |
-| `/runs` | POST session_id, optional profile (server selection, normally `default`), content (1–32768 UTF-8 bytes); required Idempotency-Key; optional wait=0..30 seconds |
+| `/runs` | POST session_id, optional profile (server selection, normally `default`), content (1–32768 UTF-8 bytes), optional image reference `{run_id, artifact_id}`; required Idempotency-Key; optional wait=0..30 seconds |
 | `/runs/{id}` | GET current run, optional wait=0..30; wait expiry returns its current state |
 | `/runs/{id}/cancel` | POST explicit cancellation; completed outcomes remain immutable |
 | `/runs/{id}/records` | GET ordered execution evidence including tool receipts and memory work |
@@ -140,7 +140,9 @@ Admission returns `{ "run": Run }` and Location. 202 means durably accepted and
 pending; 200 means terminal, including failed/cancelled outcomes. Wait timeouts
 and disconnected HTTP/SSE clients leave accepted work running. Same key and same
 payload return the original run/frozen authority, including after grant changes.
-Different content, topic or profile conflicts with 409. Queue checks, archival,
+Different content, topic, profile or image conflicts with 409. Image references
+require a verified image-enabled model and an authorized generated PNG in the
+same topic; see [image inputs](../image-workflows.md). Queue checks, archival,
 ephemeral lifetime, current revocations and cancellation remain shared services.
 Session/job creation and edits do not promise admission-key idempotency. Manual
 job retry returns its original occurrence even after a definition edit.
