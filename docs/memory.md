@@ -17,7 +17,7 @@ timeout_seconds = 15
 backlog_cap = 128
 ```
 
-Enable `memory.recall` / `memory.remember` in both `loaded_tools` and profile `tools`
+Enable `memory.recall` / `memory.remember` in profile `tools`
 when explicit model access is wanted. Automatic recall/extraction only needs enabled
 memory and a shared profile with `memory_mode = "optional"` or `"required"`.
 Operator config, identity and production roots are never changed by developer probes.

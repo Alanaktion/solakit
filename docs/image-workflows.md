@@ -9,7 +9,7 @@ Installation and image-service enablement grant no tool authority.
 ## Configure and use
 
 Add `files.list`, `files.read`, `files.search`, `files.write`, and `images.generate`
-to top-level `loaded_tools` and the selected profile's `tools`. Grant only intended
+to the selected profile's `tools`. Grant only intended
 workspace roots. Configure `[images] enabled = true` and its `base_url` outside
 the tool arguments. Give generation enough tool/run time; the default 60-second
 tool deadline can expire before a cold image model finishes. Configuration examples

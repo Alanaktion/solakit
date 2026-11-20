@@ -13,8 +13,8 @@ from typing import Any
 import pytest
 from pydantic import ConfigDict
 
-from solakit.config import EffectiveProfile, OperatorConfig, resolve_profile
-from solakit.dispatch import MAX_ARTIFACT_BYTES, Dispatcher, ToolSession, load_registry
+from solakit.config import EffectiveProfile, OperatorConfig, resolve_profile, restrict_to_admission
+from solakit.dispatch import MAX_ARTIFACT_BYTES, Dispatcher, ToolSession
 from solakit.evidence import StorageError, digest
 from solakit.files import MAX_FILE_BYTES
 from solakit.records import (
@@ -27,7 +27,7 @@ from solakit.records import (
     ToolReceipt,
     new_id,
 )
-from solakit.registry import Registry, RegistryError
+from solakit.registry import Registry, RegistryError, load_registry
 from solakit.sdk import Tool, ToolArguments, ToolContext, ToolError, ToolResult
 from solakit.store import Store
 from solakit.tools import TOOLS
@@ -62,6 +62,7 @@ def opened(
     root: Path,
     *,
     extra: tuple[Tool[Any], ...] = (),
+    modules: tuple[str, ...] = (),
     grants: list[str] | None = None,
     mode: SessionMode = SessionMode.SHARED,
     budgets: dict[str, int] | None = None,
@@ -70,7 +71,9 @@ def opened(
     root = root.resolve()
     workspace = root / "workspace"
     workspace.mkdir()
-    registry = Registry((*TOOLS, *extra))
+    registry = load_registry(modules)
+    for tool in extra:
+        registry.register(tool)
     soul = workspace / "SOUL.md" if identity else None
     if soul:
         soul.write_text("operator owned")
@@ -79,17 +82,18 @@ def opened(
             {
                 "data_dir": str(root / "data"),
                 "model": {"pin": "fixture"},
-                "loaded_tools": list(registry.tools),
+                "tool_modules": list(modules),
                 "soul_file": str(soul) if soul else None,
                 "defaults": {
                     "workspace_roots": [str(workspace)],
-                    "tools": grants if grants is not None else ["*"],
+                    "tools": grants if grants is not None else list(registry.tools),
                     "budgets": budgets or {},
                 },
             }
         ),
         mode=mode,
     )
+    profile = changed(profile, tools=profile.granted_tools & frozenset(registry.tools))
     store = Store(profile.data_dir)
     asyncio.run(store.start())
     try:
@@ -171,7 +175,9 @@ def test_revocation_new_grants_roots_and_identity(tmp_path: Path) -> None:
             h.profile, tools=frozenset({"runtime.status"})
         )
         assert h.dispatch("files.write", path="denied", content="never").status == "denied"
-        h.dispatcher.current = lambda admitted: changed(h.profile, tools=h.profile.loaded_tools)
+        h.dispatcher.current = lambda admitted: changed(
+            h.profile, tools=frozenset(h.dispatcher.registry.tools)
+        )
         assert h.dispatch("files.read", path="denied").status == "denied"
         sub = h.root / "sub"
         sub.mkdir()
@@ -533,11 +539,48 @@ def test_registry_errors_and_explicit_loading(
     monkeypatch.syspath_prepend(str(tmp_path))
     with pytest.raises(RegistryError, match="dependency unavailable"):
         Registry().load(("missing_dependency_pack",))
-    with opened(tmp_path) as h:
-        assert not Registry().tools
-        assert set(load_registry(h.profile).tools) == set(h.profile.loaded_tools)
-        with pytest.raises(RegistryError, match="not registered"):
-            load_registry(changed(h.profile, loaded_tools=frozenset({"unknown"})))
+    assert not Registry().tools
+    assert set(load_registry().tools) == {tool.name for tool in TOOLS}
+
+
+@pytest.mark.parametrize("grants", [[], ["fixture.read"], ["fixture.*"]])
+def test_external_module_loading_requires_only_profile_grants(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, grants: list[str]
+) -> None:
+    async def handler(ctx: ToolContext, args: ToolArguments) -> ToolResult:
+        return ToolResult(data="external tool")
+
+    module = ModuleType("fixture_pack")
+    module.SDK_VERSION = 1  # type: ignore[attr-defined]
+    module.TOOLS = (Tool("fixture.read", "External tool", ToolArguments, handler),)  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "fixture_pack", module)
+    with opened(tmp_path, modules=("fixture_pack",), grants=grants) as h:
+        assert "fixture.read" in h.dispatcher.registry.tools
+        assert "files.read" in h.dispatcher.registry.tools
+        assert h.dispatch("files.read", path="denied").status == "denied"
+        receipt = h.dispatch("fixture.read")
+        if grants:
+            assert h.profile.tools == {"fixture.read"}
+            assert receipt.status == "succeeded" and receipt.result == "external tool"
+            added = Tool("fixture.new", "New external tool", ToolArguments, handler)
+            module.TOOLS += (added,)  # type: ignore[attr-defined]
+            config = OperatorConfig.model_validate(
+                {
+                    "data_dir": str(h.profile.data_dir),
+                    "model": {"pin": h.profile.model_pin},
+                    "tool_modules": ["fixture_pack"],
+                    "defaults": {"workspace_roots": [str(h.root)], "tools": grants},
+                }
+            )
+            current = resolve_profile(config)
+            assert ("fixture.new" in current.tools) == (grants == ["fixture.*"])
+            assert "fixture.new" not in restrict_to_admission(current, h.profile).tools
+            removed = config.model_copy(update={"tool_modules": []})
+            h.dispatcher.current = lambda admitted: resolve_profile(removed)
+            assert h.dispatch("fixture.read").status == "denied"
+        else:
+            assert not h.profile.tools
+            assert receipt.status == "denied"
 
 
 def test_current_budget_reduction_and_active_elapsed_ceiling(tmp_path: Path) -> None:
@@ -618,7 +661,7 @@ def test_confirmed_effect_survives_later_timeout_and_errors_are_redacted(tmp_pat
         assert receipt.failure and receipt.failure.message == "<redacted>"
 
 
-@pytest.mark.parametrize("field", ["loaded_tools", "granted_tools", "tools"])
+@pytest.mark.parametrize("field", ["granted_tools", "tools"])
 def test_revocation_of_each_authority_set_is_enforced(tmp_path: Path, field: str) -> None:
     with opened(tmp_path) as h:
         h.dispatcher.current = lambda admitted: changed(h.profile, **{field: frozenset()})

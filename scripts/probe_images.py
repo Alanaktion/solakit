@@ -6,10 +6,11 @@ import json
 from pathlib import Path
 
 from solakit.config import OperatorConfig, resolve_profile
-from solakit.dispatch import Dispatcher, load_registry
+from solakit.dispatch import Dispatcher
 from solakit.evidence import canonical, publish
 from solakit.images import ImageService
 from solakit.records import ModelStep, RunState, ToolCall, new_id, utc_now
+from solakit.registry import load_registry
 from solakit.runtime import DataDirectoryLock
 from solakit.store import Store
 
@@ -23,7 +24,6 @@ async def probe(args: argparse.Namespace) -> None:
                 "data_dir": str(output / "data"),
                 "model": {"pin": "image-adapter-probe-no-model-call"},
                 "images": {"enabled": True, "base_url": args.endpoint},
-                "loaded_tools": ["images.generate"],
                 "defaults": {
                     "workspace_roots": [str(output)],
                     "tools": ["images.generate"],
@@ -45,7 +45,9 @@ async def probe(args: argparse.Namespace) -> None:
     try:
         await store.start()
         await images.start()
-        dispatcher = Dispatcher(store, load_registry(profile), lambda admitted: profile)
+        dispatcher = Dispatcher(
+            store, load_registry(profile.tool_modules), lambda admitted: profile
+        )
         dispatcher.images = images
         topic = store.create_session(title="Phase 12 image adapter probe")
         run = store.admit(

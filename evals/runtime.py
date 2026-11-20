@@ -195,7 +195,6 @@ async def run_runtime_trial(
         names = frozenset(app.tools.registry.tools)
         app.profile = profile.model_copy(
             update={
-                "loaded_tools": names,
                 "granted_tools": names,
                 "tools": names,
             }

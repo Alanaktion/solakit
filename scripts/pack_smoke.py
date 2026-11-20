@@ -5,8 +5,9 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from solakit.config import OperatorConfig, resolve_profile
-from solakit.dispatch import Dispatcher, load_registry
+from solakit.dispatch import Dispatcher
 from solakit.records import ModelStep, RunState, ToolCall, new_id
+from solakit.registry import load_registry
 from solakit.store import Store
 
 
@@ -19,7 +20,6 @@ async def main() -> None:
                     "data_dir": str(root / "data"),
                     "model": {"pin": "fixture"},
                     "tool_modules": ["sola_example"],
-                    "loaded_tools": ["example.read", "example.write", "example.image"],
                     "defaults": {"workspace_roots": [str(root)], "tools": ["example.*"]},
                 }
             )
@@ -44,9 +44,9 @@ async def main() -> None:
                 model=profile.model_pin,
             )
             store.append(step)
-            dispatch = Dispatcher(store, load_registry(profile), lambda admitted: profile).bind(
-                run.id
-            )
+            dispatch = Dispatcher(
+                store, load_registry(profile.tool_modules), lambda admitted: profile
+            ).bind(run.id)
             for name, arguments in (
                 ("example.write", {"path": "hello.txt", "content": "external pack"}),
                 ("example.read", {"path": "hello.txt"}),

@@ -73,7 +73,6 @@ async def probe(args: argparse.Namespace) -> None:
                 )
                 if args.memory
                 else MemorySettings().model_dump(),
-                "loaded_tools": names,
                 "defaults": {
                     "workspace_roots": [str(workspace)],
                     "tools": names,

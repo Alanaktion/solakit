@@ -9,6 +9,7 @@ from typing import Any
 from pydantic import JsonValue
 
 from solakit.sdk import SDK_VERSION, Origin, Tool, ToolArguments
+from solakit.tools import TOOLS
 
 
 class RegistryError(ValueError):
@@ -97,3 +98,9 @@ class Registry:
     ) -> tuple[dict[str, JsonValue], ...]:
         """Disclosure accepts an authority ceiling; it never changes it."""
         return self.visible(names & executable)
+
+
+def load_registry(modules: Iterable[str] = ()) -> Registry:
+    registry = Registry(TOOLS)
+    registry.load(modules)
+    return registry

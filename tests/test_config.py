@@ -63,9 +63,10 @@ def test_lan_http_does_not_allow_other_origins(origin: str) -> None:
 def write_config(tmp_path: Path, extra: str = "") -> Path:
     path = tmp_path / "config.toml"
     path.write_text(
-        'data_dir = "data"\nloaded_tools = ["read", "write"]\n'
+        'data_dir = "data"\n'
         '[model]\npin = "fixture-qwen"\napi_key_env = "PRIVATE_KEY_REFERENCE"\n'
-        '[defaults]\nworkspace_roots = ["."]\ntools = ["read", "write", "unloaded"]\n' + extra
+        '[defaults]\nworkspace_roots = ["."]\n'
+        'tools = ["files.read", "files.write", "unloaded"]\n' + extra
     )
     return path
 
@@ -73,20 +74,20 @@ def write_config(tmp_path: Path, extra: str = "") -> Path:
 def test_inheritance_sources_and_empty_tools(tmp_path: Path) -> None:
     path = write_config(
         tmp_path,
-        '[profiles.readonly]\ntools = ["read"]\n'
+        '[profiles.readonly]\ntools = ["files.read"]\n'
         "[profiles.readonly.budgets]\nmodel_calls = 4\n"
         '[profiles.none]\nextends = "readonly"\ntools = []\n',
     )
     config = load_config(path)
     inherited = resolve_profile(config, "readonly", base=tmp_path)
-    assert inherited.tools == {"read"}
+    assert inherited.tools == {"files.read"}
     assert inherited.workspace_roots == (tmp_path,)
     assert inherited.budgets.model_calls == 4 and inherited.budgets.tool_calls == 32
     assert dict(inherited.sources)["budgets.model_calls"] == "profiles.readonly.budgets.model_calls"
     assert not resolve_profile(config, "none", base=tmp_path).tools
     default = resolve_profile(config, base=tmp_path)
-    assert default.granted_tools == {"read", "write", "unloaded"}
-    assert default.tools == {"read", "write"}
+    assert default.granted_tools == {"files.read", "files.write", "unloaded"}
+    assert default.tools == {"files.read", "files.write"}
     with pytest.raises(ValidationError):
         inherited.memory_mode = "off"
     assert "PRIVATE_KEY_REFERENCE" not in json.dumps(inherited.explain())
@@ -120,13 +121,15 @@ def test_removed_permission_settings_are_rejected(tmp_path: Path, table: str, fi
 def test_root_narrowing_and_current_revocations(tmp_path: Path) -> None:
     subdir = tmp_path / "sub"
     subdir.mkdir()
-    path = write_config(tmp_path, '[profiles.child]\nworkspace_roots = ["sub"]\ntools = ["read"]\n')
+    path = write_config(
+        tmp_path, '[profiles.child]\nworkspace_roots = ["sub"]\ntools = ["files.read"]\n'
+    )
     config = load_config(path)
     admitted = resolve_profile(config, base=tmp_path)
     current = resolve_profile(config, "child", base=tmp_path)
     assert restrict_to_admission(current, admitted).workspace_roots == (subdir,)
-    assert restrict_to_admission(current, admitted).tools == {"read"}
-    assert restrict_to_admission(admitted, current).tools == {"read"}
+    assert restrict_to_admission(current, admitted).tools == {"files.read"}
+    assert restrict_to_admission(admitted, current).tools == {"files.read"}
     assert restrict_to_admission(admitted, current).workspace_roots == (subdir,)
     changed = current.model_dump() | {"model_pin": "another-model"}
     with pytest.raises(ConfigError):
@@ -164,6 +167,7 @@ def test_modes_and_proactive_budgets(tmp_path: Path) -> None:
         "[defaults.budgets]\nmodel_calls = 257",
         '[defaults.budgets]\nmisspelled = "VERY_PRIVATE_VALUE"',
         'loaded_tools = "VERY_PRIVATE_VALUE"',
+        'loaded_tools = ["files.read"]',
         "schema_version = true",
         'broken = ["VERY_PRIVATE_VALUE"',
     ],
@@ -270,11 +274,10 @@ def test_proactive_override_and_admitted_budget_ceiling(tmp_path: Path) -> None:
     assert restrict_to_admission(current, admitted).budgets.model_calls == 2
 
 
-def test_wildcards_expand_loaded_names_and_children_only_narrow(tmp_path: Path) -> None:
+def test_wildcards_expand_registered_names_and_children_only_narrow(tmp_path: Path) -> None:
     config = OperatorConfig.model_validate(
         {
             "model": {"pin": "fixture"},
-            "loaded_tools": ["files.read", "files.write", "runtime.status"],
             "defaults": {"workspace_roots": [str(tmp_path)], "tools": ["files.*", "not.loaded"]},
             "profiles": {
                 "job": {"tools": ["files.r?ad"], "budgets": {"tool_calls": 1}},
@@ -283,8 +286,9 @@ def test_wildcards_expand_loaded_names_and_children_only_narrow(tmp_path: Path) 
         }
     )
     admitted = resolve_profile(config)
-    assert admitted.tools == {"files.read", "files.write"}
-    assert admitted.granted_tools == {"files.read", "files.write", "not.loaded"}
+    files = {"files.list", "files.read", "files.search", "files.write"}
+    assert admitted.tools == files
+    assert admitted.granted_tools == files | {"not.loaded"}
     job = resolve_profile(config, "job", origin=Origin.SCHEDULED)
     assert job.tools == {"files.read"} and job.budgets.tool_calls == 1
     assert restrict_to_admission(admitted, job).tools == {"files.read"}
@@ -294,11 +298,37 @@ def test_wildcards_expand_loaded_names_and_children_only_narrow(tmp_path: Path) 
     added = OperatorConfig.model_validate(
         config.model_dump()
         | {
-            "loaded_tools": [*config.loaded_tools, "files.new"],
+            "defaults": {"workspace_roots": [str(tmp_path)], "tools": ["*"]},
         }
     )
-    assert "files.new" in resolve_profile(added).tools
-    assert "files.new" not in restrict_to_admission(resolve_profile(added), admitted).tools
+    assert "runtime.status" in resolve_profile(added).tools
+    assert "runtime.status" not in restrict_to_admission(resolve_profile(added), admitted).tools
+
+
+def test_legacy_admission_keeps_its_frozen_tool_ceiling(profile: EffectiveProfile) -> None:
+    snapshot = profile.model_dump(mode="json") | {
+        "loaded_tools": ["files.read", "files.write"],
+        "granted_tools": ["files.read", "files.write"],
+        "tools": ["files.read"],
+    }
+    admitted = EffectiveProfile.model_validate_json(json.dumps(snapshot))
+    assert admitted.tools == {"files.read"}
+    assert "loaded_tools" not in admitted.model_dump()
+    assert snapshot["loaded_tools"] == ["files.read", "files.write"]
+    current = admitted.model_copy(update={"tools": admitted.granted_tools})
+    assert restrict_to_admission(current, admitted).tools == {"files.read"}
+
+
+def test_unavailable_tool_module_fails_config_resolution(tmp_path: Path) -> None:
+    config = OperatorConfig.model_validate(
+        {
+            "model": {"pin": "fixture"},
+            "tool_modules": ["sola_missing_fixture_pack"],
+            "defaults": {"workspace_roots": [str(tmp_path)]},
+        }
+    )
+    with pytest.raises(ConfigError, match="dependency unavailable"):
+        resolve_profile(config)
 
 
 def test_memory_credential_reference_is_redacted(profile: EffectiveProfile) -> None:

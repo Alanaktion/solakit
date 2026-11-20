@@ -147,7 +147,8 @@ creating them, constructing the server, opening databases, acquiring ownership,
 or contacting any service. An empty TOML parses for initialization but cannot
 resolve a runnable profile without an existing workspace root and explicit model
 pin. Loaded/granted tools start empty. Phase 5 adds exact configured module loading
-and `*`/`?` expansion against explicitly loaded names; no automatic discovery.
+and `*`/`?` expansion against registered built-ins and explicit `tool_modules` tools;
+no package discovery.
 
 `[defaults]` supplies workspace roots, grants (`tools`), memory mode, fragments,
 and budgets. `[profiles.NAME]` inherits `default`, or a
@@ -159,7 +160,10 @@ operator-selected replacement lists, preserve order, and must name existing file
 Unknown keys and invalid types fail even in unused profile tables; semantic
 inheritance/root validation applies to the selected profile and its ancestors.
 
-Effective tools are `loaded_tools ∩ granted_tools`. Loading alone grants nothing.
+Effective tools are registered tool names intersected with `granted_tools`.
+Built-ins register automatically; `tool_modules` registers installed external packs.
+Registration alone grants nothing. The obsolete `loaded_tools` configuration key is rejected;
+historical admission snapshots retain their already-frozen `tools` ceiling.
 Workspace roots and tool grants are the access controls; there are no separate
 resource or effect permissions. Old `resources` and `effects` keys are rejected as
 unknown settings. Session isolation, origin rules, budgets, and protected-path

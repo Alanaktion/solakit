@@ -60,24 +60,28 @@ and supported services; importing a module itself executes trusted Python.
 
 ## Loading and authority
 
-Top-level `loaded_tools` lists exact permitted registration names. Built-ins are
-registered only when listed; explicit modules declare their tools, and only names
-in `loaded_tools` can become executable. Missing configured names fail runtime
-composition. Module registration grants no execution authority.
+Built-ins are always registered. Top-level `tool_modules` imports installed trusted
+packs and registers their declared tools automatically. Configuration resolution
+validates these registrations; unavailable modules and invalid declarations fail
+resolution. Registration grants no execution authority.
 
 Profile `tools` accepts exact names, `*`, and `?`. Patterns expand case-sensitively
-against the explicit `loaded_tools` set at resolution, including for child
-profiles. Exact unloaded grants remain inspectable but non-executable. Children
+against registered built-in and external tool names at resolution, including for child
+profiles. Exact unregistered grants remain inspectable but non-executable. Children
 must narrow the expanded inherited set; an empty list clears it. Expanding a new
 wildcard match later cannot widen an existing admission.
 
-Executable authority is registered/loaded tools intersected with profile grants,
+Executable authority is registered tools intersected with profile grants,
 admitted run/job restrictions, current revocations, and the declaration's allowed
 origins. There are no separate resource/effect grant lists. Session mode, memory
 disabling, budgets, protected paths, and run state remain service checks. A
 narrower job profile uses the same evaluator; scheduled/proactive admission and
 wake-management rules retain Phase 9's occurrence/service gate. No wake-management
 tool is present for the model to invoke here.
+
+The obsolete top-level `loaded_tools` key is rejected; remove it from existing
+TOML configuration. Existing immutable admissions containing that field remain
+readable and retain their already-frozen effective `tools` ceiling.
 
 Tools have three useful states: hidden schemas, visible schemas, and executable
 authority. `ToolSession.schemas()` eagerly lists eligible tools in sorted order.

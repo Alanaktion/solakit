@@ -85,7 +85,6 @@ def harness(
     names = frozenset(context.tools.registry.tools)
     context.profile = profile.model_copy(
         update={
-            "loaded_tools": names,
             "granted_tools": names,
             "tools": names,
         }

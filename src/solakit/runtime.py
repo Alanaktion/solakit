@@ -157,12 +157,13 @@ def compose(
     current_profile: Callable[[EffectiveProfile], EffectiveProfile] | None = None,
 ) -> ApplicationContext:
     """Resources are supplied in dependency order, closed in reverse order."""
-    from solakit.dispatch import Dispatcher, load_registry
+    from solakit.dispatch import Dispatcher
     from solakit.images import ImageService
     from solakit.jobs import JobService
     from solakit.memory import MemoryService, OpenViking
     from solakit.model import ModelAdapter
     from solakit.redaction import Redactor
+    from solakit.registry import load_registry
     from solakit.run_loop import RunLoop
 
     store = Store(profile.data_dir)
@@ -187,7 +188,7 @@ def compose(
 
     context.tools = Dispatcher(
         store,
-        load_registry(profile),
+        load_registry(profile.tool_modules),
         current_profile or current,
         redactor=redactor,
     )

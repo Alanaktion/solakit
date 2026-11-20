@@ -59,10 +59,9 @@ Place these before any `[table]` header.
 | `soul_file` | optional path string: omitted | Operator-owned UTF-8 identity file, read verbatim. Must be an existing file when configured. |
 | `curated_memory_file` | optional path string: omitted | Operator-owned UTF-8 curated memory file, read verbatim; independent of OpenViking being enabled. Must exist when configured. |
 | `shutdown_timeout_seconds` | integer: `5` | Bounded runtime cleanup timeout, 1–60 seconds. |
-| `tool_modules` | array of name strings: `[]` | Explicit importable modules for installed trusted Python packs. Each exports `SDK_VERSION = 1` and `TOOLS`; imports execute trusted code. Loading grants no access. |
-| `loaded_tools` | array of name strings: `[]` | Exact tool registration names allowed to execute. Missing registrations fail runtime composition. Profile grants must also permit the tool. |
+| `tool_modules` | array of name strings: `[]` | Explicit importable modules for installed trusted Python packs. Each exports `SDK_VERSION = 1` and `TOOLS`; configuration resolution imports and registers them. Imports execute trusted code; registration grants no access. Missing modules or invalid declarations fail resolution. |
 
-Names used for modules, loaded tools, profile names and memory account/user must
+Names used for modules, profile names and memory account/user must
 match `[A-Za-z0-9_][A-Za-z0-9_.-]*` and contain at most 128 characters. Module names
 must also be importable Python modules.
 
@@ -70,8 +69,9 @@ Built-ins currently include `files.list`, `files.read`, `files.search`, `files.w
 `images.generate`, `transcripts.search`,
 `runtime.status`, `memory.recall`, `memory.remember`, and `jobs.list`, `jobs.create`,
 `jobs.update`, `jobs.pause`, `jobs.resume`, `jobs.run_now`, `jobs.delete`,
-`jobs.pause_all`. Enable names in both `loaded_tools` and the selected profile's
-`tools`. There are no separate `resources` or `effects` settings. See the
+`jobs.pause_all`. Built-ins are always registered; enable them in the selected profile's
+`tools`. Remove the obsolete top-level `loaded_tools` key from existing configuration;
+it is rejected. There are no separate `resources` or `effects` settings. See the
 [tool contract](contracts/tools.md) for protected paths and pack permissions.
 
 The other supported top-level keys are tables: `model`, `http`, `memory`, `images`,
@@ -166,7 +166,7 @@ for a child override.
 | --- | --- | --- |
 | `defaults.extends` | name string: `"default"` | For child profiles, selects the parent. In `[defaults]`, only `"default"` is valid. |
 | `defaults.workspace_roots` | array of path strings: `[]` | Granted existing directories. A runnable profile requires at least one. Child roots must lie within inherited canonical roots. |
-| `defaults.tools` | array of tool grants: `[]` | Exact names or case-sensitive `*` / `?` patterns. Patterns expand against `loaded_tools`; exact unloaded names remain inspectable but cannot execute. Child grants must be a subset of inherited grants. |
+| `defaults.tools` | array of tool grants: `[]` | Exact names or case-sensitive `*` / `?` patterns. Patterns expand against registered built-ins and `tool_modules` tools; exact unregistered names remain inspectable but cannot execute. Child grants must be a subset of inherited grants. |
 | `defaults.memory_mode` | string: `"optional"` | `"off"` disables semantic memory; `"optional"` allows conversation through memory outages; `"required"` fails the run if initial recall is unavailable. Does not enable the service or widen scope. |
 | `defaults.fragments` | array of path strings: `[]` | Ordered operator-owned prompt files. Must exist. Overrides replace the inherited list, preserving order and removing duplicates. |
 | `defaults.budgets` | table: built-in run budgets below | Per-field limits; use `[defaults.budgets]` or `[profiles.NAME.budgets]`. |

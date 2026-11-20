@@ -112,7 +112,6 @@ def migrate(
     draft: dict[str, Any] = {
         "schema_version": 1,
         "data_dir": str(data_dir.resolve()),
-        "loaded_tools": tools,
         "model": {
             "pin": model.get("model_id", ""),
             "base_url": model.get("base_url", "http://127.0.0.1:8000/v1"),

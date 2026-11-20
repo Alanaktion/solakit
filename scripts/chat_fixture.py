@@ -106,9 +106,7 @@ def main() -> None:
         (Tool("fixture.pause", "Wait four seconds.", ToolArguments, pause),)
     )
     grants = frozenset({"fixture.pause"})
-    context.profile = profile.model_copy(
-        update={"loaded_tools": grants, "granted_tools": grants, "tools": grants}
-    )
+    context.profile = profile.model_copy(update={"granted_tools": grants, "tools": grants})
 
     async def respond(request: httpx2.Request) -> httpx2.Response:
         if request.url.path.endswith("/models"):

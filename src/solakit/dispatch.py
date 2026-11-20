@@ -24,11 +24,10 @@ from solakit.records import (
     utc_now,
 )
 from solakit.redaction import Redactor
-from solakit.registry import Registry, RegistryError
+from solakit.registry import Registry
 from solakit.sdk import ToolContext, ToolError, ToolResult
 from solakit.search import search
 from solakit.store import Store
-from solakit.tools import TOOLS
 
 if TYPE_CHECKING:
     from solakit.images import ImageService
@@ -422,12 +421,3 @@ class Invocation:
         if action != "list":
             self.confirm_effect()
         return result
-
-
-def load_registry(profile: EffectiveProfile) -> Registry:
-    registry = Registry(tool for tool in TOOLS if tool.name in profile.loaded_tools)
-    registry.load(profile.tool_modules)
-    missing = profile.loaded_tools - registry.tools.keys()
-    if missing:
-        raise RegistryError("configured tools are not registered: " + ", ".join(sorted(missing)))
-    return registry

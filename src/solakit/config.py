@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from pydantic import Field, ValidationError, field_validator, model_validator
 
 from solakit.records import Origin, SchemaVersion, SessionMode, Value
+from solakit.registry import RegistryError, load_registry
 
 Count = Annotated[int, Field(ge=1, le=256)]
 Seconds = Annotated[int, Field(ge=1, le=86400)]
@@ -207,7 +208,6 @@ class OperatorConfig(Value):
     memory: MemorySettings = Field(default_factory=MemorySettings)
     images: ImageSettings = Field(default_factory=ImageSettings)
     tool_modules: list[Name] = Field(default_factory=list)
-    loaded_tools: list[Name] = Field(default_factory=list)
     defaults: ProfileSettings = Field(default_factory=ProfileSettings)
     profiles: dict[Name, ProfileSettings] = Field(default_factory=dict)
     proactive_budgets: BudgetOverrides = Field(default_factory=BudgetOverrides)
@@ -237,7 +237,10 @@ class EffectiveProfile(Value):
     http: HTTPSettings = Field(default_factory=HTTPSettings)
     proactive_budgets: BudgetOverrides = Field(default_factory=BudgetOverrides)
     tool_modules: tuple[str, ...] = ()
-    loaded_tools: frozenset[str]
+    # Read old admissions without exposing or applying their redundant loading field.
+    legacy_loaded_tools: frozenset[str] = Field(
+        default_factory=frozenset, validation_alias="loaded_tools", exclude=True, repr=False
+    )
     granted_tools: frozenset[str]
     tools: frozenset[str]
     memory_mode: MemoryMode
@@ -247,7 +250,7 @@ class EffectiveProfile(Value):
 
     def explain(self) -> dict[str, object]:
         values = self.model_dump(mode="json", exclude={"sources", "model_api_key_env"})
-        for key in ("loaded_tools", "granted_tools", "tools"):
+        for key in ("granted_tools", "tools"):
             values[key] = sorted(values[key])
         values["model_api_key_env"] = "<redacted>" if self.model_api_key_env else None
         values["memory"]["api_key_env"] = "<redacted>" if self.memory.api_key_env else None
@@ -316,7 +319,11 @@ def resolve_profile(
         parent = settings.extends
     if "default" in config.profiles or config.defaults.extends != "default":
         raise ConfigError("default is reserved; defaults cannot extend another profile")
-    sources = {key: "builtin" for key in EffectiveProfile.model_fields if key != "sources"}
+    sources = {
+        key: "builtin"
+        for key in EffectiveProfile.model_fields
+        if key not in ("sources", "legacy_loaded_tools")
+    }
     budgets = Budgets()
     for key in Budgets.model_fields:
         sources[f"budgets.{key}"] = "builtin"
@@ -324,6 +331,10 @@ def resolve_profile(
     grants: frozenset[str] = frozenset()
     memory: MemoryMode = "optional"
     fragments: tuple[Path, ...] = ()
+    try:
+        registered = frozenset(load_registry(config.tool_modules).tools)
+    except RegistryError as error:
+        raise ConfigError(str(error)) from None
     for source, settings in [("defaults", config.defaults), *reversed(chain)]:
         child = source != "defaults"
         if settings.workspace_roots is not None:
@@ -336,7 +347,7 @@ def resolve_profile(
             selected_tools = frozenset(
                 name
                 for pattern in settings.tools
-                for name in config.loaded_tools
+                for name in registered
                 if fnmatchcase(name, pattern)
             ) | frozenset(
                 pattern for pattern in settings.tools if not any(c in pattern for c in "*?")
@@ -401,7 +412,6 @@ def resolve_profile(
         ("background", "background"),
         ("http", "http"),
         ("proactive_budgets", "proactive_budgets"),
-        ("loaded_tools", "loaded_tools"),
         ("tool_modules", "tool_modules"),
         ("shutdown_timeout_seconds", "shutdown_timeout_seconds"),
     ):
@@ -411,7 +421,10 @@ def resolve_profile(
             explicit = nested in config.model.model_fields_set
         sources[field] = setting if explicit else "builtin"
     sources.update(
-        name="selection", origin="admission", mode="admission", tools="loaded_tools ∩ granted_tools"
+        name="selection",
+        origin="admission",
+        mode="admission",
+        tools="registered tools ∩ granted_tools",
     )
     sources.pop("budgets")
     return EffectiveProfile(
@@ -440,9 +453,8 @@ def resolve_profile(
         http=config.http,
         proactive_budgets=config.proactive_budgets,
         tool_modules=tuple(config.tool_modules),
-        loaded_tools=frozenset(config.loaded_tools),
         granted_tools=grants,
-        tools=grants & frozenset(config.loaded_tools),
+        tools=grants & registered,
         memory_mode=memory,
         fragments=fragments,
         budgets=budgets,
@@ -476,16 +488,8 @@ def restrict_to_admission(
     changes = {
         "model_image_inputs": current.model_image_inputs and admitted.model_image_inputs,
         "workspace_roots": roots,
-        "loaded_tools": current.loaded_tools & admitted.loaded_tools,
         "granted_tools": current.granted_tools & admitted.granted_tools,
-        "tools": (
-            current.tools
-            & admitted.tools
-            & current.loaded_tools
-            & admitted.loaded_tools
-            & current.granted_tools
-            & admitted.granted_tools
-        ),
+        "tools": (current.tools & admitted.tools & current.granted_tools & admitted.granted_tools),
         "memory_mode": "off"
         if "off" in (current.memory_mode, admitted.memory_mode)
         else admitted.memory_mode,
