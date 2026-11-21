@@ -67,6 +67,7 @@ def opened(
     mode: SessionMode = SessionMode.SHARED,
     budgets: dict[str, int] | None = None,
     identity: bool = False,
+    blog_repository: Path | None = None,
 ) -> Iterator[Harness]:
     root = root.resolve()
     workspace = root / "workspace"
@@ -83,6 +84,7 @@ def opened(
                 "data_dir": str(root / "data"),
                 "model": {"pin": "fixture"},
                 "tool_modules": list(modules),
+                "blog": {"repository": str(blog_repository)} if blog_repository else {},
                 "soul_file": str(soul) if soul else None,
                 "defaults": {
                     "workspace_roots": [str(workspace)],

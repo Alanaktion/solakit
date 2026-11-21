@@ -97,6 +97,16 @@ def requested_tools(text: str, names: Sequence[str]) -> set[str]:
         and (
             not name.startswith("jobs.") or bool(re.search(r"\b(?:jobs?|wakes?|schedule)\b", text))
         )
+        and (
+            not name.startswith("blog.")
+            or name in explicit
+            or bool(re.search(r"\b(?:blogs?|posts?)\b", text))
+        )
+        and (
+            not name.startswith("dreams.")
+            or name in explicit
+            or bool(re.search(r"\b(?:dreams?)\b", text))
+        )
     }
 
 

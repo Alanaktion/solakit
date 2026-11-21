@@ -69,12 +69,14 @@ Built-ins currently include `files.list`, `files.read`, `files.search`, `files.w
 `images.generate`, `transcripts.search`,
 `runtime.status`, `memory.recall`, `memory.remember`, and `jobs.list`, `jobs.create`,
 `jobs.update`, `jobs.pause`, `jobs.resume`, `jobs.run_now`, `jobs.delete`,
-`jobs.pause_all`. Built-ins are always registered; enable them in the selected profile's
+`jobs.pause_all`, `blog.list`, `blog.read`, `blog.create`, `blog.publish`,
+`dreams.list`, `dreams.read`, and `dreams.create`.
+Built-ins are always registered; enable them in the selected profile's
 `tools`. Remove the obsolete top-level `loaded_tools` key from existing configuration;
 it is rejected. There are no separate `resources` or `effects` settings. See the
 [tool contract](contracts/tools.md) for protected paths and pack permissions.
 
-The other supported top-level keys are tables: `model`, `http`, `memory`, `images`,
+The other supported top-level keys are tables: `model`, `http`, `memory`, `images`, `blog`,
 `defaults`, `profiles`, `proactive_budgets` and `background`, described below.
 The example pack's image adapter remains a fixture; the optional built-in image
 service uses the fixed [ComfyUI workflow](image-workflows.md).
@@ -96,6 +98,20 @@ port if specified. They reject embedded credentials, query strings and fragments
 Environment-variable names match `[A-Za-z_][A-Za-z0-9_]*`.
 See the [model/prompt contract](contracts/model-prompts.md) and
 [context contract](contracts/context-compaction.md) for request accounting.
+
+## `[blog]`
+
+| Key | Type / built-in default | Meaning and constraints |
+| --- | --- | --- |
+| `blog.repository` | optional path string: omitted | Existing blog checkout, resolved relative to this config file. Unset disables blog/dream operations. Calls require the entire checkout within current and admitted workspace roots. Changing this path requires a new admission. Publication builds with npm, commits pending content, and pushes all existing pending commits to `origin/main`. |
+
+Grant `blog.*` and/or `dreams.*` as needed; reading needs only the respective
+list/read grants. `blog.create` includes the `auto_publish` capability;
+`dreams.create` always publishes. Build/push commands use the server's PATH and
+existing Git credentials. Give publication an adequate tool timeout, within the
+run's active budget. Background jobs also need explicit workspace roots, and
+existing quiet-hour rules apply to these consequential tools, including draft
+creation. See the [blog and dream guide](blog.md).
 
 ## `[images]`
 

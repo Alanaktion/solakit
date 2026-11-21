@@ -68,6 +68,8 @@ class Services(Protocol):
 
     def jobs(self, action: str, arguments: dict[str, JsonValue]) -> JsonValue: ...
 
+    async def blog(self, action: str, arguments: dict[str, JsonValue]) -> JsonValue: ...
+
 
 @dataclass(frozen=True)
 class ToolContext:

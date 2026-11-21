@@ -8,6 +8,7 @@ tool_modules = []
 # Built-ins: files.list, files.read, files.search, files.write, images.generate,
 # transcripts.search, runtime.status,
 # memory.recall, memory.remember; jobs.list/create/update/pause/resume/run_now/delete/pause_all.
+# blog.list/read/create/publish; dreams.list/read/create (always publishes).
 shutdown_timeout_seconds = 5
 # Operator-owned UTF-8 files, read verbatim; optional and never created by Sola.
 # soul_file = "SOUL.md"
@@ -34,6 +35,11 @@ poll_seconds = 2
 max_checks = 300
 # Image jobs also require explicit job workspace_roots. Give generation enough time:
 # [defaults.budgets] tool_timeout_seconds = 600 (within active_seconds).
+
+# Optional blog checkout; also grant it in defaults.workspace_roots and tools.
+# Publication pushes ALL pending commits to origin/main, including unrelated commits.
+[blog]
+# repository = "~/workspace/blog"
 
 [http]
 host = "127.0.0.1"

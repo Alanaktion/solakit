@@ -46,6 +46,29 @@ class Query(ToolArguments):
     limit: Annotated[int, Field(ge=1, le=100)] = 20
 
 
+class ContentPage(ToolArguments):
+    limit: Annotated[int, Field(ge=1, le=100)] = 20
+    offset: Annotated[int, Field(ge=0, le=2000)] = 0
+
+
+class ContentTarget(ToolArguments):
+    slug: Annotated[str, Field(pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$", max_length=128)]
+
+
+class DreamCreate(ToolArguments):
+    body: Annotated[str, Field(min_length=1, max_length=48000)]
+    date: Annotated[str, Field(min_length=1, max_length=64)] | None = None
+
+
+class BlogCreate(ContentTarget, DreamCreate):
+    title: Annotated[str, Field(min_length=1, max_length=256)]
+    description: Annotated[str, Field(min_length=1, max_length=2000)]
+    tags: Annotated[tuple[str, ...], Field(max_length=32)] = ()
+    cover_path: Annotated[str, Field(min_length=1, max_length=4096)] | None = None
+    cover_artifact_id: RecordID | None = None
+    auto_publish: bool = False
+
+
 class JobCreate(ToolArguments):
     task: str
     schedule: str
@@ -123,6 +146,38 @@ async def remember(context: ToolContext, args: Note) -> ToolResult:
     return ToolResult(data=context.services.remember(args.content))
 
 
+async def list_blogs(context: ToolContext, args: ContentPage) -> ToolResult:
+    return ToolResult(data=await context.services.blog("blog.list", args.model_dump(mode="json")))
+
+
+async def read_blog(context: ToolContext, args: ContentTarget) -> ToolResult:
+    return ToolResult(data=await context.services.blog("blog.read", args.model_dump(mode="json")))
+
+
+async def create_blog(context: ToolContext, args: BlogCreate) -> ToolResult:
+    return ToolResult(data=await context.services.blog("blog.create", args.model_dump(mode="json")))
+
+
+async def publish_blog(context: ToolContext, args: ContentTarget) -> ToolResult:
+    return ToolResult(
+        data=await context.services.blog("blog.publish", args.model_dump(mode="json"))
+    )
+
+
+async def list_dreams(context: ToolContext, args: ContentPage) -> ToolResult:
+    return ToolResult(data=await context.services.blog("dreams.list", args.model_dump(mode="json")))
+
+
+async def read_dream(context: ToolContext, args: ContentTarget) -> ToolResult:
+    return ToolResult(data=await context.services.blog("dreams.read", args.model_dump(mode="json")))
+
+
+async def create_dream(context: ToolContext, args: DreamCreate) -> ToolResult:
+    return ToolResult(
+        data=await context.services.blog("dreams.create", args.model_dump(mode="json"))
+    )
+
+
 async def jobs(context: ToolContext, args: ToolArguments) -> ToolResult:
     if isinstance(args, JobCreate):
         action = "create"
@@ -154,6 +209,31 @@ async def delete_job(context: ToolContext, args: JobTarget) -> ToolResult:
 
 
 TOOLS = (
+    Tool("blog.list", "List blogs, including drafts, newest first.", ContentPage, list_blogs),
+    Tool("blog.read", "Read a blog's metadata and Markdown body.", ContentTarget, read_blog),
+    Tool(
+        "blog.create",
+        "Create a blog draft; auto_publish=true builds, commits pending content, and pushes.",
+        BlogCreate,
+        create_blog,
+        True,
+    ),
+    Tool(
+        "blog.publish",
+        "Publish this blog; commit pending content and push all pending commits to main.",
+        ContentTarget,
+        publish_blog,
+        True,
+    ),
+    Tool("dreams.list", "List dream poems newest first.", ContentPage, list_dreams),
+    Tool("dreams.read", "Read a dream poem's metadata and body.", ContentTarget, read_dream),
+    Tool(
+        "dreams.create",
+        "Create a date-named poem (3–15 lines), then always build, commit, and push. No overwrite.",
+        DreamCreate,
+        create_dream,
+        True,
+    ),
     Tool(
         "files.list",
         "List a granted workspace directory; bounded, no symlinks.",

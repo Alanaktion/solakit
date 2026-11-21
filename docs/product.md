@@ -17,7 +17,14 @@ One operator uses one runtime process on this Apple Silicon Mac through a web UI
 - Operator-enabled scheduled work and proactive wake-ups, using the same run loop, grants, budgets, and evidence as interactive work.
 - Preservation of existing history, identity/config fragments, operational data, and legacy effect receipts, including data belonging to integrations deferred from v1.
 
-Domain packs for letters, blog, email, journal, calendar, and printer are deferred. Legacy image-generation behavior is reference material; v1 needs one reliable configured workflow, not every legacy option. Shell is deferred until file access and image generation pass their reliability gates, and is not a v1 release dependency. Delegation, Android compatibility, Discord parity, browser/computer control, and independent agents are deferred. No domain logic belongs in the run loop.
+The operator subsequently approved optional high-level blog and dream tools;
+see the [blog guide](blog.md). They use a fixed Markdown/build/commit/push service
+without exposing shell access. Other domain packs for letters, email, journal,
+calendar, and printer remain deferred. Legacy image-generation behavior is
+reference material; v1 needs one reliable configured workflow, not every legacy
+option. General shell remains deferred. Delegation, Android compatibility,
+Discord parity, browser/computer control, and independent agents are deferred.
+No domain execution logic belongs in the run loop.
 
 ## Proactive authority
 

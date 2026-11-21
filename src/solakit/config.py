@@ -97,6 +97,10 @@ class ImageSettings(Value):
         return ModelSettings.endpoint(value).rstrip("/")
 
 
+class BlogSettings(Value):
+    repository: str | None = None
+
+
 class MemorySettings(Value):
     enabled: bool = False
     base_url: str = "http://127.0.0.1:1933"
@@ -207,6 +211,7 @@ class OperatorConfig(Value):
     model: ModelSettings = Field(default_factory=ModelSettings)
     memory: MemorySettings = Field(default_factory=MemorySettings)
     images: ImageSettings = Field(default_factory=ImageSettings)
+    blog: BlogSettings = Field(default_factory=BlogSettings)
     tool_modules: list[Name] = Field(default_factory=list)
     defaults: ProfileSettings = Field(default_factory=ProfileSettings)
     profiles: dict[Name, ProfileSettings] = Field(default_factory=dict)
@@ -233,6 +238,7 @@ class EffectiveProfile(Value):
     workspace_roots: tuple[Path, ...]
     memory: MemorySettings = Field(default_factory=MemorySettings)
     images: ImageSettings = Field(default_factory=ImageSettings)
+    blog_repository: Path | None = None
     background: BackgroundSettings = Field(default_factory=BackgroundSettings)
     http: HTTPSettings = Field(default_factory=HTTPSettings)
     proactive_budgets: BudgetOverrides = Field(default_factory=BudgetOverrides)
@@ -409,6 +415,7 @@ def resolve_profile(
         ("curated_memory_file", "curated_memory_file"),
         ("memory", "memory"),
         ("images", "images"),
+        ("blog_repository", "blog"),
         ("background", "background"),
         ("http", "http"),
         ("proactive_budgets", "proactive_budgets"),
@@ -449,6 +456,9 @@ def resolve_profile(
         workspace_roots=roots,
         memory=config.memory,
         images=config.images,
+        blog_repository=_paths([config.blog.repository], base, directories=True)[0]
+        if config.blog.repository is not None
+        else None,
         background=config.background,
         http=config.http,
         proactive_budgets=config.proactive_budgets,
@@ -476,6 +486,8 @@ def restrict_to_admission(
         raise ConfigError("memory service/scope changed; a new admission is required")
     if current.images != admitted.images:
         raise ConfigError("image service changed; a new admission is required")
+    if current.blog_repository != admitted.blog_repository:
+        raise ConfigError("blog repository changed; a new admission is required")
     roots = tuple(
         dict.fromkeys(
             inner

@@ -80,7 +80,18 @@ def harness(
     context = compose(profile)
     assert context.tools and context.model
     context.tools.registry = Registry(
-        (*(tool for tool in TOOLS if not tool.name.startswith("jobs.")), *extra)
+        (
+            *(
+                tool
+                for tool in TOOLS
+                if not tool.name.startswith("jobs.")
+                and (
+                    profile.blog_repository is not None
+                    or not tool.name.startswith(("blog.", "dreams."))
+                )
+            ),
+            *extra,
+        )
     )
     names = frozenset(context.tools.registry.tools)
     context.profile = profile.model_copy(

@@ -4,8 +4,10 @@ Phase 5 SDK/dispatch implementation, extended by [Phase 12 file/image workflows]
 See [validation](../validation/phase-05.md) and the
 [external example pack](../../examples/phase5_pack/src/sola_example/__init__.py).
 The supported extension surface is `solakit.sdk`. It imports neither FastAPI nor
-provider SDKs. No general shell, process, job-management, or delegation service is
-provided. The model/tool cycle remains Phase 6.
+provider SDKs. No general shell, process, or delegation service is provided.
+Built-in job management retains its interactive-origin restriction. The optional
+[blog service](../blog.md) runs fixed build/Git commands behind named tool grants;
+it exposes no command or argument execution tool.
 
 ## Pack authoring
 
@@ -199,7 +201,8 @@ opened directory trees or concurrently redefining Git metadata.
 | `runtime.status` | Own run/service health | Own run | Own run | Own run |
 | `memory.recall` | Recorded, scoped OpenViking 0.5 recall when enabled | Denied | Denied | Bound memory scope |
 | `memory.remember` | Exact local staging, extraction after completed runs | Denied | Denied | Bound memory scope; no wake creation |
-| Git metadata writes / managed file access | Denied | Denied | Denied | Denied |
+| Generic Git metadata writes / managed file access | Denied | Denied | Denied | Denied |
+| Blog/dream publication | Named tool grant + configured checkout within roots | Same | Same; generated covers limited to own run | Same; explicit job roots and quiet-hour policy |
 | Shell / process / delegation / wake creation | No provided service | No provided service | No provided service | No provided service |
 
 Built-in tools call these application services directly, never HTTP routes.
@@ -215,3 +218,10 @@ retain at most the existing 1 MiB text bound. Installing/selecting the example p
 does not load or grant it.
 
 Phase 7 memory lifecycle, limits and recovery are defined in the [memory contract](memory.md).
+
+The additive SDK `Services.blog(action, arguments)` method is reserved for the
+matching named built-in blog/dream tool. It cannot turn an unrelated granted tool
+into publication authority. Internal guarded binary reads/writes support PNG
+cover copies without changing generic text-tool limits. Uncertain receipts keep
+safe adapter error details (including the last known publication phase/commit)
+while retaining `effect_uncertain` status and error code.

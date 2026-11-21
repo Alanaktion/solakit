@@ -30,6 +30,7 @@ from solakit.search import search
 from solakit.store import Store
 
 if TYPE_CHECKING:
+    from solakit.blog import BlogService
     from solakit.images import ImageService
     from solakit.jobs import JobService
     from solakit.memory import MemoryService
@@ -52,6 +53,7 @@ class Dispatcher:
         self.memory: MemoryService | None = None
         self.jobs: JobService | None = None
         self.images: ImageService | None = None
+        self.blog: BlogService | None = None
         package = Path(__file__).resolve().parent
         checkout = package.parent.parent
         self.protected: tuple[Path, ...] = (
@@ -212,7 +214,9 @@ class ToolSession:
             status = "uncertain"
             failure = Failure(
                 code=ErrorCode.EFFECT_UNCERTAIN,
-                message="Tool effect is uncertain; reconcile before retry",
+                message=failure.message
+                if failure
+                else "Tool effect is uncertain; reconcile before retry",
             )
         elif status == "denied" and invocation.effect == "confirmed":
             status = "failed"
@@ -328,6 +332,60 @@ class Invocation:
         )
         self.artifact = generation.artifact
         return self.dispatcher.images.result(generation)
+
+    async def blog(self, action: str, arguments: dict[str, JsonValue]) -> JsonValue:
+        profile = self.authority()
+        if action != self.call.name or action not in {
+            "blog.list",
+            "blog.read",
+            "blog.create",
+            "blog.publish",
+            "dreams.list",
+            "dreams.read",
+            "dreams.create",
+        }:
+            raise ToolError("Content service requires its named tool", ErrorCode.TOOL_DENIED)
+        service = self.dispatcher.blog
+        if service is None:
+            raise ToolError("Blog service is unavailable")
+        args = self.dispatcher.registry.tools[action].arguments.model_validate_json(
+            canonical(arguments)
+        )
+        from solakit.tools import BlogCreate
+
+        cover = None
+        if isinstance(args, BlogCreate) and args.cover_artifact_id is not None:
+            from solakit.compaction import read_artifact
+            from solakit.images import MAX_IMAGE_BYTES
+
+            scope = "run_id" if profile.mode == SessionMode.EPHEMERAL else "session_id"
+            identity = self.run_id if scope == "run_id" else self.call.session_id
+            row = self.dispatcher.store.db.execute(
+                f"SELECT id FROM entities WHERE kind='receipt' AND {scope}=? "
+                "AND json_extract(body,'$.artifact.path')=? LIMIT 1",
+                (identity, f"artifacts/{args.cover_artifact_id}"),
+            ).fetchone()
+            if row is None:
+                raise ToolError(
+                    "Cover artifact is outside this content scope", ErrorCode.TOOL_DENIED
+                )
+            receipt = self.dispatcher.store._load("receipt", row[0], ToolReceipt)
+            reference = receipt.artifact
+            if (
+                reference is None
+                or reference.media_type != "image/png"
+                or reference.length > MAX_IMAGE_BYTES
+            ):
+                raise ToolError("Cover must be a bounded generated PNG", ErrorCode.INVALID_INPUT)
+            cover = read_artifact(self.dispatcher.store, reference)
+        files = GuardedFiles(
+            self.authority,
+            self.dispatcher.protected,
+            self.begin_effect,
+            self.confirm_effect,
+            self.record_artifact,
+        )
+        return await service.execute(action, args, files, cover=cover)
 
     def transcript_search(self, query: str, *, limit: int = 20) -> JsonValue:
         profile = self.authority()

@@ -14,13 +14,19 @@ dependencies = [
     "uvicorn>=0.54.0",
     "pydantic>=2.12",
     "apscheduler>=3.11.3,<4",
+    "pyyaml>=6.0.3",
 ]
 
 [project.scripts]
 sola = "solakit.cli:main"
 
 [dependency-groups]
-dev = ["pytest>=9.2", "ruff>=0.17.5", "mypy>=2.4.1"]
+dev = [
+    "pytest>=9.2",
+    "ruff>=0.17.5",
+    "mypy>=2.4.1",
+    "types-pyyaml>=6.0.12.20261113",
+]
 
 [tool.uv.workspace]
 members = ["examples/phase5_pack"]

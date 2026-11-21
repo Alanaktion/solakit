@@ -140,17 +140,21 @@ class GuardedFiles:
             raise _deny()
 
     def read_text(self, path: str) -> str:
-        with self._parent(path, write=False) as (parent, name):
-            fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent)
-            with os.fdopen(fd, "rb") as stream:
-                self._regular(os.fstat(stream.fileno()))
-                raw = stream.read(MAX_FILE_BYTES + 1)
-        if len(raw) > MAX_FILE_BYTES:
-            raise ToolError("File exceeds 1 MiB read limit", ErrorCode.BUDGET_EXCEEDED)
+        raw = self.read_bytes(path, limit=MAX_FILE_BYTES)
         try:
             return raw.decode("utf-8")
         except UnicodeError:
             raise ToolError("File is not UTF-8 text", ErrorCode.INVALID_INPUT) from None
+
+    def read_bytes(self, path: str, *, limit: int) -> bytes:
+        with self._parent(path, write=False) as (parent, name):
+            fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent)
+            with os.fdopen(fd, "rb") as stream:
+                self._regular(os.fstat(stream.fileno()))
+                raw = stream.read(limit + 1)
+        if len(raw) > limit:
+            raise ToolError("File exceeds read limit", ErrorCode.BUDGET_EXCEEDED)
+        return raw
 
     def list_directory(self, path: str, *, limit: int = 100) -> JsonValue:
         if type(limit) is not int or not 1 <= limit <= 100:
@@ -254,8 +258,16 @@ class GuardedFiles:
         self, path: str, content: str, *, overwrite: bool = False
     ) -> dict[str, JsonValue]:
         raw = content.encode("utf-8")
-        if len(raw) > MAX_FILE_BYTES:
-            raise ToolError("File exceeds 1 MiB write limit", ErrorCode.BUDGET_EXCEEDED)
+        result = self.write_bytes(path, raw, limit=MAX_FILE_BYTES, overwrite=overwrite)
+        if self.record_artifact is not None:
+            self.record_artifact(raw)
+        return result
+
+    def write_bytes(
+        self, path: str, raw: bytes, *, limit: int, overwrite: bool = False
+    ) -> dict[str, JsonValue]:
+        if len(raw) > limit:
+            raise ToolError("File exceeds write limit", ErrorCode.BUDGET_EXCEEDED)
         with self._parent(path, write=True) as (parent, name):
             try:
                 info = os.stat(name, dir_fd=parent, follow_symlinks=False)
@@ -283,8 +295,6 @@ class GuardedFiles:
                     )
                 self.confirm_effect()
                 os.fsync(parent)
-                if self.record_artifact is not None:
-                    self.record_artifact(raw)
             finally:
                 try:
                     os.unlink(temporary, dir_fd=parent)
