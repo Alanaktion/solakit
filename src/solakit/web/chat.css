@@ -1,17 +1,20 @@
 :root {
+  --hue-primary: 167.835;
+  --hue-accent: 91.437;
+  --hue-danger: 28.795;
   color-scheme: light dark;
-  --paper: oklch(0.987 0.003 91.437);
-  --surface: oklch(0.966 0.006 87.452);
-  --line: oklch(0.883 0.011 84.58);
-  --control-line: oklch(0.596 0.026 168.381);
-  --ink: oklch(0.291 0.017 172.749);
-  --muted: oklch(0.486 0.02 168.423);
-  --accent: oklch(0.445 0.058 167.835);
-  --on-accent: oklch(0.987 0.003 91.437);
-  --accent-hover: oklch(0.378 0.048 168.036);
-  --tint: oklch(0.938 0.013 169.268);
-  --danger: oklch(0.434 0.131 28.795);
-  --backdrop: oklch(0.223 0.011 172.992 / 0.45);
+  --paper: oklch(0.987 0.003 var(--hue-accent));
+  --surface: oklch(0.966 0.006 var(--hue-accent));
+  --line: oklch(0.883 0.011 var(--hue-accent));
+  --control-line: oklch(0.596 0.026 var(--hue-primary));
+  --ink: oklch(0.291 0.017 var(--hue-primary));
+  --muted: oklch(0.486 0.02 var(--hue-primary));
+  --accent: oklch(0.445 0.058 var(--hue-primary));
+  --on-accent: oklch(0.987 0.003 var(--hue-accent));
+  --accent-hover: oklch(0.378 0.048 var(--hue-primary));
+  --tint: oklch(0.938 0.013 var(--hue-primary));
+  --danger: oklch(0.434 0.131 var(--hue-danger));
+  --backdrop: oklch(0.223 0.011 var(--hue-primary) / 0.45);
   --radius: 6px;
   --control-height: 36px;
   --font-body:
@@ -29,18 +32,18 @@
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --paper: oklch(0.232 0.009 173.407);
-    --surface: oklch(0.276 0.011 173.421);
-    --line: oklch(0.448 0.019 168.444);
-    --control-line: oklch(0.646 0.024 168.559);
-    --ink: oklch(0.937 0.008 91.48);
-    --muted: oklch(0.765 0.017 164.562);
-    --accent: oklch(0.801 0.06 165.542);
-    --on-accent: oklch(0.25 0.019 172.174);
-    --accent-hover: oklch(0.863 0.046 166.259);
-    --tint: oklch(0.36 0.029 167.087);
-    --danger: oklch(0.784 0.103 26.572);
-    --backdrop: oklch(0.149 0.005 173.852 / 0.7);
+    --paper: oklch(0.232 0.009 var(--hue-primary));
+    --surface: oklch(0.276 0.011 var(--hue-primary));
+    --line: oklch(0.448 0.019 var(--hue-primary));
+    --control-line: oklch(0.646 0.024 var(--hue-primary));
+    --ink: oklch(0.937 0.008 var(--hue-accent));
+    --muted: oklch(0.765 0.017 var(--hue-primary));
+    --accent: oklch(0.801 0.06 var(--hue-primary));
+    --on-accent: oklch(0.25 0.019 var(--hue-accent));
+    --accent-hover: oklch(0.863 0.046 var(--hue-primary));
+    --tint: oklch(0.36 0.029 var(--hue-primary));
+    --danger: oklch(0.784 0.103 var(--hue-danger));
+    --backdrop: oklch(0.149 0.005 var(--hue-primary) / 0.7);
   }
 }
 * {
