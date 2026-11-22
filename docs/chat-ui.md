@@ -4,6 +4,8 @@ Start `sola serve` with your normal configuration and the environment variable
 named by `http.password_env` set. Open `http://127.0.0.1:8765/` (or your explicitly
 configured origin) and sign in. The server serves the HTML, CSS and Lit components
 from the core wheel. Components import the bundled `lit-core.min.js` locally;
+icons come from the bundled Lucide `lucide.min.js` (ISC) through a light-DOM
+`<sola-icon name="…">` element, always decorative beside visible text;
 there is no frontend build, package installation or external CDN. The app shell,
 conversation turns, job cards and artifact viewer use light DOM to share the
 stylesheet and preserve native labels, keyboard navigation and fragment links.
@@ -13,6 +15,18 @@ The interface follows your system light or dark appearance through
 `prefers-color-scheme`, including native controls and dialogs. Changes apply
 immediately; there is no separate theme setting. On a fresh setup, **Start a
 topic** opens topic creation. Empty/whitespace drafts cannot be submitted.
+
+Set the top-level `agent_name = "Sola"` in `config.toml` to change the name shown
+throughout the UI. Restart the server and reload the page after changing it.
+The name is presentation only; operator-owned identity prompts remain verbatim.
+
+To customize appearance, create `user.css` in the configured `data_dir`. It loads
+after the packaged CSS and applies to all components through their shared light
+DOM. Reload the page after adding, editing or removing it; no server restart is
+needed. An absent file leaves the default appearance. The file must be a regular
+file, not a symbolic or hard link. Like the login shell, this stylesheet is served
+before sign-in, so keep its contents free of private data. The existing Content
+Security Policy still applies.
 
 Create a topic, choose its memory mode, and send a message. Enter sends;
 Shift+Enter inserts a newline. The composer remains editable while Sola works,
@@ -30,13 +44,26 @@ copy of an uncertain submission if it could repeat a consequential action.
 The initial conversation loads recent messages and runs, rather than walking
 the topic from its beginning. **Load older conversation** prepends bounded pages
 while retaining the visible turn. New tokens update a provisional preview;
-settled messages and open disclosures keep their DOM nodes. Scrolling up stops
-automatic following; **Jump to latest** resumes it. Elapsed time comes from the
+pulsing dots show a run that is working before any text or tool appears.
+Settled messages and open disclosures keep their DOM nodes. While at the bottom,
+the view stays pinned as content, images or opened disclosures grow. Scrolling
+up stops automatic following; the floating **Jump to latest** button resumes it
+and gains a dot when new content arrives below. Elapsed time comes from the
 server's start/end timestamps and survives reconnect and navigation.
+
+Each turn is one timeline in record order: your message, any text the model
+wrote while working, its tool calls, then the reply. In-between text is muted to
+distinguish it from the final reply. Tool calls, memory work and summary markers
+are compact one-line disclosures; open one to see its arguments, receipt and
+artifact. A status icon marks each disclosure and the run line: spinner for
+working, check for succeeded/completed, cross for failed/denied, `!` for
+uncertain/ambiguous, dashed circle for queued/pending and dash for cancelled.
+The state is always written in words beside the icon.
 
 Use **Cancel run** to request cancellation and **Inspect evidence** for records,
 exact model-request references, receipts and verified artifact chunks. The chat
-shows recent run activity; the evidence dialog pages through all records. Tool
+loads each run's records back to its start, then refreshes recent activity; the
+evidence dialog pages through all records. Tool
 results are associated with their call IDs. Tool errors, uncertain effects,
 interrupted work, memory extraction state and staged notes have separate labels.
 A staged note is not a claim that memory extraction succeeded. Context summary

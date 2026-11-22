@@ -14,6 +14,7 @@
   --accent-hover: oklch(0.378 0.048 var(--hue-primary));
   --tint: oklch(0.938 0.013 var(--hue-primary));
   --danger: oklch(0.434 0.131 var(--hue-danger));
+  --warn: oklch(0.48 0.1 70);
   --backdrop: oklch(0.223 0.011 var(--hue-primary) / 0.45);
   --radius: 6px;
   --control-height: 36px;
@@ -43,6 +44,7 @@
     --accent-hover: oklch(0.863 0.046 var(--hue-primary));
     --tint: oklch(0.36 0.029 var(--hue-primary));
     --danger: oklch(0.784 0.103 var(--hue-danger));
+    --warn: oklch(0.82 0.11 80);
     --backdrop: oklch(0.149 0.005 var(--hue-primary) / 0.7);
   }
 }
@@ -108,6 +110,15 @@ a {
 }
 [hidden] {
   display: none !important;
+}
+sola-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  vertical-align: -0.125em;
+}
+sola-icon svg {
+  width: 1em;
+  height: 1em;
 }
 h1,
 h2,
@@ -339,24 +350,37 @@ code {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 4px 8px;
   color: var(--muted);
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
+  margin-top: 4px;
 }
 .run-bar button {
   border: 0;
-  padding: 4px 8px;
+  padding: 2px 8px;
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+.run-bar button:hover:not(:disabled) {
+  color: var(--ink);
 }
 .preview {
   color: var(--muted);
   white-space: pre-wrap;
   padding: 8px 0;
 }
-.work details {
-  margin: 8px 0;
-  background: var(--surface);
-  border-radius: var(--radius);
-  padding: 4px 12px;
+/* In-between text the model wrote while working, quieter than the final reply. */
+.narration {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+  margin: 4px 0;
+}
+.narration p:last-child {
+  margin-bottom: 0;
+}
+.preview::after {
+  content: '▍';
+  animation: blink 1s steps(2) infinite;
 }
 summary {
   cursor: pointer;
@@ -364,8 +388,105 @@ summary {
   padding: 4px 0;
   overflow-wrap: anywhere;
 }
-.work .warning {
+/* Tool and memory work stays quiet in the timeline until opened. */
+.work details {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+.work summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  list-style: none;
+  padding: 2px 8px;
+  margin: 0 -8px;
+  border-radius: var(--radius);
+  min-height: 32px;
+}
+.work summary::-webkit-details-marker {
+  display: none;
+}
+.work .chevron {
+  transition: transform 0.15s;
+}
+.work details[open] > summary > .chevron {
+  transform: rotate(90deg);
+}
+.work summary:hover {
+  background: var(--tint);
+  color: var(--ink);
+}
+.work details[open] {
+  margin-bottom: 8px;
+}
+.work details[open] > :not(summary) {
+  margin-left: 22px;
+}
+.work + .message,
+.message + .work {
+  margin-top: 8px;
+}
+.status-icon {
+  color: var(--muted);
+}
+[data-tone='ok'] .status-icon,
+[data-tone='working'] .status-icon {
+  color: var(--accent);
+}
+[data-tone='error'] .status-icon {
   color: var(--danger);
+}
+[data-tone='warn'] .status-icon {
+  color: var(--warn);
+}
+[data-tone='working'] .status-icon svg {
+  animation: spin 0.8s linear infinite;
+}
+details[data-tone='error'] > summary,
+.run-bar[data-tone='error'] [role='status'] {
+  color: var(--danger);
+}
+details[data-tone='warn'] > summary,
+.run-bar[data-tone='warn'] [role='status'] {
+  color: var(--warn);
+}
+.thinking {
+  display: flex;
+  gap: 4px;
+  padding: 12px 0;
+}
+.thinking span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--muted);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+.thinking span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.thinking span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+@keyframes blink {
+  to {
+    visibility: hidden;
+  }
 }
 #composer {
   width: calc(100% - 48px);
@@ -427,9 +548,39 @@ summary {
   gap: 8px;
   font-size: 0.875rem;
 }
+.history-wrap {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+/* Floats over the history so showing it never resizes the scroller. */
 #latest {
-  align-self: center;
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1;
+  background: var(--paper);
+  border-color: var(--control-line);
+  border-radius: 999px;
+  padding: 4px 16px;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px var(--backdrop);
+}
+#latest:hover {
   background: var(--tint);
+}
+#latest.unseen::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  vertical-align: middle;
 }
 dialog {
   background: var(--paper);
@@ -645,6 +796,9 @@ dialog > details > summary {
 @media (any-pointer: coarse) {
   :root {
     --control-height: 44px;
+  }
+  .work summary {
+    min-height: var(--control-height);
   }
   input,
   select {

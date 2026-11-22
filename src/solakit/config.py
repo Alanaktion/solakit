@@ -17,6 +17,7 @@ Count = Annotated[int, Field(ge=1, le=256)]
 Seconds = Annotated[int, Field(ge=1, le=86400)]
 Name = Annotated[str, Field(pattern=r"^[a-zA-Z0-9_][a-zA-Z0-9_.-]*$", max_length=128)]
 ToolGrant = Annotated[str, Field(pattern=r"^[a-zA-Z0-9_*?][a-zA-Z0-9_.*?-]*$", max_length=128)]
+AgentName = Annotated[str, Field(min_length=1, max_length=128, pattern=r"\S")]
 MemoryMode = Literal["off", "optional", "required"]
 DEFAULT_CONFIG = Path.home() / ".config/sola/config.toml"
 
@@ -204,6 +205,7 @@ class HTTPSettings(Value):
 
 class OperatorConfig(Value):
     schema_version: SchemaVersion = 1
+    agent_name: AgentName = "Sola"
     data_dir: str = "~/.local/share/sola"
     soul_file: str | None = None
     curated_memory_file: str | None = None
@@ -222,6 +224,7 @@ class OperatorConfig(Value):
 
 class EffectiveProfile(Value):
     name: str
+    agent_name: AgentName = "Sola"
     origin: Origin
     mode: SessionMode
     data_dir: Path
@@ -403,6 +406,7 @@ def resolve_profile(
     if data_dir.exists() and not data_dir.is_dir():
         raise ConfigError("data directory must be a directory")
     for field, setting in (
+        ("agent_name", "agent_name"),
         ("data_dir", "data_dir"),
         ("model_pin", "model.pin"),
         ("model_image_inputs", "model.image_inputs"),
@@ -436,6 +440,7 @@ def resolve_profile(
     sources.pop("budgets")
     return EffectiveProfile(
         name=name,
+        agent_name=config.agent_name,
         origin=origin,
         mode=mode,
         data_dir=data_dir,

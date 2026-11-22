@@ -1,6 +1,7 @@
 import asyncio
 import hashlib
 import json
+import os
 from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
 from typing import Any
@@ -945,6 +946,8 @@ def test_chat_shell_is_public_but_runtime_stays_authenticated(client: TestClient
     response = client.get("/")
     assert response.status_code == 200
     assert "<sola-app></sola-app>" in response.text
+    assert '<meta name="agent-name" content="Sola" />' in response.text
+    assert response.text.index("/assets/chat.css") < response.text.index("/assets/user.css")
     assert PASSWORD not in response.text
     assert "script-src 'self'" in response.headers["content-security-policy"]
     assert "frame-ancestors 'none'" in response.headers["content-security-policy"]
@@ -962,6 +965,7 @@ def test_chat_shell_is_public_but_runtime_stays_authenticated(client: TestClient
         "ui.js",
         "markdown.js",
         "lit-core.min.js",
+        "lucide.min.js",
     ):
         response = client.get("/assets/" + asset)
         assert response.status_code == 200
@@ -973,6 +977,57 @@ def test_chat_shell_is_public_but_runtime_stays_authenticated(client: TestClient
     assert client.post("/assets/chat.js").status_code == 401
     assert client.get("/", headers={"Host": "evil.invalid"}).status_code == 400
     assert client.get("/", headers={"Origin": "https://evil.invalid"}).status_code == 403
+
+
+def test_configured_agent_name_is_escaped_in_shell(client: TestClient, app: FastAPI) -> None:
+    context = app.state.context
+    context.profile = context.profile.model_copy(
+        update={"agent_name": 'Luna 🌙 "><script>alert(1)</script>&'}
+    )
+    response = client.get("/")
+    assert response.status_code == 200
+    assert '<meta name="agent-name" content="Luna 🌙 &quot;&gt;&lt;script&gt;' in response.text
+    assert (
+        "<title>Luna 🌙 &quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;&amp; · Conversation"
+        in response.text
+    )
+    assert "<script>alert(1)</script>" not in response.text
+
+
+def test_optional_user_css(client: TestClient, app: FastAPI) -> None:
+    path = app.state.context.profile.data_dir / "user.css"
+    response = client.get("/assets/user.css")
+    assert response.status_code == 200 and response.content == b""
+    path.write_text(".brand { color: red; }", encoding="utf-8")
+    response = client.get("/assets/user.css")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/css")
+    assert response.headers["cache-control"] == "no-store"
+    assert response.text == ".brand { color: red; }"
+    path.write_text(".brand { color: blue; }", encoding="utf-8")
+    assert client.get("/assets/user.css").text == ".brand { color: blue; }"
+    path.unlink()
+    assert client.get("/assets/user.css").content == b""
+    assert client.post("/assets/user.css").status_code == 401
+    assert client.get("/assets/state.db").status_code == 401
+
+
+@pytest.mark.parametrize("kind", ["symlink", "hardlink", "directory"])
+def test_user_css_does_not_serve_links_or_directories(
+    client: TestClient, app: FastAPI, tmp_path: Path, kind: str
+) -> None:
+    private = tmp_path / "private"
+    private.write_text("private operator data")
+    path = app.state.context.profile.data_dir / "user.css"
+    if kind == "symlink":
+        path.symlink_to(private)
+    elif kind == "hardlink":
+        os.link(private, path)
+    else:
+        path.mkdir()
+    response = client.get("/assets/user.css")
+    assert response.status_code == 404
+    assert "private operator data" not in response.text
 
 
 def test_recent_history_pages_backwards_without_changing_forward_clients(

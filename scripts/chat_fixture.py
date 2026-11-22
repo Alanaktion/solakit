@@ -69,6 +69,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--port", type=int, default=8877)
+    parser.add_argument("--agent-name", default="Sola")
     parser.add_argument(
         "--image-fixture", type=Path, help="Optional saved PNG; never contacts an image provider"
     )
@@ -80,6 +81,7 @@ def main() -> None:
         OperatorConfig.model_validate(
             {
                 "data_dir": str(args.output / "data"),
+                "agent_name": args.agent_name,
                 "model": {
                     "pin": "fixture-qwen",
                     "generation_timeout_seconds": 30,
@@ -121,6 +123,7 @@ def main() -> None:
         deltas: list[dict[str, Any]]
         if tool:
             deltas = [
+                {"content": "Pausing briefly before I answer."},
                 {
                     "tool_calls": [
                         {
@@ -130,7 +133,7 @@ def main() -> None:
                             "function": {"name": "fixture.pause", "arguments": "{}"},
                         }
                     ]
-                }
+                },
             ]
         else:
             content = (
@@ -245,7 +248,13 @@ def main() -> None:
                     message="Process stopped; effects require inspection.",
                 ),
             )
-            metadata = {"origin": origin, "topic": topic.id, "other": other.id, "turns": 500}
+            metadata = {
+                "origin": origin,
+                "topic": topic.id,
+                "other": other.id,
+                "turns": 500,
+                "agent_name": profile.agent_name,
+            }
             if args.image_fixture:
                 from solakit.images import validate_png
 

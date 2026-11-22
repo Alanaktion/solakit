@@ -55,6 +55,7 @@ Place these before any `[table]` header.
 | Key | Type / built-in default | Meaning and constraints |
 | --- | --- | --- |
 | `schema_version` | integer: `1` | Only version `1` is supported. |
+| `agent_name` | string: `"Sola"` | Agent display name throughout the web UI, including login, messages and page titles. Must contain a non-whitespace character; at most 128 characters. Restart the server and reload the page after changing it. Does not rewrite identity files or conversation evidence. |
 | `data_dir` | string: `"~/.local/share/sola"` | Evidence, operational databases and managed runtime files. Must be nonempty and, if present, a directory. One runtime owns it at a time. |
 | `soul_file` | optional path string: omitted | Operator-owned UTF-8 identity file, read verbatim. Must be an existing file when configured. |
 | `curated_memory_file` | optional path string: omitted | Operator-owned UTF-8 curated memory file, read verbatim; independent of OpenViking being enabled. Must exist when configured. |

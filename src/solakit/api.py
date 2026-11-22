@@ -4,14 +4,16 @@ import asyncio
 from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
+from html import escape
 from pathlib import Path as FilePath
+from stat import S_ISREG
 from typing import Annotated, Any, Literal, cast
 from urllib.parse import urlsplit
 
 from fastapi import FastAPI, Path, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.openapi.utils import get_openapi
-from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt
 from starlette.exceptions import HTTPException
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
@@ -59,8 +61,9 @@ WEB_ASSETS = (
     "ui.js",
     "markdown.js",
     "lit-core.min.js",
+    "lucide.min.js",
 )
-PUBLIC_WEB_PATHS = {"/"} | {f"/assets/{name}" for name in WEB_ASSETS}
+PUBLIC_WEB_PATHS = {"/", "/assets/user.css"} | {f"/assets/{name}" for name in WEB_ASSETS}
 
 
 def failure(status: int, code: str, message: str) -> JSONResponse:
@@ -347,9 +350,10 @@ def create_app(
     app.add_middleware(Boundary, auth=auth)
 
     @app.get("/", include_in_schema=False)
-    async def chat() -> FileResponse:
-        return FileResponse(
-            FilePath(__file__).parent / "web" / "index.html",
+    async def chat() -> HTMLResponse:
+        shell = (FilePath(__file__).parent / "web" / "index.html").read_text(encoding="utf-8")
+        return HTMLResponse(
+            shell.replace("{{agent_name}}", escape(context.profile.agent_name)),
             headers={
                 "Content-Security-Policy": "default-src 'self'; script-src 'self'; "
                 "style-src 'self'; img-src 'self' blob:; connect-src 'self'; "
@@ -357,6 +361,17 @@ def create_app(
                 "Referrer-Policy": "no-referrer",
             },
         )
+
+    @app.get("/assets/user.css", include_in_schema=False)
+    async def user_css() -> Response:
+        path = context.profile.data_dir / "user.css"
+        try:
+            info = path.lstat()
+        except FileNotFoundError:
+            return Response(media_type="text/css")
+        if not S_ISREG(info.st_mode) or info.st_nlink != 1:
+            raise HTTPException(404)
+        return FileResponse(path, media_type="text/css")
 
     @app.get("/assets/{name}", include_in_schema=False)
     async def asset(name: str) -> FileResponse:

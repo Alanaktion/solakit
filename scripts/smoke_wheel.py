@@ -34,6 +34,7 @@ def main() -> None:
                 "ui.js",
                 "markdown.js",
                 "lit-core.min.js",
+                "lucide.min.js",
             ):
                 assert archive.read(f"solakit/web/{asset}")
         environment = root / "venv"

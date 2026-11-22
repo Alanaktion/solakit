@@ -1,6 +1,6 @@
 import { html, nothing, render as renderTemplate } from './lit-core.min.js';
 import { api } from './client.js';
-import { $, text, action, showError } from './ui.js';
+import { $, text, action, showError, agentName } from './ui.js';
 import { openEvidence } from './evidence.js';
 import './job.js';
 
@@ -79,7 +79,7 @@ export function settingsTemplate(actions) {
               <div>
                 <h3>Scheduled &amp; proactive work</h3>
                 <p class="meta">
-                  Give Sola a task to revisit, or a bounded wake-up to decide what needs
+                  Give ${agentName} a task to revisit, or a bounded wake-up to decide what needs
                   attention.
                 </p>
               </div>
@@ -95,7 +95,7 @@ export function settingsTemplate(actions) {
             </div>
             <p id="scheduler-status" class="meta" role="status"></p>
             <p id="jobs-empty" class="empty-state" hidden>
-              No jobs yet. Create a job when you want Sola to follow up.
+              No jobs yet. Create a job when you want ${agentName} to follow up.
             </p>
             <div id="jobs"></div>
             <button @click=${action(() => loadJobs(true))} id="more-jobs" hidden>

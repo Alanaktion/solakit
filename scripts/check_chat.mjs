@@ -20,6 +20,7 @@ const options = Object.fromEntries(
     )
 );
 const fixture = JSON.parse(await fs.readFile(options.fixture, 'utf8'));
+const agentName = fixture.agent_name || 'Sola';
 await fs.mkdir(options.output, { recursive: true });
 const browser = await chromium.launch({
   headless: true,
@@ -65,6 +66,45 @@ const audit = async (name) => {
 };
 try {
   await page.goto(fixture.origin);
+  await check('configured agent name and optional user.css override', async () => {
+    await page.locator('#login-dialog[open]').waitFor();
+    assert.equal(await page.locator('.brand').innerText(), `🌙 ${agentName}`);
+    assert.equal(await page.locator('#login-title').innerText(), `Welcome to ${agentName}`);
+    assert.equal(await page.locator('#draft').getAttribute('placeholder'), `Message ${agentName}…`);
+    assert.equal(
+      await page.getByRole('textbox', { name: `Message ${agentName}`, exact: true }).count(),
+      1
+    );
+    assert.equal(
+      await page.locator('#empty-hint').innerText(),
+      `Start a topic, then send ${agentName} a message.`
+    );
+    assert.equal(
+      (await page.locator('#jobs-empty').innerText()).trim(),
+      `No jobs yet. Create a job when you want ${agentName} to follow up.`
+    );
+    const cssPath = path.join(path.dirname(options.fixture), 'data', 'user.css');
+    const original = await fs.readFile(cssPath).catch((error) => {
+      if (error.code !== 'ENOENT') throw error;
+      return null;
+    });
+    const brandColor = () => page.locator('.brand').evaluate((el) => getComputedStyle(el).color);
+    const defaultColor = await brandColor();
+    try {
+      for (const color of ['rgb(12, 34, 56)', 'rgb(65, 43, 21)']) {
+        await fs.writeFile(cssPath, `.brand { color: ${color}; }`);
+        await page.reload();
+        await page.locator('#login-dialog[open]').waitFor();
+        assert.equal(await brandColor(), color);
+      }
+    } finally {
+      if (original === null) await fs.unlink(cssPath);
+      else await fs.writeFile(cssPath, original);
+    }
+    await page.reload();
+    await page.locator('#login-dialog[open]').waitFor();
+    assert.equal(await brandColor(), defaultColor);
+  });
   await check(
     'login has an accessible name, description and no automated WCAG violations',
     async () => {
@@ -195,7 +235,7 @@ try {
       await page.locator('#pinned').uncheck();
       await page.locator('#topic-form button.primary').click();
       await page.locator('#topic-dialog').waitFor({ state: 'hidden' });
-      await waitFor(() => document.querySelector('#topics button').textContent.trimStart().startsWith('⌑ '));
+      await waitFor(() => document.querySelector('#topics button sola-icon[name=Pin]'));
       assert.equal(await page.locator('#topics button').first().getAttribute('id'), 'topic-' + ids[51]);
       await searchFor('no matching unpinned topic');
       await waitFor(() => document.querySelectorAll('#topics button').length === 1);
@@ -528,7 +568,7 @@ try {
     await page.locator('#topic-dialog').waitFor({ state: 'hidden' });
     assert(await page.locator('#send').isDisabled());
     assert.equal(await page.locator('#draft').inputValue(), 'Keep this draft\n');
-    assert.equal(await page.title(), 'Sola · Polished conversation');
+    assert.equal(await page.title(), `${agentName} · Polished conversation`);
     await page.locator('#topic-edit').click();
     await page.locator('#archived').uncheck();
     await page.locator('#topic-form button.primary').click();
@@ -581,6 +621,12 @@ try {
         .count(),
       1
     );
+    const timeline = await page
+      .locator('.turn')
+      .filter({ hasText: 'tool first submission' })
+      .locator('.timeline > *')
+      .evaluateAll((nodes) => nodes.map((el) => el.className));
+    assert.deepEqual(timeline, ['message user', 'narration', 'work', 'message assistant']);
     assert.equal(
       await page.locator('#turns .message.user').filter({ hasText: 'second queued draft' }).count(),
       1
@@ -768,7 +814,7 @@ try {
       fullPage: true
     });
     await page.getByRole('button', { name: 'Close Settings', exact: true }).click();
-    await page.getByText('Sola · scheduled message', { exact: true }).last().waitFor();
+    await page.getByText(`${agentName} · scheduled message`, { exact: true }).last().waitFor();
     await page
       .locator('.message.assistant')
       .filter({ hasText: 'Automatic scheduled UI message' })
@@ -973,7 +1019,7 @@ try {
     assert(bounds.main > 350);
     assert(bounds.composer <= 844);
     assert(bounds.buttons.every((h) => h >= 36));
-    assert.equal(await page.getByRole('textbox', { name: 'Message Sola', exact: true }).count(), 1);
+    assert.equal(await page.getByRole('textbox', { name: `Message ${agentName}`, exact: true }).count(), 1);
     await page.screenshot({
       path: path.join(options.output, 'chat-mobile.png'),
       fullPage: true

@@ -4,14 +4,16 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="light dark" />
-    <title>Sola · Conversation</title>
+    <meta name="agent-name" content="{{agent_name}}" />
+    <title>{{agent_name}} · Conversation</title>
     <link rel="stylesheet" href="/assets/chat.css" />
+    <link rel="stylesheet" href="/assets/user.css" />
     <script type="module" src="/assets/chat.js"></script>
   </head>
   <body>
     <sola-app></sola-app>
     <noscript
-      >Sola’s chat needs JavaScript enabled. The authenticated HTTP API is also available.</noscript
+      >{{agent_name}}’s chat needs JavaScript enabled. The authenticated HTTP API is also available.</noscript
     >
   </body>
 </html>

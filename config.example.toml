@@ -2,6 +2,8 @@
 # Copy and set model.pin and defaults.workspace_roots before use.
 # Paths are relative to this file. No services are contacted by check.
 schema_version = 1
+agent_name = "Sola"
+# Optional user.css in data_dir overrides the default UI stylesheet on page reload.
 data_dir = "~/.local/share/sola"
 # Explicit import modules for installed trusted packs; loading grants no access.
 tool_modules = []

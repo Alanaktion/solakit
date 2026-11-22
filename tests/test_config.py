@@ -71,6 +71,29 @@ def write_config(tmp_path: Path, extra: str = "") -> Path:
     return path
 
 
+def test_agent_name_default_and_configured(tmp_path: Path) -> None:
+    path = write_config(tmp_path)
+    default = resolve_profile(load_config(path), base=tmp_path)
+    assert default.agent_name == "Sola"
+    assert dict(default.sources)["agent_name"] == "builtin"
+    path.write_text('agent_name = "Luna 🌙"\n' + path.read_text())
+    configured = resolve_profile(load_config(path), base=tmp_path)
+    assert configured.agent_name == "Luna 🌙"
+    values = configured.explain()["values"]
+    assert isinstance(values, dict) and values["agent_name"] == "Luna 🌙"
+    assert dict(configured.sources)["agent_name"] == "agent_name"
+    historical = default.model_dump(exclude={"agent_name"})
+    assert EffectiveProfile.model_validate(historical).agent_name == "Sola"
+
+
+@pytest.mark.parametrize("value", ['""', '"   "', "42", '"' + "x" * 129 + '"'])
+def test_invalid_agent_name(tmp_path: Path, value: str) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text(f"agent_name = {value}\n")
+    with pytest.raises(ConfigError, match="agent_name"):
+        load_config(path)
+
+
 def test_inheritance_sources_and_empty_tools(tmp_path: Path) -> None:
     path = write_config(
         tmp_path,

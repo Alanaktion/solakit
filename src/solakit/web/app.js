@@ -1,5 +1,5 @@
 import { html } from './lit-core.min.js';
-import { $, action, SolaElement } from './ui.js';
+import { $, action, SolaElement, agentName } from './ui.js';
 import { settingsTemplate } from './settings.js';
 
 export class SolaApp extends SolaElement {
@@ -27,9 +27,9 @@ export class SolaApp extends SolaElement {
     return html`
       <a class="skip" href="#draft">Skip to message</a>
       <aside class="sidebar" aria-label="Topics">
-        <div class="brand">🌙 Sola</div>
+        <div class="brand">🌙 ${agentName}</div>
         <button @click=${newTopic} id="new-topic">
-          <span aria-hidden="true">＋</span> New topic
+          <sola-icon name="Plus"></sola-icon> New topic
         </button>
         <input
           id="topic-search"
@@ -49,8 +49,10 @@ export class SolaApp extends SolaElement {
         >
         <div class="sidebar-footer">
           <button @click=${action(openSettings)} id="settings-open" aria-haspopup="dialog">
-            Settings</button
-          ><button @click=${action(logout)} id="logout">Sign out</button>
+            <sola-icon name="Settings"></sola-icon> Settings</button
+          ><button @click=${action(logout)} id="logout">
+            <sola-icon name="LogOut"></sola-icon> Sign out
+          </button>
         </div>
       </aside>
       <main>
@@ -60,7 +62,7 @@ export class SolaApp extends SolaElement {
             <p id="topic-mode">A little room to think.</p>
           </div>
           <button @click=${editTopic} id="topic-edit" aria-haspopup="dialog" disabled>
-            Topic details
+            <sola-icon name="SlidersHorizontal"></sola-icon> Topic details
           </button>
         </header>
         <p id="connection" role="status" aria-live="polite">Connecting…</p>
@@ -76,31 +78,33 @@ export class SolaApp extends SolaElement {
             Dismiss
           </button>
         </div>
-        <section @scroll=${historyScroll} id="history" aria-label="Conversation" tabindex="0">
-          <button @click=${action(older)} id="older" hidden>Load older conversation</button>
-          <div id="empty">
-            <h2>What’s on your mind?</h2>
-            <p id="empty-hint">Start a topic, then send Sola a message.</p>
-            <button @click=${newTopic} id="empty-new-topic" class="primary">
-              Start a topic
-            </button>
-          </div>
-          <div id="turns"></div>
-        </section>
-        <button @click=${jumpLatest} id="latest" hidden>
-          Jump to latest <span aria-hidden="true">↓</span>
-        </button>
+        <div class="history-wrap">
+          <section @scroll=${historyScroll} id="history" aria-label="Conversation" tabindex="0">
+            <button @click=${action(older)} id="older" hidden>Load older conversation</button>
+            <div id="empty">
+              <h2>What’s on your mind?</h2>
+              <p id="empty-hint">Start a topic, then send ${agentName} a message.</p>
+              <button @click=${newTopic} id="empty-new-topic" class="primary">
+                Start a topic
+              </button>
+            </div>
+            <div id="turns"></div>
+          </section>
+          <button @click=${jumpLatest} id="latest" hidden>
+            Jump to latest <sola-icon name="ArrowDown"></sola-icon>
+          </button>
+        </div>
         <div id="outbox" role="group" aria-label="Submissions awaiting confirmation"></div>
         <form @submit=${submit} id="composer">
           <div id="draft-image" role="status"></div>
-          <label class="sr-only" for="draft">Message Sola</label>
+          <label class="sr-only" for="draft">Message ${agentName}</label>
           <textarea
             @keydown=${draftKeydown}
             @input=${saveDraft}
             id="draft"
             rows="2"
             maxlength="32768"
-            placeholder="Message Sola…"
+            placeholder="Message ${agentName}…"
             aria-describedby="compose-hint"
             required
           ></textarea>
@@ -115,7 +119,7 @@ export class SolaApp extends SolaElement {
               </select></label
             >
             <button class="primary" id="send" type="submit" aria-label="Send message" disabled>
-              Send <span aria-hidden="true">↑</span>
+              Send <sola-icon name="ArrowUp"></sola-icon>
             </button>
           </div>
         </form>
@@ -126,7 +130,7 @@ export class SolaApp extends SolaElement {
         aria-labelledby="login-title"
       >
         <form @submit=${login} id="login-form">
-          <h2 id="login-title">Welcome to Sola</h2>
+          <h2 id="login-title">Welcome to ${agentName}</h2>
           <p id="login-reason">Sign in with your operator password.</p>
           <label for="password">Password</label
           ><input

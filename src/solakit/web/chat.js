@@ -1,5 +1,5 @@
 import { html, nothing, render as renderTemplate } from './lit-core.min.js';
-import { $, active, action, text, showError } from './ui.js';
+import { $, active, action, text, showError, agentName } from './ui.js';
 import { api, read, write, uid } from './client.js';
 import { openEvidence, moreEvidence, switchEvidence } from './evidence.js';
 import { createSettings } from './settings.js';
@@ -65,9 +65,11 @@ function preserveScroll(action, prepend = false) {
       )
     : null;
   const top = anchor?.getBoundingClientRect().top;
+  const height = history.scrollHeight;
   action();
   if (anchor?.isConnected) history.scrollTop += anchor.getBoundingClientRect().top - top;
   else if (following) history.scrollTop = history.scrollHeight;
+  else if (history.scrollHeight > height) $('latest').classList.add('unseen');
   $('latest').hidden = following;
 }
 function merge(kind, rows) {
@@ -106,28 +108,23 @@ function render() {
       ...runs.keys(),
       ...[...messages.values()].map((row) => row.record.run_id)
     ]);
-    const sorted = [...ids].sort((a, b) => {
-      const position = (id) =>
-        runs.get(id)?.sequence ??
-        Math.min(
-          ...[...messages.values()]
-            .filter((row) => row.record.run_id === id)
-            .map((row) => row.sequence)
-        );
-      return position(a) - position(b);
-    });
-    for (let index = 0; index < sorted.length; index++) {
+    const position = new Map();
+    for (const row of messages.values())
+      position.set(
+        row.record.run_id,
+        Math.min(position.get(row.record.run_id) ?? Infinity, row.sequence)
+      );
+    for (const [id, row] of runs) position.set(id, row.sequence ?? position.get(id));
+    const sorted = [...ids].sort((a, b) => position.get(a) - position.get(b));
+    let next = null;
+    for (let index = sorted.length - 1; index >= 0; index--) {
       const id = sorted[index],
         turn = turnFor(id),
         run = runs.get(id)?.record;
-      // Keep keyed turn elements in place so prepending history preserves selections.
-      if (!turn.isConnected) {
-        const next = sorted
-          .slice(index + 1)
-          .map((key) => turns.get(key))
-          .find((root) => root?.isConnected);
-        $('turns').insertBefore(turn, next || null);
-      }
+      // Move only misplaced turns so settled ones keep focus and selections.
+      if (!turn.isConnected || turn.nextElementSibling !== next)
+        $('turns').insertBefore(turn, next);
+      next = turn;
       turn.messageRows = [...messages.values()]
         .filter((row) => row.record.run_id === id && row.record.role !== 'tool')
         .sort((a, b) => a.sequence - b.sequence);
@@ -161,10 +158,19 @@ function updateTimers() {
   }
 }
 async function loadRecords(id, token) {
-  const result = await api(`/runs/${id}/records?before=0&limit=50`);
-  if (token !== generation) return;
+  const items = [],
+    full = !records.has(id);
+  let before = 0;
+  // The first load pages back to the run record so long tool runs keep early calls.
+  while (true) {
+    const result = await api(`/runs/${id}/records?before=${before}&limit=50`);
+    if (token !== generation) return;
+    items.push(...result.items);
+    if (!full || !result.items.length || result.items.some((row) => row.kind === 'run')) break;
+    before = result.next;
+  }
   if (!records.has(id)) records.set(id, new Map());
-  for (const row of result.items) {
+  for (const row of items) {
     records.get(id).set(`${row.kind}:${row.record.id}`, row);
     if (row.kind === 'run') merge('run', [row]);
   }
@@ -234,7 +240,7 @@ async function refresh(ids = []) {
     .sort((a, b) => a.sequence - b.sequence);
   // Replacing the text also announces a new reply identical to the previous one.
   if (replies.length)
-    $('reply-status').textContent = replies.map((row) => `Sola: ${row.record.content}`).join('\n\n');
+    $('reply-status').textContent = replies.map((row) => `${agentName}: ${row.record.content}`).join('\n\n');
 }
 function queueRefresh(id) {
   for (const identity of Array.isArray(id) ? id : id ? [id] : []) pendingRuns.add(identity);
@@ -412,8 +418,8 @@ function saveDraft() {
   updateComposer();
 }
 function updateComposer() {
-  renderTemplate(draftImage ? html`<span>Image attached</span>
-    <button type="button" @click=${() => { draftImage = null; saveDraft(); }}>Remove image</button>` : nothing, $('draft-image'));
+  renderTemplate(draftImage ? html`<span><sola-icon name="Image"></sola-icon> Image attached</span>
+    <button type="button" @click=${() => { draftImage = null; saveDraft(); }}><sola-icon name="X"></sola-icon> Remove image</button>` : nothing, $('draft-image'));
   const topic = topics.get(selected);
   const used =
     topic?.mode === 'ephemeral' &&
@@ -434,7 +440,7 @@ function setTopicHeading() {
   const topic = topics.get(selected);
   const title = topic ? topic.title || 'Untitled topic' : 'Conversation';
   text($('topic-title'), title);
-  document.title = `Sola · ${title}`;
+  document.title = `${agentName} · ${title}`;
   const modes = {
     shared: 'Shared memory',
     isolated: 'Isolated memory',
@@ -448,7 +454,7 @@ function setTopicHeading() {
     $('empty-hint'),
     topic
       ? 'Send a message to start this conversation.'
-      : 'Start a topic, then send Sola a message.'
+      : `Start a topic, then send ${agentName} a message.`
   );
   $('empty-new-topic').hidden = !!topic;
   $('topic-edit').disabled = !topic;
@@ -474,6 +480,8 @@ async function selectTopic(id) {
   olderMessages = olderRuns = 0;
   messagesDone = runsDone = false;
   following = true;
+  $('latest').hidden = true;
+  $('latest').classList.remove('unseen');
   const draft = read(`sola.draft.${id}`, {});
   $('draft').value = draft.content || '';
   $('profile').value = draft.profile || '';
@@ -503,7 +511,7 @@ function renderTopics() {
           aria-current=${topic.id === selected ? 'page' : nothing}
           @click=${action(() => selectTopic(topic.id))}
         >
-          ${`${topic.pinned ? '⌑ ' : ''}${topic.title || 'Untitled topic'}${topic.archived ? ' (archived)' : ''}`}
+          ${topic.pinned ? html`<sola-icon name="Pin"></sola-icon><span class="sr-only">Pinned: </span>` : nothing}${`${topic.title || 'Untitled topic'}${topic.archived ? ' (archived)' : ''}`}
         </button>
       `
     )}`,
@@ -560,7 +568,7 @@ function renderOutbox() {
             <span
               >${`${item.sending ? 'Submitting' : 'Awaiting confirmation'} · ${item.content.slice(0, 80)}`}</span
             >
-            ${item.sending ? nothing : html`<button type="button" @click=${action(() => deliver(item))}>Retry same submission</button>`}
+            ${item.sending ? nothing : html`<button type="button" @click=${action(() => deliver(item))}><sola-icon name="RotateCcw"></sola-icon> Retry same submission</button>`}
           </div>
         `
       ),
@@ -679,6 +687,7 @@ function historyScroll() {
   const h = $('history');
   following = h.scrollHeight - h.scrollTop - h.clientHeight < 64;
   $('latest').hidden = following;
+  if (following) $('latest').classList.remove('unseen');
 }
 
 function jumpLatest() {
@@ -686,6 +695,7 @@ function jumpLatest() {
   $('history').scrollTop = $('history').scrollHeight;
   if (document.activeElement === $('latest')) $('history').focus({ preventScroll: true });
   $('latest').hidden = true;
+  $('latest').classList.remove('unseen');
 }
 
 function newTopic() {
@@ -749,6 +759,12 @@ function initialize() {
     startPolling();
   });
   window.addEventListener('pagehide', saveDraft);
+  // Images, disclosures and composer resizes change height outside render(); stay pinned.
+  const pin = new ResizeObserver(() => {
+    if (following) $('history').scrollTop = $('history').scrollHeight;
+  });
+  pin.observe($('turns'));
+  pin.observe($('history'));
   setInterval(updateTimers, 1000);
   boot().catch((error) => {
     if (loggedIn) showError(error);

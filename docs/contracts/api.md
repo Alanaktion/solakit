@@ -73,8 +73,11 @@ local tests.
 ## Browser request matrix
 
 The public chat shell at `/` and its explicitly allowlisted CSS and JavaScript
-modules under `/assets/` permit GET without login; they contain no runtime data or credential values. All API paths
-retain the authentication matrix below.
+modules under `/assets/` permit GET without login. The shell includes the configured
+`agent_name`; `/assets/user.css` serves the optional regular, non-linked
+`<data_dir>/user.css`, or an empty stylesheet when absent. These presentation values
+are public and must not contain private data. No other data-directory files are
+served through this route. All API paths retain the authentication matrix below.
 
 All paths, including health, require Host to match an authority in
 `http.allowed_origins`. Duplicate Host, Origin, Authorization, CSRF and length
