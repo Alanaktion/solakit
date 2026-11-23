@@ -35,7 +35,8 @@ profile and selected navigation in browser session storage, across reloads in
 that tab. Closing the tab clears these drafts. No credentials enter browser
 storage; sign-in uses the existing HttpOnly session cookie and CSRF protocol.
 
-When an image route is configured, **Attach image** accepts one PNG or JPEG.
+When an image route is configured, **Attach image** accepts one static PNG, JPEG,
+or WebP.
 The draft shows the thumbnail and **Remove image** alongside the question.
 **Use image in next message** adds an image already in the topic. On the separate
 vision route the run shows **Analyzing image…** while the vision model works.

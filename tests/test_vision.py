@@ -96,10 +96,12 @@ def topic(client: TestClient) -> str:
     return str(response.json()["id"])
 
 
-def upload(client: TestClient, session: str, raw: bytes | None = None) -> str:
+def upload(
+    client: TestClient, session: str, raw: bytes | None = None, *, media_type: str = "image/png"
+) -> str:
     response = client.post(
         f"/api/v1/sessions/{session}/image-uploads",
-        headers={"Content-Type": "image/png"},
+        headers={"Content-Type": media_type},
         content=picture() if raw is None else raw,
     )
     assert response.status_code == 201, response.text
@@ -122,13 +124,15 @@ def submit(
     )
 
 
+@pytest.mark.parametrize("media_type", ["image/png", "image/webp"])
 def test_vision_pixels_evidence_history_compaction_and_reattachment(
-    vision: tuple[TestClient, ApplicationContext, dict[str, Any]],
+    vision: tuple[TestClient, ApplicationContext, dict[str, Any]], media_type: str
 ) -> None:
     client, context, state = vision
     login(client)
     session = topic(client)
-    identity = upload(client, session)
+    raw = picture("WEBP", lossless=True) if media_type == "image/webp" else picture()
+    identity = upload(client, session, raw, media_type=media_type)
     assert client.portal and context.store and context.model
 
     # Hold the only permit across admission and give the run a chance to reach the adapter.
@@ -379,6 +383,25 @@ def test_normalize_orientation_and_reject_animated_corrupt_or_overlarge() -> Non
     animated = picture("PNG", save_all=True, append_images=[Image.new("RGB", (80, 64), "red")])
     with pytest.raises(ValueError):
         normalize_upload(animated, "image/png")
+
+
+def test_webp_orientation_and_invalid_containers() -> None:
+    exif = Image.Exif()
+    exif[274] = 6
+    exif[270] = "private comment"
+    still = picture("WEBP", exif=exif)
+    with Image.open(BytesIO(normalize_upload(still, "image/webp"))) as image:
+        assert image.format == "PNG" and image.size == (64, 80)
+        assert not image.info
+
+    animated = picture("WEBP", save_all=True, append_images=[Image.new("RGB", (80, 64), "red")])
+    first_frame = animated[: animated.rindex(b"ANMF")]
+    first_frame = first_frame[:4] + (len(first_frame) - 8).to_bytes(4, "little") + first_frame[8:]
+    with Image.open(BytesIO(first_frame)) as image:
+        assert getattr(image, "n_frames", 0) == 1
+    for raw in (still[:-1], still + b"x", picture(), animated, first_frame):
+        with pytest.raises(ValueError):
+            normalize_upload(raw, "image/webp")
 
 
 def test_vision_config_requires_pin_and_excludes_native() -> None:

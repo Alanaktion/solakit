@@ -98,7 +98,7 @@ export class SolaApp extends SolaElement {
         <div id="outbox" role="group" aria-label="Submissions awaiting confirmation"></div>
         <form @submit=${submit} id="composer">
           <div id="draft-image"></div>
-          <input id="image-file" type="file" accept="image/png,image/jpeg" @change=${pickImage} hidden />
+          <input id="image-file" type="file" accept="image/png,image/jpeg,image/webp" @change=${pickImage} hidden />
           <label class="sr-only" for="draft">Message ${agentName}</label>
           <textarea
             @keydown=${draftKeydown}

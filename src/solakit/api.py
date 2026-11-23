@@ -29,7 +29,7 @@ from solakit.config import (
     resolve_profile,
 )
 from solakit.evidence import StorageError, canonical
-from solakit.images import UPLOAD_BYTES
+from solakit.images import UPLOAD_BYTES, UPLOAD_FORMATS
 from solakit.records import (
     RUN_TRANSITIONS,
     Job,
@@ -552,15 +552,15 @@ def create_app(
                 "required": True,
                 "content": {
                     media_type: {"schema": {"type": "string", "format": "binary"}}
-                    for media_type in ("image/png", "image/jpeg")
+                    for media_type in UPLOAD_FORMATS
                 },
             }
         },
     )
     async def upload_image(session_id: ID, request: Request) -> UploadReference:
         media_type = request.headers.get("content-type", "").strip().lower()
-        if media_type not in ("image/png", "image/jpeg"):
-            raise RequestError(415, "unsupported_media_type", "Send one binary PNG or JPEG")
+        if media_type not in UPLOAD_FORMATS:
+            raise RequestError(415, "unsupported_media_type", "Send one binary PNG, JPEG, or WebP")
         return UploadReference(
             upload_id=service.upload_image(session_id, await request.body(), media_type)
         )

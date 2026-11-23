@@ -6189,6 +6189,12 @@
                 "format": "binary",
                 "type": "string"
               }
+            },
+            "image/webp": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
             }
           },
           "required": true

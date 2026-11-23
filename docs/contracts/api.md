@@ -130,7 +130,7 @@ means unavailable service/state.
 | `/sessions/archive` | POST `{ "session_ids": [id, ...] }` (1–100); returns `{ "archived": count }`; validates all IDs before one state transaction; duplicates/already archived sessions are no-ops |
 | `/sessions/{id}/messages` | GET public conversation pages; private background inputs/tools remain in run records |
 | `/sessions/{id}/runs` | GET admission-order run pages; current state in each record |
-| `/sessions/{id}/image-uploads` | POST one binary `image/png` or `image/jpeg`. Returns 201 and `{upload_id}` for a normalized, temporary PNG |
+| `/sessions/{id}/image-uploads` | POST one binary `image/png`, `image/jpeg`, or `image/webp`. Returns 201 and `{upload_id}` for a normalized, temporary PNG |
 | `/sessions/{id}/image-uploads/{upload_id}` | GET the staged PNG while it is available |
 | `/runs` | POST session_id, optional profile (server selection, normally `default`), content (1–32768 UTF-8 bytes), optional image reference `{upload_id}` or `{run_id, artifact_id}`; required Idempotency-Key; optional wait=0..30 seconds |
 | `/runs/{id}` | GET current run, optional wait=0..30; wait expiry returns its current state |

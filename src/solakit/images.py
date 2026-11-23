@@ -33,6 +33,7 @@ from solakit.tools import GenerateImage
 
 MAX_IMAGE_BYTES = 16 * 1024 * 1024
 UPLOAD_BYTES = 8 * 1024 * 1024
+UPLOAD_FORMATS = {"image/png": "PNG", "image/jpeg": "JPEG", "image/webp": "WEBP"}
 UPLOAD_TTL = 30 * 60
 TOPIC_UPLOADS = 4
 TOTAL_UPLOADS = 16
@@ -130,10 +131,16 @@ def pixel_png(source: Image.Image) -> bytes:
 
 
 def normalize_upload(raw: bytes, media_type: str) -> bytes:
-    expected = {"image/png": "PNG", "image/jpeg": "JPEG"}.get(media_type)
+    expected = UPLOAD_FORMATS.get(media_type)
     if not expected or not 0 < len(raw) <= UPLOAD_BYTES:
-        raise ValueError("Choose one PNG or JPEG up to 8 MiB")
+        raise ValueError("Choose one PNG, JPEG, or WebP up to 8 MiB")
     try:
+        if expected == "WEBP":
+            if len(raw) < 21 or int.from_bytes(raw[4:8], "little") + 8 != len(raw):
+                raise ValueError("Incomplete or trailing WebP data")
+            # RFC 9649's VP8X animation flag also marks single-frame animations.
+            if raw[12:16] == b"VP8X" and raw[20] & 0x02:
+                raise ValueError("Animated images are unsupported")
         stream = BytesIO(raw)
         with Image.open(stream, formats=[expected]) as source:
             width, height = source.size
@@ -164,7 +171,7 @@ def normalize_upload(raw: bytes, media_type: str) -> bytes:
         struct.error,
         Image.DecompressionBombError,
     ) as error:
-        raise ValueError("Image must be a valid, static PNG or JPEG within pixel bounds") from error
+        raise ValueError("Image must be a valid static PNG, JPEG, or WebP within bounds") from error
 
 
 class ImageUploads:
