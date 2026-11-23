@@ -72,6 +72,8 @@ def opened(
     shell_enabled: bool = False,
     git_repositories: dict[str, dict[str, str]] | None = None,
     letters_repository: Path | None = None,
+    letters_settings: dict[str, str] | None = None,
+    timezone: str = "America/Denver",
 ) -> Iterator[Harness]:
     root = root.resolve()
     workspace = root / "workspace"
@@ -92,7 +94,9 @@ def opened(
                 "web_search": {"api_key_env": web_search_env},
                 "shell": {"enabled": shell_enabled},
                 "git": {"repositories": git_repositories or {}},
-                "letters": {"repository": str(letters_repository)} if letters_repository else {},
+                "letters": ({"repository": str(letters_repository)} if letters_repository else {})
+                | (letters_settings or {}),
+                "background": {"timezone": timezone},
                 "soul_file": str(soul) if soul else None,
                 "defaults": {
                     "workspace_roots": [str(workspace)],

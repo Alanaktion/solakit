@@ -28,6 +28,7 @@ legacy files byte for byte. `search.db` is disposable and contains no authority.
 | Start/terminal run | Validate prior lifecycle + latest snapshot + sequence + outbox | Started/terminal event durable before return; immutable terminal state |
 | Message/model/tool/receipt/compaction | Check parent identities + insert immutable record + sequence + outbox | Record/event durable before return; tool intent return precedes any future effect |
 | Delivery/memory transition | Validate lifecycle + latest state + sequence + outbox | New snapshot/event durable before return; no success inferred from missing state |
+| Letter publication | Reserve request or reply target + latest phase + outbox | Prepared allocation precedes file creation. Confirmed result follows verified push or operator reconciliation. Global ledger entries retain the original tool intent ID across session archival. |
 | Search projection | No authoritative mutation | Best effort after append; failure marks search degraded and does not undo a successful write |
 | Backup | Writer held; drain outbox; SQLite backup API | Evidence high-water sizes + hashes + state backup + atomic manifest; restore verifies all files before publication |
 | Legacy fixture import | Source digest ledger and deterministic import identities | Preserve raw source first; retain unknown fields in normalized legacy entries; retry is idempotent |

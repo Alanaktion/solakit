@@ -11,7 +11,13 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler  # type: ignore[impo
 from apscheduler.triggers.cron import CronTrigger  # type: ignore[import-untyped]
 from pydantic import JsonValue
 
-from solakit.config import Budgets, EffectiveProfile, restrict_to_admission
+from solakit.config import (
+    LETTERS_TOOLS,
+    Budgets,
+    EffectiveProfile,
+    letters_tools,
+    restrict_to_admission,
+)
 from solakit.evidence import canonical, digest
 from solakit.lineage import deny_autonomous_successor
 from solakit.records import (
@@ -212,8 +218,11 @@ class JobService:
             selected.model_base_url,
         ) != (self.runs.model.profile.model_pin, self.runs.model.profile.model_base_url):
             raise ValueError("job profile belongs to a different runtime/model")
-        tools = selected.tools if job.tools is None else frozenset(job.tools)
-        if not tools <= selected.tools:
+        eligible = selected.tools - (
+            LETTERS_TOOLS - letters_tools(selected.letters, selected.workspace_roots, job.origin)
+        )
+        tools = eligible if job.tools is None else frozenset(job.tools)
+        if not tools <= eligible:
             raise ValueError("job tools exceed current profile grants")
         roots = selected.workspace_roots
         if job.workspace_roots is not None:
@@ -225,7 +234,7 @@ class JobService:
             ):
                 raise ValueError("job roots exceed current profile roots")
         else:
-            tools -= {"files.write", "images.generate"}
+            tools -= {"files.write", "images.generate", "letters.inbox"}
         changes = {"model_calls": 8, "tool_calls": 12, "active_seconds": 600}
         changes.update(selected.proactive_budgets.model_dump(exclude_none=True))
         changes = {

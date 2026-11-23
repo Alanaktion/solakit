@@ -15,4 +15,5 @@ wheels/
 # Local reference files
 .env
 config.toml
-docs/validation/
+docs/validation/*
+!docs/validation/letters-tools.md

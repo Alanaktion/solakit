@@ -56,9 +56,14 @@ max_checks = 300
 # path = "~/workspace/project"
 # branch = "main"
 
-# Optional reservation for a correspondence checkout. Git and blog mutations are denied here.
+# Optional correspondence checkout. Repository alone reserves it against generic writes.
+# Use a separate checkout for blog and dreams. Seed existing v1 replies before granting publication.
 # [letters]
 # repository = "~/workspace/letters"
+# branch = "main"
+# directory = "." # Repository-relative. Use "letters" for a checkout with a letters/ subdirectory.
+# author = "sola"
+# peer = "dingus"
 
 # Optional Brave public web search. Set the named environment variable and grant web.search.
 # Existing wildcard grants can match web.search on new admissions once enabled.
@@ -121,6 +126,15 @@ tool_timeout_seconds = 60
 # model_calls = 4
 # tool_calls = 8
 # active_seconds = 300
+
+# Optional dedicated profiles. First admit their workspace and named grants in [defaults].
+# [profiles.correspondence]
+# workspace_roots = ["~/workspace/letters"]
+# tools = ["letters.inbox", "letters.read", "letters.send", "letters.reply"]
+# [profiles.correspondence_job]
+# workspace_roots = ["~/workspace/letters"]
+# tools = ["letters.inbox", "letters.read"]
+# Set explicit job workspace_roots covering the checkout to permit an inbox update.
 
 [proactive_budgets]
 # Omitted overrides use these automatic ceilings, capped by profile budgets.

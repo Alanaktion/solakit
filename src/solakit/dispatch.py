@@ -16,6 +16,7 @@ from solakit.records import (
     ErrorCode,
     Failure,
     Origin,
+    Run,
     RunState,
     SessionMode,
     ToolCall,
@@ -38,6 +39,17 @@ if TYPE_CHECKING:
 
 MAX_ARGUMENT_BYTES = 65536
 MAX_ARTIFACT_BYTES = 1024 * 1024
+
+
+def receipt_content(status: str, effect: str, result: JsonValue, failure: Failure | None) -> bytes:
+    return canonical(
+        {
+            "status": status,
+            "effect": effect,
+            "result": result,
+            "failure": failure.model_dump(mode="json") if failure else None,
+        }
+    )
 
 
 class Dispatcher:
@@ -71,6 +83,13 @@ class Dispatcher:
             self._checkout_locks[key] = asyncio.Lock()
         return self._checkout_locks[key]
 
+    def letters_inbox_allowed(self, run: Run) -> bool:
+        return run.origin == Origin.INTERACTIVE or (
+            run.occurrence_id is not None
+            and self.store.occurrence(run.occurrence_id).definition.get("workspace_roots")
+            is not None
+        )
+
     def bind(self, run_id: str) -> ToolSession:
         admitted = EffectiveProfile.model_validate_json(
             canonical(self.store.admission_profile(run_id))
@@ -103,9 +122,14 @@ class ToolSession:
 
     def eligible(self) -> frozenset[str]:
         profile = restrict_to_admission(self.dispatcher.current(self.admitted), self.admitted)
+        tools = profile.tools
+        if "letters.inbox" in tools and not self.dispatcher.letters_inbox_allowed(
+            self.dispatcher.store.run(self.run_id)
+        ):
+            tools -= {"letters.inbox"}
         return frozenset(
             name
-            for name in profile.tools
+            for name in tools
             if name in self.dispatcher.registry.tools
             and profile.origin in self.dispatcher.registry.tools[name].origins
             and (not name.startswith("memory.") or profile.memory_mode != "off")
@@ -161,11 +185,19 @@ class ToolSession:
                 raise ToolError(
                     "Tool returned without confirming its effect", ErrorCode.EFFECT_UNCERTAIN
                 )
-            safe = self.dispatcher.redactor.value(outcome.data)
+            safe = (
+                outcome.data
+                if invocation.redacted_result
+                else self.dispatcher.redactor.value(outcome.data)
+            )
             raw = canonical(safe).decode() if not isinstance(safe, str) else safe
             encoded = raw.encode("utf-8")
             result_bytes, result_sha256 = len(encoded), digest(encoded)
             cap = invocation.authority().budgets.tool_result_bytes
+            if invocation.redacted_result and len(encoded) > cap:
+                raise ToolError(
+                    "Structured result exceeds the current budget", ErrorCode.BUDGET_EXCEEDED
+                )
             if len(encoded) > cap:
                 marker = "[truncated]" if cap >= 11 else "!"
                 result = (
@@ -230,7 +262,13 @@ class ToolSession:
                 message=message + invocation.uncertain_advice,
             )
         else:
-            if failure is not None and call.name in ("git.pull", "git.publish"):
+            if failure is not None and call.name in (
+                "git.pull",
+                "git.publish",
+                "letters.inbox",
+                "letters.send",
+                "letters.reply",
+            ):
                 failure = failure.model_copy(
                     update={"message": failure.message + invocation.uncertain_advice}
                 )
@@ -269,6 +307,7 @@ class Invocation:
         self.call_started = time.monotonic()
         self.closed = False
         self.artifact: Artifact | None = None
+        self.redacted_result = False
 
     def authority(self, service: str = "") -> EffectiveProfile:
         if self.closed:
@@ -293,6 +332,10 @@ class Invocation:
         if service in ("files.write", "effect") and not tool.consequential:
             raise ToolError("Tool did not declare writes", ErrorCode.TOOL_DENIED)
         run = store.run(self.run_id)
+        if tool.name == "letters.inbox" and not self.dispatcher.letters_inbox_allowed(run):
+            raise ToolError(
+                "Letters inbox requires explicit job workspace roots", ErrorCode.TOOL_DENIED
+            )
         if (
             service == "files.write"
             and tool.name != "memory.remember"

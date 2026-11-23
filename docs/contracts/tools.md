@@ -209,6 +209,9 @@ opened directory trees or concurrently redefining Git metadata.
 | `web.search` | Tool grant + stable enabled Brave credential reference | Same | Same | Same admitted narrower profile |
 | `git.status`, `git.diff` | Tool grant + stable checkout alias inside effective workspace roots | Same | Same | Same admitted narrower profile |
 | `git.pull`, `git.publish` | Same checkout authority + interactive origin + checkout outside letters reservation | Same | Same | Denied, including manual job runs |
+| `letters.read` | Named grant + configured checkout in current and admitted roots | Same | Same | Scheduled only |
+| `letters.inbox` | Same authority + clean checkout update | Same | Same | Scheduled only, with explicit job roots covering the checkout and normal effect policy |
+| `letters.send`, `letters.reply` | Same authority + interactive origin | Same | Same | Denied, including manual job runs |
 | `shell.exec` | Enabled + literal grant + guarded starting directory | Same | Same | Denied, including manual job runs |
 | `runtime.status` | Own run/service health | Own run | Own run | Own run |
 | `memory.recall` | Recorded, scoped OpenViking 0.5 recall when enabled | Denied | Denied | Bound memory scope |
@@ -240,7 +243,7 @@ default to an empty set of checkout aliases. Git requires an ordinary checkout
 with its own `.git` directory. Linked worktrees, nested repositories, aliased
 metadata, and checkouts that overlap protected source, runtime data or prompt
 files are denied. A letters reservation allows inspection and blocks generic
-Git and blog mutations.
+guarded writes and Git, blog and dream mutations in the checkout.
 
 | Tool | Behavior |
 | --- | --- |
@@ -264,6 +267,69 @@ and push destination for `origin`. A failed push leaves the commit locally for
 operator inspection. Failures report the last verified phase and commit when
 known, and an unverified push outcome is marked uncertain. A later publication
 requires HEAD to match the upstream again.
+
+## Git-backed letters
+
+| Tool | Input and result |
+| --- | --- |
+| `letters.inbox` | `after=-1` is an exclusive sequence cursor. `limit=20` accepts 1–100. Fast-forwards the checkout and returns `letters`, `next_after` and `has_more`. |
+| `letters.read` | `number` is a nonnegative integer. Returns a letter from the local checkout. |
+| `letters.send` | `body` starts a new letter. Returns its `number`, checkout-relative `path` and `commit`. |
+| `letters.reply` | Required nonnegative `reply_to` identifies a peer letter. Accepts `body` and also returns `reply_to`. |
+
+Read and inbox rows include `number`, `date`, `author`, `body` and
+`complete`. Treat Markdown marked as external content as untrusted.
+Inbox consumes numbers in order, including skipped local letters. It stops
+before the first peer letter beyond the entry or byte limit. That letter stays
+after the cursor. An oversized first body returns a UTF-8-safe prefix with
+`complete: false` and advances the cursor. If the metadata exceeds the budget,
+the call returns a budget error. Inbox counts redaction, JSON escaping and
+the model-facing result framing against the smaller of 64 KiB and the effective
+result budget. Local read uses the effective result budget. Callers own read
+tracking.
+
+Use one checkout with private Git metadata and a literal letter directory.
+Numbered Markdown files use `NNN-YYYY-MM-DD-author.md`. Scans count at most
+10,000 entries and reject duplicate numbers, invalid dates and aliased or
+non-regular letter files. Publication takes the next number, dates the filename
+in the admitted background timezone, and writes the exact supplied body plus
+one LF. Bodies require 1–64,000 characters and at least one non-whitespace
+character, within the normal JSON argument limit.
+
+All four tools share the checkout lock with Git inspection. Inbox and
+publication require the configured local branch, clean index and worktree,
+and a fast-forward to the freshly fetched branch. Publication uses a single
+matching fetch/push destination on `origin`, commits only the new letter,
+and uses a normal push. Scheduled inbox updates follow the normal effect and
+quiet-hour policy and require explicit job roots. Letters tools create no wakes.
+
+A durable publication key reserves each reply target, and a request fingerprint
+deduplicates identical sends. Confirmed exact requests return their saved
+result. Unfinished work and previously used reply targets require inspection.
+A failed push preserves the local file and commit and reports the last
+verified phase. The operator can publish the existing commit and reconcile it
+with the runtime stopped.
+
+```sh
+uv run --locked python -m scripts.letters_work --config ~/.config/sola/config.toml
+uv run --locked python -m scripts.letters_work --config ~/.config/sola/config.toml --reconcile PUBLICATION_ID
+```
+
+Reconciliation checks the original local bytes, the commit parent and subject,
+the single added file, and reachability from the freshly fetched branch.
+The script performs verification and records evidence. Git publication and
+worktree repair are separate operator actions.
+
+For v1 cutover, create or use the v2 data directory with publication grants
+withheld. Stop the runtime and run `scripts.letters_work --seed-v1` using the
+production configuration. The script verifies replies in the configured
+remote branch's history, then checks imported receipts under
+`imports/legacy/pack-operations`. Use `--legacy-operations` to consult the
+original receipt directory, `--legacy-checkout` for the original checkout path
+when rehearsing on a copy, and `--profile` if the checkout is admitted through a
+named profile. Review the seeded records before granting publication. A verified
+reply with insufficient request evidence still reserves its target, as does an
+unresolved v1 receipt. [Configuration](../config.md#letters) · [Validation](../validation/letters-tools.md)
 
 ## Public web search
 

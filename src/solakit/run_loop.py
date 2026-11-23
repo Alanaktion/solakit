@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 
 from solakit.compaction import Compactor, select
 from solakit.config import ConfigError, EffectiveProfile, restrict_to_admission
-from solakit.dispatch import Dispatcher
+from solakit.dispatch import Dispatcher, receipt_content
 from solakit.evidence import StorageError, canonical
 from solakit.images import ImageUploads
 from solakit.lineage import current_run, deny_autonomous_successor
@@ -116,21 +116,18 @@ def requested_tools(text: str, names: Sequence[str]) -> set[str]:
             or name in explicit
             or bool(re.search(r"\b(?:dreams?)\b", text))
         )
+        and (
+            not name.startswith("letters.")
+            or name in explicit
+            or bool(re.search(r"\b(?:letters?|correspondence)\b(?!\.[\w-])", text))
+        )
     }
 
 
 def render_receipt(receipt: ToolReceipt, cap: int) -> str:
-    text = canonical(
-        {
-            "status": receipt.status,
-            "effect": receipt.effect,
-            "result": receipt.result,
-            "failure": receipt.failure.model_dump(mode="json") if receipt.failure else None,
-        }
-    ).decode()
-    raw = text.encode()
+    raw = receipt_content(receipt.status, receipt.effect, receipt.result, receipt.failure)
     if len(raw) <= cap:
-        return text
+        return raw.decode()
     marker = b"[truncated]" if cap >= 11 else b"!"
     return raw[: cap - len(marker)].decode(errors="ignore") + marker.decode()
 

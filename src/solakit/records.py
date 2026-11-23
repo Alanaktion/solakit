@@ -269,6 +269,34 @@ class ToolCall(Record):
     arguments: dict[str, JsonValue]
 
 
+class LetterResult(Value):
+    number: int
+    path: str
+    commit: str
+    reply_to: int | None = None
+
+
+class LetterPublication(Record):
+    checkout: str
+    branch: str
+    origin_hash: str
+    directory: str
+    author: str
+    peer: str
+    layout: str
+    reply_to: int | None = None
+    request_hash: str | None = None
+    tool_call_id: RecordID | None = None
+    legacy_evidence: str | None = None
+    number: int | None = None
+    path: str | None = None
+    file_hash: str | None = None
+    base: str | None = None
+    phase: Literal["prepared", "created", "committed", "confirmed"] = "prepared"
+    commit: str | None = None
+    result: LetterResult | None = None
+
+
 class ToolReceipt(Record):
     session_id: RecordID
     run_id: RecordID

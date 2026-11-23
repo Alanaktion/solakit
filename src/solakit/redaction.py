@@ -1,6 +1,24 @@
 """Credentials are registered before use; diagnostics and tool outputs are scrubbed."""
 
+from collections.abc import Iterable, Iterator
+
 from pydantic import JsonValue
+
+
+def _replace_stream(chunks: Iterable[str], secret: str) -> Iterator[str]:
+    pending = ""
+    for chunk in chunks:
+        pending += chunk
+        start = 0
+        while (match := pending.find(secret, start)) != -1:
+            yield pending[start:match] + "<redacted>"
+            start = match + len(secret)
+        split = max(start, len(pending) - len(secret) + 1)
+        if split > start:
+            yield pending[start:split]
+        pending = pending[split:]
+    if pending:
+        yield pending
 
 
 class Redactor:
@@ -14,6 +32,11 @@ class Redactor:
         for secret in sorted(self._secrets, key=len, reverse=True):
             text = text.replace(secret, "<redacted>")
         return text
+
+    def stream(self, chunks: Iterable[str]) -> Iterable[str]:
+        for secret in sorted(self._secrets, key=len, reverse=True):
+            chunks = _replace_stream(chunks, secret)
+        return chunks
 
     def value(self, value: JsonValue) -> JsonValue:
         if isinstance(value, str):

@@ -18,6 +18,7 @@ from solakit.records import (
     DurableEvent,
     ImageGeneration,
     Job,
+    LetterPublication,
     MemoryCommit,
     MemoryNote,
     MemoryRecall,
@@ -57,6 +58,7 @@ RECORDS: dict[str, type[Record]] = {
     "occurrence": Occurrence,
     "scheduler": SchedulerControl,
     "image": ImageGeneration,
+    "letter_publication": LetterPublication,
 }
 SEGMENT = re.compile(r"^[0-9]{8}\.jsonl$")
 
@@ -189,6 +191,7 @@ class Entry(Value):
         "occurrence",
         "scheduler",
         "image",
+        "letter_publication",
     ]
     record: dict[str, object]
     event: DurableEvent | None = None
@@ -196,9 +199,17 @@ class Entry(Value):
 
     @model_validator(mode="after")
     def valid_record(self) -> Entry:
-        if (self.kind not in ("session", "legacy", "job", "occurrence", "scheduler")) != (
-            self.event is not None
-        ):
+        if (
+            self.kind
+            not in (
+                "session",
+                "legacy",
+                "job",
+                "occurrence",
+                "scheduler",
+                "letter_publication",
+            )
+        ) != (self.event is not None):
             raise ValueError("execution entries require an event; session/legacy entries have none")
         if self.kind in RECORDS:
             record = RECORDS[self.kind].model_validate_json(canonical(self.record))

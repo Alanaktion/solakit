@@ -186,7 +186,11 @@ class GitCheckout:
         return raw
 
     async def command(
-        self, *argv: str, limit: int = MAX_CHECK_BYTES, effect: Invocation | None = None
+        self,
+        *argv: str,
+        limit: int = MAX_CHECK_BYTES,
+        effect: Invocation | None = None,
+        confirm: bool = True,
     ) -> tuple[int, bytes, bool]:
         env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
         env.update(
@@ -252,20 +256,33 @@ class GitCheckout:
                 if not started and not spawn.done():
                     spawn.cancel()
                 await reap_group(spawn)
-        if effect is not None and (
-            (argv[0] != "push" and not truncated)
-            or code == 0
-            or any(
-                line.startswith(b"!\t")
-                and line.split(b"\t")[-1].startswith((b"[rejected]", b"[remote rejected]"))
-                for line in output.splitlines()
+        if (
+            effect is not None
+            and confirm
+            and (
+                (argv[0] != "push" and not truncated)
+                or code == 0
+                or any(
+                    line.startswith(b"!\t")
+                    and line.split(b"\t")[-1].startswith((b"[rejected]", b"[remote rejected]"))
+                    for line in output.splitlines()
+                )
             )
         ):
             effect.confirm_effect()
         return code, bytes(output), truncated
 
-    async def checked(self, *argv: str, phase: str, effect: Invocation | None = None) -> bytes:
-        code, output, truncated = await self.command(*argv, effect=effect)
+    async def checked(
+        self,
+        *argv: str,
+        phase: str,
+        effect: Invocation | None = None,
+        confirm: bool = True,
+        limit: int = MAX_CHECK_BYTES,
+    ) -> bytes:
+        code, output, truncated = await self.command(
+            *argv, effect=effect, confirm=confirm, limit=limit
+        )
         if truncated:
             raise ToolError(f"Git output limit exceeded while {phase}", ErrorCode.BUDGET_EXCEEDED)
         if code:
@@ -346,29 +363,22 @@ class GitCheckout:
                 "Pull requires a clean checkout" if pull else "Publish requires an empty index"
             )
 
-    async def mutate(self, invocation: Invocation, args: GitTarget) -> ToolResult:
-        invocation.uncertain_advice = ". Last verified Git phase: checkout validated."
+    async def verify_branch(self) -> None:
         symbolic = await self.checked("symbolic-ref", "HEAD", phase="checking current branch")
         if symbolic.removesuffix(b"\n") != os.fsencode(self.ref):
             raise _deny("Checkout is on a different branch")
-        pull = not isinstance(args, GitPublish)
-        await self.clean(pull=pull)
-        old = await self.head("HEAD")
-        if isinstance(args, GitPublish):
-            if "\0" in args.message or len(set(args.paths)) != len(args.paths):
-                raise ToolError(
-                    "Use distinct filenames and a NUL-free message", ErrorCode.INVALID_INPUT
-                )
-            for path in args.paths:
-                await self.path(path)
-            fetch_url = await self.checked(
-                "remote", "get-url", "--all", "origin", phase="checking origin"
-            )
-            push_url = await self.checked(
+
+    async def origin_url(self, *, publishing: bool) -> bytes:
+        fetch = await self.checked("remote", "get-url", "--all", "origin", phase="checking origin")
+        if publishing:
+            push = await self.checked(
                 "remote", "get-url", "--push", "--all", "origin", phase="checking push origin"
             )
-            if fetch_url != push_url or len(fetch_url.splitlines()) != 1:
+            if fetch != push or len(fetch.splitlines()) != 1:
                 raise _deny("Origin must have one matching fetch and push destination")
+        return fetch
+
+    async def fetch_origin(self, effect: Invocation | None = None, *, confirm: bool = True) -> str:
         await self.checked(
             "fetch",
             "--no-tags",
@@ -379,9 +389,48 @@ class GitCheckout:
             "origin",
             self.ref,
             phase="fetching origin",
-            effect=invocation,
+            effect=effect,
+            confirm=confirm,
         )
-        upstream = await self.head("FETCH_HEAD")
+        return await self.head("FETCH_HEAD")
+
+    async def fast_forward(
+        self, old: str, upstream: str, effect: Invocation, *, confirm: bool = True
+    ) -> str:
+        if old != upstream:
+            await self.checked(
+                "merge-base", "--is-ancestor", old, upstream, phase="checking fast-forward ancestry"
+            )
+            await self.checked(
+                "merge",
+                "--ff-only",
+                "--no-autostash",
+                "--no-overwrite-ignore",
+                upstream,
+                phase="fast-forwarding to origin",
+                effect=effect,
+                confirm=confirm,
+            )
+        new = await self.head("HEAD")
+        if new != upstream:
+            raise ToolError("Local HEAD differs from the fetched branch")
+        return new
+
+    async def mutate(self, invocation: Invocation, args: GitTarget) -> ToolResult:
+        invocation.uncertain_advice = ". Last verified Git phase: checkout validated."
+        await self.verify_branch()
+        pull = not isinstance(args, GitPublish)
+        await self.clean(pull=pull)
+        old = await self.head("HEAD")
+        if isinstance(args, GitPublish):
+            if "\0" in args.message or len(set(args.paths)) != len(args.paths):
+                raise ToolError(
+                    "Use distinct filenames and a NUL-free message", ErrorCode.INVALID_INPUT
+                )
+            for path in args.paths:
+                await self.path(path)
+            await self.origin_url(publishing=True)
+        upstream = await self.fetch_origin(invocation)
         invocation.uncertain_advice = ". Last verified Git phase: upstream fetched."
         await self.clean(pull=pull)
         if await self.head("HEAD") != old:
@@ -427,22 +476,7 @@ class GitCheckout:
             )
             invocation.uncertain_advice = f". Last verified Git phase: pushed commit {commit}."
             return ToolResult(data={"commit": commit, "push": "succeeded"})
-        if old != upstream:
-            await self.checked(
-                "merge-base", "--is-ancestor", old, upstream, phase="checking fast-forward ancestry"
-            )
-            await self.checked(
-                "merge",
-                "--ff-only",
-                "--no-autostash",
-                "--no-overwrite-ignore",
-                upstream,
-                phase="fast-forwarding to origin",
-                effect=invocation,
-            )
-        new = await self.head("HEAD")
-        if new != upstream:
-            raise ToolError("Local HEAD differs from the fetched branch")
+        new = await self.fast_forward(old, upstream, invocation)
         invocation.uncertain_advice = f". Last verified Git phase: synchronized at commit {new}."
         return ToolResult(data={"old_commit": old, "new_commit": new})
 
@@ -483,12 +517,11 @@ async def run_git(context: ToolContext, args: GitTarget) -> ToolResult:
         return GitCheckout(repo.path, repo.branch, guarded, write=write)
 
     repo = checkout()
-    if write:
-        async with invocation.dispatcher.checkout_lock(repo.root):
-            repo = checkout()
-            await repo.validate()
+    async with invocation.dispatcher.checkout_lock(repo.root):
+        repo = checkout()
+        await repo.validate()
+        if write:
             return await repo.mutate(invocation, args)
-    await repo.validate()
-    if isinstance(args, GitDiff):
-        return await repo.diff(args.path)
-    return await repo.status()
+        if isinstance(args, GitDiff):
+            return await repo.diff(args.path)
+        return await repo.status()

@@ -158,9 +158,28 @@ configuration disables the tools. Matching wildcard grants can expose newly
 configured Git tools to new admissions. Pull and publication also require an
 interactive run.
 
-Set `[letters] repository` to reserve an existing correspondence checkout.
-The reservation allows Git inspection and denies generic Git and blog writes.
-See the [Git tool contract](contracts/tools.md#configured-git-checkouts).
+## `[letters]`
+
+Set `repository` to an existing operator-trusted Git checkout. Paths resolve
+like `[blog] repository`, including paths relative to the configuration file.
+Set `branch` to the checked-out branch and the corresponding branch on
+`origin`. Set distinct `author` and `peer` identifiers with 1–64 lowercase
+letters, digits, underscores or hyphens, starting with a letter.
+`directory` defaults to `"."`. It must be repository-relative and contain
+ordinary directories.
+
+A repository-only setting reserves the entire checkout. Use a separate
+checkout for blog and dream content. Generic guarded writes, Git mutations and
+blog or dream mutations are denied for the reservation, including aliases.
+Git inspection can be granted separately.
+
+Admit the checkout in `defaults.workspace_roots` and grant the named letters
+tools in `defaults.tools` before narrowing them in dedicated profiles.
+A correspondence profile needs only `letters.inbox`, `letters.read`,
+`letters.send` and `letters.reply`. For a scheduled job, use a profile with
+`letters.inbox` and `letters.read`, and set the job's own `workspace_roots`
+explicitly for inbox updates. Existing wildcard grants may match newly enabled
+letters tools at admission. [Tool behavior and v1 cutover](contracts/tools.md#git-backed-letters)
 
 ## `[web_search]`
 

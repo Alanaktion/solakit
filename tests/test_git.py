@@ -167,11 +167,15 @@ def test_competing_push_leaves_remote_at_peer_commit(
     checked = GitCheckout.checked
 
     async def race(
-        self: GitCheckout, *argv: str, phase: str, effect: Invocation | None = None
+        self: GitCheckout,
+        *argv: str,
+        phase: str,
+        effect: Invocation | None = None,
+        confirm: bool = True,
     ) -> bytes:
         if argv[0] == "push":
             git(peer, "push")
-        return await checked(self, *argv, phase=phase, effect=effect)
+        return await checked(self, *argv, phase=phase, effect=effect, confirm=confirm)
 
     monkeypatch.setattr(GitCheckout, "checked", race)
     with opened(tmp_path, git_repositories=aliases(project=checkout)) as h:

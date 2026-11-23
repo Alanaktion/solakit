@@ -31,6 +31,7 @@ from solakit.records import (
     Failure,
     ImageGeneration,
     Job,
+    LetterPublication,
     MemoryCommit,
     MemoryNote,
     MemoryRecall,
@@ -73,6 +74,7 @@ type StoredRecord = (
     | Occurrence
     | SchedulerControl
     | ImageGeneration
+    | LetterPublication
 )
 
 SCHEMA = """
@@ -349,7 +351,7 @@ class Store:
         event = None
         sequence = 0
         entry_id = new_id()
-        if not isinstance(record, (Session, Job, Occurrence, SchedulerControl)):
+        if not isinstance(record, (Session, Job, Occurrence, SchedulerControl, LetterPublication)):
             sequence = self.db.execute(
                 "SELECT sequence FROM sessions WHERE id=?", (session_id,)
             ).fetchone()[0]
@@ -438,6 +440,69 @@ class Store:
 
     def occurrence(self, identity: str) -> Occurrence:
         return self._load("occurrence", identity, Occurrence)
+
+    def letter_publication(self, identity: str) -> LetterPublication:
+        return self._load("letter_publication", identity, LetterPublication)
+
+    def letter_checkout_name(self, path: Path) -> str:
+        from solakit.config import same_path
+
+        for row in self.db.execute(
+            "SELECT DISTINCT json_extract(body,'$.checkout') FROM entities "
+            "WHERE kind='letter_publication'"
+        ):
+            if same_path(path, Path(row[0])):
+                return str(row[0])
+        return str(path)
+
+    def letter_number_reserved(self, checkout: str, number: int) -> bool:
+        return any(
+            self.letter_publication(row[0]).number == number
+            for row in self.db.execute(
+                "SELECT id FROM entities WHERE kind='letter_publication' "
+                "AND json_extract(body,'$.checkout')=? "
+                "AND json_extract(body,'$.phase')!='confirmed' "
+                "AND json_extract(body,'$.number') IS NOT NULL",
+                (checkout,),
+            )
+        )
+
+    def save_letter_publication(self, record: LetterPublication) -> None:
+        try:
+            previous = self.letter_publication(record.id)
+        except KeyError:
+            if record.tool_call_id is not None:
+                call = self._load("tool", record.tool_call_id, ToolCall)
+                expected = "letters.send" if record.reply_to is None else "letters.reply"
+                if (
+                    call.name != expected
+                    or call.origin != record.origin
+                    or record.phase != "prepared"
+                ):
+                    raise ValueError("Letter publication differs from its tool intent") from None
+            elif record.origin != Origin.SYSTEM or record.legacy_evidence is None:
+                raise ValueError("Letter publication requires tool or legacy evidence") from None
+        else:
+            phases = ("prepared", "created", "committed", "confirmed")
+            mutable = {"phase", "commit", "result"}
+            if (
+                previous.phase == "prepared"
+                and previous.origin == Origin.SYSTEM
+                and previous.legacy_evidence is not None
+                and record.phase == "confirmed"
+            ):
+                mutable.update(
+                    field
+                    for field in ("number", "path", "file_hash", "base", "request_hash")
+                    if getattr(previous, field) is None
+                )
+            if (
+                phases.index(record.phase) <= phases.index(previous.phase)
+                or (previous.commit is not None and record.commit != previous.commit)
+                or record.model_dump(exclude=mutable) != previous.model_dump(exclude=mutable)
+            ):
+                raise ValueError("Letter publication cannot replace its original allocation")
+        self._commit((record,))
 
     def jobs(self, *, include_deleted: bool = False) -> list[Job]:
         return [

@@ -124,12 +124,52 @@ class GitRepository(Value):
         return value
 
 
+LetterAuthor = Annotated[str, Field(pattern=r"^[a-z][a-z0-9_-]{0,63}$")]
+LetterBranch = Annotated[str, Field(min_length=1, max_length=255)]
+
+
+class LettersSettings(CheckoutSettings):
+    branch: LetterBranch | None = None
+    directory: str = "."
+    author: LetterAuthor | None = None
+    peer: LetterAuthor | None = None
+
+    @field_validator("directory")
+    @classmethod
+    def relative_directory(cls, value: str) -> str:
+        path = Path(value)
+        if (
+            not value
+            or "\0" in value
+            or path.is_absolute()
+            or any(part == ".." or part.casefold() == ".git" for part in path.parts)
+        ):
+            raise ValueError("letters.directory must be repository-relative")
+        return path.as_posix()
+
+    @model_validator(mode="after")
+    def distinct_authors(self) -> LettersSettings:
+        if self.author is not None and self.author == self.peer:
+            raise ValueError("letters authors must be distinct")
+        return self
+
+
+class LettersCheckout(GitRepository):
+    directory: str
+    author: LetterAuthor
+    peer: LetterAuthor
+
+
 class GitSettings(Value):
     repositories: dict[Name, GitRepository] = Field(default_factory=dict)
 
 
 GIT_READ = frozenset({"git.status", "git.diff"})
 GIT_WRITE = frozenset({"git.pull", "git.publish"})
+LETTERS_READ = frozenset({"letters.inbox", "letters.read"})
+LETTERS_WRITE = frozenset({"letters.send", "letters.reply"})
+LETTERS_TOOLS = LETTERS_READ | LETTERS_WRITE
+CONTENT_WRITE = frozenset({"blog.create", "blog.publish", "dreams.create"})
 
 
 def same_path(path: Path, other: Path) -> bool:
@@ -153,6 +193,16 @@ def _git_tools(
     ):
         tools |= GIT_WRITE
     return tools
+
+
+def letters_tools(
+    checkout: LettersCheckout | None, roots: tuple[Path, ...], origin: Origin
+) -> frozenset[str]:
+    if checkout is None or not any(checkout.path.is_relative_to(root) for root in roots):
+        return frozenset()
+    if origin == Origin.INTERACTIVE:
+        return LETTERS_TOOLS
+    return LETTERS_READ if origin == Origin.SCHEDULED else frozenset()
 
 
 class WebSearchSettings(Value):
@@ -288,7 +338,7 @@ class OperatorConfig(Value):
     images: ImageSettings = Field(default_factory=ImageSettings)
     blog: CheckoutSettings = Field(default_factory=CheckoutSettings)
     git: GitSettings = Field(default_factory=GitSettings)
-    letters: CheckoutSettings = Field(default_factory=CheckoutSettings)
+    letters: LettersSettings = Field(default_factory=LettersSettings)
     web_search: WebSearchSettings = Field(default_factory=WebSearchSettings)
     shell: ShellSettings = Field(default_factory=ShellSettings)
     tool_modules: list[Name] = Field(default_factory=list)
@@ -328,6 +378,7 @@ class EffectiveProfile(Value):
     blog_repository: Path | None = None
     git_repositories: dict[str, GitRepository] = Field(default_factory=dict)
     git_reserved: frozenset[Path] = Field(default_factory=frozenset)
+    letters: LettersCheckout | None = None
     web_search: WebSearchSettings = Field(default_factory=WebSearchSettings)
     shell: ShellSettings = Field(default_factory=ShellSettings)
     shell_granted: bool = False
@@ -518,6 +569,7 @@ def resolve_profile(
         ("blog_repository", "blog"),
         ("git_repositories", "git"),
         ("git_reserved", "letters"),
+        ("letters", "letters"),
         ("web_search", "web_search"),
         ("shell", "shell"),
         ("background", "background"),
@@ -544,11 +596,35 @@ def resolve_profile(
         root = _paths([str(repo.path)], base, directories=True)[0]
         if any(root.is_relative_to(parent) for parent in roots):
             repositories[alias] = GitRepository(path=root, branch=repo.branch)
+    letter_settings = config.letters
     reserved = frozenset(
-        _paths([config.letters.repository], base, directories=True)
-        if config.letters.repository is not None
+        _paths([letter_settings.repository], base, directories=True)
+        if letter_settings.repository is not None
         else ()
     )
+    letters = None
+    if reserved and letter_settings.branch and letter_settings.author and letter_settings.peer:
+        checkout = next(iter(reserved))
+        directory = checkout
+        for part in Path(letter_settings.directory).parts:
+            directory /= part
+            if directory.is_symlink():
+                raise ConfigError("letters.directory cannot contain symlinked components")
+        letters = LettersCheckout(
+            path=checkout,
+            branch=letter_settings.branch,
+            directory=letter_settings.directory,
+            author=letter_settings.author,
+            peer=letter_settings.peer,
+        )
+    blog = (
+        _paths([config.blog.repository], base, directories=True)[0]
+        if (config.blog.repository is not None)
+        else None
+    )
+    if blog is not None and checkout_reserved(blog, reserved):
+        tools -= CONTENT_WRITE
+    tools -= LETTERS_TOOLS - letters_tools(letters, roots, origin)
     tools -= (GIT_READ | GIT_WRITE) - _git_tools(repositories, reserved, origin)
     if not config.web_search.api_key_env:
         tools -= {"web.search"}
@@ -578,11 +654,10 @@ def resolve_profile(
         workspace_roots=roots,
         memory=config.memory,
         images=config.images,
-        blog_repository=_paths([config.blog.repository], base, directories=True)[0]
-        if config.blog.repository is not None
-        else None,
+        blog_repository=blog,
         git_repositories=repositories,
         git_reserved=reserved,
+        letters=letters,
         web_search=config.web_search,
         shell=config.shell,
         shell_granted=shell_granted,
@@ -633,6 +708,12 @@ def restrict_to_admission(
     }
     reserved = current.git_reserved | admitted.git_reserved
     tools -= (GIT_READ | GIT_WRITE) - _git_tools(repositories, reserved, admitted.origin)
+    letters = admitted.letters if admitted.letters == current.letters else None
+    tools -= LETTERS_TOOLS - letters_tools(letters, roots, admitted.origin)
+    if admitted.blog_repository is not None and checkout_reserved(
+        admitted.blog_repository, reserved
+    ):
+        tools -= CONTENT_WRITE
     if not admitted.web_search.api_key_env or current.web_search != admitted.web_search:
         tools -= {"web.search"}
     shell_granted = current.shell_granted and admitted.shell_granted
@@ -649,6 +730,7 @@ def restrict_to_admission(
         "workspace_roots": roots,
         "git_repositories": repositories,
         "git_reserved": reserved,
+        "letters": letters,
         "granted_tools": current.granted_tools & admitted.granted_tools,
         "shell_granted": shell_granted,
         "tools": tools,

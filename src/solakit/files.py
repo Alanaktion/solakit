@@ -107,6 +107,8 @@ class GuardedFiles:
             protected |= _git_roots(profile.workspace_roots)
             if any(part.casefold() == ".git" for part in path.parts):
                 raise _deny()
+        if write:
+            protected.update(profile.git_reserved)
         if any(path == root or path.is_relative_to(root) for root in protected):
             raise _deny()
         identities = set()
