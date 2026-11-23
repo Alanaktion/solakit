@@ -23,6 +23,64 @@ These plans expand [OUTLINE.md](OUTLINE.md) into fourteen implementation phases 
 
 Execute in numbered order. Later-phase contracts can be drafted earlier, but their gates require their dependencies. Phase 6 is the headless milestone; Phase 9 adds durable personal agency; Phase 12 validates basic file/image workflows and produces the release candidate; Phase 13 imports legacy data.
 
+## Follow-up tool plans
+
+These plans propose additions to the shipped v2 tool set. The initial release
+scope and the later blog/dream decision are recorded in the [decision register](../decisions.md).
+Web search and wiki lookups can land independently. Git supplies the narrow
+checkout operations letters need. Email and shell have no dependency on that work.
+
+| Plan | First tool surface |
+| --- | --- |
+| [Letters](NEXT-TOOLS-LETTERS.md) | `letters.inbox`, `letters.read`, `letters.send` |
+| [Email](NEXT-TOOLS-EMAIL.md) | `email.search`, `email.read`, `email.reply`, `email.send` |
+| [Web search](NEXT-TOOLS-WEB-SEARCH.md) | `web.search` |
+| [Wiki lookups](NEXT-TOOLS-WIKI.md) | `wiki.summary` |
+| [Git](NEXT-TOOLS-GIT.md) | `git.status`, `git.diff`, `git.pull`, `git.publish` |
+| [Shell](NEXT-TOOLS-SHELL.md) | `shell.exec` |
+
+Use one typed input and a short description for each tool. Use the existing
+registry, eager schemas, dispatch, result limits, and receipts. Put provider
+and process logic behind the matching named tools using internal services.
+
+Use one operator-owned configuration section per integration. Empty or disabled
+configuration leaves its tools ineligible. Within enabled integrations, check
+capabilities such as configured SMTP separately. Apply eligibility consistently
+to prompt disclosure and dispatch. Exact grants are preferable for outbound
+mail, Git mutations, letters, and shell. Existing grants can include wildcard
+matches, so document that enabling an integration can expose its tools to those
+profiles at new admission. Shell requires a literal grant. Freeze enabled
+resource identity with the admission and recheck it and current grants when the
+matching tool is invoked. Default older admissions to disabled for these new
+integrations. Use credential references in configuration snapshots and keep raw
+values private to the adapter and redactor.
+
+Treat search hits, mail, letters, and command output as external content. For
+read-only network calls, add a private dispatcher check that revalidates the
+invocation and registers any credential with the redactor before I/O. Record the
+normal tool attempt and receipt. Update the [tool contract](../contracts/tools.md)
+to describe this read path and keep effect markers for mutations and sends.
+Unresolved effects stay uncertain on restart. Tools never create wakes.
+
+Validate each slice with focused dispatcher tests, a disposable integration
+fixture, and a short model acceptance scenario. Keep live checks separate and
+record which ones ran under `docs/validation/`. When implementing a plan, update
+the configuration example, tool contract, and decision register for that slice.
+
+## Agent and operator follow-up plans
+
+| Plan | First usable workflow |
+| --- | --- |
+| [Sub-agent delegation](NEXT-AGENT-DELEGATION.md) | Hand one bounded research task to an isolated child and inspect its report. |
+| [Follow-ups](NEXT-AGENT-FOLLOW-UPS.md) | Continue an existing child or schedule a one-time follow-up in the current topic. |
+| [Separate vision model](NEXT-VISION-MODEL.md) | Attach an image and ask a question while keeping the conversation model text-only. |
+| [Operator diagnostics and configuration review](NEXT-OPERATOR-DIAGNOSTICS.md) | Check deployment health, inspect effective authority, and compare it with a recorded run. |
+| [Operator probes and evaluations](NEXT-OPERATOR-EVALUATIONS.md) | Run fixed synthetic checks and compare results in Settings and the authenticated API. |
+
+Delegation precedes child continuation. Timed follow-ups reuse the current
+scheduler and can land independently. The vision adapter precedes its live
+pixel-recognition probe. Operator diagnostics can land before evaluation runs.
+
 ## Phase 0 contracts
 
 Phase 0 is complete with bounded later-phase verification. Read [product scope](../product.md), [decision register](../decisions.md), [session semantics](../contracts/session-modes.md), [acceptance journeys](../contracts/acceptance.md), [inventory](../migration/inventory.md), and [evidence](../validation/phase-00.md). The operator subsequently narrowed v1 to basic file access and image generation; domain packs, delegation, and shell are deferred. This scope supersedes the earlier broad pack-port sequence in the outline. Historical data from deferred integrations must still be preserved.

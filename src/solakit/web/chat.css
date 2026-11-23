@@ -611,6 +611,16 @@ dialog header {
 dialog header h2 {
   margin: 0;
 }
+.dialog-close {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: var(--control-height);
+  margin-inline-start: auto;
+  padding: 0;
+  border-color: transparent;
+  font-size: 1.125rem;
+}
 dialog > details {
   border-top: 1px solid var(--line);
   padding: 8px 0;

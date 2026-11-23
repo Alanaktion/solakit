@@ -449,22 +449,27 @@ def test_jobs_shared_controls_and_occurrences(client: TestClient) -> None:
     created = client.post("/api/v1/jobs", json=body)
     assert created.status_code == 201, created.text
     job = created.json()
-    assert not job["enabled"]
+    assert job["enabled"] is False and "paused" not in job
     assert (
         client.post("/api/v1/jobs", json=body | {"budgets": {"model_calls": True}}).status_code
         == 422
     )
     path = "/api/v1/jobs/" + job["id"]
-    assert client.patch(path, json={"paused": True}).json()["paused"]
-    assert client.patch(path, json={"paused": False, "enabled": True}).json()["enabled"]
+    assert client.patch(path, json={"paused": True}).status_code == 422
+    assert client.patch(path, json={"enabled": True}).json()["enabled"] is True
+    assert client.patch(path, json={"enabled": False}).json()["enabled"] is False
     assert client.patch(path, json={"generation": 99}).status_code == 422
     assert client.patch(path, json={"tools": ["ungranted"]}).status_code == 409
     assert client.put("/api/v1/jobs/control", json={"paused": True}).json()["paused"]
     assert client.get("/api/v1/jobs/control").json()["paused"]
-    assert client.put("/api/v1/jobs/control", json={"paused": False}).json()["paused"] is False
     headers = {"Idempotency-Key": new_id()}
+    assert client.post(path + "/run", headers=headers).status_code == 409
+    assert client.put("/api/v1/jobs/control", json={"paused": False}).json()["paused"] is False
     occurrence = client.post(path + "/run", headers=headers).json()
-    assert occurrence["run_id"]
+    assert occurrence["trigger"] == "manual" and occurrence["definition"]["enabled"] is False
+    run = client.get(f"/api/v1/runs/{occurrence['run_id']}?wait=5").json()
+    assert run["state"] == "completed"
+    assert client.get(path).json()["enabled"] is False
     assert client.post(path + "/run", headers=headers).json()["id"] == occurrence["id"]
     assert client.get(path + "/occurrences").json()["items"][0]["id"] == occurrence["id"]
     assert client.get("/api/v1/jobs?limit=1").json()["items"][0]["id"] == job["id"]
@@ -821,9 +826,16 @@ def test_secure_cookie_and_remote_configuration(
         assert client.get("/api/v1/auth/session").status_code == 200
 
 
-@pytest.mark.parametrize("origin", ["http://192.168.1.20:8382", "http://[fd12::1]:8382"])
-def test_lan_cookie_login_and_exact_host_origin_checks(
-    profile: EffectiveProfile, monkeypatch: pytest.MonkeyPatch, origin: str
+@pytest.mark.parametrize(
+    ("origin", "other_origin"),
+    [
+        ("http://192.168.1.20:8382", "http://192.168.1.21:8382"),
+        ("http://[fd12::1]:8382", "http://[fd12::2]:8382"),
+        ("http://100.64.1.20:8382", "http://100.64.1.21:8382"),
+    ],
+)
+def test_direct_http_cookie_login_and_exact_host_origin_checks(
+    profile: EffectiveProfile, monkeypatch: pytest.MonkeyPatch, origin: str, other_origin: str
 ) -> None:
     monkeypatch.setenv("SOLA_OPERATOR_PASSWORD", PASSWORD)
     selected = profile.model_copy(update={"http": HTTPSettings(allowed_origins=(origin,))})
@@ -837,7 +849,7 @@ def test_lan_cookie_login_and_exact_host_origin_checks(
         assert client.post("/api/v1/sessions", json={}).status_code == 403
         client.headers.update({"Origin": origin, "X-CSRF-Token": response.json()["csrf_token"]})
         assert client.post("/api/v1/sessions", json={}).status_code == 201
-        for foreign in ("http://192.168.1.21:8382", origin.replace(":8382", ":8383")):
+        for foreign in (other_origin, origin.replace(":8382", ":8383")):
             assert client.get("/health", headers={"Host": foreign[7:]}).status_code == 400
             assert (
                 client.post("/api/v1/sessions", json={}, headers={"Origin": foreign}).status_code

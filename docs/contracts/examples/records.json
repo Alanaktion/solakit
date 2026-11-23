@@ -109,7 +109,6 @@
     "enabled": false,
     "version": 1,
     "generation": 1,
-    "paused": false,
     "deleted": false,
     "next_due": null,
     "consumed": false,

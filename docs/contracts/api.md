@@ -50,25 +50,33 @@ allowed_origins = ["http://192.168.1.20:8382", "http://localhost:8382"]
 secure_cookie = false
 ```
 
-HTTP is allowed for exact loopback and private LAN IP origins (IPv4 RFC 1918
-and IPv6 ULA, with brackets around IPv6 addresses). Entries identify the server
-URL, not client IPs; this is not a client-network firewall. CIDR ranges and
-wildcards are unsupported. Changing the listen port does not update allowed
-origins. Restart after editing configuration. Authentication and CSRF checks
-still apply. LAN HTTP sends credentials and conversation data without encryption;
-use it only on a trusted network.
+For direct Tailnet access, bind the server's own Tailscale IP and use the same IP
+in the browser URL. Replace `100.64.1.20` with the address assigned to the server.
 
-For public IPs, hostnames or tailnet access, configure exact HTTPS origins and
-`secure_cookie = true`.
+```toml
+[http]
+host = "100.64.1.20"
+port = 8382
+allowed_origins = ["http://100.64.1.20:8382"]
+secure_cookie = false
+```
+
+HTTP is allowed for localhost, loopback IPs, RFC 1918 IPv4 addresses, IPv6 ULA
+addresses, and IPv4 addresses in the Tailscale shared range `100.64.0.0/10`.
+See [Tailscale IP addresses](https://tailscale.com/docs/concepts/tailscale-ip-addresses).
+
+Use brackets around IPv6 addresses in origins. Configure
+the exact server URL, including the port when needed. Use Tailnet access policy
+or a firewall to restrict clients. Authentication and CSRF checks still apply.
+Restart after editing configuration. LAN HTTP sends credentials and conversation
+data without encryption, so use it only on a trusted network.
+
+For public IPs and hostnames, including MagicDNS names, configure exact HTTPS
+origins and `secure_cookie = true`.
 Terminate TLS in an operator-managed reverse proxy and preserve the configured
-Host; keep the direct HTTP backend private. Tailnet membership grants no login.
-Origins outside loopback/private LAN IPs without HTTPS/Secure cookies are
-rejected by configuration.
+Host. Keep the direct HTTP backend private.
 `serve` ignores proxy headers (`proxy_headers=False`); `Forwarded` and
-`X-Forwarded-*` never establish Host, origin or client identity. Direct localhost
-HTTP and explicitly configured private LAN HTTP support insecure cookies. Remote
-TLS/browser integration is a separate deployment verification, not claimed by
-local tests.
+`X-Forwarded-*` never establish Host, origin or client identity.
 
 ## Browser request matrix
 
@@ -128,8 +136,8 @@ means admission/login/event capacity, 413 means bounded input/output exceeded,
 | `/runs/{id}/artifacts/{id}` | GET bounded verified bytes of a directly linked request/manifest/response/tool artifact |
 | `/sessions/{id}/events` | GET [SSE protocol](events.md) |
 | `/jobs` | GET stable creation pages; POST creates a disabled definition unless explicitly enabled |
-| `/jobs/{id}` | GET/PATCH/DELETE through existing validation, narrowing and tombstones; PATCH enabled/paused provides resume/pause |
-| `/jobs/{id}/run` | POST explicit manual occurrence; required Idempotency-Key; the occurrence references its durable run |
+| `/jobs/{id}` | GET/PATCH/DELETE through existing validation, narrowing and tombstones. PATCH `{"enabled":true/false}` toggles automatic scheduling |
+| `/jobs/{id}/run` | POST explicit manual occurrence, including for disabled jobs. Requires Idempotency-Key and returns the occurrence with its durable run reference |
 | `/jobs/{id}/occurrences` | GET occurrence pages including decisions and run references |
 | `/jobs/control` | GET or PUT `{"paused":true/false}` for global scheduler pause |
 | `/memory` | GET observer state and commit counts |

@@ -45,7 +45,14 @@ export function settingsTemplate(actions) {
     <dialog id="settings" class="wide" aria-labelledby="settings-title">
       <header>
         <h2 id="settings-title">Settings</h2>
-        <button @click=${() => $('settings').close()}>Close Settings</button>
+        <button
+          type="button"
+          class="dialog-close"
+          aria-label="Close Settings"
+          @click=${() => $('settings').close()}
+        >
+          <sola-icon name="X"></sola-icon>
+        </button>
       </header>
       <div class="settings-layout">
         <div

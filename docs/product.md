@@ -42,7 +42,8 @@ expiry. These are reversible engineering defaults in `[background]`; hourly,
 daily and topic counters survive restart. Both automatic scheduled and proactive
 origins share these bounds. Explicit run-now is separately attributed and bypasses
 automatic admission-rate and quiet-hour limits while retaining grants, run budgets,
-pause and overlap controls. See the [job contract](contracts/jobs.md).
+global pause and overlap controls. It works with the job's schedule off. See the
+[job contract](contracts/jobs.md).
 
 ## Durability and honest outcomes
 

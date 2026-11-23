@@ -63,6 +63,10 @@ Statuses distinguish operator-confirmed requirements, implementer-selected rever
 
 | V2-43 | Confirmed / operator, 2026-11-22 | Make the web UI agent name configurable through top-level `agent_name`, defaulting to `Sola`, and load optional `<data_dir>/user.css` after packaged CSS. Apply the display name to login, conversation authors, Settings, page titles and accessibility labels without rewriting operator identity or evidence. Serve the escaped name and regular non-linked CSS before login through the existing Host/origin/CSP boundary. Restart for name changes; CSS changes apply on reload | [Configuration](config.md), [UI guide](chat-ui.md), [validation](validation/ui-customization.md) |
 
+| V2-44 | Confirmed direction / operator; implementation selected, 2026-11-23 | Allow direct Tailnet HTTP for exact server IP origins in `100.64.0.0/10`. Bind the server's concrete Tailscale IP through the existing `http.host` setting. Keep exact Host and Origin validation, operator login and CSRF. Public IPs and hostnames still require HTTPS and Secure cookies. Extends V2-33 | [Deployment](contracts/api.md#deployment-and-login), [validation](validation/tailnet-http.md) |
+
+| V2-45 | Confirmed / operator, 2026-11-23 | Use one per-job scheduling switch, `enabled`. Existing paused jobs read as disabled. Manual runs work with the switch off and retain global pause and overlap controls. Existing job tool grants use the same switch | [Job contract](contracts/jobs.md), [validation](validation/job-enabled.md) |
+
 ## Unavailable references and remaining verification
 
 The outline refers to D1–D6 and companion source specifications that are not present in this checkout. Similarly named legacy refactor IDs are unrelated. Their absence is recorded; these v2 contracts replace the ambiguity for this release. Newly supplied requirements should become explicit decision changes, not retroactive assumptions.

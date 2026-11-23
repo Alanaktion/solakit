@@ -167,11 +167,6 @@
           "origin": {
             "$ref": "#/components/schemas/Origin"
           },
-          "paused": {
-            "default": false,
-            "title": "Paused",
-            "type": "boolean"
-          },
           "profile": {
             "title": "Profile",
             "type": "string"
@@ -417,17 +412,6 @@
                 "type": "null"
               }
             ]
-          },
-          "paused": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Paused"
           },
           "profile": {
             "anyOf": [

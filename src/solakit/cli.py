@@ -19,7 +19,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(prog="sola")
     parser.add_argument("--version", action="version", version=version("solakit"))
     commands = parser.add_subparsers(dest="command", required=True)
-    serve = commands.add_parser("serve", help="serve the configured localhost runtime")
+    serve = commands.add_parser("serve", help="serve the runtime at the configured address")
     check = commands.add_parser(
         "check", help="validate local configuration without starting services"
     )

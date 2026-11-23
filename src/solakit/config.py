@@ -185,20 +185,29 @@ class HTTPSettings(Value):
 
     @model_validator(mode="after")
     def transport(self) -> HTTPSettings:
-        lan_networks = tuple(
+        direct_http_networks = tuple(
             ip_network(cidr)
-            for cidr in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7")
+            for cidr in (
+                "10.0.0.0/8",
+                "172.16.0.0/12",
+                "192.168.0.0/16",
+                "100.64.0.0/10",
+                "fc00::/7",
+            )
         )
         for origin in self.allowed_origins:
             url = urlsplit(origin)
             try:
                 address = ip_address(url.hostname or "")
-                local = address.is_loopback or any(address in network for network in lan_networks)
+                local = address.is_loopback or any(
+                    address in network for network in direct_http_networks
+                )
             except ValueError:
                 local = url.hostname == "localhost"
             if not local and (url.scheme != "https" or not self.secure_cookie):
                 raise ValueError(
-                    "origins outside loopback/private LAN IPs require HTTPS and secure cookies"
+                    "origins outside loopback, private LAN, and Tailnet IP ranges "
+                    "require HTTPS and secure cookies"
                 )
         return self
 

@@ -234,7 +234,6 @@ def records(root: Path, source: Path) -> Iterator[StoredRecord | Entry]:
                 if bound
                 else SessionMode.EPHEMERAL,
                 enabled=False,
-                paused=True,
                 deleted=bool(deleted),
                 consumed=bool(
                     cursor.get("consumed")

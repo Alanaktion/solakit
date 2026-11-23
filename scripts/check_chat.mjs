@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createRequire } from 'node:module';
+import { setTimeout as delay } from 'node:timers/promises';
 const require = createRequire(import.meta.url);
 const { chromium } = require(process.env.SOLA_PLAYWRIGHT_PATH || 'playwright');
 const { default: AxeBuilder } = require(
@@ -422,6 +423,42 @@ try {
     await page.keyboard.press('Escape');
     assert.equal(await page.evaluate(() => document.activeElement.id), 'new-topic');
   });
+  await check('dialog close icons and read-only backdrop dismissal', async () => {
+    await page.locator('#settings-open').click();
+    await page.mouse.click(4, 4);
+    const settingsClose = page.getByRole('button', { name: 'Close Settings', exact: true });
+    assert(await settingsClose.locator('sola-icon[name="X"] svg').isVisible());
+    await settingsClose.click();
+    await page.locator('#settings').waitFor({ state: 'hidden' });
+
+    await page.locator('#new-topic').click();
+    await page.locator('#topic-name').fill('Unsaved title');
+    await page.mouse.click(4, 4);
+    assert(await page.locator('#topic-dialog').isVisible());
+    assert.equal(await page.locator('#topic-name').inputValue(), 'Unsaved title');
+    await page.locator('#topic-dialog').getByRole('button', { name: 'Cancel' }).click();
+
+    const inspect = page.getByRole('button', { name: 'Inspect evidence', exact: true }).last();
+    const evidence = page.locator('#evidence');
+    await inspect.click();
+    await evidence.waitFor();
+    const { x, y } = await evidence.boundingBox();
+    await page.mouse.click(x + 4, y + 4);
+    await page.mouse.down();
+    await page.mouse.move(4, 4);
+    await page.mouse.up();
+    assert(await evidence.isVisible());
+    await page.screenshot({ path: path.join(options.output, 'evidence-close-icon.png') });
+    await page.mouse.click(4, 4);
+    await evidence.waitFor({ state: 'hidden' });
+    assert(await inspect.evaluate((button) => button === document.activeElement));
+
+    await inspect.click();
+    const evidenceClose = page.getByRole('button', { name: 'Close evidence', exact: true });
+    assert(await evidenceClose.locator('sola-icon[name="X"] svg').isVisible());
+    await evidenceClose.click();
+    await evidence.waitFor({ state: 'hidden' });
+  });
   await check('older history is prepended with a preserved scroll anchor', async () => {
     await page.locator('#history').evaluate((h) => (h.scrollTop = 0));
     const anchor = page.locator('.turn').first();
@@ -747,7 +784,22 @@ try {
       1
     );
   });
-  await check('Settings job creation, pause, manual message and no-action occurrence', async () => {
+  await check('Settings schedule toggle and disabled manual runs', async () => {
+    const showCompletedOccurrence = async (job, decision) => {
+      const id = await job.getAttribute('data-job-id');
+      const deadline = Date.now() + 30000;
+      while (Date.now() < deadline) {
+        const response = await page.request.get(`${fixture.origin}/api/v1/jobs/${id}/occurrences`);
+        assert(response.ok());
+        const { items } = await response.json();
+        if (items.some((item) => item.state === 'completed' && item.decision === decision)) {
+          await job.getByRole('button', { name: 'Occurrences', exact: true }).click();
+          return;
+        }
+        await delay(250);
+      }
+      assert.fail(`Job ${id} did not complete with decision ${decision}`);
+    };
     await page.locator('#settings-open').click();
     await page.locator('#job-new').click();
     await page.locator('#job-task').fill('A scheduled fixture message');
@@ -758,12 +810,18 @@ try {
       .locator('#jobs article')
       .filter({ hasText: 'A scheduled fixture message' })
       .last();
-    await job.getByRole('button', { name: 'Pause', exact: true }).click();
-    await job.getByRole('button', { name: 'Resume', exact: true }).click();
-    await job.getByRole('button', { name: 'Run now', exact: true }).click();
-    await page.waitForTimeout(5000);
-    await job.getByRole('button', { name: 'Occurrences', exact: true }).click();
+    await job.getByRole('button', { name: 'Enable', exact: true }).click();
+    await job.getByRole('button', { name: 'Disable', exact: true }).click();
+    await job.getByRole('button', { name: 'Enable', exact: true }).waitFor();
+    assert.equal(await job.getByRole('button', { name: /^(Pause|Resume)$/ }).count(), 0);
+    const runNow = job.getByRole('button', { name: 'Run now', exact: true });
+    await page.getByRole('button', { name: 'Pause all schedules', exact: true }).click();
+    await runNow.and(page.locator(':disabled')).waitFor();
+    await page.getByRole('button', { name: 'Resume all schedules', exact: true }).click();
+    await runNow.click();
+    await showCompletedOccurrence(job, 'message');
     await job.getByText(/completed · message/).waitFor();
+    assert(await job.getByRole('button', { name: 'Enable', exact: true }).isVisible());
     const jobId = await job.getAttribute('data-job-id');
     await job.getByRole('button', { name: 'Edit', exact: true }).click();
     await page.locator('#job-task').fill('no action');
@@ -771,8 +829,7 @@ try {
     const noAction = page.locator(`[data-job-id="${jobId}"]`);
     await noAction.getByRole('heading', { name: 'no action', exact: true }).waitFor();
     await noAction.getByRole('button', { name: 'Run now', exact: true }).click();
-    await page.waitForTimeout(1500);
-    await noAction.getByRole('button', { name: 'Occurrences', exact: true }).click();
+    await showCompletedOccurrence(noAction, 'no_action');
     await noAction.getByText(/completed · No action needed/).waitFor();
     await page.locator('#job-new').click();
     await page.locator('#job-task').fill('no action proactive fixture');
@@ -784,8 +841,7 @@ try {
       .filter({ hasText: 'no action proactive fixture' })
       .last();
     await proactive.getByRole('button', { name: 'Run now', exact: true }).click();
-    await page.waitForTimeout(1500);
-    await proactive.getByRole('button', { name: 'Occurrences', exact: true }).click();
+    await showCompletedOccurrence(proactive, 'no_action');
     await proactive.getByText(/completed · No action needed/).waitFor();
     await page.getByRole('button', { name: 'Close Settings', exact: true }).click();
     await page.locator('#new-topic').click();
@@ -805,8 +861,7 @@ try {
       .locator('#jobs article')
       .filter({ hasText: 'Automatic scheduled UI message' })
       .last();
-    await page.waitForTimeout(8500);
-    await automatic.getByRole('button', { name: 'Occurrences', exact: true }).click();
+    await showCompletedOccurrence(automatic, 'message');
     await automatic.getByText(/completed · message/).waitFor();
     assert((await automatic.textContent()).includes('"trigger": "scheduled"'));
     await page.screenshot({

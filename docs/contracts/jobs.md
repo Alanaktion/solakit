@@ -11,8 +11,9 @@ starting that timer. It never stores jobs in an APScheduler database. See
 `Job` definitions live in the existing `state.db` entity ledger and immutable JSONL
 outbox. They retain task, scheduled/proactive origin, selected profile, tools,
 workspace roots, budgets, bound session/mode, delivery policy, version, schedule
-generation, next UTC instant, enabled/paused state, consumed state and tombstones.
-New definitions are disabled unless explicitly enabled. Versions change with
+generation, next UTC instant, enabled state, consumed state and tombstones.
+New definitions are disabled unless explicitly enabled. Existing per-job pauses
+read as disabled, with stored evidence retained. Versions change with
 definition edits; generations change only with schedule/timezone edits. Timer
 advancement changes neither. A deleted ID cannot be imported/created again.
 
@@ -44,8 +45,8 @@ job = context.jobs.create(
         tools=(),
     )
 )
-context.jobs.resume(job.id)  # Explicitly enable; resume also clears a per-job pause.
-context.jobs.pause(job.id)
+context.jobs.update(job.id, enabled=True)
+context.jobs.update(job.id, enabled=False)
 context.jobs.update(job.id, task="Review the corrected commitment.")
 receipt = context.jobs.manual(job.id, request_id=new_id())  # Explicit run-now.
 context.jobs.delete(job.id)
@@ -56,14 +57,16 @@ context.jobs.global_pause(True)
 tombstones. `store.occurrence(id)` and `store.run(id)` inspect outcomes.
 `manual()` is idempotent by job ID plus caller request ID, including after edits or
 deletion. Each new manual key is a distinct requested occurrence; it cannot overlap
-queued/running work for the same job. Global pause blocks admission/start/delivery;
-individual pauses block future scheduled admissions and queued execution. Running
-work is not cancelled by pause; use ordinary run cancellation. Explicit manual
-requests obey global/per-job pause and queue/overlap bounds, but bypass automatic
-hourly/daily admission limits and quiet-hour/notification cooldown restrictions.
+queued/running work for the same job. Global pause blocks admission, start and
+delivery. A disabled job skips automatic admission and holds queued automatic
+runs. Use ordinary run cancellation to stop running work. Explicit manual
+requests work with the job enabled or disabled. They respect global pause and
+queue/overlap bounds and bypass automatic hourly/daily admission limits and
+quiet-hour/notification cooldown restrictions.
 
 Grant only needed tools: `jobs.list`, `jobs.create`, `jobs.update`, `jobs.pause`,
 `jobs.resume`, `jobs.run_now`, `jobs.delete`, `jobs.pause_all`. Loading grants nothing.
+Existing `jobs.pause` and `jobs.resume` grants toggle the same `enabled` state.
 Tool operations are scoped to the invoking topic; mutations require interactive
 origin and the exact operation grant. `jobs.run_now` requires a stable 32-hex
 request ID. HTTP/CLI job controls and the Settings UI retain Phases 10–11 gates.
@@ -80,8 +83,8 @@ Tests cover spring gaps, both fall folds, and every-minute schedules crossing a 
 Cron downtime coalesces to the latest due slot within a one-hour grace window.
 At most 61 minute slots are examined per job/tick; older backlog is represented by
 `coalesced_from`, not replayed. No eligible slot, overlap, or a rate/queue cap records
-one skipped range and advances beyond now. Pausing/disabling admits nothing;
-resuming an enabled cron starts at its next future slot without paused backlog.
+one skipped range and advances beyond now. Disabling stops automatic admissions.
+Enabling a cron starts at its next future slot without replaying missed slots.
 An overdue unconsumed one-shot waits for queue/rate/overlap room and runs once.
 Invalid profile/target admission records failure and consumes that one-shot;
 repair it and explicitly set a new future schedule. No invalid job blocks other jobs.
@@ -96,7 +99,7 @@ archives the one-run session, including on failure, cancellation, or recovery
 from interruption.
 
 A one-shot is consumed at admission, including manual execution before its due
-time. Task edits, pause/resume, restart and search rebuild cannot rearm it. An
+time. Task edits, enable/disable, restart and search rebuild cannot rearm it. An
 explicit changed *future* one-shot schedule creates a new generation and clears
 consumption. Changing timezone alone does not rearm a consumed one-shot.
 

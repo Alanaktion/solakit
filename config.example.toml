@@ -53,6 +53,9 @@ secure_cookie = false
 session_seconds = 86400
 # LAN HTTP: bind 0.0.0.0 and add the server's exact private IP and port, e.g.
 # allowed_origins = ["http://192.168.1.20:8765"] with secure_cookie=false.
+# Tailnet HTTP: use the server's own Tailscale IP in host and allowed_origins, e.g.
+# host = "100.64.1.20"
+# allowed_origins = ["http://100.64.1.20:8765"]
 # Public IPs/hostnames: explicit https origins, secure_cookie=true, private backend + TLS proxy.
 
 # OpenViking stable >=0.5.5,<0.6.0; opt-in, with the selected user's managed root.

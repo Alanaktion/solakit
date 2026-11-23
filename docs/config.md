@@ -133,23 +133,23 @@ may continue and is observed separately. See [recovery](image-workflows.md).
 
 | Key | Type / built-in default | Meaning and constraints |
 | --- | --- | --- |
-| `http.host` | string: `"127.0.0.1"` | Server bind address. Use `"0.0.0.0"` to listen on all IPv4 interfaces. |
+| `http.host` | string: `"127.0.0.1"` | Server bind address. Use the server's Tailscale IP to listen on that address, or `"0.0.0.0"` to listen on all IPv4 interfaces. |
 | `http.port` | integer: `8765` | Listen port, 1–65535. Changing it does not update allowed origins. |
 | `http.allowed_origins` | array of strings: `["http://127.0.0.1:8765", "http://localhost:8765"]` | Nonempty exact server origins accepted by Host/origin checks; duplicates are removed. Use scheme and lowercase authority only, with no path or trailing slash. No embedded credentials, query or fragment. |
-| `http.secure_cookie` | boolean: `false` | Set the Secure flag on login cookies. Required with HTTPS origins outside loopback/private LAN IPs. |
+| `http.secure_cookie` | boolean: `false` | Set the Secure flag on login cookies. Required with HTTPS origins outside loopback, private LAN, and Tailnet IP ranges. |
 | `http.password_env` | environment-variable name: `"SOLA_OPERATOR_PASSWORD"` | Login password source. No default password; missing/empty credentials disable login. |
 | `http.session_seconds` | integer: `86400` | Login lifetime, 60–2592000 seconds (up to 30 days). Fixed expiry; sessions survive ordinary restarts. |
 
-Allowed origins identify the server URL used by the client, not a client subnet.
-Use exact origins; CIDR/wildcard matching is unsupported. HTTP with insecure
-cookies is allowed for localhost, loopback IPs, RFC 1918 IPv4 addresses and IPv6
-ULA addresses. Other IPs and hostnames require HTTPS and `secure_cookie = true`.
-LAN HTTP sends credentials and conversation data without encryption.
+Each allowed origin identifies the exact server URL used by the client. HTTP
+with insecure cookies is allowed for localhost, loopback IPs, RFC 1918 IPv4
+addresses, IPv6 ULA addresses, and IPv4 addresses in the Tailscale shared range
+`100.64.0.0/10`. Other IPs and hostnames require HTTPS and `secure_cookie = true`.
+Use Tailnet access policy or a firewall to control which clients can connect.
 
 Restart after deployment configuration changes. Remote TLS termination requires
 an operator-managed proxy with a private backend and the configured Host preserved;
 forwarded headers are not trusted. See the
-[deployment and login guide](contracts/api.md#deployment-and-login) for LAN examples
+[deployment and login guide](contracts/api.md#deployment-and-login) for LAN and Tailnet examples
 and authentication behavior.
 
 ## `[memory]`

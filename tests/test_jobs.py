@@ -150,11 +150,13 @@ def test_one_shot_claim_edit_manual_tombstone_restart_and_search(profile: Effect
             app.jobs.update(saved.id, task="Edited consumed task")
             await app.jobs.tick()
             assert len(requests) == 1 and app.store.job(saved.id).consumed
+            assert not app.jobs.pause(saved.id).enabled
             manual = app.jobs.manual(saved.id, request_id=(key := new_id()))
             assert manual.id != occurrence.id and manual.trigger == "manual" and manual.run_id
             assert app.jobs.manual(saved.id, request_id=key).id == manual.id
             assert (await app.runs.wait(manual.run_id, timeout=3)).state == RunState.COMPLETED
             assert app.store.occurrence(manual.id).decision == "no_action"
+            assert not app.store.job(saved.id).enabled
             assert not any(
                 isinstance(r, Message) and r.role == "assistant"
                 for r in records(app.store, manual.run_id)
@@ -255,11 +257,11 @@ def test_cron_backlog_overlap_rates_and_pause(profile: EffectiveProfile) -> None
             clock.now += timedelta(minutes=1)
             await app.jobs.tick()
             assert occurrences(app)[-1].state == "skipped" and len(requests) == 1
-            app.jobs.pause(saved.id)
+            app.jobs.update(saved.id, enabled=False)
             clock.now += timedelta(hours=2)
             await app.jobs.tick()
             assert len(occurrences(app)) == 2
-            app.jobs.resume(saved.id)
+            app.jobs.update(saved.id, enabled=True)
             assert app.store.job(saved.id).next_due == clock.now + timedelta(minutes=1)
             app.jobs.global_pause(True)
             clock.now += timedelta(hours=3)

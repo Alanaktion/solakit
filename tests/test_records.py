@@ -155,6 +155,15 @@ def test_record_and_event_fixtures() -> None:
     assert len({event.event_id for event in events}) == 3
 
 
+@pytest.mark.parametrize("paused", [True, False])
+def test_legacy_job_pause_maps_to_enabled(paused: bool) -> None:
+    path = Path(__file__).parents[1] / "docs/contracts/examples/records.json"
+    raw = json.loads(path.read_text())["Job"] | {"enabled": True, "paused": paused}
+    job = records.Job.model_validate_json(json.dumps(raw))
+    assert job.enabled is not paused
+    assert "paused" not in job.model_dump(mode="json")
+
+
 def test_phase_three_model_steps_remain_readable() -> None:
     root = Path(__file__).parents[1] / "docs/contracts/examples"
     raw = json.loads((root / "records.json").read_text())["ModelStep"]

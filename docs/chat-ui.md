@@ -81,11 +81,11 @@ run. Error notices can be dismissed without removing an uncertain submission
 from the outbox. The selected topic stays visible in narrow-screen navigation.
 
 Settings uses six keyboard-accessible tabs, with a separate dialog for job
-creation and editing. Arrow keys move between tabs; Home/End select the first
-or last tab. Navigation stays visible while section content scrolls. On small
-screens, the tabs form a compact grid.
+creation and editing. Use the X or Escape to close Settings. Arrow keys move
+between tabs. Home and End select the first or last tab. Navigation stays visible
+while section content scrolls. On small screens, the tabs form a compact grid.
 
-- **Schedules:** create/edit, enable/disable, pause/resume, run now, delete and
+- **Schedules:** create/edit, enable/disable, run now, delete and
   inspect occurrences. New jobs start disabled. Schedules use
   `cron:<five fields>` or `once:<aware ISO timestamp>`. Each job chooses its own
   profile, a shared/isolated topic or a fresh one-run target, and whether to
@@ -98,7 +98,8 @@ screens, the tabs form a compact grid.
   **Limit workspace roots for this job** is checked. An empty path list allows
   no roots. This section can also narrow all six budget fields.
   Blank limits inherit scheduled-work limits. The server enforces authority.
-  Run-now has its own durable retry key; resume paused jobs/schedules first.
+  **Run now** works with the job's schedule off and has its own durable retry
+  key. **Pause all schedules** also suspends manual runs.
 - **Memory:** readable observer/commit counts and manual reconciliation of
   failed/ambiguous extraction using the memory commit ID and a verified provider
   task ID. Run memory cards also offer reconciliation. This checks existing work
@@ -118,9 +119,10 @@ screens, the tabs form a compact grid.
   every browser/API login, including the current one.
 
 The run-evidence dialog has **All records** and **Model requests** tabs, each with
-independent pagination and authorized artifact inspection. Settings loads each
-section on demand, so an unavailable diagnostic service does not block the other
-sections. Streaming failure still falls back to five-second polling and retries
+independent pagination and authorized artifact inspection. Close it with the X,
+Escape, or a click or tap outside the dialog. Settings loads each section on
+demand, so an unavailable diagnostic service does not block the other sections.
+Streaming failure still falls back to five-second polling and retries
 SSE; both transports use the same record maps and stable IDs. Sign-in expiry
 retains drafts and pending submissions.
 

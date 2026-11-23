@@ -139,7 +139,6 @@ def test_direct_import_preserves_history_and_does_not_replay(legacy: Path, tmp_p
         jobs = store.jobs(include_deleted=True)
         assert all(
             j.consumed
-            and j.paused
             and not j.enabled
             and not j.tools
             and not j.workspace_roots

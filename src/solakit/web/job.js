@@ -62,12 +62,12 @@ class SolaJob extends SolaElement {
       <article data-job-id=${job.id}>
         <h3>${job.task.slice(0, 128)}</h3>
         <p class="meta">
-          ${`${job.consumed ? 'Finished' : job.enabled ? (job.paused ? 'Paused' : 'Enabled') : 'Disabled'} · ${job.schedule} · ${job.timezone}`}
+          ${`${job.enabled ? 'Enabled' : 'Disabled'}${job.consumed ? ' · Finished' : ''} · ${job.schedule} · ${job.timezone}`}
         </p>
         <p class="meta">
           ${job.origin === 'proactive' ? 'Proactive wake-up' : 'Scheduled task'} ·
           ${job.profile} ·
-          ${job.mode === 'ephemeral' ? 'New one-run topic' : 'Bound topic'}${job.delivery === 'none' ? ' · Evidence only' : ''}${job.next_due ? ` · Next: ${new Date(job.next_due).toLocaleString()}` : ''}
+          ${job.mode === 'ephemeral' ? 'New one-run topic' : 'Bound topic'}${job.delivery === 'none' ? ' · Evidence only' : ''}${job.enabled && !this.schedulerPaused && job.next_due ? ` · Next: ${new Date(job.next_due).toLocaleString()}` : ''}
         </p>
         <button type="button" @click=${action(() => this.editJob(job))}>Edit</button>
         <button
@@ -81,18 +81,8 @@ class SolaJob extends SolaElement {
           ${job.enabled ? 'Disable' : 'Enable'}
         </button>
         <button
-          class="quiet"
           type="button"
-          @click=${action(async () => {
-            await api(`/jobs/${job.id}`, { method: 'PATCH', body: { paused: !job.paused } });
-            await this.refreshJobs();
-          })}
-        >
-          ${job.paused ? 'Resume' : 'Pause'}
-        </button>
-        <button
-          type="button"
-          ?disabled=${job.paused || this.schedulerPaused}
+          ?disabled=${this.schedulerPaused}
           @click=${action(() => this.runNow())}
         >
           ${read(`sola.job-run.${job.id}`, null) ? 'Retry run now' : 'Run now'}

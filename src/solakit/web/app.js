@@ -170,11 +170,16 @@ export class SolaApp extends SolaElement {
         </form>
       </dialog>
       ${settingsTemplate(this.actions)}
-      <dialog id="evidence" class="wide" aria-labelledby="evidence-title">
+      <dialog id="evidence" class="wide" aria-labelledby="evidence-title" closedby="any">
         <header>
           <h2 id="evidence-title">Run evidence</h2>
-          <button data-close="evidence" @click=${() => $('evidence').close()}>
-            Close evidence
+          <button
+            type="button"
+            class="dialog-close"
+            aria-label="Close evidence"
+            @click=${() => $('evidence').close()}
+          >
+            <sola-icon name="X"></sola-icon>
           </button>
         </header>
         <div
@@ -216,6 +221,25 @@ export class SolaApp extends SolaElement {
   }
 
   firstUpdated() {
+    const evidence = $('evidence');
+    if (!('closedBy' in evidence)) {
+      // The backdrop and the dialog padding both target the dialog itself.
+      const onBackdrop = (event) => {
+        if (event.target !== evidence) return false;
+        const { left, right, top, bottom } = evidence.getBoundingClientRect();
+        return (
+          event.clientX < left || event.clientX >= right ||
+          event.clientY < top || event.clientY >= bottom
+        );
+      };
+      let pressedBackdrop = false;
+      evidence.addEventListener('pointerdown', (event) => {
+        pressedBackdrop = onBackdrop(event);
+      });
+      evidence.addEventListener('click', (event) => {
+        if (pressedBackdrop && onBackdrop(event)) evidence.close();
+      });
+    }
     this.actions.initialize();
   }
 }

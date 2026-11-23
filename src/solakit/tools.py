@@ -282,7 +282,7 @@ TOOLS = (
     ),
     Tool(
         "jobs.update",
-        "Edit a job; consumed one-shots require a new future schedule.",
+        "Edit a job or toggle automatic wake-ups. Consumed one-shots need a new future schedule.",
         JobUpdate,
         jobs,
         True,
@@ -290,7 +290,7 @@ TOOLS = (
     ),
     Tool(
         "jobs.pause",
-        "Pause a bound job.",
+        "Disable automatic wake-ups for a bound job.",
         JobTarget,
         pause_job,
         True,
@@ -298,7 +298,7 @@ TOOLS = (
     ),
     Tool(
         "jobs.resume",
-        "Enable/resume a bound job.",
+        "Enable automatic wake-ups for a bound job.",
         JobTarget,
         resume_job,
         True,
@@ -306,7 +306,7 @@ TOOLS = (
     ),
     Tool(
         "jobs.run_now",
-        "Run a job now with a stable request ID; no overlap.",
+        "Run a job now even if its schedule is off. Requires a stable request ID and no overlap.",
         JobRun,
         jobs,
         True,

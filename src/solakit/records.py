@@ -14,6 +14,7 @@ from pydantic import (
     JsonValue,
     model_validator,
 )
+from pydantic.json_schema import SkipJsonSchema
 
 
 def new_id() -> str:
@@ -294,9 +295,12 @@ class Job(Record):
     session_id: RecordID | None = None
     mode: SessionMode = SessionMode.SHARED
     enabled: bool = False
+    # Decode old definitions and occurrence snapshots without rewriting evidence.
+    legacy_paused: SkipJsonSchema[bool] = Field(
+        default=False, validation_alias="paused", exclude=True, repr=False
+    )
     version: Annotated[int, Field(ge=1)] = 1
     generation: Annotated[int, Field(ge=1)] = 1
-    paused: bool = False
     deleted: bool = False
     next_due: Timestamp | None = None
     consumed: bool = False
@@ -309,6 +313,9 @@ class Job(Record):
     def target(self) -> Self:
         if (self.mode == SessionMode.EPHEMERAL) != (self.session_id is None):
             raise ValueError("jobs require a bound topic or an ephemeral target")
+        if self.legacy_paused:
+            object.__setattr__(self, "enabled", False)
+            object.__setattr__(self, "legacy_paused", False)
         return self
 
 

@@ -19,9 +19,10 @@ login sessions and disposable caches. Identity files and OpenViking memory stay
 in their existing locations; use the existing [config migration](../memory.md)
 script separately if needed.
 
-Imported work never runs automatically: running/queued historical runs become
-interrupted, jobs/global scheduling start paused, and old memory submissions and
-effects are not replayed. Review job profiles/bindings before enabling them.
+Running and queued historical runs become interrupted. Imported jobs start
+disabled and the global scheduler starts paused. Historical memory submissions
+and effects are retained for inspection. Review job profiles and bindings before
+enabling their schedules.
 
 Run snapshots supply historical outcomes; the importer does not reconcile them
 against every journal. Inverted timestamps are clamped, missing run snapshots

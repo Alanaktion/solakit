@@ -287,7 +287,6 @@ class JobService:
             "session_id",
             "mode",
             "enabled",
-            "paused",
             "delivery",
         }:
             raise ValueError("unsupported job edit")
@@ -306,7 +305,7 @@ class JobService:
             if rearm and (instant := one_shot(job)) is not None and instant <= self.clock():
                 raise ValueError("rearming requires a new future one-shot schedule")
         self._validate(job)
-        if temporal or (not job.paused and old.paused) or (job.enabled and not old.enabled):
+        if temporal or (job.enabled and not old.enabled):
             job = job.model_copy(update={"next_due": next_due(job, self.clock())})
         job = job.model_copy(update={"version": old.version + 1})
         self.store._commit((job,))
@@ -314,10 +313,10 @@ class JobService:
         return job
 
     def pause(self, identity: str) -> Job:
-        return self.update(identity, paused=True)
+        return self.update(identity, enabled=False)
 
     def resume(self, identity: str) -> Job:
-        return self.update(identity, paused=False, enabled=True)
+        return self.update(identity, enabled=True)
 
     def delete(self, identity: str) -> Job:
         deny_autonomous_successor()
@@ -462,9 +461,9 @@ class JobService:
         occurrence = self.store.occurrence(run.occurrence_id)
         if job.deleted:
             return True
-        if self.control().paused or job.paused:
+        if self.control().paused:
             return False
-        if occurrence.trigger != "manual" and not job.enabled and not job.deleted:
+        if occurrence.trigger != "manual" and not job.enabled:
             return False
         # Outbound-capable profiles wait until daylight; local-only preparation can run.
         admitted = EffectiveProfile.model_validate_json(
@@ -677,7 +676,7 @@ class JobService:
                 return
             now = self.clock()
             for job in self.list():
-                if not job.enabled or job.paused or job.consumed or job.next_due is None:
+                if not job.enabled or job.consumed or job.next_due is None:
                     continue
                 if job.next_due > now:
                     continue

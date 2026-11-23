@@ -25,12 +25,14 @@ from solakit.records import Origin, SessionMode
         "http://172.16.0.1:8382",
         "http://172.31.255.254:8382",
         "http://192.168.1.20:8382",
+        "http://100.64.0.0:8382",
+        "http://100.127.255.255:8382",
         "http://[fd12::1]:8382",
         "http://127.0.0.1:8382",
         "http://localhost:8382",
     ],
 )
-def test_explicit_lan_http_origins(origin: str) -> None:
+def test_explicit_local_and_tailnet_http_origins(origin: str) -> None:
     settings = HTTPSettings(allowed_origins=(origin,))
     assert settings.allowed_origins == (origin,)
     assert not settings.secure_cookie
@@ -41,6 +43,9 @@ def test_explicit_lan_http_origins(origin: str) -> None:
     [
         "http://172.15.255.255:8382",
         "http://172.32.0.1:8382",
+        "http://100.63.255.255:8382",
+        "http://100.128.0.0:8382",
+        "http://100.64.0.0/10",
         "http://8.8.8.8:8382",
         "http://0.0.0.0:8382",
         "http://169.254.1.2:8382",
@@ -55,7 +60,7 @@ def test_explicit_lan_http_origins(origin: str) -> None:
         "null",
     ],
 )
-def test_lan_http_does_not_allow_other_origins(origin: str) -> None:
+def test_direct_http_rejects_other_origins(origin: str) -> None:
     with pytest.raises(ValidationError):
         HTTPSettings(allowed_origins=(origin,))
 

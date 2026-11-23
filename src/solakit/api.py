@@ -240,7 +240,6 @@ class JobPatch(Input):
     session_id: RecordID | None = None
     mode: SessionMode | None = None
     enabled: StrictBool | None = None
-    paused: StrictBool | None = None
     tools: tuple[str, ...] | None = None
     workspace_roots: tuple[str, ...] | None = None
     budgets: dict[str, StrictInt] | None = None

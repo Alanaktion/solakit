@@ -72,15 +72,16 @@ def test_check_live_is_health_only_with_cleanup(
     assert not (tmp_path / "data").exists()
 
 
+@pytest.mark.parametrize("host", ["127.0.0.1", "100.64.1.20"])
 def test_serve_uses_configured_single_worker_and_ignores_proxy_headers(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, host: str
 ) -> None:
     import uvicorn
 
     config = config_file(tmp_path)
     with config.open("a") as target:
         target.write(
-            '\n[http]\nhost = "127.0.0.1"\nport = 9876\nallowed_origins = ["http://127.0.0.1:9876"]\n'
+            f'\n[http]\nhost = "{host}"\nport = 9876\nallowed_origins = ["http://{host}:9876"]\n'
         )
     options: dict[str, Any] = {}
 
@@ -92,7 +93,7 @@ def test_serve_uses_configured_single_worker_and_ignores_proxy_headers(
     monkeypatch.setattr(sys, "argv", ["sola", "serve", "--config", str(config)])
     main()
     assert options == {
-        "host": "127.0.0.1",
+        "host": host,
         "port": 9876,
         "workers": 1,
         "proxy_headers": False,

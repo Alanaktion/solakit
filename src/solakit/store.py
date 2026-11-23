@@ -626,10 +626,7 @@ class Store:
                 or job.deleted
                 or (job.session_id is not None and job.session_id != session_id)
                 or job.mode != session.mode
-                or (
-                    occurrence.trigger == "scheduled"
-                    and (not job.enabled or job.paused or job.consumed)
-                )
+                or (occurrence.trigger == "scheduled" and (not job.enabled or job.consumed))
                 or self.db.execute(
                     "SELECT 1 FROM entities WHERE kind='occurrence' AND id=?", (occurrence.id,)
                 ).fetchone()
