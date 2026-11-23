@@ -123,13 +123,19 @@ saved ceiling; a new grant requires a new run.
 Before a consequential operation, durable `tool.intent` contains internal/provider
 call IDs, run/session/model-step lineage, original origin, explicit tool name and
 arguments (including target/content/overwrite). Store failure stops execution.
-Guarded writes mark the publication boundary themselves. A trusted network adapter
+Guarded writes mark the publication boundary themselves. A consequential network adapter
 must call `ctx.begin_effect((credential, ...))` **before any network access**;
 this rechecks authority and registers credentials with the redactor. Call
 `ctx.confirm_effect()` only when the provider confirms the operation, and return
 provider receipt/idempotency IDs in result data. Track multiple sends honestly:
 starting another operation returns effect certainty to uncertain. Never infer a
 successful send from a timeout or retry an uncertain non-idempotent send blindly.
+
+A built-in read-only network adapter uses a private dispatcher check immediately
+before I/O. The check revalidates the active invocation, named tool, current
+grants and admitted integration settings. The adapter resolves and registers its
+credential with the shared redactor before sending the request. Read attempts
+use the normal durable intent and receipt and leave the effect at `none`.
 
 Every completed attempt writes one durable `tool.receipt`, with status
 `succeeded/failed/denied/cancelled/uncertain`, effect `none/confirmed/uncertain`,
@@ -198,6 +204,7 @@ opened directory trees or concurrently redefining Git metadata.
 | --- | --- | --- | --- | --- |
 | `files.read` / `files.write` | Tool grant + roots + guards | Same | Same | Same admitted narrower profile |
 | `transcripts.search` | Messages in shared sessions only | Own session only | Own run only | Bound session; own run if ephemeral |
+| `web.search` | Tool grant + stable enabled Brave credential reference | Same | Same | Same admitted narrower profile |
 | `runtime.status` | Own run/service health | Own run | Own run | Own run |
 | `memory.recall` | Recorded, scoped OpenViking 0.5 recall when enabled | Denied | Denied | Bound memory scope |
 | `memory.remember` | Exact local staging, extraction after completed runs | Denied | Denied | Bound memory scope; no wake creation |
@@ -218,6 +225,25 @@ retain at most the existing 1 MiB text bound. Installing/selecting the example p
 does not load or grant it.
 
 Phase 7 memory lifecycle, limits and recovery are defined in the [memory contract](memory.md).
+
+## Public web search
+
+`web.search(query, limit=5)` accepts a public query of 1–600 characters and at
+most 75 words, with a limit from 1 to 10. It returns an ordered JSON array of
+`title`, `url` and `snippet` fields. Snippets are untrusted excerpts. The model
+can cite the returned URLs and should use only the public terms needed for its
+query. Solakit makes one request to Brave over verified HTTPS, with a 10-second
+provider deadline and a 512 KiB response-body cap before parsing. Redirects and
+requests to result URLs are disabled. Titles and snippets are plain text capped
+at 160 and 400 characters. HTTP(S) source URLs can be up to 2,048 characters.
+
+An empty result array represents a successful search with no usable matches.
+Missing credentials, rate limits, timeouts and provider errors have distinct
+failure messages. Malformed rows are skipped and a malformed envelope fails the
+call. The query and returned excerpts are stored in regular tool evidence.
+Admissions without a `[web_search]` reference, including older admissions, keep
+search ineligible. Changing the reference or removing the grant revokes search
+from an existing run. Matching wildcard grants can confer search in new runs.
 
 The additive SDK `Services.blog(action, arguments)` method is reserved for the
 matching named built-in blog/dream tool. It cannot turn an unrelated granted tool

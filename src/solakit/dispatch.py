@@ -28,6 +28,7 @@ from solakit.registry import Registry
 from solakit.sdk import ToolContext, ToolError, ToolResult
 from solakit.search import search
 from solakit.store import Store
+from solakit.web_search import BraveSearch, WebSearch
 
 if TYPE_CHECKING:
     from solakit.blog import BlogService
@@ -50,6 +51,7 @@ class Dispatcher:
     ) -> None:
         self.store, self.registry, self.current = store, registry, current
         self.redactor = redactor or Redactor()
+        self.web_search = BraveSearch(self.redactor)
         self.memory: MemoryService | None = None
         self.jobs: JobService | None = None
         self.images: ImageService | None = None
@@ -298,6 +300,17 @@ class Invocation:
         self.authority("effect")
         self.dispatcher.redactor.register(*credentials)
         self.effect = "uncertain"
+
+    def _authorize_web_search(self) -> str | None:
+        profile = self.authority()
+        if self.call.name != "web.search":
+            raise ToolError("Web search requires its named tool", ErrorCode.TOOL_DENIED)
+        return profile.web_search.api_key_env
+
+    async def search_web(self, args: WebSearch) -> ToolResult:
+        return ToolResult(
+            data=await self.dispatcher.web_search.search(args, self._authorize_web_search)
+        )
 
     def confirm_effect(self) -> None:
         if self.closed:

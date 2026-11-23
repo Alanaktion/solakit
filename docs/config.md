@@ -67,7 +67,7 @@ match `[A-Za-z0-9_][A-Za-z0-9_.-]*` and contain at most 128 characters. Module n
 must also be importable Python modules.
 
 Built-ins currently include `files.list`, `files.read`, `files.search`, `files.write`,
-`images.generate`, `transcripts.search`,
+`images.generate`, `transcripts.search`, `web.search`,
 `runtime.status`, `memory.recall`, `memory.remember`, and `jobs.list`, `jobs.create`,
 `jobs.update`, `jobs.pause`, `jobs.resume`, `jobs.run_now`, `jobs.delete`,
 `jobs.pause_all`, `blog.list`, `blog.read`, `blog.create`, `blog.publish`,
@@ -77,7 +77,7 @@ Built-ins are always registered; enable them in the selected profile's
 it is rejected. There are no separate `resources` or `effects` settings. See the
 [tool contract](contracts/tools.md) for protected paths and pack permissions.
 
-The other supported top-level keys are tables: `model`, `http`, `memory`, `images`, `blog`,
+The other supported top-level keys are tables: `model`, `http`, `memory`, `images`, `blog`, `web_search`,
 `defaults`, `profiles`, `proactive_budgets` and `background`, described below.
 The example pack's image adapter remains a fixture; the optional built-in image
 service uses the fixed [ComfyUI workflow](image-workflows.md).
@@ -128,6 +128,18 @@ One unfinished generation is allowed globally. Set `defaults.budgets.tool_timeou
 high enough for the selected endpoint (for example 600, within `active_seconds`).
 The usual run deadline still applies. Cancellation stops waiting; provider work
 may continue and is observed separately. See [recovery](image-workflows.md).
+
+## `[web_search]`
+
+| Key | Type / built-in default | Meaning and constraints |
+| --- | --- | --- |
+| `web_search.api_key_env` | optional environment-variable name, omitted | Enables Brave web search when set. Supply the Brave API key in this variable in the server environment and grant `web.search` in `defaults.tools` or the selected profile's inherited grants. |
+
+Enablement can expose `web.search` to profiles with matching wildcard grants at
+new admission. Changing or removing this reference revokes search in existing
+runs. Only the environment-variable name is saved in admissions. Search queries
+go to Brave and are kept with the tool result in normal tool evidence. See the
+[web search contract](contracts/tools.md#public-web-search).
 
 ## `[http]`
 

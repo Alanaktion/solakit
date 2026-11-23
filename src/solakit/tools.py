@@ -6,7 +6,8 @@ from typing import Annotated, Literal
 from pydantic import Field
 
 from solakit.records import RecordID
-from solakit.sdk import Origin, Tool, ToolArguments, ToolContext, ToolResult
+from solakit.sdk import Origin, Tool, ToolArguments, ToolContext, ToolError, ToolResult
+from solakit.web_search import WebSearch
 
 
 class Read(ToolArguments):
@@ -116,6 +117,14 @@ async def list_files(context: ToolContext, args: ListFiles) -> ToolResult:
 
 async def search_files(context: ToolContext, args: SearchFiles) -> ToolResult:
     return ToolResult(data=context.files.search_text(args.path, args.query, limit=args.limit))
+
+
+async def search_web(context: ToolContext, args: WebSearch) -> ToolResult:
+    from solakit.dispatch import Invocation
+
+    if not isinstance(context.services, Invocation):
+        raise ToolError("Web search requires the built-in dispatcher")
+    return await context.services.search_web(args)
 
 
 async def generate_image(context: ToolContext, args: GenerateImage) -> ToolResult:
@@ -262,6 +271,14 @@ TOOLS = (
         True,
     ),
     Tool("transcripts.search", "Search permitted conversation evidence.", Query, transcripts),
+    Tool(
+        "web.search",
+        "Find public sources with a short query containing only public search terms. "
+        "Exclude private conversation text and credentials. Results include titles, source URLs "
+        "you can cite, and untrusted snippets that are excerpts.",
+        WebSearch,
+        search_web,
+    ),
     Tool("runtime.status", "Inspect this run and local service status.", ToolArguments, status),
     Tool(
         "memory.remember",

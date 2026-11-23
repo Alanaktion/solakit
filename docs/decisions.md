@@ -67,6 +67,8 @@ Statuses distinguish operator-confirmed requirements, implementer-selected rever
 
 | V2-45 | Confirmed / operator, 2026-11-23 | Use one per-job scheduling switch, `enabled`. Existing paused jobs read as disabled. Manual runs work with the switch off and retain global pause and overlap controls. Existing job tool grants use the same switch | [Job contract](contracts/jobs.md), [validation](validation/job-enabled.md) |
 
+| V2-46 | Selected / implementer, 2026-11-23 | Add `web.search` for public keyword or natural-language queries through Brave, the v1 provider. An operator credential reference and regular profile grants gate tool disclosure and dispatch. Existing admissions gain no search authority from configuration changes. One bounded read returns ordered titles, source URLs and excerpts through standard tool receipts | [Tool contract](contracts/tools.md#public-web-search), [validation](validation/web-search.md) |
+
 ## Unavailable references and remaining verification
 
 The outline refers to D1–D6 and companion source specifications that are not present in this checkout. Similarly named legacy refactor IDs are unrelated. Their absence is recorded; these v2 contracts replace the ambiguity for this release. Newly supplied requirements should become explicit decision changes, not retroactive assumptions.

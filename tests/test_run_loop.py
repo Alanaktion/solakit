@@ -283,6 +283,8 @@ def test_explicit_status_tool_request(text: str, expected: str) -> None:
     ("text", "expected"),
     [
         ("Use files.search to find a phrase in brief.txt.", {"files.search"}),
+        ("Search the web for sources on the Python 3.15 release.", {"web.search"}),
+        ("Search our conversation for past notes.", {"transcripts.search"}),
         (
             "Read brief.txt, search evidence with transcripts.search, then write result.txt.",
             {"files.read", "transcripts.search", "files.write"},
@@ -295,7 +297,9 @@ def test_explicit_status_tool_request(text: str, expected: str) -> None:
 )
 def test_explicit_tool_names_resolve_shared_verbs(text: str, expected: set[str]) -> None:
     assert (
-        requested_tools(text, ("files.read", "files.search", "files.write", "transcripts.search"))
+        requested_tools(
+            text, ("files.read", "files.search", "files.write", "transcripts.search", "web.search")
+        )
         == expected
     )
 

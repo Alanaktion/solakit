@@ -68,6 +68,7 @@ def opened(
     budgets: dict[str, int] | None = None,
     identity: bool = False,
     blog_repository: Path | None = None,
+    web_search_env: str | None = None,
 ) -> Iterator[Harness]:
     root = root.resolve()
     workspace = root / "workspace"
@@ -85,6 +86,7 @@ def opened(
                 "model": {"pin": "fixture"},
                 "tool_modules": list(modules),
                 "blog": {"repository": str(blog_repository)} if blog_repository else {},
+                "web_search": {"api_key_env": web_search_env},
                 "soul_file": str(soul) if soul else None,
                 "defaults": {
                     "workspace_roots": [str(workspace)],
@@ -95,7 +97,9 @@ def opened(
         ),
         mode=mode,
     )
-    profile = changed(profile, tools=profile.granted_tools & frozenset(registry.tools))
+    profile = changed(
+        profile, tools=profile.tools | {t.name for t in extra if t.name in profile.granted_tools}
+    )
     store = Store(profile.data_dir)
     asyncio.run(store.start())
     try:

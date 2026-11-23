@@ -102,6 +102,12 @@ class BlogSettings(Value):
     repository: str | None = None
 
 
+class WebSearchSettings(Value):
+    api_key_env: Annotated[str, Field(pattern=r"^[A-Za-z_][A-Za-z0-9_]*$")] | None = Field(
+        default=None, repr=False
+    )
+
+
 class MemorySettings(Value):
     enabled: bool = False
     base_url: str = "http://127.0.0.1:1933"
@@ -223,6 +229,7 @@ class OperatorConfig(Value):
     memory: MemorySettings = Field(default_factory=MemorySettings)
     images: ImageSettings = Field(default_factory=ImageSettings)
     blog: BlogSettings = Field(default_factory=BlogSettings)
+    web_search: WebSearchSettings = Field(default_factory=WebSearchSettings)
     tool_modules: list[Name] = Field(default_factory=list)
     defaults: ProfileSettings = Field(default_factory=ProfileSettings)
     profiles: dict[Name, ProfileSettings] = Field(default_factory=dict)
@@ -251,6 +258,7 @@ class EffectiveProfile(Value):
     memory: MemorySettings = Field(default_factory=MemorySettings)
     images: ImageSettings = Field(default_factory=ImageSettings)
     blog_repository: Path | None = None
+    web_search: WebSearchSettings = Field(default_factory=WebSearchSettings)
     background: BackgroundSettings = Field(default_factory=BackgroundSettings)
     http: HTTPSettings = Field(default_factory=HTTPSettings)
     proactive_budgets: BudgetOverrides = Field(default_factory=BudgetOverrides)
@@ -272,6 +280,7 @@ class EffectiveProfile(Value):
             values[key] = sorted(values[key])
         values["model_api_key_env"] = "<redacted>" if self.model_api_key_env else None
         values["memory"]["api_key_env"] = "<redacted>" if self.memory.api_key_env else None
+        values["web_search"]["api_key_env"] = "<redacted>" if self.web_search.api_key_env else None
         values["http"]["password_env"] = "<redacted>"
         return {"values": values, "sources": dict(self.sources)}
 
@@ -429,6 +438,7 @@ def resolve_profile(
         ("memory", "memory"),
         ("images", "images"),
         ("blog_repository", "blog"),
+        ("web_search", "web_search"),
         ("background", "background"),
         ("http", "http"),
         ("proactive_budgets", "proactive_budgets"),
@@ -447,6 +457,9 @@ def resolve_profile(
         tools="registered tools ∩ granted_tools",
     )
     sources.pop("budgets")
+    tools = grants & registered
+    if not config.web_search.api_key_env:
+        tools -= {"web.search"}
     return EffectiveProfile(
         name=name,
         agent_name=config.agent_name,
@@ -473,12 +486,13 @@ def resolve_profile(
         blog_repository=_paths([config.blog.repository], base, directories=True)[0]
         if config.blog.repository is not None
         else None,
+        web_search=config.web_search,
         background=config.background,
         http=config.http,
         proactive_budgets=config.proactive_budgets,
         tool_modules=tuple(config.tool_modules),
         granted_tools=grants,
-        tools=grants & registered,
+        tools=tools,
         memory_mode=memory,
         fragments=fragments,
         budgets=budgets,
@@ -511,11 +525,14 @@ def restrict_to_admission(
             if inner.is_relative_to(a) and inner.is_relative_to(b)
         )
     )
+    tools = current.tools & admitted.tools & current.granted_tools & admitted.granted_tools
+    if not admitted.web_search.api_key_env or current.web_search != admitted.web_search:
+        tools -= {"web.search"}
     changes = {
         "model_image_inputs": current.model_image_inputs and admitted.model_image_inputs,
         "workspace_roots": roots,
         "granted_tools": current.granted_tools & admitted.granted_tools,
-        "tools": (current.tools & admitted.tools & current.granted_tools & admitted.granted_tools),
+        "tools": tools,
         "memory_mode": "off"
         if "off" in (current.memory_mode, admitted.memory_mode)
         else admitted.memory_mode,

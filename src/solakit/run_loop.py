@@ -84,10 +84,17 @@ def requested_tools(text: str, names: Sequence[str]) -> set[str]:
     }
     # A named tool resolves shared verbs such as files.search/transcripts.search.
     actions -= {part for name in explicit for part in re.split(r"[_.-]", name)}
+    web_target = bool(
+        re.search(r"\bsearch\s+(?:(?:the|for)\s+)?(?:web|internet|online|public sources?)\b", text)
+    )
     return {
         name
         for name in names
         if (actions.intersection(re.split(r"[_.-]", name)) or name in explicit)
+        and (name != "web.search" or name in explicit or web_target)
+        and (
+            name not in {"files.search", "transcripts.search"} or name in explicit or not web_target
+        )
         and (not ({"file", "files"} & set(re.split(r"[_.-]", name))) or file_target or name in text)
         and (
             not ({"image", "images"} & set(re.split(r"[_.-]", name)))
