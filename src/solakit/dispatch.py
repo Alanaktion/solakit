@@ -214,11 +214,12 @@ class ToolSession:
         artifact = invocation.artifact or artifact
         if invocation.effect == "uncertain":
             status = "uncertain"
+            message = (
+                failure.message if failure else "Tool effect is uncertain; reconcile before retry"
+            )
             failure = Failure(
                 code=ErrorCode.EFFECT_UNCERTAIN,
-                message=failure.message
-                if failure
-                else "Tool effect is uncertain; reconcile before retry",
+                message=message + invocation.uncertain_advice,
             )
         elif status == "denied" and invocation.effect == "confirmed":
             status = "failed"
@@ -251,6 +252,7 @@ class Invocation:
         self.dispatcher, self.admitted = session.dispatcher, session.admitted
         self.run_id, self.started, self.call = session.run_id, session.started, call
         self.effect: Literal["none", "confirmed", "uncertain"] = "none"
+        self.uncertain_advice = ""
         self.call_started = time.monotonic()
         self.closed = False
         self.artifact: Artifact | None = None

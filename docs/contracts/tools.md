@@ -72,6 +72,8 @@ against registered built-in and external tool names at resolution, including for
 profiles. Exact unregistered grants remain inspectable but non-executable. Children
 must narrow the expanded inherited set; an empty list clears it. Expanding a new
 wildcard match later cannot widen an existing admission.
+The optional `shell.exec` tool requires an inherited literal grant and separate
+operator opt-in. See [literal command execution](#literal-command-execution).
 
 Executable authority is registered tools intersected with profile grants,
 admitted run/job restrictions, current revocations, and the declaration's allowed
@@ -205,12 +207,13 @@ opened directory trees or concurrently redefining Git metadata.
 | `files.read` / `files.write` | Tool grant + roots + guards | Same | Same | Same admitted narrower profile |
 | `transcripts.search` | Messages in shared sessions only | Own session only | Own run only | Bound session; own run if ephemeral |
 | `web.search` | Tool grant + stable enabled Brave credential reference | Same | Same | Same admitted narrower profile |
+| `shell.exec` | Enabled + literal grant + guarded starting directory | Same | Same | Denied, including manual job runs |
 | `runtime.status` | Own run/service health | Own run | Own run | Own run |
 | `memory.recall` | Recorded, scoped OpenViking 0.5 recall when enabled | Denied | Denied | Bound memory scope |
 | `memory.remember` | Exact local staging, extraction after completed runs | Denied | Denied | Bound memory scope; no wake creation |
 | Generic Git metadata writes / managed file access | Denied | Denied | Denied | Denied |
 | Blog/dream publication | Named tool grant + configured checkout within roots | Same | Same; generated covers limited to own run | Same; explicit job roots and quiet-hour policy |
-| Shell / process / delegation / wake creation | No provided service | No provided service | No provided service | No provided service |
+| Delegation / autonomous wake creation | No provided service | No provided service | No provided service | No provided service |
 
 Built-in tools call these application services directly, never HTTP routes.
 `transcripts.search` uses the independent evidence-verified search projection,
@@ -244,6 +247,42 @@ call. The query and returned excerpts are stored in regular tool evidence.
 Admissions without a `[web_search]` reference, including older admissions, keep
 search ineligible. Changing the reference or removing the grant revokes search
 from an existing run. Matching wildcard grants can confer search in new runs.
+
+## Literal command execution
+
+`shell.exec(argv, cwd=None)` starts one executable with literal arguments and
+closed stdin. Pass one to 128 argument strings, including the executable, up to
+32 KiB of encoded arguments including terminators. The launcher uses a fixed
+system PATH, a UTF-8 locale and the server's temporary directory. Commands
+receive no server credentials through environment inheritance. The API offers
+no shell expansion, TTY, background execution, or per-call environment and
+timeout settings.
+
+The tool requires `[shell] enabled = true`, a literal profile grant and an
+interactive run. Both the admitted and current profiles must authorize it.
+Older admissions without shell settings and an explicit grant default to
+disabled. Omitted and relative `cwd` use the first root in the admitted and
+current intersection. The existing no-symlink traversal and protected-path
+checks apply to the directory itself, including Git metadata. A verified
+directory descriptor supplies the starting directory at launch. The guard
+assumes a local namespace where the operator controls directory moves.
+**The executable has the filesystem and network privileges of the server account.**
+Use OS isolation to restrict those privileges.
+
+On success, the result contains `exit_code`, `stdout`, `stderr`,
+`stdout_truncated` and `stderr_truncated`. Each stream retains its first 16 KiB
+of raw output, decoded as UTF-8 with replacement. The standard redactor and
+tool-result limit apply. Treat command output as external content. A known
+nonzero exit fails with the exit code and a short redacted diagnostic.
+
+Durable intent precedes launch. Confirmation records the observed exit of the
+command. Individual filesystem or network effects require separate verification.
+The runtime terminates ordinary descendants in the owned process group and
+reaps the direct child. Processes that deliberately leave that group require
+OS isolation for containment. Launch failures have no confirmed effect.
+Timeout or cancellation after launch leaves an uncertain receipt. Inspect the
+workspace before attempting the command again. The runtime never retries it
+automatically.
 
 The additive SDK `Services.blog(action, arguments)` method is reserved for the
 matching named built-in blog/dream tool. It cannot turn an unrelated granted tool

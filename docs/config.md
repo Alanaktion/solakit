@@ -67,7 +67,7 @@ match `[A-Za-z0-9_][A-Za-z0-9_.-]*` and contain at most 128 characters. Module n
 must also be importable Python modules.
 
 Built-ins currently include `files.list`, `files.read`, `files.search`, `files.write`,
-`images.generate`, `transcripts.search`, `web.search`,
+`images.generate`, `transcripts.search`, `web.search`, `shell.exec`,
 `runtime.status`, `memory.recall`, `memory.remember`, and `jobs.list`, `jobs.create`,
 `jobs.update`, `jobs.pause`, `jobs.resume`, `jobs.run_now`, `jobs.delete`,
 `jobs.pause_all`, `blog.list`, `blog.read`, `blog.create`, `blog.publish`,
@@ -77,7 +77,7 @@ Built-ins are always registered; enable them in the selected profile's
 it is rejected. There are no separate `resources` or `effects` settings. See the
 [tool contract](contracts/tools.md) for protected paths and pack permissions.
 
-The other supported top-level keys are tables: `model`, `http`, `memory`, `images`, `blog`, `web_search`,
+The other supported top-level keys are tables: `model`, `http`, `memory`, `images`, `blog`, `web_search`, `shell`,
 `defaults`, `profiles`, `proactive_budgets` and `background`, described below.
 The example pack's image adapter remains a fixture; the optional built-in image
 service uses the fixed [ComfyUI workflow](image-workflows.md).
@@ -140,6 +140,20 @@ new admission. Changing or removing this reference revokes search in existing
 runs. Only the environment-variable name is saved in admissions. Search queries
 go to Brave and are kept with the tool result in normal tool evidence. See the
 [web search contract](contracts/tools.md#public-web-search).
+
+## `[shell]`
+
+Set `enabled = true` here and include the exact name `shell.exec` in
+`defaults.tools` to grant interactive commands. The default is `false`.
+Child profiles inherit the grant when they inherit their parent's tools.
+If a child supplies a new tools list, it must retain the literal grant from its
+parent. Wildcards confer no shell authority.
+
+**Commands have the server account's filesystem and network privileges.**
+Workspace roots govern the starting directory. Deploy the server with OS
+isolation when commands need narrower filesystem or network access. The
+command's arguments and retained output are part of durable tool evidence.
+See the [literal command contract](contracts/tools.md#literal-command-execution).
 
 ## `[http]`
 

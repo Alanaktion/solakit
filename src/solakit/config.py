@@ -108,6 +108,10 @@ class WebSearchSettings(Value):
     )
 
 
+class ShellSettings(Value):
+    enabled: bool = False
+
+
 class MemorySettings(Value):
     enabled: bool = False
     base_url: str = "http://127.0.0.1:1933"
@@ -230,6 +234,7 @@ class OperatorConfig(Value):
     images: ImageSettings = Field(default_factory=ImageSettings)
     blog: BlogSettings = Field(default_factory=BlogSettings)
     web_search: WebSearchSettings = Field(default_factory=WebSearchSettings)
+    shell: ShellSettings = Field(default_factory=ShellSettings)
     tool_modules: list[Name] = Field(default_factory=list)
     defaults: ProfileSettings = Field(default_factory=ProfileSettings)
     profiles: dict[Name, ProfileSettings] = Field(default_factory=dict)
@@ -259,6 +264,8 @@ class EffectiveProfile(Value):
     images: ImageSettings = Field(default_factory=ImageSettings)
     blog_repository: Path | None = None
     web_search: WebSearchSettings = Field(default_factory=WebSearchSettings)
+    shell: ShellSettings = Field(default_factory=ShellSettings)
+    shell_granted: bool = False
     background: BackgroundSettings = Field(default_factory=BackgroundSettings)
     http: HTTPSettings = Field(default_factory=HTTPSettings)
     proactive_budgets: BudgetOverrides = Field(default_factory=BudgetOverrides)
@@ -356,6 +363,7 @@ def resolve_profile(
         sources[f"budgets.{key}"] = "builtin"
     roots: tuple[Path, ...] = ()
     grants: frozenset[str] = frozenset()
+    shell_granted = False
     memory: MemoryMode = "optional"
     fragments: tuple[Path, ...] = ()
     try:
@@ -381,8 +389,10 @@ def resolve_profile(
             )
             if child and not selected_tools <= grants:
                 raise ConfigError("profile tools exceed inherited authority")
+            shell_granted = "shell.exec" in settings.tools and (not child or shell_granted)
             grants = selected_tools
             sources["granted_tools"] = source + ".tools"
+            sources["shell_granted"] = source + ".tools"
         if settings.memory_mode is not None:
             if child and memory == "off" and settings.memory_mode != "off":
                 raise ConfigError("profile cannot enable inherited disabled memory")
@@ -439,6 +449,7 @@ def resolve_profile(
         ("images", "images"),
         ("blog_repository", "blog"),
         ("web_search", "web_search"),
+        ("shell", "shell"),
         ("background", "background"),
         ("http", "http"),
         ("proactive_budgets", "proactive_budgets"),
@@ -460,6 +471,8 @@ def resolve_profile(
     tools = grants & registered
     if not config.web_search.api_key_env:
         tools -= {"web.search"}
+    if not (config.shell.enabled and shell_granted and origin == Origin.INTERACTIVE):
+        tools -= {"shell.exec"}
     return EffectiveProfile(
         name=name,
         agent_name=config.agent_name,
@@ -487,6 +500,8 @@ def resolve_profile(
         if config.blog.repository is not None
         else None,
         web_search=config.web_search,
+        shell=config.shell,
+        shell_granted=shell_granted,
         background=config.background,
         http=config.http,
         proactive_budgets=config.proactive_budgets,
@@ -528,10 +543,20 @@ def restrict_to_admission(
     tools = current.tools & admitted.tools & current.granted_tools & admitted.granted_tools
     if not admitted.web_search.api_key_env or current.web_search != admitted.web_search:
         tools -= {"web.search"}
+    shell_granted = current.shell_granted and admitted.shell_granted
+    if not (
+        shell_granted
+        and current.shell.enabled
+        and admitted.shell.enabled
+        and admitted.origin == Origin.INTERACTIVE
+        and roots
+    ):
+        tools -= {"shell.exec"}
     changes = {
         "model_image_inputs": current.model_image_inputs and admitted.model_image_inputs,
         "workspace_roots": roots,
         "granted_tools": current.granted_tools & admitted.granted_tools,
+        "shell_granted": shell_granted,
         "tools": tools,
         "memory_mode": "off"
         if "off" in (current.memory_mode, admitted.memory_mode)

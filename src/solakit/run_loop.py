@@ -619,10 +619,8 @@ class RunLoop:
                         )
                     )
                     if receipt.status == "uncertain":
-                        raise RunFailure(
-                            ErrorCode.EFFECT_UNCERTAIN,
-                            "Tool effect is uncertain; reconcile before retry",
-                        )
+                        assert receipt.failure is not None
+                        raise RunFailure(receipt.failure.code, receipt.failure.message)
                     if receipt.failure:
                         if (
                             receipt.failure.code == ErrorCode.MEMORY_UNAVAILABLE

@@ -69,6 +69,8 @@ Statuses distinguish operator-confirmed requirements, implementer-selected rever
 
 | V2-46 | Selected / implementer, 2026-11-23 | Add `web.search` for public keyword or natural-language queries through Brave, the v1 provider. An operator credential reference and regular profile grants gate tool disclosure and dispatch. Existing admissions gain no search authority from configuration changes. One bounded read returns ordered titles, source URLs and excerpts through standard tool receipts | [Tool contract](contracts/tools.md#public-web-search), [validation](validation/web-search.md) |
 
+| V2-47 | Selected / implementer, 2026-11-23 | Add opt-in interactive `shell.exec` with an inherited literal grant. Recheck enablement, grants and cwd at launch. Pass literal argv with a minimal environment and bound output under the existing tool budgets. Commands have the server account's filesystem and network privileges. Record exit or uncertainty in standard receipts and terminate the owned process group. Supersedes V2-13 for this tool | [Tool contract](contracts/tools.md#literal-command-execution), [validation](validation/shell.md) |
+
 ## Unavailable references and remaining verification
 
 The outline refers to D1–D6 and companion source specifications that are not present in this checkout. Similarly named legacy refactor IDs are unrelated. Their absence is recorded; these v2 contracts replace the ambiguity for this release. Newly supplied requirements should become explicit decision changes, not retroactive assumptions.
@@ -84,6 +86,6 @@ No architecture-changing product question remains unanswered for Phase 0. Remain
 | Exact image workflow/resource and credentials | Fixed examples/image-workflow.json passed live at operator-selected http://127.0.0.1:8188/ (ComfyUI 0.42.0), with retrievable default/explicit outputs and recovery tests | Implementer, Phase 12; operator browser acceptance remains pending |
 | Numerical task-completion and disclosure thresholds | Selected before live baseline | Implementer, Phase 1; [versioned thresholds](../evals/thresholds.json), revise only before future candidate measurement |
 | Quiet-hour/backlog behavior and cron DST details | Deterministic checks and APScheduler integration passed; real scheduled Qwen/topic/extraction trace passed in test account | Implementer, Phase 9; production soak Phase 13 |
-| Shell and deferred domain integrations | Out of release scope | Operator may initiate a separate scope change after basic reliability |
+| Deferred domain integrations | Out of release scope | Operator may initiate a separate scope change |
 
 Record changes here with date, reason, affected phases, and verification. Do not widen an existing run's admission ceiling when configuration gains authority.

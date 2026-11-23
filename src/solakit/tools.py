@@ -7,6 +7,7 @@ from pydantic import Field
 
 from solakit.records import RecordID
 from solakit.sdk import Origin, Tool, ToolArguments, ToolContext, ToolError, ToolResult
+from solakit.shell import ShellExec, execute_shell
 from solakit.web_search import WebSearch
 
 
@@ -125,6 +126,15 @@ async def search_web(context: ToolContext, args: WebSearch) -> ToolResult:
     if not isinstance(context.services, Invocation):
         raise ToolError("Web search requires the built-in dispatcher")
     return await context.services.search_web(args)
+
+
+async def run_shell(context: ToolContext, args: ShellExec) -> ToolResult:
+    from solakit.dispatch import Invocation
+    from solakit.files import GuardedFiles
+
+    if not isinstance(context.services, Invocation) or not isinstance(context.files, GuardedFiles):
+        raise ToolError("Shell execution requires the built-in dispatcher")
+    return await execute_shell(context.services, args, context.files)
 
 
 async def generate_image(context: ToolContext, args: GenerateImage) -> ToolResult:
@@ -278,6 +288,14 @@ TOOLS = (
         "you can cite, and untrusted snippets that are excerpts.",
         WebSearch,
         search_web,
+    ),
+    Tool(
+        "shell.exec",
+        "Run a local program with literal arguments in a granted directory.",
+        ShellExec,
+        run_shell,
+        True,
+        frozenset({Origin.INTERACTIVE}),
     ),
     Tool("runtime.status", "Inspect this run and local service status.", ToolArguments, status),
     Tool(

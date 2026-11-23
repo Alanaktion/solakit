@@ -22,7 +22,8 @@ see the [blog guide](blog.md). They use a fixed Markdown/build/commit/push servi
 without exposing shell access. Other domain packs for letters, email, journal,
 calendar, and printer remain deferred. Legacy image-generation behavior is
 reference material; v1 needs one reliable configured workflow, not every legacy
-option. General shell remains deferred. Delegation, Android compatibility,
+option. A separate operator opt-in enables [literal interactive commands](contracts/tools.md#literal-command-execution).
+Delegation, Android compatibility,
 Discord parity, browser/computer control, and independent agents are deferred.
 No domain execution logic belongs in the run loop.
 

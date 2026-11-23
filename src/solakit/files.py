@@ -139,6 +139,15 @@ class GuardedFiles:
         if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
             raise _deny()
 
+    @contextmanager
+    def command_directory(self, path: str) -> Iterator[int]:
+        with self._parent(path, write=True) as (parent, name):
+            fd = os.open(name or ".", DIRECTORY, dir_fd=parent)
+            try:
+                yield fd
+            finally:
+                os.close(fd)
+
     def read_text(self, path: str) -> str:
         raw = self.read_bytes(path, limit=MAX_FILE_BYTES)
         try:

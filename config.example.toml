@@ -8,7 +8,7 @@ data_dir = "~/.local/share/sola"
 # Explicit import modules for installed trusted packs; loading grants no access.
 tool_modules = []
 # Built-ins: files.list, files.read, files.search, files.write, images.generate,
-# transcripts.search, web.search, runtime.status,
+# transcripts.search, web.search, shell.exec, runtime.status,
 # memory.recall, memory.remember; jobs.list/create/update/pause/resume/run_now/delete/pause_all.
 # blog.list/read/create/publish; dreams.list/read/create (always publishes).
 shutdown_timeout_seconds = 5
@@ -47,6 +47,12 @@ max_checks = 300
 # Existing wildcard grants can match web.search on new admissions once enabled.
 [web_search]
 # api_key_env = "BRAVE_SEARCH_API_KEY"
+
+# To enable interactive commands, set enabled and include "shell.exec" literally in tools.
+# Commands have the server account's filesystem and network privileges.
+# Workspace roots constrain the starting directory. Use OS isolation for narrower privileges.
+[shell]
+enabled = false
 
 [http]
 host = "127.0.0.1"
