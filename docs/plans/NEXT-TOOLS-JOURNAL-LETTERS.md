@@ -1,5 +1,10 @@
 # Next tools: journal + letter writing on main-v2
 
+The [current letters plan](NEXT-TOOLS-LETTERS.md) replaces the letters proposal
+in this historical note. The [blog and dream tools](../blog.md) landed after
+this note was written. The v1 journal reference below still describes its
+general-purpose collection workflow.
+
 Alan 2026-11-18 (06:31 UTC, side chat "Solakit main-v2 needs more tools"): main-v2 is
 basically done, he'll use it as-is for a bit, and "mostly just needs journal and
 letter writing". This is the porting surface for those two, mapped from the v1 packs
