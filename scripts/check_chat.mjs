@@ -723,12 +723,23 @@ try {
       await page.waitForTimeout(1500);
       assert.equal(await page.locator('.preview:not([hidden])').count(), 0);
       await page.locator('#draft').fill('Offline editable draft');
+      // One row per page forces the reconnect to cross a page boundary for this cached run.
+      const recordsURL = `**/runs/${run}/records?*`;
+      let pagedBack = false;
+      await page.route(recordsURL, (route) => {
+        const url = new URL(route.request().url());
+        pagedBack ||= Number(url.searchParams.get('before')) > 0;
+        url.searchParams.set('limit', '1');
+        return route.continue({ url: url.href });
+      });
       await context.setOffline(false);
       await waitFor(() => document.querySelector('#connection').textContent === 'Connected');
       await page
         .locator(`[data-run-id="${run}"] .run-bar`)
         .filter({ hasText: 'completed' })
         .waitFor({ timeout: 30000 });
+      assert(pagedBack, 'Catch up on records beyond the newest page');
+      await page.unroute(recordsURL);
       assert.equal(await page.locator(`[data-run-id="${run}"]`).count(), 1);
       assert.equal(await page.locator('#draft').inputValue(), 'Offline editable draft');
       const after = await page.evaluate(() =>

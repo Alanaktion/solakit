@@ -3,7 +3,7 @@
 import sqlite3
 from collections.abc import Callable
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from pydantic import JsonValue, TypeAdapter
 
@@ -56,6 +56,10 @@ from solakit.records import (
     new_id,
     utc_now,
 )
+
+if TYPE_CHECKING:
+    from solakit.config import EffectiveProfile
+
 
 type StoredRecord = (
     Session
@@ -221,28 +225,30 @@ class Store:
             self._connection = None
 
     def _reconcile(self, *, active_only: bool = False) -> None:
-        rows = self.db.execute(
-            "SELECT * FROM outbox "
-            + ("WHERE id NOT IN (" + ARCHIVED_ENTRIES + ") " if active_only else "")
-            + "ORDER BY ordinal"
-        ).fetchall()
         known = {row[0] for row in self.db.execute("SELECT id FROM outbox")}
         if set(self.log.references) - known:
             raise CorruptionError("evidence absent from operational outbox; restore state")
-        for row in rows:
-            ref = self.log.references.get(row["id"])
-            if ref is None and row["delivered"]:
-                raise CorruptionError("acknowledged evidence missing")
-            if ref is not None and self.log.read(ref).encoded() != row["body"]:
-                raise CorruptionError("outbox/evidence payload mismatch")
-            if row["delivered"] and (ref is None or row["reference"] != ref.model_dump_json()):
-                raise CorruptionError("state evidence offset mismatch")
         latest: dict[tuple[str, str], Entry] = {}
         sequences: dict[str, int] = {}
         first_sequence: dict[tuple[str, str], int] = {}
         admissions: dict[str, tuple[str, str]] = {}
+        rows = self.db.execute(
+            "SELECT * FROM outbox "
+            + ("WHERE id NOT IN (" + ARCHIVED_ENTRIES + ") " if active_only else "")
+            + "ORDER BY ordinal"
+        )
         for row in rows:
-            entry = Entry.model_validate_json(row["body"])
+            ref = self.log.references.get(row["id"])
+            if ref is None:
+                if row["delivered"]:
+                    raise CorruptionError("acknowledged evidence missing")
+                entry = Entry.model_validate_json(row["body"])
+            else:
+                entry = self.log.read(ref)
+                if entry.encoded() != row["body"]:
+                    raise CorruptionError("outbox/evidence payload mismatch")
+                if row["delivered"] and row["reference"] != ref.model_dump_json():
+                    raise CorruptionError("state evidence offset mismatch")
             if entry.kind in RECORDS:
                 key = (entry.kind, str(entry.record["id"]))
                 latest[key] = entry
@@ -423,13 +429,21 @@ class Store:
         ).fetchone()
         if row is None:
             raise KeyError(identity)
+        return self._read_row(row, cls)
+
+    def _read_row[T: Record](self, row: sqlite3.Row, cls: type[T]) -> T:
         ref = self.log.references.get(row["entry_id"])
         if ref is None:
             raise StorageError("record evidence pending")
         entry = self.log.read(ref)
-        if entry.kind != kind or canonical(entry.record).decode() != row["body"]:
+        body = canonical(entry.record)
+        if (
+            entry.kind != row["kind"]
+            or entry.record["id"] != row["id"]
+            or body.decode() != row["body"]
+        ):
             raise CorruptionError("record projection differs from evidence")
-        return cls.model_validate_json(canonical(entry.record))
+        return cls.model_validate_json(body)
 
     def session(self, identity: str) -> Session:
         return self._load("session", identity, Session)
@@ -518,11 +532,17 @@ class Store:
 
     def admission_details(self, run_id: str) -> dict[str, object]:
         self.run(run_id)
+        # Run transitions keep the original session sequence. It indexes the admission event.
+        position = self.db.execute(
+            "SELECT session_id,sequence FROM entities WHERE kind='run' AND id=?", (run_id,)
+        ).fetchone()
         row = self.db.execute(
             "SELECT reference FROM outbox WHERE delivered=1 "
+            "AND json_extract(body,'$.event.session_id')=? "
+            "AND json_extract(body,'$.event.sequence')=? "
             "AND json_extract(body,'$.event.run_id')=? "
             "AND json_extract(body,'$.event.type')='run.admitted'",
-            (run_id,),
+            (*position, run_id),
         ).fetchone()
         if row is None:
             raise StorageError("durable admission unavailable")
@@ -533,6 +553,11 @@ class Store:
         if not isinstance(profile, dict) or not profile:
             raise ValueError("tool dispatch requires a durable effective profile at admission")
         return profile
+
+    def admitted_profile(self, run_id: str) -> EffectiveProfile:
+        from solakit.config import EffectiveProfile
+
+        return EffectiveProfile.model_validate_json(canonical(self.admission_profile(run_id)))
 
     def tool_attempts(self, run_id: str) -> int:
         self.run(run_id)
@@ -1078,7 +1103,7 @@ class Store:
             raise ValueError("use either after or a nonnegative before cursor")
         direction = "DESC" if before is not None else "ASC"
         rows = self.db.execute(
-            "SELECT id,sequence FROM entities WHERE kind=? AND session_id=? AND sequence>? "
+            "SELECT * FROM entities WHERE kind=? AND session_id=? AND sequence>? "
             "AND (? IS NULL OR ?=0 OR sequence<?) "
             "AND (kind!='message' OR json_extract(body,'$.origin') "
             "NOT IN ('scheduled','proactive') "
@@ -1088,8 +1113,8 @@ class Store:
             "AND json_extract(delivery.body,'$.state')='delivered'))) "
             f"ORDER BY sequence {direction},id LIMIT ?",
             (kind, session_id, after, before, before, before, limit),
-        ).fetchall()
-        return [(row["sequence"], self._load(kind, row["id"], RECORDS[kind])) for row in rows]
+        )
+        return [(row["sequence"], self._read_row(row, RECORDS[kind])) for row in rows]
 
     def run_records(
         self, run_id: str, *, after: int = 0, limit: int = 50, before: int | None = None
@@ -1106,11 +1131,8 @@ class Store:
             "AND (? IS NULL OR ?=0 OR sequence<?) "
             f"ORDER BY sequence {direction},id LIMIT ?",
             (run_id, after, before, before, before, limit),
-        ).fetchall()
-        return [
-            (row["sequence"], self._load(row["kind"], row["id"], RECORDS[row["kind"]]))
-            for row in rows
-        ]
+        )
+        return [(row["sequence"], self._read_row(row, RECORDS[row["kind"]])) for row in rows]
 
     def events(self, session_id: str, *, after: int = 0, limit: int = 50) -> list[DurableEvent]:
         self.session(session_id)

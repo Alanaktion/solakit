@@ -1,7 +1,6 @@
 """Bounded headless execution; SQLite owns queues, this service owns live tasks."""
 
 import asyncio
-import contextvars
 import math
 import re
 from collections.abc import Sequence
@@ -43,9 +42,6 @@ if TYPE_CHECKING:
     from solakit.jobs import JobService
     from solakit.vision import VisionAdapter
 
-_CURRENT_SESSION: contextvars.ContextVar[str | None] = contextvars.ContextVar(
-    "sola_run_session", default=None
-)
 _ACTIONS = (
     r"read|write|save|create|generate|publish|search|recall|remember|list|show|check|inspect|use"
     r"|delegate"
@@ -470,7 +466,9 @@ class RunLoop:
                 run = self.store.run(run_id)
                 if run.state not in RUN_TRANSITIONS:
                     return run
-                if _CURRENT_SESSION.get() == run.session_id:
+                if (
+                    caller := current_run.get()
+                ) is not None and caller.session_id == run.session_id:
                     return run
                 if self.failure is not None:
                     raise StorageError("run worker failed; stop and recover") from self.failure
@@ -532,14 +530,11 @@ class RunLoop:
             self._fault(error)
 
     async def _execute(self, queued: Run) -> None:
-        token = _CURRENT_SESSION.set(queued.session_id)
         lineage_token = current_run.set(queued)
         try:
             if self.store.run(queued.id).state != RunState.QUEUED:
                 return
-            admitted = EffectiveProfile.model_validate_json(
-                canonical(self.store.admission_profile(queued.id))
-            )
+            admitted = self.store.admitted_profile(queued.id)
             self.dispatcher.profile(queued, admitted)
             if self.jobs is not None:
                 self.jobs.validate_execution(queued)
@@ -582,7 +577,6 @@ class RunLoop:
             self.store.transition_run(queued.id, RunState.FAILED, reason=reason)
         finally:
             current_run.reset(lineage_token)
-            _CURRENT_SESSION.reset(token)
 
     async def _observe(self, run: Run, admitted: EffectiveProfile, user: Message) -> None:
         current = self.dispatcher.profile(run, admitted)
@@ -631,13 +625,12 @@ class RunLoop:
         if user.image_route == "vision":
             await self._observe(run, admitted, user)
             first_index += 1
-        history: tuple[PromptTurn, ...] = ()
         selection = None
         if admitted.mode != SessionMode.EPHEMERAL:
             selection = select(self.store, run, admitted.budgets.tool_result_bytes)
-            history = selection.turns
         recall = None
         if self.memory and run.parent_tool_call_id is None:
+            history = selection.turns if selection else ()
             query = (
                 "\n".join(turn.content for turn in history if turn.role in ("user", "assistant"))[
                     -2000:
@@ -694,51 +687,28 @@ class RunLoop:
                 raise RunFailure(ErrorCode.BUDGET_EXCEEDED, "Run budget exhausted")
             report_only = child_calls > 0 and index + child_calls == profile.budgets.model_calls
             projected = project_run(self.store, run.id, profile.budgets.tool_result_bytes)
+            eligible = frozenset() if report_only else tools.eligible()
             frozen = PromptInput(
                 at=utc_now(),
                 input=user,
-                prior_turns=tuple(history),
                 continuation=projected[1:],
                 enable_thinking=False,
                 recall=recall if profile.memory_mode != "off" else None,
-                tools=() if report_only else tools.schemas(deferred=hidden),
-                tool_catalog=() if report_only else tuple(sorted(hidden & tools.eligible())),
+                tools=self.dispatcher.registry.visible(eligible, deferred=hidden),
+                tool_catalog=tuple(sorted(hidden & eligible)),
                 disclosure="deferred-experiment-v1" if self.deferred else "eager-v1",
-                summary=selection.summary if selection else None,
-                context_boundary=selection.boundary.through_message_id
-                if selection and selection.boundary
-                else None,
-                compaction=selection.provenance if selection else None,
             )
-            if index == first_index:
-                _, index = await Compactor(self.store, self.model, current).prepare(
-                    profile,
-                    run,
-                    frozen,
-                    index,
+            if selection and selection.result_cap != profile.budgets.tool_result_bytes:
+                selection = select(self.store, run, profile.budgets.tool_result_bytes)
+            if index == first_index and selection and selection.runs:
+                prompt, index, selection = await Compactor(self.store, self.model, current).prepare(
+                    profile, run, frozen, index, selection
                 )
-                profile = current(admitted)
-                if selection is not None:
-                    selection = select(self.store, run, profile.budgets.tool_result_bytes)
-                    history = selection.turns
-                if index > profile.budgets.model_calls:
-                    raise RunFailure(ErrorCode.BUDGET_EXCEEDED, "Model call budget exhausted")
-                frozen = frozen.model_copy(
-                    update={
-                        "prior_turns": history,
-                        "summary": selection.summary if selection else None,
-                        "context_boundary": selection.boundary.through_message_id
-                        if selection and selection.boundary
-                        else None,
-                        "compaction": selection.provenance if selection else None,
-                        "recall": recall if profile.memory_mode != "off" else None,
-                        "tools": tools.schemas(deferred=hidden),
-                        "tool_catalog": tuple(sorted(hidden & tools.eligible())),
-                    }
-                )
-                prompt = assemble(profile, frozen)
+                if index != first_index:
+                    # Summary inference yielded control. Recheck grants and budgets before chat.
+                    continue
             else:
-                prompt = assemble(profile, frozen)
+                prompt = assemble(profile, selection.apply(frozen) if selection else frozen)
             async with asyncio.timeout(
                 profile.budgets.active_seconds - (asyncio.get_running_loop().time() - started)
             ):

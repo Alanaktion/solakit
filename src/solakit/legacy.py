@@ -17,26 +17,21 @@ from solakit.store import Store
 
 def retain_tree(store: Store, source: Path) -> dict[str, object]:
     """Retain a copied legacy tree without loading code or activating configuration."""
-    from solakit.backup import _copy
+    from solakit.backup import _copy, file_metadata
 
     if source.is_symlink() or not source.is_dir():
         raise ValueError("retention source must be a copied directory, without symlinks")
     source = source.resolve()
-    if source.is_relative_to(store.root.resolve()):
-        raise ValueError("retention source must be outside runtime data")
+    root = store.root.resolve()
+    if source.is_relative_to(root) or root.is_relative_to(source):
+        raise ValueError("retention source and runtime data directories must be disjoint")
     sources = []
     for path in sorted(source.rglob("*")):
         if path.is_symlink() or not (path.is_file() or path.is_dir()):
             raise ValueError("retention sources must contain only directories and regular files")
         if path.is_file():
             sources.append(path)
-    metadata = {
-        str(path.relative_to(source)): {
-            "length": path.stat().st_size,
-            "sha256": digest(path.read_bytes()),
-        }
-        for path in sources
-    }
+    metadata = {str(path.relative_to(source)): file_metadata(path) for path in sources}
     manifest = canonical({"source_root": str(source), "files": metadata, "activation": "none"})
     destination = store.root / "imports" / ("retained-" + digest(manifest))
     ensure_directory(destination)
@@ -44,7 +39,7 @@ def retain_tree(store: Store, source: Path) -> dict[str, object]:
         relative = str(path.relative_to(source))
         target = destination / "files" / relative
         if target.exists():
-            actual = {"length": target.stat().st_size, "sha256": digest(target.read_bytes())}
+            actual = file_metadata(target)
         else:
             actual = _copy(path, target)
         if actual != metadata[relative] or target.is_symlink():

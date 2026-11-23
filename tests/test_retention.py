@@ -64,5 +64,7 @@ def test_retention_rejects_alias_and_detects_changed_copy(tmp_path: Path) -> Non
             retain_tree(store, source)
         with pytest.raises(ValueError):
             retain_tree(store, store.root)
+        with pytest.raises(ValueError, match="disjoint"):
+            retain_tree(store, tmp_path)
     finally:
         asyncio.run(store.stop())

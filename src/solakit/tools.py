@@ -182,66 +182,28 @@ async def remember(context: ToolContext, args: Note) -> ToolResult:
     return ToolResult(data=context.services.remember(args.content))
 
 
-async def list_blogs(context: ToolContext, args: ContentPage) -> ToolResult:
-    return ToolResult(data=await context.services.blog("blog.list", args.model_dump(mode="json")))
+def content_tool[A: ToolArguments](
+    name: str, description: str, arguments: type[A], *, consequential: bool = False
+) -> Tool[A]:
+    async def handle(context: ToolContext, args: A) -> ToolResult:
+        return ToolResult(data=await context.services.blog(name, args.model_dump(mode="json")))
+
+    return Tool(name, description, arguments, handle, consequential)
 
 
-async def read_blog(context: ToolContext, args: ContentTarget) -> ToolResult:
-    return ToolResult(data=await context.services.blog("blog.read", args.model_dump(mode="json")))
+def job_tool[A: ToolArguments](action: str, description: str, arguments: type[A]) -> Tool[A]:
+    async def handle(context: ToolContext, args: A) -> ToolResult:
+        values = args.model_dump(mode="json", exclude_unset=action == "update")
+        return ToolResult(data=context.services.jobs(action, values))
 
-
-async def create_blog(context: ToolContext, args: BlogCreate) -> ToolResult:
-    return ToolResult(data=await context.services.blog("blog.create", args.model_dump(mode="json")))
-
-
-async def publish_blog(context: ToolContext, args: ContentTarget) -> ToolResult:
-    return ToolResult(
-        data=await context.services.blog("blog.publish", args.model_dump(mode="json"))
+    return Tool(
+        f"jobs.{action}",
+        description,
+        arguments,
+        handle,
+        consequential=action != "list",
+        origins=frozenset(Origin) if action == "list" else frozenset({Origin.INTERACTIVE}),
     )
-
-
-async def list_dreams(context: ToolContext, args: ContentPage) -> ToolResult:
-    return ToolResult(data=await context.services.blog("dreams.list", args.model_dump(mode="json")))
-
-
-async def read_dream(context: ToolContext, args: ContentTarget) -> ToolResult:
-    return ToolResult(data=await context.services.blog("dreams.read", args.model_dump(mode="json")))
-
-
-async def create_dream(context: ToolContext, args: DreamCreate) -> ToolResult:
-    return ToolResult(
-        data=await context.services.blog("dreams.create", args.model_dump(mode="json"))
-    )
-
-
-async def jobs(context: ToolContext, args: ToolArguments) -> ToolResult:
-    if isinstance(args, JobCreate):
-        action = "create"
-    elif isinstance(args, JobUpdate):
-        action = "update"
-    elif isinstance(args, JobRun):
-        action = "run_now"
-    elif isinstance(args, JobPauseAll):
-        action = "pause_all"
-    else:
-        action = "list"
-    return ToolResult(
-        data=context.services.jobs(
-            action, args.model_dump(mode="json", exclude_unset=isinstance(args, JobUpdate))
-        )
-    )
-
-
-async def pause_job(context: ToolContext, args: JobTarget) -> ToolResult:
-    return ToolResult(data=context.services.jobs("pause", args.model_dump(mode="json")))
-
-
-async def resume_job(context: ToolContext, args: JobTarget) -> ToolResult:
-    return ToolResult(data=context.services.jobs("resume", args.model_dump(mode="json")))
-
-
-async def delete_job(context: ToolContext, args: JobTarget) -> ToolResult:
-    return ToolResult(data=context.services.jobs("delete", args.model_dump(mode="json")))
 
 
 TOOLS = (
@@ -255,30 +217,27 @@ TOOLS = (
         delegate,
         origins=frozenset({Origin.INTERACTIVE}),
     ),
-    Tool("blog.list", "List blogs, including drafts, newest first.", ContentPage, list_blogs),
-    Tool("blog.read", "Read a blog's metadata and Markdown body.", ContentTarget, read_blog),
-    Tool(
+    content_tool("blog.list", "List blogs, including drafts, newest first.", ContentPage),
+    content_tool("blog.read", "Read a blog's metadata and Markdown body.", ContentTarget),
+    content_tool(
         "blog.create",
         "Create a blog draft; auto_publish=true builds, commits pending content, and pushes.",
         BlogCreate,
-        create_blog,
-        True,
+        consequential=True,
     ),
-    Tool(
+    content_tool(
         "blog.publish",
         "Publish this blog; commit pending content and push all pending commits to main.",
         ContentTarget,
-        publish_blog,
-        True,
+        consequential=True,
     ),
-    Tool("dreams.list", "List dream poems newest first.", ContentPage, list_dreams),
-    Tool("dreams.read", "Read a dream poem's metadata and body.", ContentTarget, read_dream),
-    Tool(
+    content_tool("dreams.list", "List dream poems newest first.", ContentPage),
+    content_tool("dreams.read", "Read a dream poem's metadata and body.", ContentTarget),
+    content_tool(
         "dreams.create",
         "Create a date-named poem (3–15 lines), then always build, commit, and push. No overwrite.",
         DreamCreate,
-        create_dream,
-        True,
+        consequential=True,
     ),
     Tool(
         "files.list",
@@ -395,61 +354,40 @@ TOOLS = (
         True,
     ),
     Tool("memory.recall", "Recall scoped semantic memory, when available.", Query, memory),
-    Tool("jobs.list", "List this topic's jobs.", ToolArguments, jobs),
-    Tool(
-        "jobs.create",
+    job_tool("list", "List this topic's jobs.", ToolArguments),
+    job_tool(
+        "create",
         "Create a bound job; disabled unless explicitly enabled.",
         JobCreate,
-        jobs,
-        True,
-        frozenset({Origin.INTERACTIVE}),
     ),
-    Tool(
-        "jobs.update",
+    job_tool(
+        "update",
         "Edit a job or toggle automatic wake-ups. Consumed one-shots need a new future schedule.",
         JobUpdate,
-        jobs,
-        True,
-        frozenset({Origin.INTERACTIVE}),
     ),
-    Tool(
-        "jobs.pause",
+    job_tool(
+        "pause",
         "Disable automatic wake-ups for a bound job.",
         JobTarget,
-        pause_job,
-        True,
-        frozenset({Origin.INTERACTIVE}),
     ),
-    Tool(
-        "jobs.resume",
+    job_tool(
+        "resume",
         "Enable automatic wake-ups for a bound job.",
         JobTarget,
-        resume_job,
-        True,
-        frozenset({Origin.INTERACTIVE}),
     ),
-    Tool(
-        "jobs.run_now",
+    job_tool(
+        "run_now",
         "Run a job now even if its schedule is off. Requires a stable request ID and no overlap.",
         JobRun,
-        jobs,
-        True,
-        frozenset({Origin.INTERACTIVE}),
     ),
-    Tool(
-        "jobs.delete",
+    job_tool(
+        "delete",
         "Tombstone a bound job.",
         JobTarget,
-        delete_job,
-        True,
-        frozenset({Origin.INTERACTIVE}),
     ),
-    Tool(
-        "jobs.pause_all",
+    job_tool(
+        "pause_all",
         "Set the durable global background pause.",
         JobPauseAll,
-        jobs,
-        True,
-        frozenset({Origin.INTERACTIVE}),
     ),
 )

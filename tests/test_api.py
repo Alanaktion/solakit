@@ -56,6 +56,17 @@ def login(client: TestClient, *, bearer: bool = False) -> dict[str, Any]:
     return body
 
 
+def test_tool_catalog_and_prompt_hide_disabled_memory(client: TestClient, app: FastAPI) -> None:
+    login(client, bearer=True)
+    context = app.state.context
+    assert "memory.recall" in context.profile.tools
+    context.profile = context.profile.model_copy(update={"memory_mode": "off"})
+    schemas = client.get("/api/v1/tools").json()["items"]
+    assert schemas and all(not tool["function"]["name"].startswith("memory.") for tool in schemas)
+    inspection = client.post("/api/v1/prompt", json={"content": "Hello"}).json()
+    assert inspection["request"]["tools"] == schemas
+
+
 @pytest.mark.parametrize("state", ["absent", "invalid", "expired", "revoked"])
 def test_cookie_authentication_states(client: TestClient, app: FastAPI, state: str) -> None:
     if state != "absent":

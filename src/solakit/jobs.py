@@ -477,9 +477,7 @@ class JobService:
         if occurrence.trigger != "manual" and not job.enabled:
             return False
         # Outbound-capable profiles wait until daylight; local-only preparation can run.
-        admitted = EffectiveProfile.model_validate_json(
-            canonical(self.store.admission_profile(run.id))
-        )
+        admitted = self.store.admitted_profile(run.id)
         try:
             current = restrict_to_admission(self.runs.dispatcher.current(admitted), admitted)
         except ValueError:

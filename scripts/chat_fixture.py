@@ -6,7 +6,6 @@ import json
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -91,11 +90,7 @@ def main() -> None:
                     "image_inputs": True,
                 },
                 "defaults": {"workspace_roots": [str(args.output)], "memory_mode": "off"},
-                "background": {
-                    "timezone": "UTC",
-                    "quiet_start": (datetime.now(UTC).hour + 1) % 24,
-                    "quiet_end": (datetime.now(UTC).hour + 2) % 24,
-                },
+                "background": {"timezone": "UTC", "quiet_start": 0, "quiet_end": 0},
                 "http": {
                     "port": args.port,
                     "allowed_origins": [origin],

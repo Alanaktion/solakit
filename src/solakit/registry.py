@@ -4,12 +4,15 @@ import importlib
 import inspect
 import re
 from collections.abc import Iterable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import JsonValue
 
 from solakit.sdk import SDK_VERSION, Origin, Tool, ToolArguments
 from solakit.tools import TOOLS
+
+if TYPE_CHECKING:
+    from solakit.config import EffectiveProfile
 
 
 class RegistryError(ValueError):
@@ -85,6 +88,15 @@ class Registry:
             location = getattr(module, "__file__", None)
             if location:
                 self.code_roots.append(location)
+
+    def eligible(self, profile: EffectiveProfile) -> frozenset[str]:
+        return frozenset(
+            name
+            for name in profile.tools
+            if (tool := self.tools.get(name)) is not None
+            and profile.origin in tool.origins
+            and (profile.memory_mode != "off" or not name.startswith("memory."))
+        )
 
     def visible(
         self, executable: frozenset[str], *, deferred: frozenset[str] = frozenset()

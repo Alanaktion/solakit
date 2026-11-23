@@ -248,9 +248,7 @@ class MemoryService:
         await self.adapter.stop()
 
     def profile(self, run_id: str) -> EffectiveProfile:
-        admitted = EffectiveProfile.model_validate_json(
-            canonical(self.store.admission_profile(run_id))
-        )
+        admitted = self.store.admitted_profile(run_id)
         return restrict_to_admission(self.current(admitted), admitted)
 
     async def recall(self, run: Run, profile: EffectiveProfile, query: str) -> MemoryRecall:

@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Literal, cast
 from pydantic import JsonValue, ValidationError
 
 from solakit.config import ConfigError, EffectiveProfile, restrict_to_admission
-from solakit.evidence import CorruptionError, StorageError, canonical, digest
+from solakit.evidence import CorruptionError, StorageError, canonical, digest, read_artifact
 from solakit.files import GuardedFiles
 from solakit.records import (
     Artifact,
@@ -110,9 +110,7 @@ class Dispatcher:
         )
 
     def bind(self, run_id: str) -> ToolSession:
-        admitted = EffectiveProfile.model_validate_json(
-            canonical(self.store.admission_profile(run_id))
-        )
+        admitted = self.store.admitted_profile(run_id)
         run = self.store.run(run_id)
         if (run.origin, run.profile, self.store.session(run.session_id).mode) != (
             admitted.origin,
@@ -141,9 +139,7 @@ class Dispatcher:
         parent = self.store.run(link.run_id)
         if parent.origin != Origin.INTERACTIVE or parent.state != RunState.RUNNING:
             raise ConfigError("Delegated run requires an active interactive parent")
-        parent_admitted = EffectiveProfile.model_validate_json(
-            canonical(self.store.admission_profile(parent.id))
-        )
+        parent_admitted = self.store.admitted_profile(parent.id)
         ceiling = restrict_to_admission(self.current(parent_admitted), parent_admitted)
         if "delegate.run" not in ceiling.tools or ceiling.delegation_worker != profile.name:
             raise ConfigError("Parent delegation grant has changed")
@@ -192,20 +188,14 @@ class ToolSession:
     def eligible(self) -> frozenset[str]:
         run = self.dispatcher.store.run(self.run_id)
         profile = self.dispatcher.profile(run, self.admitted)
-        tools = profile.tools
+        tools = self.dispatcher.registry.eligible(profile)
         if run.origin == Origin.DELEGATED and (
             self.dispatcher.store.tool_attempts(run.id) >= profile.budgets.tool_calls
         ):
             return frozenset()
         if "letters.inbox" in tools and not self.dispatcher.letters_inbox_allowed(run):
             tools -= {"letters.inbox"}
-        return frozenset(
-            name
-            for name in tools
-            if name in self.dispatcher.registry.tools
-            and profile.origin in self.dispatcher.registry.tools[name].origins
-            and (not name.startswith("memory.") or profile.memory_mode != "off")
-        )
+        return tools
 
     async def dispatch(self, call: ToolCall) -> ToolReceipt:
         async with self.lock:
@@ -228,10 +218,11 @@ class ToolSession:
         result_sha256 = None
         try:
             profile = invocation.authority()
-            if len(canonical(call.arguments)) > MAX_ARGUMENT_BYTES:
+            arguments = canonical(call.arguments)
+            if len(arguments) > MAX_ARGUMENT_BYTES:
                 raise ToolError("Tool arguments exceed 64 KiB", ErrorCode.INVALID_INPUT)
             tool = registry.tools[call.name]
-            args = tool.arguments.model_validate_json(canonical(call.arguments))
+            args = tool.arguments.model_validate_json(arguments)
             context = ToolContext(
                 call.session_id,
                 call.run_id,
@@ -419,8 +410,7 @@ class Invocation:
         if (
             run.state != RunState.RUNNING
             or tool is None
-            or tool.name not in profile.tools
-            or profile.origin not in tool.origins
+            or tool.name not in registry.eligible(profile)
         ):
             raise ToolError("Tool is outside current run authority", ErrorCode.TOOL_DENIED)
         if (
@@ -453,7 +443,7 @@ class Invocation:
         if (
             tool.consequential
             and self.dispatcher.jobs is not None
-            and not self.dispatcher.jobs.effect_allowed(store.run(self.run_id), tool.name)
+            and not self.dispatcher.jobs.effect_allowed(run, tool.name)
         ):
             raise ToolError("Outbound effect deferred by quiet hours", ErrorCode.TOOL_DENIED)
         return profile
@@ -544,7 +534,6 @@ class Invocation:
 
         cover = None
         if isinstance(args, BlogCreate) and args.cover_artifact_id is not None:
-            from solakit.compaction import read_artifact
             from solakit.images import MAX_IMAGE_BYTES
 
             scope = "run_id" if profile.mode == SessionMode.EPHEMERAL else "session_id"
@@ -566,7 +555,7 @@ class Invocation:
                 or reference.length > MAX_IMAGE_BYTES
             ):
                 raise ToolError("Cover must be a bounded generated PNG", ErrorCode.INVALID_INPUT)
-            cover = read_artifact(self.dispatcher.store, reference)
+            cover = read_artifact(self.dispatcher.store.root, reference)
         files = GuardedFiles(
             self.authority,
             self.dispatcher.protected,

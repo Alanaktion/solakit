@@ -4,6 +4,8 @@ import asyncio
 from collections.abc import AsyncGenerator
 from typing import Any
 
+from pydantic import JsonValue
+
 from solakit.auth import AuthService, Login, RequestError
 from solakit.config import EffectiveProfile
 from solakit.evidence import RECORDS, canonical, read_artifact
@@ -98,6 +100,10 @@ class ClientService:
             )
         )
 
+    def schemas(self, profile: EffectiveProfile) -> tuple[dict[str, JsonValue], ...]:
+        registry = self.tools.registry
+        return registry.visible(registry.eligible(profile))
+
     async def submit(
         self,
         session_id: str,
@@ -118,9 +124,7 @@ class ClientService:
         if existing is not None:
             if existing.profile != name or existing.origin != Origin.INTERACTIVE:
                 raise RequestError(409, "conflict", "Idempotency key belongs to another submission")
-            profile = EffectiveProfile.model_validate_json(
-                canonical(self.store.admission_profile(existing.id))
-            )
+            profile = self.store.admitted_profile(existing.id)
         else:
             profile = self.profile(name, topic.mode)
         reference = None
@@ -339,7 +343,7 @@ class ClientService:
                     role="user",
                     content=content,
                 ),
-                tools=self.tools.registry.visible(profile.tools),
+                tools=self.schemas(profile),
                 enable_thinking=False,
             ),
         )

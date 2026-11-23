@@ -127,7 +127,7 @@ def publish(path: Path, data: bytes) -> None:
         temporary.unlink(missing_ok=True)
 
 
-def read_artifact(root: Path, artifact: Artifact, offset: int, limit: int) -> bytes:
+def read_artifact(root: Path, artifact: Artifact, offset: int = 0, limit: int = -1) -> bytes:
     path = root / artifact.path
     if path.parent.is_symlink():
         raise CorruptionError("artifact directory cannot be a symlink")
@@ -141,6 +141,11 @@ def read_artifact(root: Path, artifact: Artifact, offset: int, limit: int) -> by
                 or metadata.st_size != artifact.length
             ):
                 raise CorruptionError("invalid artifact file")
+            if offset == 0 and (limit < 0 or limit >= artifact.length):
+                raw = source.read(artifact.length)
+                if len(raw) != artifact.length or digest(raw) != artifact.sha256:
+                    raise CorruptionError("artifact hash mismatch")
+                return raw
             checksum = hashlib.file_digest(source, "sha256")
             if checksum.hexdigest() != artifact.sha256:
                 raise CorruptionError("artifact hash mismatch")

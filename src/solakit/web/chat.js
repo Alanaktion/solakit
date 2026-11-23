@@ -160,15 +160,17 @@ function updateTimers() {
   }
 }
 async function loadRecords(id, token) {
-  const items = [],
-    full = !records.has(id);
+  const items = [];
+  const cached = records.get(id);
   let before = 0;
-  // The first load pages back to the run record so long tool runs keep early calls.
+  // Catch up across as many pages as arrived while the tab was disconnected.
   while (true) {
     const result = await api(`/runs/${id}/records?before=${before}&limit=50`);
     if (token !== generation) return;
     items.push(...result.items);
-    if (!full || !result.items.length || result.items.some((row) => row.kind === 'run')) break;
+    if (!result.items.length || result.items.some((row) =>
+      row.kind === 'run' || cached?.has(`${row.kind}:${row.record.id}`)
+    )) break;
     before = result.next;
   }
   if (!records.has(id)) records.set(id, new Map());
@@ -200,6 +202,7 @@ async function refresh(ids = []) {
     api(`/sessions/${topic}/runs?before=0&limit=25`)
   ]);
   if (token !== generation) return;
+  const latestRuns = new Set(runPage.items.map((row) => row.record.id));
   const changed = runPage.items
     .filter((row) => JSON.stringify(row.record) !== JSON.stringify(runs.get(row.record.id)?.record))
     .map((row) => row.record.id);
@@ -218,20 +221,12 @@ async function refresh(ids = []) {
   ]);
   await Promise.all(
     [...inspect].map(async (id) => {
-      const run = await api(`/runs/${id}`);
-      if (token !== generation || run.session_id !== topic) return;
-      const old = runs.get(id);
-      merge('run', [
-        {
-          sequence:
-            old?.sequence ??
-            messagePage.items.find((row) => row.record.run_id === id)?.sequence ??
-            Number.MAX_SAFE_INTEGER,
-          record: run,
-          kind: 'run',
-          truncated: false
-        }
-      ]);
+      if (!latestRuns.has(id)) {
+        const run = await api(`/runs/${id}`);
+        if (token !== generation || run.session_id !== topic) return;
+        // A first records load supplies the run's original sequence.
+        if (runs.has(id)) merge('run', [{ ...runs.get(id), record: run }]);
+      }
       await loadRecords(id, token);
     })
   );
@@ -278,18 +273,7 @@ async function older() {
     ...rp.items.map((row) => row.record.id),
     ...mp.items.map((row) => row.record.run_id)
   ]);
-  await Promise.all(
-    [...inspect].map(async (id) => {
-      if (!runs.has(id)) {
-        const run = await api(`/runs/${id}`);
-        if (token !== generation) return;
-        merge('run', [
-          { sequence: mp.items.find((row) => row.record.run_id === id).sequence, record: run }
-        ]);
-      }
-      await loadRecords(id, token);
-    })
-  );
+  await Promise.all([...inspect].map((id) => loadRecords(id, token)));
   if (token !== generation) return;
   const follow = following;
   following = false;

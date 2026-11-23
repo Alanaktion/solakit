@@ -701,7 +701,7 @@ def create_app(
     @app.get("/api/v1/tools")
     async def tools(profile: str | None = None) -> dict[str, Any]:
         selected = service.profile(profile, SessionMode.SHARED)
-        return bounded({"items": service.tools.registry.visible(selected.tools)})
+        return bounded({"items": service.schemas(selected)})
 
     @app.get("/api/v1/profiles")
     async def profiles() -> dict[str, Any]:

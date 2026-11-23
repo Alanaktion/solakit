@@ -8,7 +8,14 @@ from typing import TYPE_CHECKING
 from pydantic import JsonValue
 
 from solakit.config import EffectiveProfile
-from solakit.evidence import CorruptionError, Reference, canonical, checked_json, digest
+from solakit.evidence import (
+    CorruptionError,
+    Reference,
+    canonical,
+    checked_json,
+    digest,
+    read_artifact,
+)
 from solakit.prompts import ContextLimit, PreparedPrompt, PromptInput, PromptTurn, assemble
 from solakit.records import (
     RUN_TRANSITIONS,
@@ -57,23 +64,10 @@ class Manifest(Value):
     prompt_sha256: str
 
 
-def read_artifact(store: Store, artifact: Artifact) -> bytes:
-    path = store.root / artifact.path
-    if path.is_symlink():
-        raise CorruptionError("compaction artifact cannot be a symlink")
-    try:
-        raw = path.read_bytes()
-    except OSError as error:
-        raise CorruptionError("compaction artifact unavailable") from error
-    if len(raw) != artifact.length or digest(raw) != artifact.sha256:
-        raise CorruptionError("compaction artifact hash mismatch")
-    return raw
-
-
 def manifest_for(store: Store, boundary: CompactionBoundary) -> Manifest:
     if boundary.manifest is None:
         raise CorruptionError("compaction manifest missing")
-    return Manifest.model_validate_json(read_artifact(store, boundary.manifest))
+    return Manifest.model_validate_json(read_artifact(store.root, boundary.manifest))
 
 
 def active_boundary(store: Store, session_id: str) -> CompactionBoundary | None:
@@ -170,7 +164,7 @@ def verify(store: Store, boundary: CompactionBoundary) -> tuple[Manifest, Messag
         boundary.through_message_id
     ):
         raise CorruptionError("compaction message range mismatch")
-    summary = Message.model_validate_json(read_artifact(store, manifest.summary))
+    summary = Message.model_validate_json(read_artifact(store.root, manifest.summary))
     step = store._load("model", manifest.model_step_id, ModelStep)
     if step.request_id is None:
         raise CorruptionError("compaction request missing")
@@ -190,8 +184,8 @@ def verify(store: Store, boundary: CompactionBoundary) -> tuple[Manifest, Messag
         or request.body.sha256 != manifest.prompt_sha256
     ):
         raise CorruptionError("compaction summary provenance mismatch")
-    read_artifact(store, request.body)
-    prompt_manifest = checked_json(read_artifact(store, request.manifest))
+    read_artifact(store.root, request.body, 0, 0)
+    prompt_manifest = checked_json(read_artifact(store.root, request.manifest))
     generated = checked_json(step.content.encode())
     if (
         not isinstance(generated, dict)
@@ -253,11 +247,22 @@ def recover(store: Store) -> None:
 
 @dataclass
 class Selection:
+    result_cap: int
     boundary: CompactionBoundary | None
     summary: Message | None
     runs: list[Run]
     turns: tuple[PromptTurn, ...]
     provenance: dict[str, JsonValue] | None
+
+    def apply(self, frozen: PromptInput) -> PromptInput:
+        return frozen.model_copy(
+            update={
+                "prior_turns": self.turns,
+                "summary": self.summary,
+                "context_boundary": self.boundary.through_message_id if self.boundary else None,
+                "compaction": self.provenance,
+            }
+        )
 
 
 def select(store: Store, run: Run, cap: int) -> Selection:
@@ -285,6 +290,7 @@ def select(store: Store, run: Run, cap: int) -> Selection:
         previous = previous[offset:]
         provenance["selected_tail_run_ids"] = [r.id for r in previous]
     return Selection(
+        cap,
         boundary,
         summary,
         previous,
@@ -309,50 +315,26 @@ class Compactor:
         run: Run,
         frozen: PromptInput,
         index: int,
-    ) -> tuple[PreparedPrompt, int]:
+        selection: Selection,
+    ) -> tuple[PreparedPrompt, int, Selection]:
         """Only the run's session owner calls this, before its first conversation step."""
         from solakit.model import ModelError
 
         started = asyncio.get_running_loop().time()
-        if profile.mode == SessionMode.EPHEMERAL:
-            return assemble(profile, frozen), index
-        assemble(
-            profile,
-            frozen.model_copy(
-                update={
-                    "summary": None,
-                    "context_boundary": None,
-                    "prior_turns": (),
-                    "history": (),
-                    "compaction": None,
-                }
-            ),
-        )
         admitted = profile
         while True:
-            profile = self.current(admitted)
-            if index > profile.budgets.model_calls:
-                raise ContextLimit("Context summary exhausted the current model-call budget")
-            selection = select(self.store, run, profile.budgets.tool_result_bytes)
-            frozen = frozen.model_copy(
-                update={
-                    "summary": selection.summary,
-                    "context_boundary": selection.boundary.through_message_id
-                    if selection.boundary
-                    else None,
-                    "prior_turns": selection.turns,
-                    "compaction": selection.provenance,
-                }
-            )
             old = None
             try:
-                old = assemble(profile, frozen)
+                old = assemble(profile, selection.apply(frozen))
                 accounting = checked_json(old.manifest)
                 assert isinstance(accounting, dict)
                 if accounting["accounting"]["total_reserved"] <= profile.model_context_tokens * 0.8:
-                    return old, index
+                    return old, index, selection
             except ContextLimit:
                 pass
+            # Fail before spending a summary call if even the input alone cannot fit.
+            if old is None:
+                assemble(profile, frozen)
             candidate = None
             eligible: list[Run] = []
             for previous in selection.runs[:-2]:
@@ -366,7 +348,7 @@ class Compactor:
                     break
             if candidate is None or index >= profile.budgets.model_calls:
                 if old is not None:
-                    return old, index
+                    return old, index, selection
                 raise ContextLimit(
                     "Context cannot fit; no safe compactable prefix or summary budget"
                 )
@@ -378,7 +360,7 @@ class Compactor:
                     result = await self.model.complete(prompt, run, index)
             except ModelError:
                 if old is not None:
-                    return old, index + 1
+                    return old, index + 1, selection
                 raise ContextLimit("Context cannot fit and summary model is unavailable") from None
             index += 1
             try:
@@ -398,7 +380,7 @@ class Compactor:
                     raise ValueError("invalid summary")
             except ValueError:
                 if old is not None:
-                    return old, index
+                    return old, index, selection
                 raise ContextLimit("Context cannot fit and summary generation failed") from None
             summary = Message(
                 origin=run.origin,
@@ -449,6 +431,10 @@ class Compactor:
             self.store.append(boundary)
             self.store.fault("compaction_prepared")
             finish(self.store, boundary)
+            profile = self.current(admitted)
+            if index > profile.budgets.model_calls:
+                raise ContextLimit("Context summary exhausted the current model-call budget")
+            selection = select(self.store, run, profile.budgets.tool_result_bytes)
 
     def summary_prompt(
         self,

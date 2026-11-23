@@ -1,5 +1,6 @@
 """Coherent offline checkpoints and verified restore into a new data directory."""
 
+import hashlib
 import os
 import shutil
 import sqlite3
@@ -9,11 +10,18 @@ from solakit.evidence import (
     CorruptionError,
     canonical,
     checked_json,
-    digest,
     publish,
     sync_directory,
 )
 from solakit.store import Store
+
+
+def file_metadata(path: Path) -> dict[str, object]:
+    with path.open("rb") as stream:
+        return {
+            "length": os.fstat(stream.fileno()).st_size,
+            "sha256": hashlib.file_digest(stream, "sha256").hexdigest(),
+        }
 
 
 def _copy(source: Path, target: Path) -> dict[str, object]:
@@ -25,7 +33,7 @@ def _copy(source: Path, target: Path) -> dict[str, object]:
         shutil.copyfileobj(reader, writer)
         writer.flush()
         os.fsync(writer.fileno())
-    return {"length": target.stat().st_size, "sha256": digest(target.read_bytes())}
+    return file_metadata(target)
 
 
 def backup(store: Store, destination: Path) -> None:
@@ -46,7 +54,7 @@ def backup(store: Store, destination: Path) -> None:
     with state.open("rb") as stream:
         os.fsync(stream.fileno())
     files: dict[str, object] = {
-        "state.db": {"length": state.stat().st_size, "sha256": digest(state.read_bytes())},
+        "state.db": file_metadata(state),
     }
     for name in ("evidence", "recovery", "artifacts", "imports"):
         directory = store.root / name
@@ -106,8 +114,7 @@ def restore(source: Path, destination: Path) -> None:
             target = source / path
             if any(part.is_symlink() for part in (target, *target.parents)):
                 raise ValueError("symlink in backup")
-            data = target.read_bytes()
-            if metadata != {"length": len(data), "sha256": digest(data)}:
+            if metadata != file_metadata(target):
                 raise ValueError("backup checksum mismatch")
         water = manifest["evidence_high_water"]
         if not isinstance(water, dict) or water != {

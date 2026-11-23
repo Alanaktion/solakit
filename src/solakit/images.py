@@ -110,7 +110,7 @@ def validate_png(raw: bytes, width: int, height: int, *, min_side: int = 64) -> 
 def read_png(root: Path, image: Artifact) -> tuple[bytes, int, int]:
     if image.media_type != "image/png" or image.length > MAX_IMAGE_BYTES:
         raise ValueError("Invalid image artifact")
-    raw = read_artifact(root, image, 0, image.length)
+    raw = read_artifact(root, image)
     width = int.from_bytes(raw[16:20])
     height = int.from_bytes(raw[20:24])
     validate_png(raw, width, height, min_side=1)
@@ -437,9 +437,7 @@ class ImageService:
                         )
                     return
                 prompt = history["prompt"]
-                from solakit.compaction import read_artifact
-
-                request_bytes = read_artifact(self.store, generation.body)
+                request_bytes = read_artifact(self.store.root, generation.body)
                 if digest(request_bytes) != generation.fingerprint:
                     raise ToolError("Recorded image request fingerprint differs")
                 request = json.loads(request_bytes)
@@ -516,8 +514,6 @@ class ImageService:
         return cast(JsonValue, generation.model_dump(mode="json"))
 
     async def reconcile(self, identity: str, submission_id: str) -> ImageGeneration:
-        from solakit.compaction import read_artifact
-
         if str(UUID(submission_id)) != submission_id:
             raise ValueError("submission ID must be a canonical UUID")
         async with self.lock:
@@ -528,7 +524,7 @@ class ImageService:
             ):
                 raise ValueError("image is terminal or belongs to another endpoint")
             history = await self.adapter.history(submission_id)
-            request = json.loads(read_artifact(self.store, generation.body))
+            request = json.loads(read_artifact(self.store.root, generation.body))
             prompt = history.get("prompt") if history else None
             if (
                 not isinstance(prompt, list)

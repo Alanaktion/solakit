@@ -17,4 +17,5 @@ wheels/
 config.toml
 docs/validation/*
 !docs/validation/delegation.md
+!docs/validation/harness-review.md
 !docs/validation/letters-tools.md
