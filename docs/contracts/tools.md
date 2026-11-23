@@ -392,3 +392,28 @@ into publication authority. Internal guarded binary reads/writes support PNG
 cover copies without changing generic text-tool limits. Uncertain receipts keep
 safe adapter error details (including the last known publication phase/commit)
 while retaining `effect_uncertain` status and error code.
+
+## Bounded delegation
+
+`delegate.run(task)` accepts a brief of up to 8,192 characters containing the
+goal, permitted source references and expected deliverable. Set
+`delegation_worker` to a profile and grant `delegate.run` on the interactive
+caller profile. Grants support the usual exact names and wildcards. Worker
+selection is frozen with admission, and current worker and parent grants and
+roots continue to apply while the child runs.
+
+Worker prompts use their configured profile fragments, the brief and their local
+transcript. OpenViking, global SOUL, curated memory and the parent transcript
+stay outside those prompts. The worker can use granted built-in file, Git,
+blog, dream and letter reads, public web search, local transcript search and
+runtime status. The brief's source references constrain the task. The dispatcher
+enforces access through tool grants and workspace roots.
+
+A child admission records a link in the parent run using the parent call ID as
+its admission key. The result carries `session_id`, `run_id`, `status` and
+`evidence_ids`. A completed child adds a redacted `report` limited to 4,000
+characters and further bounded by the parent's tool-result budget. A busy result
+has only `status` because there is no child. The parent receives the outcome as
+tool data and can describe an incomplete attempt using the recorded status.
+The full child reply is available through authenticated evidence. See the
+[run contract](run-loop.md#bounded-concurrency-and-waits) for budgets and recovery.

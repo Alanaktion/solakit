@@ -150,6 +150,11 @@ dedicated polite announcement; previews, timers and loaded history do not repeat
 that announcement. Narrow screens reflow, and very short portrait windows allow
 page scrolling so the composer stays reachable.
 
+Delegation adds an **Open delegated topic** link in the parent turn and in its
+run evidence. The child topic shows the brief, the worker's response and the
+ordinary run evidence and cancellation controls. It has a read-only composer
+and is excluded from the job target picker.
+
 ## Web source layout
 
 - `app.js`, `turn.js`, `job.js`, `artifact.js`: Lit components and their rendering.

@@ -1316,6 +1316,33 @@ try {
     await page.screenshot({ path: path.join(options.output, 'image-mobile.png'), fullPage: true });
     await audit('image-attachment');
   });
+  await check('delegation links open the authenticated child transcript and run evidence', async () => {
+    await page.locator('#new-topic').click();
+    await page.locator('#topic-name').fill('Delegation browser verification');
+    await page.locator('#mode').selectOption('shared');
+    await page.locator('#topic-form button.primary').click();
+    await page.locator('#topic-dialog').waitFor({ state: 'hidden' });
+    await send('Delegate the browser fixture.');
+    const turn = page.locator('sola-turn').filter({ hasText: 'The worker reported a blue fixture.' });
+    await turn.getByText('The worker reported a blue fixture.', { exact: true }).waitFor();
+    const link = turn.getByRole('link', { name: 'Open delegated topic' });
+    const href = await link.getAttribute('href');
+    await turn.getByRole('button', { name: 'Inspect evidence' }).click();
+    const linkRecord = page.locator('#evidence-records details').filter({ hasText: 'delegation' });
+    await linkRecord.locator('summary').click();
+    assert.equal(
+      await linkRecord.getByRole('link', { name: 'Open delegated topic' }).getAttribute('href'),
+      href
+    );
+    await page.keyboard.press('Escape');
+    await link.click();
+    await page.getByText('Report the fixture label.', { exact: true }).waitFor();
+    await page.getByText('Fixture label: blue.', { exact: true }).waitFor();
+    assert(await page.locator('#draft').isDisabled());
+    await page.getByRole('button', { name: 'Inspect evidence' }).click();
+    await page.locator('#evidence-records summary').filter({ hasText: 'model' }).first().waitFor();
+    await page.keyboard.press('Escape');
+  });
   report.errors = errors;
   assert.deepEqual(errors, []);
 } catch (error) {

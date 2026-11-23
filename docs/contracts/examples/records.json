@@ -7,7 +7,8 @@
     "mode": "shared",
     "title": "",
     "archived": false,
-    "pinned": false
+    "pinned": false,
+    "parent_session_id": null
   },
   "Message": {
     "schema_version": 1,
@@ -39,7 +40,8 @@
     "ended_at": "2026-11-16T12:00:00Z",
     "job_id": "00000000000000000000000000000008",
     "occurrence_id": "00000000000000000000000000000009",
-    "retry_of": null
+    "retry_of": null,
+    "parent_tool_call_id": null
   },
   "ModelStep": {
     "schema_version": 1,

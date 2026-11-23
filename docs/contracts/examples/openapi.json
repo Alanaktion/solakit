@@ -804,6 +804,7 @@
       "Origin": {
         "enum": [
           "interactive",
+          "delegated",
           "scheduled",
           "proactive",
           "system"
@@ -924,6 +925,18 @@
           },
           "origin": {
             "$ref": "#/components/schemas/Origin"
+          },
+          "parent_tool_call_id": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Tool Call Id"
           },
           "profile": {
             "title": "Profile",
@@ -1063,6 +1076,18 @@
           },
           "origin": {
             "$ref": "#/components/schemas/Origin"
+          },
+          "parent_session_id": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Session Id"
           },
           "pinned": {
             "default": false,

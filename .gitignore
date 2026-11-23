@@ -16,4 +16,5 @@ wheels/
 .env
 config.toml
 docs/validation/*
+!docs/validation/delegation.md
 !docs/validation/letters-tools.md

@@ -264,6 +264,8 @@ class JobService:
         self._profile(job)
         if job.session_id is not None:
             topic = self.store.session(job.session_id)
+            if topic.parent_session_id is not None or topic.origin == Origin.DELEGATED:
+                raise ValueError("delegated topics cannot be job targets")
             if topic.archived or topic.mode != job.mode:
                 raise ValueError("job target is archived or has a different mode")
 

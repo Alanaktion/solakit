@@ -59,6 +59,7 @@ Place these before any `[table]` header.
 | `data_dir` | string: `"~/.local/share/sola"` | Evidence, operational databases and managed runtime files. Must be nonempty and, if present, a directory. One runtime owns it at a time. |
 | `soul_file` | optional path string: omitted | Operator-owned UTF-8 identity file, read verbatim. Must be an existing file when configured. |
 | `curated_memory_file` | optional path string: omitted | Operator-owned UTF-8 curated memory file, read verbatim; independent of OpenViking being enabled. Must exist when configured. |
+| `delegation_worker` | optional profile name: omitted | Selects one worker profile for `delegate.run`. Interactive caller profiles also need the tool grant. Workers use isolated topics and the intersection of worker and parent grants and roots. |
 | `shutdown_timeout_seconds` | integer: `5` | Bounded runtime cleanup timeout, 1–60 seconds. |
 | `tool_modules` | array of name strings: `[]` | Explicit importable modules for installed trusted Python packs. Each exports `SDK_VERSION = 1` and `TOOLS`; configuration resolution imports and registers them. Imports execute trusted code; registration grants no access. Missing modules or invalid declarations fail resolution. |
 
@@ -68,7 +69,7 @@ must also be importable Python modules.
 
 Built-ins currently include `files.list`, `files.read`, `files.search`, `files.write`,
 `images.generate`, `transcripts.search`, `web.search`, `git.status`, `git.diff`,
-`git.pull`, `git.publish`, `shell.exec`,
+`git.pull`, `git.publish`, `shell.exec`, `delegate.run`,
 `runtime.status`, `memory.recall`, `memory.remember`, and `jobs.list`, `jobs.create`,
 `jobs.update`, `jobs.pause`, `jobs.resume`, `jobs.run_now`, `jobs.delete`,
 `jobs.pause_all`, `blog.list`, `blog.read`, `blog.create`, `blog.publish`,

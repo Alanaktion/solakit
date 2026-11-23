@@ -1,7 +1,7 @@
 import { html, nothing, render as renderTemplate } from './lit-core.min.js';
 import { markdown } from './markdown.js';
 import { api } from './client.js';
-import { openEvidence } from './evidence.js';
+import { childTopicLink, openEvidence } from './evidence.js';
 import { active, action, SolaElement, agentName } from './ui.js';
 
 // Visual tone for a record state; the visible label always carries the state in words.
@@ -56,7 +56,9 @@ class SolaTurn extends SolaElement {
     if (!this.messageNodes.has(m.id)) {
       const author =
         m.role === 'user'
-          ? 'You'
+          ? (m.origin === 'delegated' ? 'Delegation brief' : 'You')
+          : m.origin === 'delegated'
+            ? 'Delegated worker'
           : m.origin === 'proactive'
             ? `${agentName} · proactive message`
             : m.origin === 'scheduled'
@@ -88,6 +90,10 @@ class SolaTurn extends SolaElement {
       this.entryNodes.set(entry.id, node);
     }
     const node = this.entryNodes.get(entry.id);
+    if (entry.delegation) {
+      renderTemplate(childTopicLink(entry.body), node);
+      return node;
+    }
     if (entry.narration) {
       if (node.source !== entry.body.content) {
         node.source = entry.body.content;
@@ -212,6 +218,8 @@ class SolaTurn extends SolaElement {
         });
     for (const { kind, sequence, record: r } of rows) {
       const entry = { id: r.id, sequence, body: r };
+      if (kind === 'delegation')
+        entries.push({ ...entry, id: `delegation:${r.id}`, delegation: true });
       // Text the model wrote alongside tool calls; the final reply arrives as a message.
       if (kind === 'model' && r.purpose !== 'compaction' && r.tool_calls?.length && r.content?.trim())
         entries.push({ ...entry, narration: true });

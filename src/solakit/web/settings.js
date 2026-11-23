@@ -525,7 +525,8 @@ export function createSettings({ topics, selected, refreshRuns, selectTopic }) {
         `/sessions?limit=100&archived=false${after ? `&after=${encodeURIComponent(after)}` : ''}`
       );
       for (const topic of page.items)
-        if (!topic.archived && topic.mode !== 'ephemeral') targets.set(topic.id, topic);
+        if (!topic.archived && !topic.parent_session_id && topic.mode !== 'ephemeral')
+          targets.set(topic.id, topic);
       after = page.items.length ? page.next : null;
     } while (after);
     for (const [id, topic] of targets) topics.set(id, topic);

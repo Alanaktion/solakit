@@ -9,7 +9,7 @@ Statuses distinguish operator-confirmed requirements, implementer-selected rever
 | V2-03 | Confirmed / operator | Web/API; Android compatibility excluded | 10/11: clean v2 API |
 | V2-04 | Confirmed / operator | Persistent identity/memory, background and proactive work; no deeper control integrations | All: operator-owned fragments remain authoritative |
 | V2-05 | Confirmed direction / operator | Shared; isolated without OpenViking; ephemeral without continuing context but retained evidence | 2/3/7: [session contract](contracts/session-modes.md) details selected below |
-| V2-06 | Deferred / operator | No delegation in v1 | 6: no child-agent executor or general framework |
+| V2-06 | Deferred / operator | No delegation in v1 | Bounded delegation added as a follow-up in V2-51 |
 | V2-07 | Selected / implementer | Eager tools first; deferred disclosure requires paired evaluation | 1/6: freeze thresholds before candidate measurements |
 | V2-08 | Confirmed / operator | Operator-enabled wakes may act/leave messages; autonomous work cannot create further wakes | 5/9: enforce by origin and dispatch, not prompt instructions |
 | V2-09 | Confirmed direction / operator | This Mac, localhost/tailnet; local filesystem, one process/worker/permit | 1/2/10: Python 3.15 selected after smoke probes; full compatibility still gated |
@@ -75,6 +75,8 @@ Statuses distinguish operator-confirmed requirements, implementer-selected rever
 | V2-49 | Selected / implementer, 2026-11-23 | Add an optional pinned vision model that shares the run budget and inference semaphore. Admit a staged PNG/JPEG or same-topic PNG reference, retain the image and vision evidence, and pass observations to the conversation model as untrusted text. Enable one image route per deployment. | [Image workflows](image-workflows.md), [validation](validation/vision-model.md) |
 
 | V2-50 | Selected / implementer, 2026-11-23 | Add four named letters tools for one reserved Git checkout. Permit read and inbox in scheduled profiles, with explicit job roots for inbox. Keep publication interactive, preserve the v1 body-plus-LF format and commit subjects, and record durable publication identities and phases. The operator verifies interrupted and v1 work before enabling or retrying publication. | [Letters contract](contracts/tools.md#git-backed-letters), [validation](validation/letters-tools.md) |
+
+| V2-51 | Selected / implementer, 2026-11-23 | Add opt-in `delegate.run` from interactive parents to one configured isolated worker profile. Intersect frozen and current grants and roots. Reserve an existing active slot after serving eligible queued runs. Use the same inference permit, charge the parent's budgets, and commit both the child admission and the parent evidence link atomically. | [Tool contract](contracts/tools.md#bounded-delegation), [validation](validation/delegation.md) |
 
 ## Unavailable references and remaining verification
 

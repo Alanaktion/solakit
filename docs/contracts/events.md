@@ -22,7 +22,8 @@ still describes current state. A future cursor resets to the current high-water.
 
 Durable frames use their existing type (run.admitted, run.started, run.terminal,
 message.appended, model.requested/recorded, tool.intent/receipt, memory.changed,
-delivery.changed, compaction.recorded, recovery.noted, image.changed) and carry a DurableEvent:
+delivery.changed, compaction.recorded, recovery.noted, image.changed,
+delegation.admitted) and carry a DurableEvent:
 
 ```text
 id: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:8

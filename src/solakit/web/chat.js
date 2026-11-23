@@ -365,7 +365,8 @@ function connect() {
     'delivery.changed',
     'compaction.recorded',
     'recovery.noted',
-    'image.changed'
+    'image.changed',
+    'delegation.admitted'
   ]) {
     stream.addEventListener(type, (event) => {
       if (token !== generation) return;
@@ -430,17 +431,20 @@ function updateComposer() {
         <sola-icon name="X"></sola-icon> Remove image
       </button>` : nothing, $('draft-image'));
   const topic = topics.get(selected);
+  const delegated = !!topic?.parent_session_id;
   const used =
     topic?.mode === 'ephemeral' &&
     (runs.size > 0 || outbox.some((item) => item.session_id === selected));
-  $('draft').disabled = !topic;
+  $('draft').disabled = !topic || delegated;
   $('attach-image').hidden = !imageInputs;
-  $('attach-image').disabled = !topic || topic.archived || used || uploading;
-  $('send').disabled = !topic || topic.archived || used || uploading || !$('draft').value.trim();
-  $('compose-hint').classList.toggle('explanation', !!(topic?.archived || used));
+  $('attach-image').disabled = !topic || delegated || topic.archived || used || uploading;
+  $('send').disabled = !topic || delegated || topic.archived || used || uploading || !$('draft').value.trim();
+  $('compose-hint').classList.toggle('explanation', !!(delegated || topic?.archived || used));
   text(
     $('compose-hint'),
-    topic?.archived
+    delegated
+      ? 'This topic contains the delegated worker’s transcript.'
+      : topic?.archived
       ? 'Restore this topic in Topic details to send a message.'
       : used
         ? 'This topic allows one run. Start a new topic to continue.'
@@ -495,6 +499,11 @@ function setTopicHeading() {
 async function selectTopic(id) {
   saveDraft();
   stopTransport();
+  const url = new URL(window.location.href);
+  if (url.searchParams.has('session') && url.searchParams.get('session') !== id) {
+    url.searchParams.delete('session');
+    history.replaceState(null, '', url);
+  }
   generation++;
   const token = generation;
   selected = id;
@@ -670,7 +679,8 @@ async function boot() {
     imageInputs = health.image_inputs;
     updateComposer();
   })]);
-  const saved = read('sola.selected', null);
+  const linked = new URLSearchParams(window.location.search).get('session');
+  const saved = /^[a-f0-9]{32}$/.test(linked || '') ? linked : read('sola.selected', null);
   if (saved && !topics.has(saved)) {
     try {
       topics.set(saved, await api(`/sessions/${saved}`));
@@ -680,7 +690,8 @@ async function boot() {
   }
   if (topics.size)
     await selectTopic(
-      topics.has(selected) ? selected : topics.has(saved) ? saved : topics.keys().next().value
+      linked && topics.has(linked) ? linked
+        : topics.has(selected) ? selected : topics.has(saved) ? saved : topics.keys().next().value
     );
   else {
     text($('connection'), 'Connected · create a topic to begin');

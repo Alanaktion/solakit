@@ -2,14 +2,17 @@
 
 import asyncio
 import contextvars
+import math
 import re
 from collections.abc import Sequence
 from functools import partial
 from typing import TYPE_CHECKING
 
+from pydantic import JsonValue
+
 from solakit.compaction import Compactor, select
 from solakit.config import ConfigError, EffectiveProfile, restrict_to_admission
-from solakit.dispatch import Dispatcher, receipt_content
+from solakit.dispatch import WORKER_TOOLS, Dispatcher, receipt_content
 from solakit.evidence import StorageError, canonical
 from solakit.images import ImageUploads
 from solakit.lineage import current_run, deny_autonomous_successor
@@ -33,6 +36,7 @@ from solakit.records import (
     ToolReceipt,
     utc_now,
 )
+from solakit.sdk import ToolError
 from solakit.store import Store
 
 if TYPE_CHECKING:
@@ -44,6 +48,7 @@ _CURRENT_SESSION: contextvars.ContextVar[str | None] = contextvars.ContextVar(
 )
 _ACTIONS = (
     r"read|write|save|create|generate|publish|search|recall|remember|list|show|check|inspect|use"
+    r"|delegate"
 )
 
 
@@ -84,6 +89,8 @@ def requested_tools(text: str, names: Sequence[str]) -> set[str]:
         for name in names
         if re.search(rf"(?<![\w.-]){re.escape(name.lower())}(?![\w-]|\.[\w-])", text)
     }
+    if "delegate.run" in names and re.match(prefix + r"(?:use\s+)?delegate\b", text):
+        return {"delegate.run"}
     # A named tool resolves shared verbs such as files.search/transcripts.search.
     actions -= {part for name in explicit for part in re.split(r"[_.-]", name)}
     web_target = bool(
@@ -241,6 +248,7 @@ class RunLoop:
         if max_pending < 1 or max_active < 1:
             raise ValueError("queue and active bounds must be positive")
         self.store, self.model, self.dispatcher = store, model, dispatcher
+        dispatcher.runs = self
         self.memory = memory
         self.vision = vision
         self.uploads = ImageUploads(store.root)
@@ -249,6 +257,7 @@ class RunLoop:
         self.active: dict[str, asyncio.Task[None]] = {}
         self.sessions: set[str] = set()
         self.cancelling: set[str] = set()
+        self.delegating: set[str] = set()
         self.failure: BaseException | None = None
         self.accepting = False
         self.stopping = False
@@ -339,6 +348,11 @@ class RunLoop:
         return run
 
     def cancel(self, run_id: str) -> Run:
+        caller = current_run.get()
+        if caller is not None and (
+            caller.origin == Origin.DELEGATED or caller.parent_tool_call_id is not None
+        ):
+            raise ToolError("Delegated work cannot cancel runs", ErrorCode.TOOL_DENIED)
         run = self.store.run(run_id)
         if run.state == RunState.QUEUED:
             run = self.store.transition_run(
@@ -351,6 +365,103 @@ class RunLoop:
             self.active[run_id].cancel()
         self._notify()
         return run
+
+    async def delegate(
+        self, call: ToolCall, parent: EffectiveProfile, brief: str, remaining: float
+    ) -> JsonValue:
+        deny_autonomous_successor()
+        caller = current_run.get()
+        if (
+            caller is None
+            or caller.id != call.run_id
+            or caller.origin != Origin.INTERACTIVE
+            or parent.delegation_worker is None
+        ):
+            raise ToolError("Delegation requires an interactive parent", ErrorCode.TOOL_DENIED)
+        if not brief.strip():
+            raise ToolError("Provide a self-contained task brief", ErrorCode.INVALID_INPUT)
+        if link := self.store.delegation(call.id):
+            child = self.store.run(link.child_run_id)
+            if child.state in RUN_TRANSITIONS:
+                return {"status": "busy"}
+            return self.store.delegation_result(link)
+        if caller.id in self.delegating or not self.accepting or self.failure is not None:
+            return {"status": "busy"}
+        self._start_ready()
+        if len(self.active) >= self.max_active:
+            return {"status": "busy"}
+        model_calls = (
+            parent.budgets.model_calls
+            - self.store.model_index(caller.id)
+            - self.store.child_attempts(caller.id, "request")
+            - 1
+        )
+        tool_calls = (
+            parent.budgets.tool_calls
+            - self.store.tool_attempts(caller.id)
+            - self.store.child_attempts(caller.id, "tool")
+        )
+        if model_calls <= 0 or remaining <= 0 or parent.budgets.tool_result_bytes < 512:
+            raise ToolError("Insufficient budget for a child and report", ErrorCode.BUDGET_EXCEEDED)
+        worker = self.dispatcher.current(
+            parent.model_copy(
+                update={
+                    "name": parent.delegation_worker,
+                    "mode": SessionMode.ISOLATED,
+                    "origin": Origin.DELEGATED,
+                }
+            )
+        )
+        if (worker.name, worker.origin, worker.mode) != (
+            parent.delegation_worker,
+            Origin.DELEGATED,
+            SessionMode.ISOLATED,
+        ):
+            raise ConfigError("Delegation resolver returned a different worker")
+        worker = restrict_to_admission(parent, worker)
+        tools = worker.tools & WORKER_TOOLS
+        worker = worker.model_copy(
+            update={
+                "tools": tools,
+                "granted_tools": tools,
+                "memory_mode": "off",
+                "budgets": worker.budgets.model_copy(
+                    update={
+                        "model_calls": min(worker.budgets.model_calls, model_calls),
+                        "tool_calls": min(worker.budgets.tool_calls, tool_calls),
+                        "active_seconds": min(worker.budgets.active_seconds, math.ceil(remaining)),
+                    }
+                ),
+            }
+        )
+        self.delegating.add(caller.id)
+        try:
+            child = self.store.admit(
+                None,
+                request_id=call.id,
+                content=brief,
+                profile=worker.name,
+                admission=worker.model_dump(mode="json"),
+                origin=Origin.DELEGATED,
+                parent_tool_call_id=call.id,
+            )
+            task = self._start_run(child)
+            try:
+                await asyncio.shield(task)
+            except asyncio.CancelledError:
+                self.cancel(child.id)
+                # Shield settlement even if another cancellation arrives during cleanup.
+                while not task.done():
+                    try:
+                        await asyncio.shield(task)
+                    except asyncio.CancelledError:
+                        continue
+                raise
+            link = self.store.delegation(call.id)
+            assert link is not None
+            return self.store.delegation_result(link)
+        finally:
+            self.delegating.discard(caller.id)
 
     async def wait(self, run_id: str, *, timeout: float | None = None) -> Run:
         async with asyncio.timeout(timeout):
@@ -383,38 +494,42 @@ class RunLoop:
             self._fault(error)
         self._notify()
 
+    def _start_run(self, run: Run) -> asyncio.Task[None]:
+        self.sessions.add(run.session_id)
+        task = asyncio.create_task(self._execute(run), name=f"sola-run-{run.id}")
+        self.active[run.id] = task
+        task.add_done_callback(partial(self._finished, run))
+        return task
+
+    def _start_ready(self) -> None:
+        for run in self.store.queued_runs():
+            if len(self.active) >= self.max_active:
+                break
+            if run.session_id in self.sessions or run.parent_tool_call_id is not None:
+                continue
+            if self.jobs is not None and run.occurrence_id is not None:
+                if not self.jobs.can_start(run):
+                    continue
+                background = sum(
+                    self.store.run(identity).origin in (Origin.SCHEDULED, Origin.PROACTIVE)
+                    for identity in self.active
+                )
+                if background >= self.jobs.policy().background.max_active:
+                    continue
+            self._start_run(run)
+
     async def _pump(self) -> None:
         try:
             while True:
                 changed = self.changed
                 if self.failure is not None:
                     return
-                for run in self.store.queued_runs():
-                    if len(self.active) >= self.max_active:
-                        break
-                    if run.session_id in self.sessions:
-                        continue
-                    if self.jobs is not None and run.occurrence_id is not None:
-                        if not self.jobs.can_start(run):
-                            continue
-                        background = sum(
-                            self.store.run(identity).origin in (Origin.SCHEDULED, Origin.PROACTIVE)
-                            for identity in self.active
-                        )
-                        if background >= self.jobs.policy().background.max_active:
-                            continue
-                    self.sessions.add(run.session_id)
-                    task = asyncio.create_task(self._execute(run), name=f"sola-run-{run.id}")
-                    self.active[run.id] = task
-                    task.add_done_callback(partial(self._finished, run))
+                self._start_ready()
                 await changed.wait()
         except asyncio.CancelledError:
             raise
         except Exception as error:
             self._fault(error)
-
-    def _profile(self, admitted: EffectiveProfile) -> EffectiveProfile:
-        return restrict_to_admission(self.dispatcher.current(admitted), admitted)
 
     async def _execute(self, queued: Run) -> None:
         token = _CURRENT_SESSION.set(queued.session_id)
@@ -425,7 +540,7 @@ class RunLoop:
             admitted = EffectiveProfile.model_validate_json(
                 canonical(self.store.admission_profile(queued.id))
             )
-            self._profile(admitted)
+            self.dispatcher.profile(queued, admitted)
             if self.jobs is not None:
                 self.jobs.validate_execution(queued)
             if self.store.session(queued.session_id).archived:
@@ -470,7 +585,7 @@ class RunLoop:
             _CURRENT_SESSION.reset(token)
 
     async def _observe(self, run: Run, admitted: EffectiveProfile, user: Message) -> None:
-        current = self._profile(admitted)
+        current = self.dispatcher.profile(run, admitted)
         if current.budgets.model_calls < 2:
             raise RunFailure(ErrorCode.BUDGET_EXCEEDED, "Image recognition needs two model calls")
         if (
@@ -502,6 +617,13 @@ class RunLoop:
         raise RunFailure(code, message)
 
     async def _cycle(self, run: Run, admitted: EffectiveProfile) -> None:
+        def current(admission: EffectiveProfile) -> EffectiveProfile:
+            profile = self.dispatcher.profile(run, admission)
+            if run.parent_tool_call_id is not None:
+                # The operator's global identity and curated memory stay out of worker prompts.
+                return profile.model_copy(update={"soul_file": None, "curated_memory_file": None})
+            return profile
+
         tools = self.dispatcher.bind(run.id)
         source = records(self.store, run.id)
         user = next(r for r in source if isinstance(r, Message) and r.role == "user")
@@ -515,7 +637,7 @@ class RunLoop:
             selection = select(self.store, run, admitted.budgets.tool_result_bytes)
             history = selection.turns
         recall = None
-        if self.memory:
+        if self.memory and run.parent_tool_call_id is None:
             query = (
                 "\n".join(turn.content for turn in history if turn.role in ("user", "assistant"))[
                     -2000:
@@ -523,7 +645,7 @@ class RunLoop:
                 + "\n"
                 + user.content
             )
-            observation = await self.memory.recall(run, self._profile(admitted), query[-1000:])
+            observation = await self.memory.recall(run, current(admitted), query[-1000:])
             recall = canonical(observation.model_dump(mode="json")).decode()
             if admitted.mode != SessionMode.SHARED or admitted.memory_mode == "off":
                 recall = None
@@ -563,22 +685,24 @@ class RunLoop:
 
         index = first_index
         while index <= admitted.budgets.model_calls:
-            profile = self._profile(admitted)
+            profile = current(admitted)
+            child_calls = self.store.child_attempts(run.id, "request")
             if (
-                index > profile.budgets.model_calls
+                index + child_calls > profile.budgets.model_calls
                 or asyncio.get_running_loop().time() - started >= profile.budgets.active_seconds
             ):
                 raise RunFailure(ErrorCode.BUDGET_EXCEEDED, "Run budget exhausted")
-            current = project_run(self.store, run.id, profile.budgets.tool_result_bytes)
+            report_only = child_calls > 0 and index + child_calls == profile.budgets.model_calls
+            projected = project_run(self.store, run.id, profile.budgets.tool_result_bytes)
             frozen = PromptInput(
                 at=utc_now(),
                 input=user,
                 prior_turns=tuple(history),
-                continuation=current[1:],
+                continuation=projected[1:],
                 enable_thinking=False,
                 recall=recall if profile.memory_mode != "off" else None,
-                tools=tools.schemas(deferred=hidden),
-                tool_catalog=tuple(sorted(hidden & tools.eligible())),
+                tools=() if report_only else tools.schemas(deferred=hidden),
+                tool_catalog=() if report_only else tuple(sorted(hidden & tools.eligible())),
                 disclosure="deferred-experiment-v1" if self.deferred else "eager-v1",
                 summary=selection.summary if selection else None,
                 context_boundary=selection.boundary.through_message_id
@@ -587,13 +711,13 @@ class RunLoop:
                 compaction=selection.provenance if selection else None,
             )
             if index == first_index:
-                _, index = await Compactor(self.store, self.model, self._profile).prepare(
+                _, index = await Compactor(self.store, self.model, current).prepare(
                     profile,
                     run,
                     frozen,
                     index,
                 )
-                profile = self._profile(admitted)
+                profile = current(admitted)
                 if selection is not None:
                     selection = select(self.store, run, profile.budgets.tool_result_bytes)
                     history = selection.turns
@@ -633,6 +757,10 @@ class RunLoop:
                     continue
                 raise RunFailure(step.failure.code, step.failure.message)
             if result.calls:
+                if report_only:
+                    raise RunFailure(
+                        ErrorCode.BUDGET_EXCEEDED, "Final model call was reserved for the report"
+                    )
                 eligible = tools.eligible()
                 undisclosed = {call.name for call in result.calls} & hidden & eligible
                 if undisclosed:
@@ -645,13 +773,18 @@ class RunLoop:
                     )
                     continue
                 invalid = False
+                delegated = False
                 for proposed in result.calls:
-                    profile = self._profile(admitted)
+                    profile = current(admitted)
                     if (
-                        self.store.tool_attempts(run.id) >= profile.budgets.tool_calls
+                        self.store.tool_attempts(run.id) + self.store.child_attempts(run.id, "tool")
+                        >= profile.budgets.tool_calls
                         or asyncio.get_running_loop().time() - started
                         >= profile.budgets.active_seconds
                     ):
+                        if delegated:
+                            # The child can use the remaining tool budget before its parent reply.
+                            break
                         raise RunFailure(ErrorCode.BUDGET_EXCEEDED, "Tool budget exhausted")
                     call = ToolCall(
                         origin=run.origin,
@@ -671,6 +804,7 @@ class RunLoop:
                     ):
                         await self.jobs.wait_for_effect(run, call.name)
                     receipt = await tools.dispatch(call)
+                    delegated |= call.name == "delegate.run"
                     attempted.add(call.name)
                     self.store.append(
                         Message(

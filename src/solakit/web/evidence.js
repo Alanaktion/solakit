@@ -6,6 +6,9 @@ import './artifact.js';
 let evidenceRun = null,
   view = 'records';
 let pages = {};
+export function childTopicLink(record) {
+  return html`<a href="/?session=${record.child_session_id}">Open delegated topic</a>`;
+}
 export async function openEvidence(id) {
   evidenceRun = id;
   pages = { records: { rows: [], cursor: 0 }, prompts: { rows: [], cursor: 0 } };
@@ -61,6 +64,7 @@ function renderEvidence() {
           <summary>
             ${`${row.sequence} · ${row.kind}${row.truncated ? ' · large record' : ''}`}
           </summary>
+          ${row.kind === 'delegation' ? childTopicLink(row.record) : nothing}
           <pre tabindex="0">${JSON.stringify(row.record, null, 2)}</pre>
           ${artifacts.map((reference) => html`<sola-artifact .runId=${id} .reference=${reference}></sola-artifact>`)}
         </details>

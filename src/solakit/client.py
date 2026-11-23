@@ -111,6 +111,9 @@ class ClientService:
         name = self.context.profile.name if name is None else name
         if not content.strip() or len(content.encode()) > 32768:
             raise RequestError(422, "invalid_input", "Content must contain 1–32768 UTF-8 bytes")
+        topic = self.store.session(session_id)
+        if topic.parent_session_id is not None or topic.origin == Origin.DELEGATED:
+            raise RequestError(409, "conflict", "Delegated topics require delegation")
         existing = self.store.request(request_id)
         if existing is not None:
             if existing.profile != name or existing.origin != Origin.INTERACTIVE:
@@ -119,7 +122,7 @@ class ClientService:
                 canonical(self.store.admission_profile(existing.id))
             )
         else:
-            profile = self.profile(name, self.store.session(session_id).mode)
+            profile = self.profile(name, topic.mode)
         reference = None
         if image is not None or upload_id is not None:
             if not (profile.model_image_inputs or profile.vision):

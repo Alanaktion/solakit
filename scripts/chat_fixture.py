@@ -36,6 +36,7 @@ from solakit.records import (
 from solakit.registry import Registry
 from solakit.runtime import compose
 from solakit.sdk import Tool, ToolArguments, ToolContext, ToolResult
+from solakit.tools import TOOLS
 
 PASSWORD = "phase11-disposable-fixture"
 HOSTILE = '<img src=x onerror="window.PWNED=true"> [bad](javascript:alert(1)) **Safe bold**'
@@ -82,6 +83,7 @@ def main() -> None:
             {
                 "data_dir": str(args.output / "data"),
                 "agent_name": args.agent_name,
+                "delegation_worker": "default",
                 "model": {
                     "pin": "fixture-qwen",
                     "generation_timeout_seconds": 30,
@@ -105,9 +107,12 @@ def main() -> None:
     context = compose(profile)
     assert context.model and context.tools and context.store
     context.tools.registry = Registry(
-        (Tool("fixture.pause", "Wait four seconds.", ToolArguments, pause),)
+        (
+            Tool("fixture.pause", "Wait four seconds.", ToolArguments, pause),
+            next(tool for tool in TOOLS if tool.name == "delegate.run"),
+        )
     )
-    grants = frozenset({"fixture.pause"})
+    grants = frozenset({"fixture.pause", "delegate.run"})
     context.profile = profile.model_copy(update={"granted_tools": grants, "tools": grants})
     default_profile = context.tools.current
 
@@ -129,22 +134,36 @@ def main() -> None:
             latest = next(part["text"] for part in latest if part.get("type") == "text")
         if latest.startswith("fail"):
             return httpx2.Response(503)
-        tool = latest.startswith("tool") and body["messages"][-1]["role"] != "tool"
+        delegation = latest == "Delegate the browser fixture."
+        tool = (latest.startswith("tool") or delegation) and body["messages"][-1]["role"] != "tool"
         deltas: list[dict[str, Any]]
         if tool:
+            function = (
+                {"name": "delegate.run", "arguments": '{"task":"Report the fixture label."}'}
+                if delegation
+                else {"name": "fixture.pause", "arguments": "{}"}
+            )
             deltas = [
-                {"content": "Pausing briefly before I answer."},
+                {
+                    "content": "Delegating the fixture."
+                    if delegation
+                    else "Pausing briefly before I answer."
+                },
                 {
                     "tool_calls": [
                         {
                             "index": 0,
                             "id": new_id(),
                             "type": "function",
-                            "function": {"name": "fixture.pause", "arguments": "{}"},
+                            "function": function,
                         }
                     ]
                 },
             ]
+        elif delegation:
+            deltas = [{"content": "The worker reported a blue fixture."}]
+        elif latest == "Report the fixture label.":
+            deltas = [{"content": "Fixture label: blue."}]
         else:
             content = (
                 "NO_ACTION"

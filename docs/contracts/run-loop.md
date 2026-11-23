@@ -24,7 +24,8 @@ never gets a fresh authority ceiling through the same key. Low-level Store
 methods remain available to maintenance/tests; application callers use this service.
 Scheduled/proactive admission requires the atomic occurrence claims supplied by
 `context.jobs`, rather than `runs.submit`; see the [job contract](jobs.md).
-Shell and delegation remain deferred.
+Interactive parents with `delegate.run` can admit isolated workers through the
+dispatcher. See the [delegation contract](tools.md#bounded-delegation).
 
 ## State and evidence
 
@@ -97,6 +98,15 @@ load. Compaction uses this same permit, run deadline and model-call budget.
 Phase 9 additionally limits automatic scheduled/proactive work to one active run
 and eight pending by default, with durable topic/hour/day admission caps. Interactive
 work remains eligible in the other slots; the same FIFO inference permit is shared.
+
+Delegation starts older eligible admissions before reserving an active slot for
+the child. When the remaining slots are full, it reports busy before admitting
+anything. One child may run per parent at a time. The parent waits outside the
+inference permit, pays for the child's recorded model/tool attempts within its
+remaining budgets, and reserves one model call to report back. The parent run
+and tool deadlines include the child's runtime. A cancelled or timed-out parent
+call settles its child before writing the receipt. Restart interrupts both running
+children and children that were durably admitted but did not start.
 
 `wait` observes state and does not own execution. Its timeout, cancellation, or a
 future HTTP disconnection leaves admitted work running. A wait from within a tool

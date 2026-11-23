@@ -51,6 +51,7 @@ class Value(BaseModel):
 
 class Origin(StrEnum):
     INTERACTIVE = "interactive"
+    DELEGATED = "delegated"
     SCHEDULED = "scheduled"
     PROACTIVE = "proactive"
     SYSTEM = "system"
@@ -102,6 +103,16 @@ class Session(Record):
     title: str = ""
     archived: bool = False
     pinned: bool = False
+    parent_session_id: RecordID | None = None
+
+    @model_validator(mode="after")
+    def delegation_lineage(self) -> Self:
+        if self.origin == Origin.DELEGATED:
+            if self.parent_session_id in (None, self.id) or self.mode != SessionMode.ISOLATED:
+                raise ValueError("delegated sessions require an isolated child topic")
+        elif self.parent_session_id is not None:
+            raise ValueError("parent topics belong to delegated sessions")
+        return self
 
 
 class Artifact(Value):
@@ -163,9 +174,12 @@ class Run(Record):
     job_id: RecordID | None = None
     occurrence_id: RecordID | None = None
     retry_of: RecordID | None = None
+    parent_tool_call_id: RecordID | None = None
 
     @model_validator(mode="after")
     def lifecycle(self) -> Self:
+        if (self.origin == Origin.DELEGATED) != (self.parent_tool_call_id is not None):
+            raise ValueError("delegated runs require parent tool lineage")
         scheduled = self.origin in (Origin.SCHEDULED, Origin.PROACTIVE)
         if scheduled != (self.job_id is not None and self.occurrence_id is not None):
             raise ValueError("scheduled/proactive runs require both job and occurrence lineage")
@@ -319,6 +333,14 @@ class ToolReceipt(Record):
         if self.status == "denied" and self.effect != "none":
             raise ValueError("denied tools cannot have effects")
         return self
+
+
+class Delegation(Record):
+    # Its ID is the parent tool call ID.
+    session_id: RecordID
+    run_id: RecordID
+    child_session_id: RecordID
+    child_run_id: RecordID
 
 
 class Job(Record):
@@ -505,6 +527,7 @@ class DurableEvent(Value):
         "delivery.changed",
         "recovery.noted",
         "image.changed",
+        "delegation.admitted",
     ]
     payload: dict[str, JsonValue]
 

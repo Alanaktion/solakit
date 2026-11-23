@@ -177,6 +177,12 @@ revocations and cancellation remain shared services. See [image inputs](../image
 Session/job creation and edits do not promise admission-key idempotency. Manual
 job retry returns its original occurrence even after a definition edit.
 
+Delegated topics carry `parent_session_id` and are available through authenticated
+session and run reads. The parent run's `delegation` evidence row links the
+parent tool call to `child_session_id` and `child_run_id` in sequence. The child
+run carries `parent_tool_call_id` and uses the ordinary cancellation endpoint.
+Direct run submissions and job definitions targeting the child return 409.
+
 ## Pagination and bounded inspection
 
 Limits are 1..100, default 50 (search 20). Session/job/occurrence `after` is

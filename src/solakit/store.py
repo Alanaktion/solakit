@@ -5,7 +5,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import cast
 
-from pydantic import TypeAdapter
+from pydantic import JsonValue, TypeAdapter
 
 from solakit.evidence import (
     RECORDS,
@@ -24,6 +24,7 @@ from solakit.evidence import (
 from solakit.records import (
     Artifact,
     CompactionBoundary,
+    Delegation,
     Delivery,
     DeliveryState,
     DurableEvent,
@@ -64,6 +65,7 @@ type StoredRecord = (
     | ModelRequest
     | ToolCall
     | ToolReceipt
+    | Delegation
     | Delivery
     | MemoryNote
     | MemoryRecall
@@ -540,6 +542,60 @@ class Store:
             ).fetchone()[0]
         )
 
+    def model_index(self, run_id: str) -> int:
+        return int(
+            self.db.execute(
+                "SELECT coalesce(max(json_extract(body,'$.index')),0) FROM entities "
+                "WHERE kind='request' AND run_id=?",
+                (run_id,),
+            ).fetchone()[0]
+        )
+
+    def delegation(self, call_id: str) -> Delegation | None:
+        try:
+            return self._load("delegation", call_id, Delegation)
+        except KeyError:
+            return None
+
+    def child_attempts(self, run_id: str, kind: str) -> int:
+        return int(
+            self.db.execute(
+                "SELECT count(*) FROM entities AS link JOIN entities AS attempt "
+                "ON attempt.run_id=json_extract(link.body,'$.child_run_id') "
+                "WHERE link.kind='delegation' AND link.run_id=? AND attempt.kind=?",
+                (run_id, kind),
+            ).fetchone()[0]
+        )
+
+    def delegation_result(
+        self, link: Delegation, *, include_report: bool = True
+    ) -> dict[str, JsonValue]:
+        child = self.run(link.child_run_id)
+        row = self.db.execute(
+            "SELECT kind,id FROM entities WHERE run_id=? AND kind<>'run' "
+            "ORDER BY sequence DESC LIMIT 1",
+            (child.id,),
+        ).fetchone()
+        evidence: list[JsonValue] = [child.id]
+        if row:
+            evidence.append(row["id"])
+        result: dict[str, JsonValue] = {
+            "session_id": child.session_id,
+            "run_id": child.id,
+            "status": child.state.value,
+            "evidence_ids": evidence,
+        }
+        if (
+            include_report
+            and child.state == RunState.COMPLETED
+            and row
+            and row["kind"] == "message"
+        ):
+            report = self._load("message", row["id"], Message)
+            if report.role == "assistant":
+                result["report"] = report.content[:4000]
+        return result
+
     def queued_runs(self) -> list[Run]:
         """The admitted outbox ordinal is the durable order, across sessions."""
         return [
@@ -565,6 +621,8 @@ class Store:
         title: str = "",
         origin: Origin = Origin.INTERACTIVE,
     ) -> Session:
+        if origin == Origin.DELEGATED:
+            raise ValueError("delegated sessions require a parent tool admission")
         session = Session(origin=origin, mode=mode, title=title)
 
         def prepare() -> None:
@@ -640,7 +698,7 @@ class Store:
 
     def admit(
         self,
-        session_id: str,
+        session_id: str | None,
         *,
         request_id: str,
         content: str,
@@ -655,12 +713,44 @@ class Store:
         image_source: tuple[str, str] | None = None,
         upload_id: str | None = None,
         upload: bytes | None = None,
+        parent_tool_call_id: str | None = None,
     ) -> Run:
-        from solakit.lineage import deny_autonomous_successor
+        from solakit.lineage import current_run, deny_autonomous_successor
 
         deny_autonomous_successor()
-        session = self.session(session_id)
         valid_id(request_id)
+        parent_call = None
+        if parent_tool_call_id is not None:
+            parent_call = self._load("tool", parent_tool_call_id, ToolCall)
+            parent = self.run(parent_call.run_id)
+            caller = current_run.get()
+            if (
+                session_id is not None
+                or origin != Origin.DELEGATED
+                or parent_call.name != "delegate.run"
+                or parent.origin != Origin.INTERACTIVE
+                or parent.parent_tool_call_id is not None
+                or parent.state != RunState.RUNNING
+                or caller is None
+                or caller.id != parent.id
+                or self.session(parent.session_id).parent_session_id is not None
+                or request_id != parent_call.id
+            ):
+                raise ValueError("delegation requires its running interactive parent call")
+            session = Session(
+                id=digest(canonical(["delegate-topic", request_id]))[:32],
+                origin=Origin.DELEGATED,
+                mode=SessionMode.ISOLATED,
+                title="Delegated research",
+                parent_session_id=parent.session_id,
+            )
+            session_id = session.id
+        else:
+            if session_id is None or origin == Origin.DELEGATED:
+                raise ValueError("admission requires a session")
+            session = self.session(session_id)
+            if session.parent_session_id is not None or session.origin == Origin.DELEGATED:
+                raise ValueError("delegated topics require delegation")
         details: dict[str, object] = {
             "session_id": session_id,
             "content": content,
@@ -671,6 +761,8 @@ class Store:
             "occurrence_id": occurrence_id,
             "retry_of": retry_of,
         }
+        if parent_call is not None:
+            details["parent_tool_call_id"] = parent_call.id
         existing = self.db.execute(
             "SELECT * FROM admissions WHERE request_id=?", (request_id,)
         ).fetchone()
@@ -730,6 +822,7 @@ class Store:
             job_id=job_id,
             occurrence_id=occurrence_id,
             retry_of=retry_of,
+            parent_tool_call_id=parent_tool_call_id,
         )
         if upload_id is not None:
             if upload is None or image is not None:
@@ -748,6 +841,8 @@ class Store:
         )
 
         def prepare() -> None:
+            if parent_call is not None:
+                self.db.execute("INSERT INTO sessions VALUES (?,0)", (session.id,))
             self.db.execute(
                 "INSERT INTO admissions VALUES (?,?,?)", (request_id, fingerprint, run.id)
             )
@@ -759,6 +854,18 @@ class Store:
                 occurrence.model_dump() | {"run_id": run.id, "state": "claimed"}
             )
             claimed = (occurrence, advanced)
+        if parent_call is not None:
+            claimed = (
+                session,
+                Delegation(
+                    id=parent_call.id,
+                    origin=parent_call.origin,
+                    session_id=parent_call.session_id,
+                    run_id=parent_call.run_id,
+                    child_session_id=session.id,
+                    child_run_id=run.id,
+                ),
+            )
         self._commit((*claimed, run, message), details=details, prepare=prepare)
         return run
 
@@ -1050,10 +1157,12 @@ class Store:
         for row in self.db.execute(
             "SELECT kind,id FROM entities WHERE "
             "(kind='run' AND json_extract(body,'$.state')='running') OR "
+            "(kind='run' AND json_extract(body,'$.state')='queued' "
+            "AND json_extract(body,'$.parent_tool_call_id') IS NOT NULL) OR "
             "(kind='delivery' AND json_extract(body,'$.state')='sending') OR "
             "(kind='memory' AND json_extract(body,'$.state')='running')"
         ).fetchall():
-            if row["kind"] == "run" and self.run(row["id"]).state == RunState.RUNNING:
+            if row["kind"] == "run":
                 self.transition_run(row["id"], RunState.INTERRUPTED, reason=reason)
             elif row["kind"] == "delivery":
                 record = self._load("delivery", row["id"], Delivery)
@@ -1070,6 +1179,24 @@ class Store:
             "AND json_extract(receipt.body,'$.tool_call_id')=tool.id)"
         ).fetchall():
             call = ToolCall.model_validate_json(row[0])
+            if call.name == "delegate.run":
+                link = self.delegation(call.id)
+                result = self.delegation_result(link, include_report=False) if link else None
+                raw = canonical(result) if result else b""
+                self.append(
+                    ToolReceipt(
+                        origin=call.origin,
+                        session_id=call.session_id,
+                        run_id=call.run_id,
+                        tool_call_id=call.id,
+                        status="failed",
+                        result=result,
+                        result_bytes=len(raw),
+                        result_sha256=digest(raw) if raw else None,
+                        failure=reason,
+                    )
+                )
+                continue
             self.append(
                 ToolReceipt(
                     origin=call.origin,

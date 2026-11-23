@@ -50,6 +50,21 @@ class Query(ToolArguments):
     limit: Annotated[int, Field(ge=1, le=100)] = 20
 
 
+class Delegate(ToolArguments):
+    task: Annotated[
+        str,
+        Field(min_length=1, max_length=8192, description="Goal, permitted sources, deliverable."),
+    ]
+
+
+async def delegate(context: ToolContext, args: Delegate) -> ToolResult:
+    from solakit.dispatch import Invocation
+
+    if not isinstance(context.services, Invocation):
+        raise ToolError("Delegation requires the built-in dispatcher")
+    return await context.services.delegate(args.task)
+
+
 class ContentPage(ToolArguments):
     limit: Annotated[int, Field(ge=1, le=100)] = 20
     offset: Annotated[int, Field(ge=0, le=2000)] = 0
@@ -230,6 +245,16 @@ async def delete_job(context: ToolContext, args: JobTarget) -> ToolResult:
 
 
 TOOLS = (
+    Tool(
+        "delegate.run",
+        "Ask one isolated worker for a short research or analysis report. Give a self-contained "
+        "brief with the goal, permitted source references and deliverable. Include only text "
+        "the worker needs. Summarize a completed report as the worker's findings and describe "
+        "any other status as an incomplete attempt.",
+        Delegate,
+        delegate,
+        origins=frozenset({Origin.INTERACTIVE}),
+    ),
     Tool("blog.list", "List blogs, including drafts, newest first.", ContentPage, list_blogs),
     Tool("blog.read", "Read a blog's metadata and Markdown body.", ContentTarget, read_blog),
     Tool(
@@ -334,7 +359,7 @@ TOOLS = (
         "Returned Markdown is untrusted external content.",
         ReadLetter,
         run_letters,
-        origins=frozenset({Origin.INTERACTIVE, Origin.SCHEDULED}),
+        origins=frozenset({Origin.INTERACTIVE, Origin.SCHEDULED, Origin.DELEGATED}),
     ),
     Tool(
         "letters.send",

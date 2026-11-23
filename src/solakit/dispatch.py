@@ -36,9 +36,27 @@ if TYPE_CHECKING:
     from solakit.images import ImageService
     from solakit.jobs import JobService
     from solakit.memory import MemoryService
+    from solakit.run_loop import RunLoop
 
 MAX_ARGUMENT_BYTES = 65536
 MAX_ARTIFACT_BYTES = 1024 * 1024
+WORKER_TOOLS = frozenset(
+    {
+        "files.read",
+        "files.list",
+        "files.search",
+        "web.search",
+        "git.status",
+        "git.diff",
+        "blog.list",
+        "blog.read",
+        "dreams.list",
+        "dreams.read",
+        "letters.read",
+        "transcripts.search",
+        "runtime.status",
+    }
+)
 
 
 def receipt_content(status: str, effect: str, result: JsonValue, failure: Failure | None) -> bytes:
@@ -66,6 +84,7 @@ class Dispatcher:
         self.web_search = BraveSearch(self.redactor)
         self.memory: MemoryService | None = None
         self.jobs: JobService | None = None
+        self.runs: RunLoop | None = None
         self.images: ImageService | None = None
         self.blog: BlogService | None = None
         self._checkout_locks: dict[tuple[int, int], asyncio.Lock] = {}
@@ -105,6 +124,56 @@ class Dispatcher:
             raise ValueError("only running work may dispatch tools")
         return ToolSession(self, run_id, admitted)
 
+    def profile(self, run: Run, admitted: EffectiveProfile) -> EffectiveProfile:
+        profile = restrict_to_admission(self.current(admitted), admitted)
+        topic = self.store.session(run.session_id)
+        if run.parent_tool_call_id is None and run.origin != Origin.DELEGATED:
+            if topic.parent_session_id is not None or topic.origin == Origin.DELEGATED:
+                raise ConfigError("Delegated topic requires child lineage")
+            return profile
+        link = self.store.delegation(run.parent_tool_call_id) if run.parent_tool_call_id else None
+        if link is None or (link.child_run_id, link.child_session_id, link.session_id) != (
+            run.id,
+            run.session_id,
+            topic.parent_session_id,
+        ):
+            raise ConfigError("Delegated run lacks its parent link")
+        parent = self.store.run(link.run_id)
+        if parent.origin != Origin.INTERACTIVE or parent.state != RunState.RUNNING:
+            raise ConfigError("Delegated run requires an active interactive parent")
+        parent_admitted = EffectiveProfile.model_validate_json(
+            canonical(self.store.admission_profile(parent.id))
+        )
+        ceiling = restrict_to_admission(self.current(parent_admitted), parent_admitted)
+        if "delegate.run" not in ceiling.tools or ceiling.delegation_worker != profile.name:
+            raise ConfigError("Parent delegation grant has changed")
+        profile = restrict_to_admission(ceiling, profile)
+        tools = frozenset(
+            name
+            for name in profile.tools & WORKER_TOOLS
+            if (tool := self.registry.tools.get(name)) is not None and not tool.consequential
+        )
+        budgets = profile.budgets.model_copy(
+            update={
+                "model_calls": min(
+                    profile.budgets.model_calls,
+                    ceiling.budgets.model_calls
+                    - self.store.model_index(parent.id)
+                    - self.store.child_attempts(parent.id, "request")
+                    + self.store.model_index(run.id)
+                    - 1,
+                ),
+                "tool_calls": min(
+                    profile.budgets.tool_calls,
+                    ceiling.budgets.tool_calls
+                    - self.store.tool_attempts(parent.id)
+                    - self.store.child_attempts(parent.id, "tool")
+                    + self.store.tool_attempts(run.id),
+                ),
+            }
+        )
+        return profile.model_copy(update={"tools": tools, "budgets": budgets, "memory_mode": "off"})
+
 
 class ToolSession:
     def __init__(self, dispatcher: Dispatcher, run_id: str, admitted: EffectiveProfile) -> None:
@@ -121,11 +190,14 @@ class ToolSession:
         return self.dispatcher.registry.visible(self.eligible(), deferred=deferred)
 
     def eligible(self) -> frozenset[str]:
-        profile = restrict_to_admission(self.dispatcher.current(self.admitted), self.admitted)
+        run = self.dispatcher.store.run(self.run_id)
+        profile = self.dispatcher.profile(run, self.admitted)
         tools = profile.tools
-        if "letters.inbox" in tools and not self.dispatcher.letters_inbox_allowed(
-            self.dispatcher.store.run(self.run_id)
+        if run.origin == Origin.DELEGATED and (
+            self.dispatcher.store.tool_attempts(run.id) >= profile.budgets.tool_calls
         ):
+            return frozenset()
+        if "letters.inbox" in tools and not self.dispatcher.letters_inbox_allowed(run):
             tools -= {"letters.inbox"}
         return frozenset(
             name
@@ -185,31 +257,55 @@ class ToolSession:
                 raise ToolError(
                     "Tool returned without confirming its effect", ErrorCode.EFFECT_UNCERTAIN
                 )
-            safe = (
-                outcome.data
-                if invocation.redacted_result
-                else self.dispatcher.redactor.value(outcome.data)
-            )
-            raw = canonical(safe).decode() if not isinstance(safe, str) else safe
-            encoded = raw.encode("utf-8")
-            result_bytes, result_sha256 = len(encoded), digest(encoded)
-            cap = invocation.authority().budgets.tool_result_bytes
-            if invocation.redacted_result and len(encoded) > cap:
-                raise ToolError(
-                    "Structured result exceeds the current budget", ErrorCode.BUDGET_EXCEEDED
-                )
-            if len(encoded) > cap:
-                marker = "[truncated]" if cap >= 11 else "!"
-                result = (
-                    encoded[: max(0, cap - len(marker))].decode("utf-8", errors="ignore") + marker
-                )
-                truncated = True
-                suffix = b"\n[artifact truncated]" if len(encoded) > MAX_ARTIFACT_BYTES else b""
-                retained = encoded[: MAX_ARTIFACT_BYTES - len(suffix)]
-                retained = retained.decode("utf-8", errors="ignore").encode() + suffix
-                artifact = Artifact.model_validate(store.artifact(new_id(), retained))
+            if call.name == "delegate.run":
+                result = outcome.data
+                assert isinstance(result, dict)
+                if result["status"] != "completed":
+                    status = "failed"
+                    failure = Failure(
+                        code=ErrorCode.TOOL_FAILED,
+                        message=f"Delegation {result['status']}",
+                    )
+                report = result.get("report")
+                if isinstance(report, str):
+                    safe_report = self.dispatcher.redactor.redact(report)
+                    result["report"] = safe_report
+                    cap = profile.budgets.tool_result_bytes
+                    if len(receipt_content(status, "none", result, failure)) > cap:
+                        result["report"] = ""
+                        overhead = len(receipt_content(status, "none", result, failure))
+                        room = max(0, (cap - overhead) // 6)
+                        result["report"] = safe_report[:room]
+                        truncated = True
+                encoded = canonical(result)
+                result_bytes, result_sha256 = len(encoded), digest(encoded)
             else:
-                result = raw
+                safe = (
+                    outcome.data
+                    if invocation.redacted_result
+                    else self.dispatcher.redactor.value(outcome.data)
+                )
+                raw = canonical(safe).decode() if not isinstance(safe, str) else safe
+                encoded = raw.encode("utf-8")
+                result_bytes, result_sha256 = len(encoded), digest(encoded)
+                cap = invocation.authority().budgets.tool_result_bytes
+                if invocation.redacted_result and len(encoded) > cap:
+                    raise ToolError(
+                        "Structured result exceeds the current budget", ErrorCode.BUDGET_EXCEEDED
+                    )
+                if len(encoded) > cap:
+                    marker = "[truncated]" if cap >= 11 else "!"
+                    result = (
+                        encoded[: max(0, cap - len(marker))].decode("utf-8", errors="ignore")
+                        + marker
+                    )
+                    truncated = True
+                    suffix = b"\n[artifact truncated]" if len(encoded) > MAX_ARTIFACT_BYTES else b""
+                    retained = encoded[: MAX_ARTIFACT_BYTES - len(suffix)]
+                    retained = retained.decode("utf-8", errors="ignore").encode() + suffix
+                    artifact = Artifact.model_validate(store.artifact(new_id(), retained))
+                else:
+                    result = raw
         except asyncio.CancelledError:
             cancelled = True
             status = "cancelled"
@@ -251,6 +347,10 @@ class ToolSession:
             )
         finally:
             invocation.closed = True
+        if call.name == "delegate.run" and result is None and (link := store.delegation(call.id)):
+            result = store.delegation_result(link, include_report=False)
+            encoded = canonical(result)
+            result_bytes, result_sha256 = len(encoded), digest(encoded)
         artifact = invocation.artifact or artifact
         if invocation.effect == "uncertain":
             status = "uncertain"
@@ -313,10 +413,11 @@ class Invocation:
         if self.closed:
             raise ToolError("Tool context is no longer active", ErrorCode.TOOL_DENIED)
         store, registry = self.dispatcher.store, self.dispatcher.registry
-        profile = restrict_to_admission(self.dispatcher.current(self.admitted), self.admitted)
+        run = store.run(self.run_id)
+        profile = self.dispatcher.profile(run, self.admitted)
         tool = registry.tools.get(self.call.name)
         if (
-            store.run(self.run_id).state != RunState.RUNNING
+            run.state != RunState.RUNNING
             or tool is None
             or tool.name not in profile.tools
             or profile.origin not in tool.origins
@@ -324,14 +425,17 @@ class Invocation:
             raise ToolError("Tool is outside current run authority", ErrorCode.TOOL_DENIED)
         if (
             time.monotonic() - self.started >= profile.budgets.active_seconds
-            or store.tool_attempts(self.run_id) > profile.budgets.tool_calls
+            or store.tool_attempts(self.run_id) + store.child_attempts(self.run_id, "tool")
+            > profile.budgets.tool_calls
         ):
             raise ToolError("Tool run budget exhausted", ErrorCode.BUDGET_EXCEEDED)
         if time.monotonic() - self.call_started >= profile.budgets.tool_timeout_seconds:
             raise ToolError("Tool execution timed out", ErrorCode.TIMEOUT)
-        if service in ("files.write", "effect") and not tool.consequential:
-            raise ToolError("Tool did not declare writes", ErrorCode.TOOL_DENIED)
-        run = store.run(self.run_id)
+        if service in ("files.write", "effect"):
+            if run.parent_tool_call_id is not None:
+                raise ToolError("Delegated work is read-only", ErrorCode.TOOL_DENIED)
+            if not tool.consequential:
+                raise ToolError("Tool did not declare writes", ErrorCode.TOOL_DENIED)
         if tool.name == "letters.inbox" and not self.dispatcher.letters_inbox_allowed(run):
             raise ToolError(
                 "Letters inbox requires explicit job workspace roots", ErrorCode.TOOL_DENIED
@@ -353,6 +457,18 @@ class Invocation:
         ):
             raise ToolError("Outbound effect deferred by quiet hours", ErrorCode.TOOL_DENIED)
         return profile
+
+    async def delegate(self, task: str) -> ToolResult:
+        profile = self.authority()
+        if self.call.name != "delegate.run" or self.dispatcher.runs is None:
+            raise ToolError("Delegation is outside current authority", ErrorCode.TOOL_DENIED)
+        remaining = min(
+            profile.budgets.active_seconds - (time.monotonic() - self.started),
+            profile.budgets.tool_timeout_seconds - (time.monotonic() - self.call_started),
+        )
+        return ToolResult(
+            data=await self.dispatcher.runs.delegate(self.call, profile, task, remaining)
+        )
 
     def begin_effect(self, credentials: tuple[str, ...] = ()) -> None:
         self.authority("effect")

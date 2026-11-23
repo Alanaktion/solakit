@@ -29,7 +29,7 @@ class ConfigError(ValueError):
 
 class Budgets(Value):
     model_calls: Count = 16
-    tool_calls: Count = 32
+    tool_calls: Annotated[int, Field(ge=0, le=256)] = 32
     active_seconds: Seconds = 900
     output_tokens: Annotated[int, Field(ge=1, le=32768)] = 4096
     tool_result_bytes: Annotated[int, Field(ge=1, le=1048576)] = 65536
@@ -202,7 +202,9 @@ def letters_tools(
         return frozenset()
     if origin == Origin.INTERACTIVE:
         return LETTERS_TOOLS
-    return LETTERS_READ if origin == Origin.SCHEDULED else frozenset()
+    if origin == Origin.SCHEDULED:
+        return LETTERS_READ
+    return frozenset({"letters.read"}) if origin == Origin.DELEGATED else frozenset()
 
 
 class WebSearchSettings(Value):
@@ -341,6 +343,7 @@ class OperatorConfig(Value):
     letters: LettersSettings = Field(default_factory=LettersSettings)
     web_search: WebSearchSettings = Field(default_factory=WebSearchSettings)
     shell: ShellSettings = Field(default_factory=ShellSettings)
+    delegation_worker: Name | None = None
     tool_modules: list[Name] = Field(default_factory=list)
     defaults: ProfileSettings = Field(default_factory=ProfileSettings)
     profiles: dict[Name, ProfileSettings] = Field(default_factory=dict)
@@ -352,6 +355,10 @@ class OperatorConfig(Value):
     def image_route(self) -> OperatorConfig:
         if self.vision is not None and self.model.image_inputs:
             raise ValueError("vision requires model.image_inputs = false")
+        if self.delegation_worker not in (None, "default") and (
+            self.delegation_worker not in self.profiles
+        ):
+            raise ValueError("delegation_worker must name a configured profile")
         return self
 
 
@@ -382,6 +389,7 @@ class EffectiveProfile(Value):
     web_search: WebSearchSettings = Field(default_factory=WebSearchSettings)
     shell: ShellSettings = Field(default_factory=ShellSettings)
     shell_granted: bool = False
+    delegation_worker: Name | None = None
     background: BackgroundSettings = Field(default_factory=BackgroundSettings)
     http: HTTPSettings = Field(default_factory=HTTPSettings)
     proactive_budgets: BudgetOverrides = Field(default_factory=BudgetOverrides)
@@ -572,6 +580,7 @@ def resolve_profile(
         ("letters", "letters"),
         ("web_search", "web_search"),
         ("shell", "shell"),
+        ("delegation_worker", "delegation_worker"),
         ("background", "background"),
         ("http", "http"),
         ("proactive_budgets", "proactive_budgets"),
@@ -630,6 +639,8 @@ def resolve_profile(
         tools -= {"web.search"}
     if not (config.shell.enabled and shell_granted and origin == Origin.INTERACTIVE):
         tools -= {"shell.exec"}
+    if not config.delegation_worker or origin != Origin.INTERACTIVE:
+        tools -= {"delegate.run"}
     return EffectiveProfile(
         name=name,
         agent_name=config.agent_name,
@@ -661,6 +672,7 @@ def resolve_profile(
         web_search=config.web_search,
         shell=config.shell,
         shell_granted=shell_granted,
+        delegation_worker=config.delegation_worker,
         background=config.background,
         http=config.http,
         proactive_budgets=config.proactive_budgets,
@@ -716,6 +728,8 @@ def restrict_to_admission(
         tools -= CONTENT_WRITE
     if not admitted.web_search.api_key_env or current.web_search != admitted.web_search:
         tools -= {"web.search"}
+    if not admitted.delegation_worker or current.delegation_worker != admitted.delegation_worker:
+        tools -= {"delegate.run"}
     shell_granted = current.shell_granted and admitted.shell_granted
     if not (
         shell_granted

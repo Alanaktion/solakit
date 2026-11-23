@@ -8,13 +8,15 @@ data_dir = "~/.local/share/sola"
 # Explicit import modules for installed trusted packs; loading grants no access.
 tool_modules = []
 # Built-ins: files.list, files.read, files.search, files.write, images.generate,
-# transcripts.search, web.search, git.status/diff/pull/publish, shell.exec, runtime.status,
+# transcripts.search, web.search, git.status/diff/pull/publish, shell.exec, delegate.run, runtime.status,
 # memory.recall, memory.remember; jobs.list/create/update/pause/resume/run_now/delete/pause_all.
 # blog.list/read/create/publish; dreams.list/read/create (always publishes).
 shutdown_timeout_seconds = 5
 # Operator-owned UTF-8 files, read verbatim; optional and never created by Sola.
 # soul_file = "SOUL.md"
 # curated_memory_file = "MEMORY.md"
+# Optional worker profile. Add "delegate.run" to the calling profile's tools.
+# delegation_worker = "research"
 
 [model]
 # Required: exact oMLX model ID, e.g. "Qwen3.6-35B-A3B-mxfp4".
@@ -126,6 +128,13 @@ tool_timeout_seconds = 60
 # model_calls = 4
 # tool_calls = 8
 # active_seconds = 300
+
+# Delegation worker. Add "files.read" and "delegate.run" to [defaults].tools first.
+# [profiles.research]
+# tools = ["files.read"]
+# fragments = ["research.md"]  # Operator-owned instructions for the worker.
+# [profiles.research.budgets]
+# model_calls = 5
 
 # Optional dedicated profiles. First admit their workspace and named grants in [defaults].
 # [profiles.correspondence]
