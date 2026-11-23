@@ -90,8 +90,10 @@ The scheduled occurrence key hashes job ID, generation and scheduled UTC instant
 Manual keys use a separate namespace plus the caller request ID. Claim, queued run,
 frozen definition/profile, input, consumption/next instant and evidence outbox share
 one SQLite transaction. Only after that transaction and evidence flush does the
-run service get notified. An ephemeral target creates a private one-run session;
-it never silently reroutes an archived bound topic.
+run service get notified. An ephemeral target creates a private one-run session.
+An archived bound topic blocks admission. The terminal run and occurrence commit
+archives the one-run session, including on failure, cancellation, or recovery
+from interruption.
 
 A one-shot is consumed at admission, including manual execution before its due
 time. Task edits, pause/resume, restart and search rebuild cannot rearm it. An
@@ -141,6 +143,10 @@ cancelled. Durable delivery timestamps enforce one notification/topic/hour. Loca
 pending → sending/accepted → published message → delivered/completed share one
 transaction, so a crash cannot append a second copy. `delivery="none"` retains
 private results without publication.
+
+A result queued as part of a one-run topic's automatic archival can publish to
+that archive after quiet hours or a global pause. Expiry and job deletion still
+apply. Archive reads retain both the published result and its execution evidence.
 
 ## Recovery and inspection
 

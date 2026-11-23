@@ -24,6 +24,9 @@ The topic ID is stable and separate from filesystem paths. A job binds an explic
 
 Archival hides a topic from normal navigation and refuses new submissions until explicit restore. A job targeting an archived topic is blocked with an inspectable outcome; it does not restore the topic or invent a replacement. Pinned topics stay easy to find but gain no memory, scheduling, or permission privilege.
 
+Job-created ephemeral topics archive automatically when the run reaches a terminal
+state. A pending result recorded with that archive can still publish there.
+
 Compaction only changes future context selection, preserving summary provenance plus original sources. It does not archive the topic, change memory mode, erase tool calls, or make a fresh session. Older messages stay paginated/searchable within the reader's authority.
 
 ## Memory eligibility and failure

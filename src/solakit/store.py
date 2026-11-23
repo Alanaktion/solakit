@@ -681,6 +681,13 @@ class Store:
         self._commit((*claimed, run, message), details=details, prepare=prepare)
         return run
 
+    def job_topic_archive(self, run: Run) -> tuple[Session, ...]:
+        if run.occurrence_id is not None:
+            topic = self.session(run.session_id)
+            if topic.mode == SessionMode.EPHEMERAL and not topic.archived:
+                return (topic.model_copy(update={"archived": True}),)
+        return ()
+
     def transition_run(
         self, identity: str, state: RunState, *, reason: Failure | None = None
     ) -> Run:
@@ -698,7 +705,7 @@ class Store:
                     "reason": reason,
                 }
             )
-            records += (occurrence,)
+            records += (occurrence, *self.job_topic_archive(run))
         self._commit(records)
         return run
 

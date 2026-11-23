@@ -359,6 +359,7 @@ class Delivery(Record):
     content: str | None = None
     not_before: Timestamp | None = None
     expires_at: Timestamp | None = None
+    publish_to_archive: bool = False
 
     def transition(self, state: DeliveryState, *, reason: Failure | None = None) -> Self:
         allowed = {

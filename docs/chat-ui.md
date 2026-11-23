@@ -89,9 +89,14 @@ screens, the tabs form a compact grid.
   inspect occurrences. New jobs start disabled. Schedules use
   `cron:<five fields>` or `once:<aware ISO timestamp>`. Each job chooses its own
   profile, a shared/isolated topic or a fresh one-run target, and whether to
-  publish results or retain only execution evidence. **Permissions & limits**
-  optionally narrows tool names, workspace roots and all six budget fields.
-  Unchecked restrictions inherit the profile; checked empty lists allow none.
+  publish results or retain only execution evidence. The Topic dropdown lists
+  active shared and isolated topics. If a job's bound topic is archived, choose
+  a new target before saving. One-run topics are archived when the run ends.
+  **Permissions & limits** shows tool checkboxes for the selected profile when
+  **Limit tools for this job** is checked. Unchecked tools are excluded. Leaving
+  the limit off inherits the profile's tools. The path field appears when
+  **Limit workspace roots for this job** is checked. An empty path list allows
+  no roots. This section can also narrow all six budget fields.
   Blank limits inherit scheduled-work limits. The server enforces authority.
   Run-now has its own durable retry key; resume paused jobs/schedules first.
 - **Memory:** readable observer/commit counts and manual reconciliation of

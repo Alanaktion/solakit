@@ -18,6 +18,7 @@ from solakit.records import (
     Occurrence,
     Origin,
     RunState,
+    SessionMode,
     ToolReceipt,
     new_id,
 )
@@ -324,6 +325,89 @@ def test_quiet_publication_coalesces_expires_deduplicates_and_survives_restart(
             assert len(requests) == 1
         finally:
             await replacement.stop()
+
+    asyncio.run(scenario())
+
+
+def test_ephemeral_job_archives_before_quiet_delivery_and_preserves_results(
+    profile: EffectiveProfile,
+) -> None:
+    async def scenario() -> None:
+        clock = Clock(datetime(2026, 11, 17, 5, tzinfo=UTC))
+        app, _ = harness(profile, [reply("Publish after quiet hours")])
+        assert app.jobs and app.store and app.runs
+        app.jobs.clock = clock
+        await app.start()
+        try:
+            job(app, clock, enabled=True, session_id=None, mode=SessionMode.EPHEMERAL)
+            await app.jobs.tick()
+            occurrence = occurrences(app)[0]
+            assert occurrence.run_id
+            topic_id = app.store.run(occurrence.run_id).session_id
+            assert not app.store.session(topic_id).archived
+            run = await app.runs.wait(occurrence.run_id, timeout=3)
+            assert run.state == RunState.COMPLETED
+            assert app.store.session(topic_id).archived
+            assert not app.store.messages(topic_id)
+        finally:
+            await app.stop()
+
+        replacement, requests = harness(profile, [])
+        assert replacement.jobs and replacement.store
+        replacement.jobs.clock = clock
+        await replacement.start()
+        try:
+            clock.now = datetime(2026, 11, 17, 15, tzinfo=UTC)
+            await replacement.jobs.tick()
+            await replacement.jobs.tick()
+            assert replacement.store.session(topic_id).archived
+            assert [m.content for _, m in replacement.store.messages(topic_id)] == [
+                "Publish after quiet hours"
+            ]
+            assert not requests
+        finally:
+            await replacement.stop()
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("ending", ["deleted", "cancelled", "interrupted"])
+def test_ephemeral_job_archives_after_unsuccessful_run(
+    profile: EffectiveProfile, ending: str
+) -> None:
+    async def scenario() -> None:
+        clock = Clock()
+        app, requests = harness(profile, [])
+        assert app.jobs and app.store and app.runs
+        app.jobs.clock = clock
+        await app.start()
+        try:
+            saved = job(app, clock, session_id=None, mode=SessionMode.EPHEMERAL)
+            occurrence = app.jobs.manual(saved.id, request_id=new_id())
+            assert occurrence.run_id
+            if ending == "deleted":
+                app.jobs.delete(saved.id)
+                run = await app.runs.wait(occurrence.run_id, timeout=3)
+                assert run.state == RunState.FAILED
+            elif ending == "cancelled":
+                run = app.runs.cancel(occurrence.run_id)
+                assert run.state == RunState.CANCELLED
+            else:
+                run = app.store.transition_run(occurrence.run_id, RunState.RUNNING)
+            assert app.store.session(run.session_id).archived == (ending != "interrupted")
+            assert not requests
+        finally:
+            await app.stop()
+
+        if ending == "interrupted":
+            replacement, _ = harness(profile, [])
+            assert replacement.store
+            await replacement.start()
+            try:
+                assert replacement.store.run(run.id).state == RunState.INTERRUPTED
+                assert replacement.store.session(run.session_id).archived
+            finally:
+                await replacement.stop()
 
     asyncio.run(scenario())
 

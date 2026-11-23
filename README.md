@@ -1,4 +1,4 @@
-# Sola v2
+# 🌙 Sola
 
 A local personal-agent runtime with
 [durable evidence, sessions, and offline search](docs/contracts/storage.md).

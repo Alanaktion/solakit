@@ -3,13 +3,13 @@
   --hue-accent: 91.437;
   --hue-danger: 28.795;
   color-scheme: light dark;
-  --paper: oklch(0.987 0.003 var(--hue-accent));
-  --surface: oklch(0.966 0.006 var(--hue-accent));
+  --paper: oklch(0.987 0.003 var(--hue-primary));
+  --surface: oklch(0.966 0.006 var(--hue-primary));
   --line: oklch(0.883 0.011 var(--hue-accent));
   --control-line: oklch(0.596 0.026 var(--hue-primary));
   --ink: oklch(0.291 0.017 var(--hue-primary));
   --muted: oklch(0.486 0.02 var(--hue-primary));
-  --accent: oklch(0.445 0.058 var(--hue-primary));
+  --accent: oklch(0.445 0.058 var(--hue-accent));
   --on-accent: oklch(0.987 0.003 var(--hue-accent));
   --accent-hover: oklch(0.378 0.048 var(--hue-primary));
   --tint: oklch(0.938 0.013 var(--hue-primary));
@@ -39,7 +39,7 @@
     --control-line: oklch(0.646 0.024 var(--hue-primary));
     --ink: oklch(0.937 0.008 var(--hue-accent));
     --muted: oklch(0.765 0.017 var(--hue-primary));
-    --accent: oklch(0.801 0.06 var(--hue-primary));
+    --accent: oklch(0.801 0.06 var(--hue-accent));
     --on-accent: oklch(0.25 0.019 var(--hue-accent));
     --accent-hover: oklch(0.863 0.046 var(--hue-primary));
     --tint: oklch(0.36 0.029 var(--hue-primary));
@@ -628,6 +628,15 @@ dialog > details > summary {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 12px;
+}
+#job-tools {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+#job-tools label {
+  margin-top: 0;
+  overflow-wrap: anywhere;
 }
 #jobs article {
   margin: 12px 0 16px;

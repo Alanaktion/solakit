@@ -539,6 +539,7 @@ class JobService:
             at=utc_now(),
             reason=failure,
         )
+        archive = self.store.job_topic_archive(terminal)
         delivery: tuple[Delivery, ...] = ()
         if not failure and not no_action and content.strip() and definition.delivery == "session":
             now = self.clock()
@@ -553,9 +554,10 @@ class JobService:
                     not_before=now,
                     expires_at=now
                     + timedelta(seconds=self.policy().background.notification_ttl_seconds),
+                    publish_to_archive=bool(archive),
                 ),
             )
-        self.store._commit((terminal, occurrence, *delivery))
+        self.store._commit((terminal, occurrence, *delivery, *archive))
         self.deliver()
 
     def deliver(self) -> None:
@@ -576,7 +578,10 @@ class JobService:
             )
             cancel = (
                 (delivery.expires_at is not None and delivery.expires_at <= now)
-                or self.store.session(delivery.session_id).archived
+                or (
+                    not delivery.publish_to_archive
+                    and self.store.session(delivery.session_id).archived
+                )
                 or (run.job_id is not None and self.store.job(run.job_id).deleted)
                 or (not manual and delivery.session_id in topics)
             )

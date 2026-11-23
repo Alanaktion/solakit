@@ -38,7 +38,8 @@ export function settingsTemplate(actions) {
     refreshHealth,
     inspectPrompt,
     revokeLogins,
-    changeJobRestriction
+    changeJobRestriction,
+    changeJobProfile
   } = actions;
   return html`
     <dialog id="settings" class="wide" aria-labelledby="settings-title">
@@ -280,10 +281,9 @@ export function settingsTemplate(actions) {
         <label for="job-zone">Time zone</label
         ><input id="job-zone" value="America/Denver" required maxlength="128" />
         <label for="job-topic">Topic</label
-        ><select id="job-topic"></select>
+        ><select id="job-topic" required></select>
         <p class="meta">
-          One-run targets create a fresh ephemeral topic each time; execution evidence is
-          retained.
+          One-run topics are archived after each run. Execution evidence is retained.
         </p>
         <div class="fields">
           <label
@@ -292,7 +292,7 @@ export function settingsTemplate(actions) {
               <option value="proactive">Proactive wake-up</option>
             </select></label
           >
-          <label>Profile<select id="job-profile"></select></label>
+          <label>Profile<select id="job-profile" @change=${changeJobProfile}></select></label>
         </div>
         <label for="job-delivery">Results</label
         ><select id="job-delivery">
@@ -309,14 +309,18 @@ export function settingsTemplate(actions) {
             ><input id="job-restrict-tools" type="checkbox" @change=${changeJobRestriction} />
             Limit tools for this job</label
           >
-          <label for="job-tools">Tool names, one per line (empty allows none)</label
-          ><textarea id="job-tools" rows="3" disabled></textarea>
+          <fieldset id="job-tools" hidden>
+            <legend>Tool names</legend>
+            <div id="job-tool-options"></div>
+          </fieldset>
           <label
             ><input id="job-restrict-roots" type="checkbox" @change=${changeJobRestriction} />
             Limit workspace roots for this job</label
           >
-          <label for="job-roots">Absolute paths, one per line (empty allows none)</label
-          ><textarea id="job-roots" rows="3" disabled></textarea>
+          <div id="job-roots-field" hidden>
+            <label for="job-roots">Absolute paths, one per line (empty allows none)</label
+            ><textarea id="job-roots" rows="3"></textarea>
+          </div>
           <div class="fields">
             ${budgets.map(([key, label]) => html`<label for=${`job-budget-${key}`}>${label}<input id=${`job-budget-${key}`} type="number" min="1" step="1" placeholder="Inherit" /></label>`)}
           </div>
@@ -479,8 +483,29 @@ export function createSettings({ topics, selected, refreshRuns, selectTopic }) {
     );
   }
   function changeJobRestriction() {
-    $('job-tools').disabled = !$('job-restrict-tools').checked;
-    $('job-roots').disabled = !$('job-restrict-roots').checked;
+    $('job-tools').hidden = !$('job-restrict-tools').checked;
+    $('job-roots-field').hidden = !$('job-restrict-roots').checked;
+  }
+  function checkedJobTools() {
+    return [...$('job-tool-options').querySelectorAll('input:checked')].map((input) => input.value);
+  }
+  function renderJobTools(checked) {
+    const name = $('job-profile').value || (editingJob ? null : profiles[0]?.name);
+    const profile = profiles.find((profile) => profile.name === name);
+    const names = profile?.values.tools ?? [];
+    const options = $('job-tool-options');
+    renderTemplate(
+      names.length
+        ? names.map((name) => html`<label><input type="checkbox" value=${name} />${name}</label>`)
+        : html`<p class="meta">This profile has no available tools.</p>`,
+      options
+    );
+    for (const input of options.querySelectorAll('input')) {
+      input.checked = checked.includes(input.value);
+    }
+  }
+  function changeJobProfile() {
+    renderJobTools(checkedJobTools());
   }
   async function fillJob(job = null) {
     // Fetch the selected definition so editing never silently drops fields from an older list.
@@ -493,17 +518,15 @@ export function createSettings({ topics, selected, refreshRuns, selectTopic }) {
         `/sessions?limit=100&archived=false${after ? `&after=${encodeURIComponent(after)}` : ''}`
       );
       for (const topic of page.items)
-        if (topic.mode !== 'ephemeral') targets.set(topic.id, topic);
+        if (!topic.archived && topic.mode !== 'ephemeral') targets.set(topic.id, topic);
       after = page.items.length ? page.next : null;
     } while (after);
-    if (job?.session_id && !targets.has(job.session_id)) {
-      const topic = await api(`/sessions/${job.session_id}`);
-      targets.set(topic.id, topic);
-    }
     for (const [id, topic] of targets) topics.set(id, topic);
+    const unavailable = job?.session_id && !targets.has(job.session_id);
     renderTemplate(
-      html`<option value="">New one-run topic each time</option>
-        ${[...targets.values()].map((topic) => html`<option value=${topic.id}>${topic.title || 'Untitled topic'}${topic.archived ? ' (archived)' : ''}</option>`)}`,
+      html`${unavailable ? html`<option value="" disabled>Current topic unavailable. Choose a target.</option>` : nothing}
+        <option value="ephemeral">New one-run topic each time</option>
+        ${[...targets.values()].map((topic) => html`<option value=${topic.id}>${topic.title || 'Untitled topic'}</option>`)}`,
       $('job-topic')
     );
     editingJob = job;
@@ -513,19 +536,17 @@ export function createSettings({ topics, selected, refreshRuns, selectTopic }) {
     $('job-task').value = job?.task || '';
     $('job-schedule').value = job?.schedule || '';
     $('job-zone').value = job?.timezone || 'America/Denver';
-    $('job-topic').value = job
-      ? job.session_id || ''
-      : targets.has(selected())
-        ? selected()
-        : '';
+    const target = job ? job.session_id : selected();
+    $('job-topic').value = unavailable ? '' : targets.has(target) ? target : 'ephemeral';
     $('job-origin').value = job?.origin || 'scheduled';
     $('job-origin').disabled = !!job;
     $('job-profile').value = job?.profile || '';
+    $('job-profile').required = !!job;
     $('job-profile').querySelector('[value=""]').disabled = !!job;
     $('job-delivery').value = job?.delivery || 'session';
     $('job-enabled').checked = job?.enabled || false;
     $('job-restrict-tools').checked = job?.tools != null;
-    $('job-tools').value = (job?.tools || []).join('\n');
+    renderJobTools(job?.tools ?? []);
     $('job-restrict-roots').checked = job?.workspace_roots != null;
     $('job-roots').value = (job?.workspace_roots || []).join('\n');
     for (const [key] of budgets) $(`job-budget-${key}`).value = job?.budgets[key] ?? '';
@@ -582,7 +603,7 @@ export function createSettings({ topics, selected, refreshRuns, selectTopic }) {
   async function saveJob(event) {
     event.preventDefault();
     const submit = $('job-form').querySelector('button.primary');
-    if (submit.disabled) return;
+    if (submit.disabled || !$('job-topic').value) return;
     submit.disabled = true;
     text($('job-error'), '');
     try {
@@ -600,7 +621,7 @@ export function createSettings({ topics, selected, refreshRuns, selectTopic }) {
         mode: topic?.mode || 'ephemeral',
         enabled: $('job-enabled').checked,
         delivery: $('job-delivery').value,
-        tools: $('job-restrict-tools').checked ? lines('job-tools') : null,
+        tools: $('job-restrict-tools').checked ? checkedJobTools() : null,
         workspace_roots: $('job-restrict-roots').checked ? lines('job-roots') : null,
         budgets: Object.fromEntries(
           budgets
@@ -773,6 +794,7 @@ export function createSettings({ topics, selected, refreshRuns, selectTopic }) {
     inspectPrompt,
     reconcileMemory,
     revokeLogins,
-    changeJobRestriction
+    changeJobRestriction,
+    changeJobProfile
   };
 }

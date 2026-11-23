@@ -893,44 +893,84 @@ try {
     }
   );
   await check(
-    'job overrides survive editing, with independent profile and one-run targets',
+    'job tool choices follow the profile and archived targets require reselection',
     async () => {
+      const jobApi = (path, options) =>
+        page.evaluate(async ([path, options]) => {
+          const { api } = await import('/assets/client.js');
+          return api(path, options);
+        }, [path, options]);
+      const target = await jobApi('/sessions', {
+        method: 'POST',
+        body: { title: 'Temporary job target' }
+      });
       await page.locator('#settings-open').click();
       await page.locator('#job-new').click();
       await page.locator('#job-task').fill('Restricted one-run fixture');
       await page.locator('#job-schedule').fill('cron:0 11 * * *');
-      await page.locator('#job-topic').selectOption('');
-      await page.locator('#job-profile').selectOption('default');
+      await page.locator('#job-topic').selectOption(target.id);
       await page.locator('#job-delivery').selectOption('none');
       await page.locator('#job-advanced summary').click();
-      await page.locator('#job-restrict-tools').check();
-      await page.locator('#job-restrict-roots').check();
+      const tool = page.getByRole('checkbox', { name: 'fixture.pause', exact: true });
+      const toolLimit = page.locator('#job-restrict-tools');
+      assert(await page.locator('#job-tools').isHidden());
+      await toolLimit.check();
+      await tool.check();
+      await toolLimit.uncheck();
+      assert(await page.locator('#job-tools').isHidden());
+      await toolLimit.check();
+      assert(await tool.isChecked());
+      await page.locator('#job-profile').selectOption('no-tools');
+      assert.equal(await page.locator('#job-tools input').count(), 0);
+      await page.locator('#job-profile').selectOption('default');
+      assert(!(await tool.isChecked()));
+      await tool.check();
+      const rootLimit = page.locator('#job-restrict-roots');
+      const roots = page.locator('#job-roots');
+      assert(await page.locator('#job-roots-field').isHidden());
+      await rootLimit.check();
+      await roots.fill('/example/workspace');
+      await rootLimit.uncheck();
+      assert(await page.locator('#job-roots-field').isHidden());
+      await rootLimit.check();
+      assert.equal(await roots.inputValue(), '/example/workspace');
+      await roots.clear();
       await page.locator('#job-budget-model_calls').fill('2');
       await page.locator('#job-budget-tool_calls').fill('2');
       await page.locator('#job-budget-active_seconds').fill('30');
       await audit('job-editor');
-      await page.locator('#job-tools').fill('ungranted.tool');
+      await page.screenshot({ path: path.join(options.output, 'job-editor-desktop.png') });
+      await page.locator('#job-zone').fill('Not/AZone');
       await page.locator('#job-form button.primary').click();
       await page.locator('#job-error').filter({ hasText: /.+/ }).waitFor();
       assert.equal(await page.locator('#job-task').inputValue(), 'Restricted one-run fixture');
       assert(await page.locator('#job-form button.primary').isEnabled());
-      await page.locator('#job-tools').fill('');
+      await page.locator('#job-zone').fill('America/Denver');
       await page.locator('#job-form button.primary').click();
       await page.locator('#job-dialog').waitFor({ state: 'hidden' });
       const job = page
         .locator('#jobs article')
         .filter({ hasText: 'Restricted one-run fixture' });
-      assert((await job.textContent()).includes('New one-run topic'));
+      const jobId = await job.getAttribute('data-job-id');
+      assert.deepEqual((await jobApi(`/jobs/${jobId}`)).tools, ['fixture.pause']);
+      await jobApi(`/sessions/${target.id}`, { method: 'PATCH', body: { archived: true } });
       await job.getByRole('button', { name: 'Edit', exact: true }).click();
+      await page.locator('#job-dialog').waitFor();
       assert.equal(await page.locator('#job-topic').inputValue(), '');
+      assert.equal(await page.locator(`#job-topic option[value="${target.id}"]`).count(), 0);
+      assert(!(await page.locator('#job-topic').evaluate((el) => el.validity.valid)));
       assert.equal(await page.locator('#job-profile').inputValue(), 'default');
       assert.equal(await page.locator('#job-delivery').inputValue(), 'none');
       assert(await page.locator('#job-restrict-tools').isChecked());
+      assert(await tool.isChecked());
       assert(await page.locator('#job-restrict-roots').isChecked());
       assert.equal(await page.locator('#job-budget-model_calls').inputValue(), '2');
+      await tool.uncheck();
+      await page.locator('#job-topic').selectOption('ephemeral');
       await page.locator('#job-task').fill('Restricted one-run edited');
       await page.locator('#job-form button.primary').click();
       await page.locator('#job-dialog').waitFor({ state: 'hidden' });
+      assert.deepEqual((await jobApi(`/jobs/${jobId}`)).tools, []);
       const edited = page
         .locator('#jobs article')
         .filter({ hasText: 'Restricted one-run edited' });
@@ -941,6 +981,9 @@ try {
         .getByText(/completed/)
         .first()
         .waitFor();
+      const occurrence = (await jobApi(`/jobs/${jobId}/occurrences`)).items[0];
+      const run = await jobApi(`/runs/${occurrence.run_id}`);
+      assert((await jobApi(`/sessions/${run.session_id}`)).archived);
       page.once('dialog', (dialog) => dialog.accept());
       await edited.getByRole('button', { name: 'Delete job', exact: true }).click();
       await edited.waitFor({ state: 'hidden' });

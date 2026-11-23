@@ -15,7 +15,7 @@ import uvicorn
 from fastapi import FastAPI
 
 from solakit.api import create_app
-from solakit.config import OperatorConfig, resolve_profile
+from solakit.config import EffectiveProfile, OperatorConfig, resolve_profile
 from solakit.evidence import canonical
 from solakit.records import (
     Artifact,
@@ -109,6 +109,16 @@ def main() -> None:
     )
     grants = frozenset({"fixture.pause"})
     context.profile = profile.model_copy(update={"granted_tools": grants, "tools": grants})
+    default_profile = context.tools.current
+
+    def current_profile(admitted: EffectiveProfile) -> EffectiveProfile:
+        if admitted.name == "no-tools":
+            return default_profile(admitted.model_copy(update={"name": "default"})).model_copy(
+                update={"name": admitted.name, "granted_tools": frozenset(), "tools": frozenset()}
+            )
+        return default_profile(admitted)
+
+    context.tools.current = current_profile
 
     async def respond(request: httpx2.Request) -> httpx2.Response:
         if request.url.path.endswith("/models"):
@@ -149,7 +159,7 @@ def main() -> None:
         )
 
     context.model.transport = httpx2.MockTransport(respond)
-    app = create_app(context)
+    app = create_app(context, profile_names=("no-tools",))
     lifecycle = app.router.lifespan_context
 
     @asynccontextmanager
