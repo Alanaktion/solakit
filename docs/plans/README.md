@@ -27,16 +27,16 @@ Execute in numbered order. Later-phase contracts can be drafted earlier, but the
 
 These plans propose additions to the shipped v2 tool set. The initial release
 scope and the later blog/dream decision are recorded in the [decision register](../decisions.md).
-Web search and wiki lookups can land independently. Git supplies the narrow
-checkout operations letters need. Email and shell have no dependency on that work.
+Web search and wiki lookups can land independently. Letters reuse the existing
+Git checkout adapter. Email and shell have no dependency on that work.
 
 | Plan | First tool surface |
 | --- | --- |
-| [Letters](NEXT-TOOLS-LETTERS.md) | `letters.inbox`, `letters.read`, `letters.send` |
+| [Letters](NEXT-TOOLS-LETTERS.md) | `letters.inbox`, `letters.read`, `letters.send`, `letters.reply` |
 | [Email](NEXT-TOOLS-EMAIL.md) | `email.search`, `email.read`, `email.reply`, `email.send` |
 | [Web search](NEXT-TOOLS-WEB-SEARCH.md) | `web.search` |
 | [Wiki lookups](NEXT-TOOLS-WIKI.md) | `wiki.summary` |
-| [Git](NEXT-TOOLS-GIT.md) | `git.status`, `git.diff`, `git.pull`, `git.publish` |
+| [Git](../contracts/tools.md#configured-git-checkouts) | `git.status`, `git.diff`, `git.pull`, `git.publish` |
 | [Shell](NEXT-TOOLS-SHELL.md) | `shell.exec` |
 
 Use one typed input and a short description for each tool. Use the existing
