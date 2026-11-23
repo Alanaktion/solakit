@@ -5,6 +5,7 @@ class SolaArtifact extends SolaElement {
   static properties = {
     runId: { attribute: false },
     reference: { attribute: false },
+    thumbnail: { attribute: false },
     chunk: { state: true },
     imageUrl: { state: true },
     loading: { state: true }
@@ -89,15 +90,22 @@ class SolaArtifact extends SolaElement {
 
   render() {
     const chunk = this.chunk;
+    const identity = this.reference.path.split('/').pop();
+    const preview = `/api/v1/runs/${this.runId}/artifacts/${identity}?preview=true`;
+    if (this.thumbnail) return html`
+      <div class="message-attachment">
+        <a href=${preview} target="_blank" rel="noopener" aria-label="Open full image">
+          <img class="image-thumbnail" src=${preview} loading="lazy" alt="Attached image" />
+        </a>
+        <a href=${preview} download="sola-image.png">Download image</a>
+        ${this.attachButton()}
+      </div>`;
     if (this.reference.media_type === 'image/png') return html`
       ${this.imageUrl ? html`<figure>
         <img class="artifact-image" src=${this.imageUrl} alt="Generated image" />
         <figcaption><a href=${this.imageUrl} download="sola-image.png">Download image</a></figcaption>
       </figure>` : html`<button type="button" ?disabled=${this.loading} @click=${action(() => this.loadImage())}>${this.loading ? 'Loading image…' : `View generated image · ${this.reference.length} bytes`}</button>`}
-      <button type="button" @click=${() => this.dispatchEvent(new CustomEvent('sola-image-selected', {
-        bubbles: true, composed: true,
-        detail: { run_id: this.runId, artifact_id: this.reference.path.split('/').pop() }
-      }))}>Use image in next message</button>
+      ${this.attachButton()}
     `;
     return html`
       <button type="button" @click=${action(() => this.load())}>
@@ -127,6 +135,12 @@ class SolaArtifact extends SolaElement {
           : nothing
       }
     `;
+  }
+  attachButton() {
+    return html`<button type="button" @click=${() => this.dispatchEvent(new CustomEvent('sola-image-selected', {
+      bubbles: true, composed: true,
+      detail: { run_id: this.runId, artifact_id: this.reference.path.split('/').pop() }
+    }))}>Use image in next message</button>`;
   }
 }
 

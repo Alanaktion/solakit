@@ -15,6 +15,7 @@ dependencies = [
     "pydantic>=2.12",
     "apscheduler>=3.11.3,<4",
     "pyyaml>=6.0.3",
+    "pillow>=13.0.0",
 ]
 
 [project.scripts]

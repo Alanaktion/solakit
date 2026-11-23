@@ -66,6 +66,13 @@ class ContextLimit(ValueError):
     pass
 
 
+def image_part(raw: bytes) -> dict[str, JsonValue]:
+    return {
+        "type": "image_url",
+        "image_url": {"url": "data:image/png;base64," + base64.b64encode(raw).decode()},
+    }
+
+
 class Accounting(TypedDict):
     kind: str
     components: dict[str, int]
@@ -120,26 +127,12 @@ def assemble(profile: EffectiveProfile, frozen: PromptInput) -> PreparedPrompt:
             raise ValueError("Image inputs are unsupported for the configured model")
         if any(existing["sha256"] == image.sha256 for existing in images):
             return
-        from solakit.images import MAX_IMAGE_BYTES, validate_png
+        from solakit.images import read_png
 
-        path = profile.data_dir / image.path
-        if image.media_type != "image/png" or image.length > MAX_IMAGE_BYTES or path.is_symlink():
-            raise ValueError("Invalid image artifact")
-        with path.open("rb") as stream:
-            raw = stream.read(MAX_IMAGE_BYTES + 1)
-        if len(raw) != image.length or digest(raw) != image.sha256:
-            raise ValueError("Image artifact hash mismatch")
-        width = int.from_bytes(raw[16:20])
-        height = int.from_bytes(raw[20:24])
-        if not 64 <= width <= 2048 or not 64 <= height <= 2048:
-            raise ValueError("Image dimensions exceed input bounds")
-        validate_png(raw, width, height)
+        raw, width, height = read_png(profile.data_dir, image)
         messages[-1]["content"] = [
             {"type": "text", "text": messages[-1]["content"]},
-            {
-                "type": "image_url",
-                "image_url": {"url": "data:image/png;base64," + base64.b64encode(raw).decode()},
-            },
+            image_part(raw),
         ]
         images.append(image.model_dump(mode="json") | {"width": width, "height": height})
 
@@ -171,7 +164,8 @@ def assemble(profile: EffectiveProfile, frozen: PromptInput) -> PreparedPrompt:
                     raise ValueError("duplicate projected tool ID")
             sections.append({"section": section, "message_index": len(messages)})
             messages.append(turn.message())
-            attach(turn.image)
+            if profile.model_image_inputs:
+                attach(turn.image)
         if pending:
             raise ValueError("projected tool exchange is incomplete")
 
@@ -185,7 +179,8 @@ def assemble(profile: EffectiveProfile, frozen: PromptInput) -> PreparedPrompt:
         add("summary", "assistant", frozen.summary.content)
     for message in frozen.history:
         add("history", message.role, message.content)
-        attach(message.image)
+        if profile.model_image_inputs and message.image_route != "vision":
+            attach(message.image)
     project("history", frozen.prior_turns)
     if frozen.recall is not None:
         add("recorded_recall", "user", frozen.recall)
@@ -211,7 +206,8 @@ def assemble(profile: EffectiveProfile, frozen: PromptInput) -> PreparedPrompt:
             + ". Request an identifiable tool to disclose its schema before execution.",
         )
     add("input", "user", frozen.input.content)
-    attach(frozen.input.image)
+    if frozen.input.image_route != "vision":
+        attach(frozen.input.image)
     project("continuation", frozen.continuation)
     named_tools = []
     for tool in frozen.tools:

@@ -84,6 +84,16 @@ step; normal store recovery interrupts its run, without fabricating a model repl
 Older Phase 2/3 ModelSteps remain readable with optional request/response/usage
 fields absent. Run admission request IDs and model request record IDs are distinct.
 
+With separate recognition enabled, the first request and response for an image
+turn carry `purpose = "vision"` and their own evidence artifacts. The vision
+manifest links the attached image and user message and records the hash of the
+metadata-free pixels sent. The request contains the current question and a fixed
+instruction. The adapter requires the exact pin in the JSON reply and enforces
+a 64 KiB response limit and 4 KiB observation limit. HTTP failures record the
+status without retaining the response body. Successful observations appear as
+untrusted user-role text in conversation prompts and can enter compaction with
+other turn text.
+
 JSON responses and SSE streams normalize to the same values. SSE framing operates
 on bytes before decoding, so split UTF-8 and JSON argument fragments survive.
 Tool calls assemble by index with a stable provider ID and must have contiguous

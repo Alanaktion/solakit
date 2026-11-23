@@ -449,7 +449,7 @@ class Store:
             ).fetchall()
         ]
 
-    def admission_profile(self, run_id: str) -> dict[str, object]:
+    def admission_details(self, run_id: str) -> dict[str, object]:
         self.run(run_id)
         row = self.db.execute(
             "SELECT reference FROM outbox WHERE delivered=1 "
@@ -459,7 +459,10 @@ class Store:
         ).fetchone()
         if row is None:
             raise StorageError("durable admission unavailable")
-        profile = self.log.read(Reference.model_validate_json(row[0])).details.get("admission")
+        return self.log.read(Reference.model_validate_json(row[0])).details
+
+    def admission_profile(self, run_id: str) -> dict[str, object]:
+        profile = self.admission_details(run_id).get("admission")
         if not isinstance(profile, dict) or not profile:
             raise ValueError("tool dispatch requires a durable effective profile at admission")
         return profile
@@ -584,6 +587,9 @@ class Store:
         retry_of: str | None = None,
         claim: tuple[Job, Occurrence, Job] | None = None,
         image: Artifact | None = None,
+        image_source: tuple[str, str] | None = None,
+        upload_id: str | None = None,
+        upload: bytes | None = None,
     ) -> Run:
         from solakit.lineage import deny_autonomous_successor
 
@@ -600,12 +606,18 @@ class Store:
             "occurrence_id": occurrence_id,
             "retry_of": retry_of,
         }
-        if image is not None:
-            details["image"] = image.model_dump(mode="json")
-        fingerprint = digest(canonical(details))
         existing = self.db.execute(
             "SELECT * FROM admissions WHERE request_id=?", (request_id,)
         ).fetchone()
+        if upload_id is not None:
+            details["upload_id"] = upload_id
+        if image is not None:
+            details["image"] = image.model_dump(mode="json")
+        if image_source is not None and (
+            existing is None or "image_source" in self.admission_details(existing["run_id"])
+        ):
+            details["image_source"] = image_source
+        fingerprint = digest(canonical(details))
         if existing:
             if existing["fingerprint"] != fingerprint:
                 raise ValueError("idempotency key reused with different admission")
@@ -654,6 +666,12 @@ class Store:
             occurrence_id=occurrence_id,
             retry_of=retry_of,
         )
+        if upload_id is not None:
+            if upload is None or image is not None:
+                raise ValueError("Admission requires one staged image")
+            image = Artifact.model_validate(
+                self.artifact(upload_id, upload) | {"media_type": "image/png"}
+            )
         message = Message(
             origin=origin,
             session_id=session_id,
@@ -661,6 +679,7 @@ class Store:
             role="user",
             content=content,
             image=image,
+            image_route="vision" if image and admission and admission.get("vision") else None,
         )
 
         def prepare() -> None:
@@ -772,6 +791,8 @@ class Store:
                 record.model,
             ):
                 raise ValueError("model response differs from its request")
+            if (record.purpose == "vision") != (request.purpose == "vision"):
+                raise ValueError("vision response differs from its request")
         if isinstance(record, Delivery):
             if record.content is None:
                 self._same_run(self._load("message", record.message_id, Message), record)

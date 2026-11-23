@@ -1,6 +1,7 @@
 """Versioned HTTP boundary; the lifespan owns one explicitly composed runtime."""
 
 import asyncio
+import re
 from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -28,6 +29,7 @@ from solakit.config import (
     resolve_profile,
 )
 from solakit.evidence import StorageError, canonical
+from solakit.images import UPLOAD_BYTES
 from solakit.records import (
     RUN_TRANSITIONS,
     Job,
@@ -47,6 +49,8 @@ ID = Annotated[str, Path(pattern=r"^[0-9a-f]{32}$")]
 Limit = Annotated[int, Query(ge=1, le=100)]
 After = Annotated[int, Query(ge=0)]
 SEND_TIMEOUT_SECONDS = 30
+IMAGE_UPLOAD_PATH = "/api/v1/sessions/{session_id}/image-uploads"
+UPLOAD_ROUTE = re.compile(r"/api/v1/sessions/[0-9a-f]{32}/image-uploads")
 
 WEB_ASSETS = (
     "chat.css",
@@ -127,13 +131,16 @@ class Boundary:
                 await send(message)
 
         consumed = 0
+        upload = request.method == "POST" and UPLOAD_ROUTE.fullmatch(request.url.path)
+        cap = UPLOAD_BYTES if upload else 128 * 1024
+        body_limit_message = f"Request body exceeds {'8 MiB' if upload else '128 KiB'}"
 
         async def bounded_receive() -> Message:
             nonlocal consumed
             message = await receive()
             consumed += len(message.get("body", b""))
-            if consumed > 131072:
-                raise RequestError(413, "body_too_large", "Request body exceeds 128 KiB")
+            if consumed > cap:
+                raise RequestError(413, "body_too_large", body_limit_message)
             return message
 
         try:
@@ -179,8 +186,8 @@ class Boundary:
             length = request.headers.get("content-length")
             if length is not None and (not length.isdecimal() or len(length) > 10):
                 raise RequestError(400, "invalid_length", "Invalid Content-Length")
-            if length is not None and int(length) > 131072:
-                raise RequestError(413, "body_too_large", "Request body exceeds 128 KiB")
+            if length is not None and int(length) > cap:
+                raise RequestError(413, "body_too_large", body_limit_message)
             await self.app(scope, bounded_receive, output)
         except Exception as error:
             if started:
@@ -225,11 +232,15 @@ class ImageReference(Input):
     artifact_id: str = Field(pattern=r"^[0-9a-f]{32}$")
 
 
+class UploadReference(Input):
+    upload_id: RecordID
+
+
 class Submission(Input):
     session_id: RecordID
     profile: str | None = Field(default=None, min_length=1, max_length=128)
     content: str = Field(min_length=1, max_length=32768)
-    image: ImageReference | None = None
+    image: ImageReference | UploadReference | None = None
 
 
 class JobPatch(Input):
@@ -421,6 +432,7 @@ def create_app(
             "accepting": runs.accepting,
             "memory": memory.status(),
             "scheduler_failed": jobs.failure is not None,
+            "image_inputs": bool(context.profile.model_image_inputs or context.profile.vision),
         }
 
     @app.post("/api/v1/auth/login")
@@ -532,6 +544,31 @@ def create_app(
             store.runs(session_id, after=after, limit=limit, before=before), after, before
         )
 
+    @app.post(
+        IMAGE_UPLOAD_PATH,
+        status_code=201,
+        openapi_extra={
+            "requestBody": {
+                "required": True,
+                "content": {
+                    media_type: {"schema": {"type": "string", "format": "binary"}}
+                    for media_type in ("image/png", "image/jpeg")
+                },
+            }
+        },
+    )
+    async def upload_image(session_id: ID, request: Request) -> UploadReference:
+        media_type = request.headers.get("content-type", "").strip().lower()
+        if media_type not in ("image/png", "image/jpeg"):
+            raise RequestError(415, "unsupported_media_type", "Send one binary PNG or JPEG")
+        return UploadReference(
+            upload_id=service.upload_image(session_id, await request.body(), media_type)
+        )
+
+    @app.get(IMAGE_UPLOAD_PATH + "/{upload_id}")
+    async def staged_image(session_id: ID, upload_id: ID) -> Response:
+        return Response(service.read_upload(session_id, upload_id), media_type="image/png")
+
     @app.post("/api/v1/runs")
     async def submit(
         body: Submission, request: Request, wait: Annotated[float, Query(ge=0, le=30)] = 0
@@ -542,7 +579,10 @@ def create_app(
             body.content,
             idempotency(request),
             wait,
-            image=(body.image.run_id, body.image.artifact_id) if body.image else None,
+            image=(body.image.run_id, body.image.artifact_id)
+            if isinstance(body.image, ImageReference)
+            else None,
+            upload_id=body.image.upload_id if isinstance(body.image, UploadReference) else None,
         )
         return JSONResponse(
             {"run": run.model_dump(mode="json")},
@@ -584,16 +624,17 @@ def create_app(
         artifact_id: ID,
         offset: After = 0,
         limit: Annotated[int, Query(ge=1, le=ARTIFACT_BYTES)] = 65536,
+        preview: bool = False,
     ) -> Response:
-        raw, reference = service.artifact(run_id, artifact_id, offset, limit)
+        raw, reference = service.artifact(run_id, artifact_id, offset, limit, preview=preview)
         return Response(
             raw,
-            media_type="application/octet-stream",
+            media_type="image/png" if preview else "application/octet-stream",
             headers={
                 "X-Artifact-Length": str(reference.length),
                 "X-Artifact-SHA256": reference.sha256,
-                "X-Next-Offset": str(offset + len(raw)),
-                "Content-Disposition": "attachment",
+                "X-Next-Offset": str((0 if preview else offset) + len(raw)),
+                "Content-Disposition": "inline" if preview else "attachment",
             },
         )
 
@@ -730,7 +771,10 @@ def create_app(
                             },
                         ]
                     )
-                for code in (400, 401, 403, 404, 409, 413, 416, 422, 429, 503):
+                errors: tuple[int, ...] = (400, 401, 403, 404, 409, 413, 416, 422, 429, 503)
+                if path == IMAGE_UPLOAD_PATH and method == "post":
+                    errors += (415,)
+                for code in errors:
                     operation["responses"][str(code)] = {
                         "description": "Structured error; see docs/contracts/api.md",
                         "content": {
@@ -777,6 +821,17 @@ def create_app(
             "description": "Snapshot, replay, previews; see docs/contracts/events.md",
             "content": {"text/event-stream": {"schema": {"type": "string"}}},
         }
+        for path, types in (
+            (IMAGE_UPLOAD_PATH + "/{upload_id}", ("image/png",)),
+            (
+                "/api/v1/runs/{run_id}/artifacts/{artifact_id}",
+                ("application/octet-stream", "image/png"),
+            ),
+        ):
+            schema["paths"][path]["get"]["responses"]["200"]["content"] = {
+                media_type: {"schema": {"type": "string", "format": "binary"}}
+                for media_type in types
+            }
         app.openapi_schema = schema
         return schema
 

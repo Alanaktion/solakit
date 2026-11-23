@@ -168,6 +168,7 @@ def compose(
     from solakit.redaction import Redactor
     from solakit.registry import load_registry
     from solakit.run_loop import RunLoop
+    from solakit.vision import VisionAdapter
 
     store = Store(profile.data_dir)
     context = ApplicationContext(profile=profile, store=store)
@@ -205,13 +206,23 @@ def compose(
     context.tools.images = context.images
     context.blog = BlogService()
     context.tools.blog = context.blog
-    context.runs = RunLoop(store, context.model, context.tools, memory=context.memory)
+    vision = (
+        VisionAdapter(
+            VisionAdapter.model_profile(profile), store, context.inference, redactor=redactor
+        )
+        if profile.vision
+        else None
+    )
+    context.runs = RunLoop(
+        store, context.model, context.tools, memory=context.memory, vision=vision
+    )
     context.jobs = JobService(store, context.runs, lambda: context.profile)
     context.tools.jobs = context.jobs
     context.runs.jobs = context.jobs
     context.resources = (
         store,
         context.model,
+        *((vision,) if vision else ()),
         context.memory,
         context.images,
         *resources,

@@ -31,6 +31,8 @@ from solakit.redaction import Redactor
 from solakit.store import Store
 
 MAX_RESPONSE_BYTES = 4 * 1024 * 1024
+VISION_RESPONSE_BYTES = 64 * 1024
+VISION_OBSERVATION_BYTES = 4096
 
 
 class ModelError(ValueError):
@@ -295,6 +297,9 @@ async def assemble_stream(
 
 
 class ModelAdapter:
+    default_key_env = "OPENAI_API_KEY"
+    response_hooks: tuple[Callable[[httpx2.Response], Any], ...] = ()
+
     def __init__(
         self,
         profile: EffectiveProfile,
@@ -316,7 +321,7 @@ class ModelAdapter:
         # SDK debug traces include request bodies; private artifacts own that evidence.
         for name in ("openai", "openai._base_client", "httpx2", "httpcore2"):
             logging.getLogger(name).setLevel(logging.WARNING)
-        key = os.getenv(self.profile.model_api_key_env or "OPENAI_API_KEY")
+        key = os.getenv(self.profile.model_api_key_env or self.default_key_env)
         if self.profile.model_api_key_env and not key:
             raise ModelError("Configured model credential is missing", ErrorCode.CONFIGURATION)
         self.redactor.register(key or "")
@@ -329,7 +334,10 @@ class ModelAdapter:
                 connect=self.profile.model_connect_timeout_seconds,
             ),
             http_client=httpx2.AsyncClient(
-                transport=self.transport, trust_env=False, follow_redirects=False
+                transport=self.transport,
+                trust_env=False,
+                follow_redirects=False,
+                event_hooks={"response": list(self.response_hooks)},
             ),
         )
 
@@ -381,6 +389,9 @@ class ModelAdapter:
             )
         if self.client is None:
             raise ModelError("Model client is not started", ErrorCode.MODEL_UNAVAILABLE)
+        purpose = manifest.get("purpose")
+        vision = purpose == "vision"
+        cap = VISION_RESPONSE_BYTES if vision else MAX_RESPONSE_BYTES
         async with self.inference:
             recorded = ModelRequest(
                 origin=run.origin,
@@ -390,6 +401,11 @@ class ModelAdapter:
                 model=self.profile.model_pin,
                 body=Artifact.model_validate(self.store.artifact(new_id(), prompt.body)),
                 manifest=Artifact.model_validate(self.store.artifact(new_id(), prompt.manifest)),
+                purpose="vision"
+                if vision
+                else "compaction"
+                if purpose == "compaction"
+                else "conversation",
             )
             self.store.append(recorded)
             raw = bytearray()
@@ -401,7 +417,8 @@ class ModelAdapter:
             )
             try:
                 async with asyncio.timeout(self.profile.model_generation_timeout_seconds):
-                    await self.verify()
+                    if not vision:
+                        await self.verify()
                     # Raw content prevents SDK reserialization of the recorded bytes.
                     response = cast(
                         httpx2.Response,
@@ -409,6 +426,7 @@ class ModelAdapter:
                             "chat/completions",
                             cast_to=httpx2.Response,
                             content=prompt.body,
+                            options={"headers": {"Accept-Encoding": "identity"}} if vision else {},
                             stream=True,
                         ),
                     )
@@ -426,15 +444,28 @@ class ModelAdapter:
                         )
                     else:
                         async for chunk in response.aiter_bytes():
-                            if len(raw) + len(chunk) > MAX_RESPONSE_BYTES:
+                            if len(raw) + len(chunk) > cap:
+                                raw.extend(chunk[: cap - len(raw)])
                                 raise ModelError("Model response exceeds size limit")
                             raw.extend(chunk)
                         decoded = checked_json(bytes(raw))
                         if not isinstance(decoded, dict):
                             raise ModelError("Invalid JSON model response")
                         data = decoded
-                    values = normalize(data, self.profile.model_pin)
-                    calls = values.pop("calls")
+                    if vision and data.get("model") != self.profile.model_pin:
+                        raise ModelError(
+                            "Vision response did not identify the pin", ErrorCode.MODEL_MISMATCH
+                        )
+                    normalized = normalize(data, self.profile.model_pin)
+                    calls = normalized.pop("calls")
+                    if vision:
+                        observation = self.redactor.redact(normalized["content"].strip())
+                        if calls or len(observation.encode()) > VISION_OBSERVATION_BYTES:
+                            raise ModelError(
+                                "Vision response exceeds observation limits or contains tools"
+                            )
+                        normalized.update(content=observation, reasoning="")
+                    values = normalized
                     failure = None
             except asyncio.CancelledError:
                 failure = Failure(code=ErrorCode.CANCELLED, message="Model request cancelled")
@@ -442,10 +473,10 @@ class ModelAdapter:
             except TimeoutError, APITimeoutError:
                 failure = Failure(code=ErrorCode.TIMEOUT, message="Model request timed out")
             except ModelError as error:
-                values = error.values
+                values = {} if vision else error.values
                 failure = Failure(code=error.code, message=str(error))
             except APIStatusError as error:
-                raw.extend(error.response.content[:MAX_RESPONSE_BYTES])
+                raw.extend(error.response.content[:cap])
                 failure = Failure(
                     code=ErrorCode.MODEL_UNAVAILABLE,
                     message=f"Model endpoint returned HTTP {error.status_code}",
@@ -482,9 +513,7 @@ class ModelAdapter:
                         request_id=recorded.id,
                         failure=failure,
                         response=Artifact.model_validate(self.store.artifact(new_id(), bytes(raw))),
-                        purpose="compaction"
-                        if manifest.get("purpose") == "compaction"
-                        else "conversation",
+                        purpose=recorded.purpose,
                         **values,
                     )
                     self.store.append(step)

@@ -101,21 +101,44 @@ hash-verified artifact chunks and assembles at most 16 MiB into a PNG blob; Down
 image saves the complete PNG. Raw model Markdown cannot load remote images or HTML.
 Only these authorized PNG blobs are added to the existing image CSP.
 
-Use image in next message attaches a reference to the draft; it survives topic
-navigation/reload and the existing admission retry queue. Set `model.image_inputs=true`
-only for a verified pin. `POST /api/v1/runs` accepts optional `image` with `run_id`
-and `artifact_id`; it must identify an authorized PNG in that same topic. Unknown,
-cross-topic and unsupported inputs fail before admission. Arbitrary image uploads
-and external image URLs are not provided by this interface.
+Attach image adds one static PNG or JPEG from your device. Use image in next
+message attaches a PNG already in the topic, including a generated image. Both
+show a thumbnail and Remove image next to the question. The browser retains
+draft references and retries admission with the same key.
 
-Admitted messages keep the immutable image reference. The prompt assembler checks
-its bytes/hash and embeds a PNG data URL in exact request evidence, including on
-history projection. Repeated references to the same hash use one image per request.
-Compaction retains whole-turn semantics and original artifacts. Image requests
-reserve 16,384 estimated tokens per unique image, separately from base64 bytes;
-this is explicitly unverified accounting, not tokenizer calibration. A small context
-ceiling or several different images can produce an explicit context-limit failure.
-No silent trimming or substitute model is used.
+For uploads, the server checks format and dimensions before decoding, rejects
+animated or corrupt input, applies orientation and writes a metadata-free PNG.
+The binary upload limit is 8 MiB. Inputs can be up to 8,192 pixels on either
+axis and 16,777,216 pixels total. Normalized pixels fit within 2,048 × 2,048;
+transparent pixels are composited onto white. Up to four uploads per topic and
+16 overall can be staged for 30 minutes. Admission adopts the PNG into immutable
+run artifacts with its hash and byte length. Expired drafts are collected at
+startup or on the next upload. Backups include images after admission.
+
+### Separate recognition
+
+Set `model.image_inputs = false`, configure [`[vision]`](config.md#vision) and
+restart. Each attached image makes one request to the pinned vision model with
+only the current question, the verified pixels and a fixed instruction. Sola
+removes image metadata before sending the pixels. The reply becomes bounded,
+untrusted supporting text for the conversation model. A text follow-up can use
+the saved observation. Use image in next message to inspect the pixels again.
+The UI shows image-analysis progress and a distinct failure if recognition fails.
+The next text-only turn can proceed.
+
+Vision uses one call from the ordinary run budget and the same inference permit.
+Both model requests and responses are inspectable in run evidence. The vision
+manifest links the user message and the original artifact to the exact image
+payload. Conversation continuations and compaction receive text.
+
+### Native image inputs
+
+Set `model.image_inputs = true` for a verified multimodal conversation pin.
+The prompt assembler checks the linked PNG's bytes and hash and embeds a PNG
+data URL in exact request evidence, including on history projection. Repeated
+references to the same hash use one image per request. Native image requests
+reserve 16,384 estimated tokens per unique image, separately from base64 bytes.
+A small context ceiling or several images can produce a context-limit failure.
 
 ## Deferred data and later work
 

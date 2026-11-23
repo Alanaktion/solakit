@@ -19,7 +19,8 @@
     "role": "assistant",
     "content": "The fixture write failed; no artifact was created.",
     "tool_call_id": null,
-    "image": null
+    "image": null,
+    "image_route": null
   },
   "Run": {
     "schema_version": 1,
@@ -203,7 +204,8 @@
       "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
       "length": 2,
       "media_type": "application/octet-stream"
-    }
+    },
+    "purpose": "conversation"
   },
   "RecoveryNote": {
     "schema_version": 1,

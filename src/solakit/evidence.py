@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import re
+import stat
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -11,6 +12,7 @@ from typing import Annotated, Any, Literal
 from pydantic import Field, model_validator
 
 from solakit.records import (
+    Artifact,
     CompactionBoundary,
     Delivery,
     DurableEvent,
@@ -119,6 +121,29 @@ def publish(path: Path, data: bytes) -> None:
         sync_directory(path.parent)
     finally:
         temporary.unlink(missing_ok=True)
+
+
+def read_artifact(root: Path, artifact: Artifact, offset: int, limit: int) -> bytes:
+    path = root / artifact.path
+    if path.parent.is_symlink():
+        raise CorruptionError("artifact directory cannot be a symlink")
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK)
+        with os.fdopen(fd, "rb") as source:
+            metadata = os.fstat(source.fileno())
+            if (
+                not stat.S_ISREG(metadata.st_mode)
+                or metadata.st_nlink != 1
+                or metadata.st_size != artifact.length
+            ):
+                raise CorruptionError("invalid artifact file")
+            checksum = hashlib.file_digest(source, "sha256")
+            if checksum.hexdigest() != artifact.sha256:
+                raise CorruptionError("artifact hash mismatch")
+            source.seek(offset)
+            return source.read(limit)
+    except OSError as error:
+        raise CorruptionError("artifact unavailable") from error
 
 
 def event_type(kind: str, record: Record) -> str:

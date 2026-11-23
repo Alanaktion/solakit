@@ -54,11 +54,9 @@ class ProfileSettings(Value):
     budgets: BudgetOverrides = Field(default_factory=BudgetOverrides)
 
 
-class ModelSettings(Value):
-    pin: str = ""
-    image_inputs: bool = False
-    base_url: str = "http://127.0.0.1:8000/v1"
-    context_tokens: Annotated[int, Field(ge=1024, le=1048576)] = 32768
+class ModelEndpoint(Value):
+    pin: str
+    base_url: str
     connect_timeout_seconds: Annotated[int, Field(ge=1, le=60)] = 5
     generation_timeout_seconds: Annotated[int, Field(ge=1, le=3600)] = 120
     api_key_env: Annotated[str, Field(pattern=r"^[A-Za-z_][A-Za-z0-9_]*$")] | None = Field(
@@ -84,6 +82,17 @@ class ModelSettings(Value):
         ):
             raise ValueError("model endpoint must not contain credentials, query, or fragment")
         return value
+
+
+class ModelSettings(ModelEndpoint):
+    pin: str = ""
+    base_url: str = "http://127.0.0.1:8000/v1"
+    image_inputs: bool = False
+    context_tokens: Annotated[int, Field(ge=1024, le=1048576)] = 32768
+
+
+class VisionSettings(ModelEndpoint):
+    pin: Annotated[str, Field(min_length=1, max_length=256, pattern=r"\S")]
 
 
 class ImageSettings(Value):
@@ -274,6 +283,7 @@ class OperatorConfig(Value):
     curated_memory_file: str | None = None
     shutdown_timeout_seconds: Annotated[int, Field(ge=1, le=60)] = 5
     model: ModelSettings = Field(default_factory=ModelSettings)
+    vision: VisionSettings | None = None
     memory: MemorySettings = Field(default_factory=MemorySettings)
     images: ImageSettings = Field(default_factory=ImageSettings)
     blog: CheckoutSettings = Field(default_factory=CheckoutSettings)
@@ -288,6 +298,12 @@ class OperatorConfig(Value):
     background: BackgroundSettings = Field(default_factory=BackgroundSettings)
     http: HTTPSettings = Field(default_factory=HTTPSettings)
 
+    @model_validator(mode="after")
+    def image_route(self) -> OperatorConfig:
+        if self.vision is not None and self.model.image_inputs:
+            raise ValueError("vision requires model.image_inputs = false")
+        return self
+
 
 class EffectiveProfile(Value):
     name: str
@@ -297,6 +313,7 @@ class EffectiveProfile(Value):
     data_dir: Path
     model_pin: str
     model_image_inputs: bool = False
+    vision: VisionSettings | None = None
     model_base_url: str
     model_context_tokens: int = 32768
     model_connect_timeout_seconds: int = 5
@@ -334,6 +351,8 @@ class EffectiveProfile(Value):
         for key in ("granted_tools", "tools"):
             values[key] = sorted(values[key])
         values["model_api_key_env"] = "<redacted>" if self.model_api_key_env else None
+        if self.vision and self.vision.api_key_env:
+            values["vision"]["api_key_env"] = "<redacted>"
         values["memory"]["api_key_env"] = "<redacted>" if self.memory.api_key_env else None
         values["web_search"]["api_key_env"] = "<redacted>" if self.web_search.api_key_env else None
         values["http"]["password_env"] = "<redacted>"
@@ -486,6 +505,7 @@ def resolve_profile(
         ("data_dir", "data_dir"),
         ("model_pin", "model.pin"),
         ("model_image_inputs", "model.image_inputs"),
+        ("vision", "vision"),
         ("model_base_url", "model.base_url"),
         ("model_api_key_env", "model.api_key_env"),
         ("model_context_tokens", "model.context_tokens"),
@@ -542,6 +562,7 @@ def resolve_profile(
         data_dir=data_dir,
         model_pin=config.model.pin,
         model_image_inputs=config.model.image_inputs,
+        vision=config.vision,
         model_base_url=config.model.base_url,
         model_context_tokens=config.model.context_tokens,
         model_connect_timeout_seconds=config.model.connect_timeout_seconds,

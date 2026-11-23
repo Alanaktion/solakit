@@ -501,6 +501,24 @@ details[data-tone='warn'] > summary,
 #composer:focus-within {
   border-color: var(--accent);
 }
+#draft-image:not(:empty),
+.message-attachment {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+}
+#draft-image img,
+.message-attachment img {
+  display: block;
+  width: 64px;
+  height: 48px;
+  object-fit: contain;
+  border-radius: var(--radius);
+}
+.message-attachment {
+  flex-wrap: wrap;
+}
 #draft {
   border: 0;
   padding: 8px;

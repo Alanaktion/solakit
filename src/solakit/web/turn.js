@@ -71,7 +71,7 @@ class SolaTurn extends SolaElement {
           <div class="author" id=${`author-${m.id}`}>${author}</div>
           <div>
             ${markdown(m.content || (row.truncated ? 'Large message — inspect evidence.' : ''))}
-            ${m.image ? html`<sola-artifact .runId=${m.run_id} .reference=${m.image}></sola-artifact>` : nothing}
+            ${m.image ? html`<sola-artifact .runId=${m.run_id} .reference=${m.image} .thumbnail=${true}></sola-artifact>` : nothing}
           </div>
         `,
         message
@@ -143,13 +143,17 @@ class SolaTurn extends SolaElement {
       ? `${run.origin === 'proactive' ? 'Proactive wake-up' : 'Scheduled task'} · `
       : '';
     const entries = [...this.workEntries.values()];
+    const analyzing = run?.state === 'running' &&
+      this.messageRows.some(({ record }) => record.image_route === 'vision') &&
+      !entries.some(({ body }) => body.purpose === 'vision');
     // One sequence-ordered timeline: request, tool work, then the reply it produced.
     const timeline = [
       ...this.messageRows.map((row) => [row.sequence, this.renderMessage(row)]),
       ...entries.map((entry) => [entry.sequence, this.renderEntry(entry)])
     ].sort((a, b) => a[0] - b[0]);
     const thinking =
-      run && active(run) && !this.preview && !entries.some((entry) => entry.tone === 'working');
+      run && active(run) && !analyzing && !this.preview &&
+      !entries.some((entry) => entry.tone === 'working');
     return html`
       <div class="timeline">${timeline.map(([, node]) => node)}</div>
       <div class="thinking" aria-hidden="true" ?hidden=${!thinking}><span></span><span></span><span></span></div>
@@ -157,7 +161,8 @@ class SolaTurn extends SolaElement {
       <div class="run-bar" data-tone=${run ? tone(run.state) : nothing}>
         <sola-icon class="status-icon" name=${toneIcons[run ? tone(run.state) : 'pending']}></sola-icon>
         <span role="status" aria-live="polite"
-          >${run ? `${origin}${run.state}${run.reason ? ` · ${run.reason.message}` : ''}` : ''}</span
+          >${analyzing ? 'Analyzing image…'
+            : run ? `${origin}${run.state}${run.reason ? ` · ${run.reason.message}` : ''}` : ''}</span
         >
         <span>${this.elapsed}</span>
         <button
@@ -228,6 +233,14 @@ class SolaTurn extends SolaElement {
       if (kind === 'delivery')
         entries.push({ ...entry, tone: tone(r.state), label: `Scheduled message · ${r.state}` });
       if (kind === 'recovery') entries.push({ ...entry, tone: 'info', label: 'Recovery note' });
+      if (kind === 'model' && r.purpose === 'vision')
+        entries.push({
+          ...entry,
+          tone: r.failure ? tone(r.failure.code === 'cancelled' ? 'cancelled' : 'failed') : 'ok',
+          label: r.failure
+            ? (r.failure.code === 'cancelled' ? 'Image analysis cancelled' : 'Image analysis failed')
+            : 'Image analyzed'
+        });
       if (kind === 'image')
         entries.push({
           ...entry,

@@ -11,6 +11,7 @@ from solakit.compaction import Compactor, select
 from solakit.config import ConfigError, EffectiveProfile, restrict_to_admission
 from solakit.dispatch import Dispatcher
 from solakit.evidence import StorageError, canonical
+from solakit.images import ImageUploads
 from solakit.lineage import current_run, deny_autonomous_successor
 from solakit.memory import MemoryService
 from solakit.model import ModelAdapter, ModelError
@@ -36,6 +37,7 @@ from solakit.store import Store
 
 if TYPE_CHECKING:
     from solakit.jobs import JobService
+    from solakit.vision import VisionAdapter
 
 _CURRENT_SESSION: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "sola_run_session", default=None
@@ -160,11 +162,24 @@ def project_run(store: Store, run_id: str, cap: int) -> tuple[PromptTurn, ...]:
                     session_id=record.session_id,
                     role="user",
                     content=record.content,
-                    image=record.image,
+                    image=record.image if record.image_route != "vision" else None,
                 )
             )
         elif isinstance(record, ModelStep):
             if record.purpose == "compaction":
+                continue
+            if record.purpose == "vision":
+                if not record.failure:
+                    turns.append(
+                        PromptTurn(
+                            source_id=record.id,
+                            session_id=record.session_id,
+                            role="user",
+                            content=canonical(
+                                {"untrusted_visual_observation": record.content}
+                            ).decode(),
+                        )
+                    )
                 continue
             if not record.content and not record.tool_calls:
                 continue
@@ -224,11 +239,14 @@ class RunLoop:
         max_active: int = 8,
         deferred: frozenset[str] = frozenset(),
         memory: MemoryService | None = None,
+        vision: VisionAdapter | None = None,
     ) -> None:
         if max_pending < 1 or max_active < 1:
             raise ValueError("queue and active bounds must be positive")
         self.store, self.model, self.dispatcher = store, model, dispatcher
         self.memory = memory
+        self.vision = vision
+        self.uploads = ImageUploads(store.root)
         self.jobs: JobService | None = None
         self.max_pending, self.max_active, self.deferred = max_pending, max_active, deferred
         self.active: dict[str, asyncio.Task[None]] = {}
@@ -247,6 +265,7 @@ class RunLoop:
     async def start(self) -> None:
         if self.worker is not None:
             return
+        self.uploads.clean()
         self.failure = None
         self.stopping = False
         self.accepting = True
@@ -274,6 +293,9 @@ class RunLoop:
         content: str,
         request_id: str,
         image: Artifact | None = None,
+        image_source: tuple[str, str] | None = None,
+        upload_id: str | None = None,
+        upload: bytes | None = None,
     ) -> Run:
         deny_autonomous_successor()
         if not self.accepting or self.failure is not None:
@@ -292,6 +314,10 @@ class RunLoop:
             ):
                 raise ConfigError("profile differs from the owning runtime/session")
             effective = restrict_to_admission(self.dispatcher.current(profile), profile)
+            if (image is not None or upload_id is not None) and not (
+                effective.vision or effective.model_image_inputs
+            ):
+                raise ConfigError("image inputs are unavailable at admission")
             admission = effective.model_dump(mode="json")
         try:
             run = self.store.admit(
@@ -302,12 +328,17 @@ class RunLoop:
                 admission=admission,
                 origin=profile.origin,
                 image=image,
+                image_source=image_source,
+                upload_id=upload_id,
+                upload=upload,
             )
         except BaseException as error:
             if self.store.failed:
                 self._fault(error)
             raise
         self._notify()
+        if upload_id is not None and upload is not None:
+            self.uploads.discard(session_id, upload_id)
         return run
 
     def cancel(self, run_id: str) -> Run:
@@ -441,10 +472,46 @@ class RunLoop:
             current_run.reset(lineage_token)
             _CURRENT_SESSION.reset(token)
 
+    async def _observe(self, run: Run, admitted: EffectiveProfile, user: Message) -> None:
+        current = self._profile(admitted)
+        if current.budgets.model_calls < 2:
+            raise RunFailure(ErrorCode.BUDGET_EXCEEDED, "Image recognition needs two model calls")
+        if (
+            self.vision is None
+            or admitted.vision is None
+            or self.vision.profile.vision != admitted.vision
+            or self.dispatcher.current(admitted).vision != admitted.vision
+        ):
+            raise RunFailure(ErrorCode.VISION_UNAVAILABLE, "Pinned vision service is unavailable")
+        try:
+            step = await self.vision.observe(run, user, current.budgets.output_tokens)
+        except ModelError as error:
+            failure = Failure(code=error.code, message=str(error))
+        else:
+            if step.failure is None:
+                return
+            failure = step.failure
+        code, message = {
+            ErrorCode.TIMEOUT: (ErrorCode.VISION_TIMEOUT, "Vision analysis timed out"),
+            ErrorCode.MODEL_MISMATCH: (
+                ErrorCode.VISION_MODEL_MISMATCH,
+                "Vision service did not return the pinned model",
+            ),
+            ErrorCode.INVALID_MODEL_RESPONSE: (
+                ErrorCode.INVALID_VISION_RESPONSE,
+                "Vision service returned an invalid observation",
+            ),
+        }.get(failure.code, (ErrorCode.VISION_UNAVAILABLE, "Pinned vision service is unavailable"))
+        raise RunFailure(code, message)
+
     async def _cycle(self, run: Run, admitted: EffectiveProfile) -> None:
         tools = self.dispatcher.bind(run.id)
         source = records(self.store, run.id)
         user = next(r for r in source if isinstance(r, Message) and r.role == "user")
+        first_index = 1
+        if user.image_route == "vision":
+            await self._observe(run, admitted, user)
+            first_index += 1
         history: tuple[PromptTurn, ...] = ()
         selection = None
         if admitted.mode != SessionMode.EPHEMERAL:
@@ -497,7 +564,7 @@ class RunLoop:
             )
             self.store.append(note)
 
-        index = 1
+        index = first_index
         while index <= admitted.budgets.model_calls:
             profile = self._profile(admitted)
             if (
@@ -522,7 +589,7 @@ class RunLoop:
                 else None,
                 compaction=selection.provenance if selection else None,
             )
-            if index == 1:
+            if index == first_index:
                 _, index = await Compactor(self.store, self.model, self._profile).prepare(
                     profile,
                     run,

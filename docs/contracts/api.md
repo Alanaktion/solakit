@@ -115,11 +115,13 @@ All responses use `Cache-Control: no-store` and `X-Content-Type-Options: nosniff
 All resource paths below have the `/api/v1` prefix. IDs and Idempotency-Key values
 are 32 lowercase hex characters. Timestamps are aware UTC ISO strings. Unknown
 body fields and malformed path/query/body fields receive 422. Bodies are capped
-at 128 KiB, even without Content-Length. A JSON error is always
-`{"error":{"code":"…","message":"…"}}`; messages omit raw input/provider errors.
+at 128 KiB, even without Content-Length. The binary image upload route has an
+8 MiB cap on the actual bytes received after authentication and CSRF checks.
+Errors use `{"error":{"code":"…","message":"…"}}` with a safe message.
 404 means missing resource, 409 means conflicting state/current authority, 429
-means admission/login/event capacity, 413 means bounded input/output exceeded,
-416 means an artifact offset beyond EOF, and 503 means unavailable service/state.
+means a capacity limit, 413 means bounded input/output exceeded, 415 means an
+unsupported upload media type, 416 means an artifact offset beyond EOF, and 503
+means unavailable service/state.
 
 | Resource | Operations and behavior |
 | --- | --- |
@@ -128,11 +130,13 @@ means admission/login/event capacity, 413 means bounded input/output exceeded,
 | `/sessions/archive` | POST `{ "session_ids": [id, ...] }` (1–100); returns `{ "archived": count }`; validates all IDs before one state transaction; duplicates/already archived sessions are no-ops |
 | `/sessions/{id}/messages` | GET public conversation pages; private background inputs/tools remain in run records |
 | `/sessions/{id}/runs` | GET admission-order run pages; current state in each record |
-| `/runs` | POST session_id, optional profile (server selection, normally `default`), content (1–32768 UTF-8 bytes), optional image reference `{run_id, artifact_id}`; required Idempotency-Key; optional wait=0..30 seconds |
+| `/sessions/{id}/image-uploads` | POST one binary `image/png` or `image/jpeg`. Returns 201 and `{upload_id}` for a normalized, temporary PNG |
+| `/sessions/{id}/image-uploads/{upload_id}` | GET the staged PNG while it is available |
+| `/runs` | POST session_id, optional profile (server selection, normally `default`), content (1–32768 UTF-8 bytes), optional image reference `{upload_id}` or `{run_id, artifact_id}`; required Idempotency-Key; optional wait=0..30 seconds |
 | `/runs/{id}` | GET current run, optional wait=0..30; wait expiry returns its current state |
 | `/runs/{id}/cancel` | POST explicit cancellation; completed outcomes remain immutable |
 | `/runs/{id}/records` | GET ordered execution evidence including tool receipts and memory work |
-| `/runs/{id}/prompts` | GET exact recorded model-request references; includes compaction requests |
+| `/runs/{id}/prompts` | GET exact recorded model-request references for conversation, compaction and vision |
 | `/runs/{id}/artifacts/{id}` | GET bounded verified bytes of a directly linked request/manifest/response/tool artifact |
 | `/sessions/{id}/events` | GET [SSE protocol](events.md) |
 | `/jobs` | GET stable creation pages; POST creates a disabled definition unless explicitly enabled |
@@ -164,9 +168,12 @@ pending; 200 means terminal, including failed/cancelled outcomes. Wait timeouts
 and disconnected HTTP/SSE clients leave accepted work running. Same key and same
 payload return the original run/frozen authority, including after grant changes.
 Different content, topic, profile or image conflicts with 409. Image references
-require a verified image-enabled model and an authorized generated PNG in the
-same topic; see [image inputs](../image-workflows.md). Queue checks, archival,
-ephemeral lifetime, current revocations and cancellation remain shared services.
+require a configured image route and either a live draft upload or an authorized
+PNG from the same topic. Admission moves a draft into durable artifact evidence.
+The original admission key and upload ID still return the same run after the
+draft is removed or expires. For a new admission, missing, expired or off-topic
+upload IDs return 404. Queue checks, archival, ephemeral lifetime, current
+revocations and cancellation remain shared services. See [image inputs](../image-workflows.md).
 Session/job creation and edits do not promise admission-key idempotency. Manual
 job retry returns its original occurrence even after a definition edit.
 
@@ -203,6 +210,7 @@ X-Artifact-SHA256 and X-Next-Offset. Request again at that offset until EOF.
 Authorization precedes access; a guessed ID must also be directly linked to the
 specified run's verified evidence. Symlinks, hardlinks, wrong lengths and checksum
 mismatches fail closed. The complete artifact is hashed using bounded reads
-before any bytes are returned. Paths and arbitrary filesystem reads are not API
-parameters. Draft inspection is bounded and does not become a recorded run;
-inspect actual requests through the run's prompt references.
+before any bytes are returned. `preview=true` returns the complete linked,
+bounded PNG inline and ignores the requested byte range. The API accepts only
+artifact IDs linked to a run. Draft inspection is bounded. Inspect actual
+requests through the run's prompt references.

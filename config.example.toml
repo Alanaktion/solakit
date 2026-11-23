@@ -28,6 +28,14 @@ context_tokens = 32768
 connect_timeout_seconds = 5
 generation_timeout_seconds = 120
 
+# Optional recognition model. Keep model.image_inputs = false when using this section.
+# [vision]
+# pin = "Qwen3-VL-8B-Instruct-4bit"
+# base_url = "http://127.0.0.1:8000/v1"
+# api_key_env = "SOLA_VISION_API_KEY"
+# connect_timeout_seconds = 5
+# generation_timeout_seconds = 120
+
 # Optional one-image ComfyUI workflow; enabling still requires a tool grant.
 [images]
 enabled = false

@@ -3,24 +3,39 @@
 import asyncio
 import json
 import struct
+import time
 import zlib
 from collections.abc import Callable
 from importlib.resources import files
-from pathlib import PurePosixPath
+from io import BytesIO
+from pathlib import Path, PurePosixPath
 from typing import Any, cast
 from uuid import UUID, uuid4
 
 import httpx2
+from PIL import Image, ImageOps
 from pydantic import JsonValue
 
 from solakit.config import ImageSettings
-from solakit.evidence import canonical, checked_json, digest
+from solakit.evidence import (
+    CorruptionError,
+    canonical,
+    checked_json,
+    digest,
+    ensure_directory,
+    publish,
+    read_artifact,
+)
 from solakit.records import Artifact, ErrorCode, ImageGeneration, ToolCall, new_id
 from solakit.sdk import ToolError
-from solakit.store import Store
+from solakit.store import Store, valid_id
 from solakit.tools import GenerateImage
 
 MAX_IMAGE_BYTES = 16 * 1024 * 1024
+UPLOAD_BYTES = 8 * 1024 * 1024
+UPLOAD_TTL = 30 * 60
+TOPIC_UPLOADS = 4
+TOTAL_UPLOADS = 16
 MAX_RESPONSE_BYTES = 1024 * 1024
 
 
@@ -34,12 +49,12 @@ def workflow(args: GenerateImage) -> tuple[bytes, dict[str, Any]]:
     return raw, graph
 
 
-def validate_png(raw: bytes, width: int, height: int) -> None:
+def validate_png(raw: bytes, width: int, height: int, *, min_side: int = 64) -> None:
     if (
         not raw.startswith(b"\x89PNG\r\n\x1a\n")
         or len(raw) > MAX_IMAGE_BYTES
-        or not 64 <= width <= 2048
-        or not 64 <= height <= 2048
+        or not min_side <= width <= 2048
+        or not min_side <= height <= 2048
     ):
         raise ToolError("Provider output is not a bounded PNG image")
     offset = 8
@@ -89,6 +104,119 @@ def validate_png(raw: bytes, width: int, height: int) -> None:
             break
         offset = end + 4
     raise ToolError("Provider PNG is incomplete, corrupt, or has unexpected dimensions")
+
+
+def read_png(root: Path, image: Artifact) -> tuple[bytes, int, int]:
+    if image.media_type != "image/png" or image.length > MAX_IMAGE_BYTES:
+        raise ValueError("Invalid image artifact")
+    raw = read_artifact(root, image, 0, image.length)
+    width = int.from_bytes(raw[16:20])
+    height = int.from_bytes(raw[20:24])
+    validate_png(raw, width, height, min_side=1)
+    return raw, width, height
+
+
+def pixel_png(source: Image.Image) -> bytes:
+    oriented = ImageOps.exif_transpose(source)
+    oriented.thumbnail((2048, 2048))
+    rgba = oriented.convert("RGBA")
+    normalized = Image.new("RGB", rgba.size, "white")
+    normalized.paste(rgba, mask=rgba.getchannel("A"))
+    output = BytesIO()
+    normalized.save(output, format="PNG")
+    data = output.getvalue()
+    validate_png(data, *normalized.size, min_side=1)
+    return data
+
+
+def normalize_upload(raw: bytes, media_type: str) -> bytes:
+    expected = {"image/png": "PNG", "image/jpeg": "JPEG"}.get(media_type)
+    if not expected or not 0 < len(raw) <= UPLOAD_BYTES:
+        raise ValueError("Choose one PNG or JPEG up to 8 MiB")
+    try:
+        stream = BytesIO(raw)
+        with Image.open(stream, formats=[expected]) as source:
+            width, height = source.size
+            if max(width, height) > 8192 or width * height > 16_777_216:
+                raise ValueError("Image dimensions exceed upload bounds")
+            if (
+                source.format != expected
+                or source.get_format_mimetype() == "image/apng"
+                or getattr(source, "n_frames", 1) != 1
+            ):
+                raise ValueError("Animated images are unsupported")
+            if expected == "JPEG" and not raw.endswith(b"\xff\xd9"):
+                raise ValueError("Incomplete JPEG")
+            source.verify()
+            # Pillow stops at the first IEND header, before reading its CRC.
+            if expected == "PNG" and (
+                stream.tell() + 4 != len(raw) or not raw.endswith(b"\x00\x00\x00\x00IEND\xaeB`\x82")
+            ):
+                raise ValueError("Incomplete or trailing PNG data")
+        with Image.open(BytesIO(raw), formats=[expected]) as source:
+            return pixel_png(source)
+    except (
+        OSError,
+        SyntaxError,
+        ValueError,
+        TypeError,
+        OverflowError,
+        struct.error,
+        Image.DecompressionBombError,
+    ) as error:
+        raise ValueError("Image must be a valid, static PNG or JPEG within pixel bounds") from error
+
+
+class ImageUploads:
+    def __init__(self, root: Path) -> None:
+        self.root = root / "image-uploads"
+
+    def clean(self) -> list[Path]:
+        if self.root.is_symlink():
+            raise CorruptionError("upload directory cannot be a symlink")
+        ensure_directory(self.root)
+        drafts = []
+        cutoff = time.time() - UPLOAD_TTL
+        for path in self.root.iterdir():
+            if path.is_symlink() or not path.is_file():
+                raise CorruptionError("invalid upload staging file")
+            if path.name.startswith(".") or path.stat().st_mtime <= cutoff:
+                path.unlink()
+            else:
+                drafts.append(path)
+        return drafts
+
+    def stage(self, topic: str, data: bytes) -> str:
+        valid_id(topic)
+        drafts = self.clean()
+        if (
+            len(drafts) >= TOTAL_UPLOADS
+            or sum(draft.name.startswith(topic + "-") for draft in drafts) >= TOPIC_UPLOADS
+        ):
+            raise OverflowError("Image upload storage is full")
+        identity = new_id()
+        publish(self.root / f"{topic}-{identity}", data)
+        return identity
+
+    def read(self, topic: str, identity: str) -> bytes:
+        valid_id(topic)
+        valid_id(identity)
+        path = self.root / f"{topic}-{identity}"
+        if self.root.is_symlink() or path.is_symlink():
+            raise CorruptionError("invalid upload staging path")
+        try:
+            if path.stat().st_mtime <= time.time() - UPLOAD_TTL:
+                raise KeyError(identity)
+            with path.open("rb") as stream:
+                raw = stream.read(MAX_IMAGE_BYTES + 1)
+        except FileNotFoundError:
+            raise KeyError(identity) from None
+        if len(raw) > MAX_IMAGE_BYTES:
+            raise CorruptionError("staged image exceeds size limit")
+        return raw
+
+    def discard(self, topic: str, identity: str) -> None:
+        (self.root / f"{topic}-{identity}").unlink(missing_ok=True)
 
 
 class ComfyUI:

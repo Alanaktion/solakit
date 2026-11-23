@@ -1,15 +1,13 @@
 """Bounded operator views over the same headless services used by tools and jobs."""
 
 import asyncio
-import hashlib
-import os
-import stat
 from collections.abc import AsyncGenerator
 from typing import Any
 
 from solakit.auth import AuthService, Login, RequestError
 from solakit.config import EffectiveProfile
-from solakit.evidence import RECORDS, CorruptionError, canonical
+from solakit.evidence import RECORDS, canonical, read_artifact
+from solakit.images import MAX_IMAGE_BYTES, normalize_upload
 from solakit.prompts import PromptInput, assemble, inspect_prompt
 from solakit.records import (
     Artifact,
@@ -108,6 +106,7 @@ class ClientService:
         request_id: str,
         wait: float,
         image: tuple[str, str] | None = None,
+        upload_id: str | None = None,
     ) -> Run:
         name = self.context.profile.name if name is None else name
         if not content.strip() or len(content.encode()) > 32768:
@@ -122,19 +121,29 @@ class ClientService:
         else:
             profile = self.profile(name, self.store.session(session_id).mode)
         reference = None
-        if image is not None:
-            if not profile.model_image_inputs:
+        if image is not None or upload_id is not None:
+            if not (profile.model_image_inputs or profile.vision):
                 raise RequestError(
                     422, "unsupported_image", "Image inputs are not enabled for this model"
                 )
+        if image is not None:
             source_run, identity = image
             if self.store.run(source_run).session_id != session_id:
                 raise RequestError(403, "image_scope", "Image must belong to this topic")
             _, reference = self.artifact(source_run, identity, 0, 1)
-            if reference.media_type != "image/png" or reference.length > 16 * 1024 * 1024:
-                raise RequestError(422, "invalid_image", "Attach a generated PNG image")
+            if reference.media_type != "image/png" or reference.length > MAX_IMAGE_BYTES:
+                raise RequestError(422, "invalid_image", "Attach a bounded PNG image")
         run = self.runs.submit(
-            session_id, profile=profile, content=content, request_id=request_id, image=reference
+            session_id,
+            profile=profile,
+            content=content,
+            request_id=request_id,
+            image=reference,
+            image_source=image,
+            upload_id=upload_id,
+            upload=self.read_upload(session_id, upload_id)
+            if upload_id is not None and existing is None
+            else None,
         )
         if wait:
             try:
@@ -142,6 +151,29 @@ class ClientService:
             except TimeoutError:
                 return self.store.run(run.id)
         return run
+
+    def upload_image(self, session_id: str, raw: bytes, media_type: str) -> str:
+        topic = self.store.session(session_id)
+        if topic.archived:
+            raise RequestError(409, "conflict", "Archived topics cannot accept images")
+        profile = self.profile(None, topic.mode)
+        if not (profile.model_image_inputs or profile.vision):
+            raise RequestError(422, "unsupported_image", "Image inputs are disabled")
+        try:
+            return self.runs.uploads.stage(session_id, normalize_upload(raw, media_type))
+        except ValueError as error:
+            raise RequestError(422, "invalid_image", str(error)) from None
+        except OverflowError as error:
+            raise RequestError(429, "upload_storage_full", str(error)) from None
+
+    def read_upload(self, session_id: str, upload_id: str) -> bytes:
+        self.store.session(session_id)
+        try:
+            return self.runs.uploads.read(session_id, upload_id)
+        except KeyError:
+            raise RequestError(
+                404, "image_upload_missing", "Image upload expired or unavailable"
+            ) from None
 
     def job_page(
         self, after: tuple[str, str] | None, limit: int, job_id: str | None = None
@@ -253,7 +285,7 @@ class ClientService:
             await asyncio.sleep(0 if len(events) == 100 else 0.1)
 
     def artifact(
-        self, run_id: str, identity: str, offset: int, limit: int
+        self, run_id: str, identity: str, offset: int, limit: int, *, preview: bool = False
     ) -> tuple[bytes, Artifact]:
         from solakit.store import valid_id
 
@@ -279,27 +311,13 @@ class ClientService:
             if isinstance(value := getattr(record, name), Artifact)
             and value.path == f"artifacts/{identity}"
         )
-        path = self.store.root / artifact.path
-        if path.parent.is_symlink():
-            raise CorruptionError("artifact directory cannot be a symlink")
-        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
-        with os.fdopen(fd, "rb") as source:
-            metadata = os.fstat(source.fileno())
-            if (
-                not stat.S_ISREG(metadata.st_mode)
-                or metadata.st_nlink != 1
-                or metadata.st_size != artifact.length
-            ):
-                raise CorruptionError("invalid artifact file")
-            checksum = hashlib.sha256()
-            while chunk := source.read(65536):
-                checksum.update(chunk)
-            if checksum.hexdigest() != artifact.sha256:
-                raise CorruptionError("artifact hash mismatch")
-            if offset > artifact.length:
-                raise RequestError(416, "invalid_range", "Offset exceeds artifact length")
-            source.seek(offset)
-            return source.read(limit), artifact
+        if preview:
+            if artifact.media_type != "image/png" or artifact.length > MAX_IMAGE_BYTES:
+                raise RequestError(422, "invalid_image", "Preview requires a bounded PNG image")
+            offset, limit = 0, artifact.length
+        if offset > artifact.length:
+            raise RequestError(416, "invalid_range", "Offset exceeds artifact length")
+        return read_artifact(self.store.root, artifact, offset, limit), artifact
 
     def prompt(self, name: str | None, content: str, hashes: bool) -> dict[str, Any]:
         if not content.strip() or len(content.encode()) > 32768:

@@ -30,6 +30,8 @@ let messagesDone = false,
   refreshTimer = null;
 let editingTopic = false;
 let draftImage = null;
+let imageInputs = false,
+  imageUpload = null;
 let refreshChain = Promise.resolve(),
   cursor = null;
 const pendingRuns = new Set();
@@ -418,14 +420,23 @@ function saveDraft() {
   updateComposer();
 }
 function updateComposer() {
-  renderTemplate(draftImage ? html`<span><sola-icon name="Image"></sola-icon> Image attached</span>
-    <button type="button" @click=${() => { draftImage = null; saveDraft(); }}><sola-icon name="X"></sola-icon> Remove image</button>` : nothing, $('draft-image'));
+  const uploading = imageUpload?.generation === generation;
+  const imageUrl = draftImage?.upload_id
+    ? `/api/v1/sessions/${selected}/image-uploads/${draftImage.upload_id}`
+    : draftImage && `/api/v1/runs/${draftImage.run_id}/artifacts/${draftImage.artifact_id}?preview=true`;
+  renderTemplate(uploading ? html`<span role="status">Preparing image…</span>`
+    : imageUrl ? html`<img class="image-thumbnail" src=${imageUrl} alt="Attached image">
+      <button type="button" @click=${() => { draftImage = null; saveDraft(); }}>
+        <sola-icon name="X"></sola-icon> Remove image
+      </button>` : nothing, $('draft-image'));
   const topic = topics.get(selected);
   const used =
     topic?.mode === 'ephemeral' &&
     (runs.size > 0 || outbox.some((item) => item.session_id === selected));
   $('draft').disabled = !topic;
-  $('send').disabled = !topic || topic.archived || used || !$('draft').value.trim();
+  $('attach-image').hidden = !imageInputs;
+  $('attach-image').disabled = !topic || topic.archived || used || uploading;
+  $('send').disabled = !topic || topic.archived || used || uploading || !$('draft').value.trim();
   $('compose-hint').classList.toggle('explanation', !!(topic?.archived || used));
   text(
     $('compose-hint'),
@@ -435,6 +446,27 @@ function updateComposer() {
         ? 'This topic allows one run. Start a new topic to continue.'
         : 'Enter to send · Shift + Enter for a new line'
   );
+}
+async function pickImage(event) {
+  const input = event.target;
+  const file = input.files[0];
+  input.value = '';
+  if (!file || $('attach-image').disabled) return;
+  const pending = { generation };
+  imageUpload = pending;
+  updateComposer();
+  try {
+    const result = await api(`/sessions/${selected}/image-uploads`, { method: 'POST', body: file });
+    if (imageUpload !== pending || generation !== pending.generation) return;
+    draftImage = result;
+    saveDraft();
+    $('draft').focus();
+  } finally {
+    if (imageUpload === pending) {
+      imageUpload = null;
+      updateComposer();
+    }
+  }
 }
 function setTopicHeading() {
   const topic = topics.get(selected);
@@ -634,7 +666,10 @@ async function boot() {
   await api('/auth/session');
   loggedIn = true;
   $('notice').hidden = true;
-  await Promise.all([loadTopics(), loadProfiles()]);
+  await Promise.all([loadTopics(), loadProfiles(), api('/health').then((health) => {
+    imageInputs = health.image_inputs;
+    updateComposer();
+  })]);
   const saved = read('sola.selected', null);
   if (saved && !topics.has(saved)) {
     try {
@@ -780,6 +815,7 @@ async function logout() {
 document.addEventListener('sola-auth-required', requireLogin);
 document.addEventListener('sola-image-selected', (event) => {
   if (!selected || topics.get(selected)?.archived) return;
+  imageUpload = null;
   draftImage = event.detail;
   saveDraft();
   if ($('evidence').open) $('evidence').close();
@@ -799,6 +835,7 @@ document.querySelector('sola-app').actions = {
   submit,
   draftKeydown,
   saveDraft,
+  pickImage: action(pickImage),
   login,
   saveTopic,
   ...settings,

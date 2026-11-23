@@ -35,8 +35,15 @@ profile and selected navigation in browser session storage, across reloads in
 that tab. Closing the tab clears these drafts. No credentials enter browser
 storage; sign-in uses the existing HttpOnly session cookie and CSRF protocol.
 
+When an image route is configured, **Attach image** accepts one PNG or JPEG.
+The draft shows the thumbnail and **Remove image** alongside the question.
+**Use image in next message** adds an image already in the topic. On the separate
+vision route the run shows **Analyzing image…** while the vision model works.
+Later questions can use the saved observation. Attach the image again when Sola
+needs to look at the pixels. See [image workflows](image-workflows.md).
+
 A lost submission receipt stays in the outbox. **Retry same submission** reuses
-its original content, topic, profile and admission key. A new draft gets a new
+its original content, topic, profile, attachment and admission key. A new draft gets a new
 key. Reconnect can also discover the original admission and remove the outbox
 entry. A disconnection does not cancel accepted work. Avoid creating a fresh
 copy of an uncertain submission if it could repeat a consequential action.

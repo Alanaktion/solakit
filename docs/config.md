@@ -88,7 +88,7 @@ service uses the fixed [ComfyUI workflow](image-workflows.md).
 | Key | Type / built-in default | Meaning and constraints |
 | --- | --- | --- |
 | `model.pin` | string: `""` | Exact model ID. A nonblank explicit pin is required for a runnable profile; no automatic model substitution. The tested pin is `Qwen3.6-35B-A3B-mxfp4`. |
-| `model.image_inputs` | boolean: `false` | Enable same-topic generated PNG attachments only after verifying the exact pin's image capability. Unsupported attachments return an explicit 422; no model substitution. |
+| `model.image_inputs` | boolean: `false` | Enable native PNG attachments only after verifying the exact conversation pin's image capability. Mutually exclusive with `[vision]`. |
 | `model.base_url` | string: `"http://127.0.0.1:8000/v1"` | oMLX OpenAI-compatible API base URL, including its API path. |
 | `model.context_tokens` | integer: `32768` | Request context ceiling, 1024–1048576 tokens. Conservative accounting reserves completion, tool-result and safety headroom; this does not change the server's actual model window. |
 | `model.connect_timeout_seconds` | integer: `5` | Connection timeout, 1–60 seconds. |
@@ -100,6 +100,23 @@ port if specified. They reject embedded credentials, query strings and fragments
 Environment-variable names match `[A-Za-z_][A-Za-z0-9_]*`.
 See the [model/prompt contract](contracts/model-prompts.md) and
 [context contract](contracts/context-compaction.md) for request accounting.
+
+## `[vision]`
+
+Omit this section to disable separate recognition. Configure it together with
+`model.image_inputs = false` and restart the server.
+
+| Key | Type / built-in default | Meaning and constraints |
+| --- | --- | --- |
+| `vision.pin` | required nonblank string | Exact model ID expected in completion responses. |
+| `vision.base_url` | required URL | OpenAI-compatible API base URL using the same URL constraints as `model.base_url`. |
+| `vision.api_key_env` | optional environment-variable name | Use the named credential. Omission uses the local placeholder `local`. |
+| `vision.connect_timeout_seconds` | integer: `5` | Connection timeout, 1–60 seconds. |
+| `vision.generation_timeout_seconds` | integer: `120` | Completion deadline, 1–3600 seconds within the run's active-time budget. |
+
+The endpoint must accept a PNG data URL in a non-streaming chat completion
+request and identify the exact pin in its JSON response. Vision spends one
+model call in addition to the conversation call.
 
 ## `[blog]`
 

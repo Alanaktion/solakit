@@ -70,6 +70,10 @@ class ErrorCode(StrEnum):
     MODEL_UNAVAILABLE = "model_unavailable"
     MODEL_MISMATCH = "model_mismatch"
     INVALID_MODEL_RESPONSE = "invalid_model_response"
+    VISION_UNAVAILABLE = "vision_unavailable"
+    VISION_MODEL_MISMATCH = "vision_model_mismatch"
+    VISION_TIMEOUT = "vision_timeout"
+    INVALID_VISION_RESPONSE = "invalid_vision_response"
     TOOL_DENIED = "tool_denied"
     TOOL_FAILED = "tool_failed"
     TIMEOUT = "timeout"
@@ -116,6 +120,7 @@ class Message(Record):
     content: str
     tool_call_id: RecordID | None = None
     image: Artifact | None = None
+    image_route: Literal["vision"] | None = None
 
     @model_validator(mode="after")
     def tool_link(self) -> Self:
@@ -221,6 +226,7 @@ class ModelRequest(Record):
     model: Annotated[str, Field(min_length=1)]
     body: Artifact
     manifest: Artifact
+    purpose: Literal["conversation", "compaction", "vision"] = "conversation"
 
 
 class ToolProposal(Value):
@@ -243,7 +249,7 @@ class ModelStep(Record):
     response: Artifact | None = None
     usage: dict[str, JsonValue] | None = None
     tool_calls: tuple[ToolProposal, ...] = ()
-    purpose: Literal["conversation", "compaction"] = "conversation"
+    purpose: Literal["conversation", "compaction", "vision"] = "conversation"
 
 
 class RecoveryNote(Record):

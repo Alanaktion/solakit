@@ -18,6 +18,7 @@ export class SolaApp extends SolaElement {
       submit,
       draftKeydown,
       saveDraft,
+      pickImage,
       login,
       saveTopic,
       moreEvidence,
@@ -96,7 +97,8 @@ export class SolaApp extends SolaElement {
         </div>
         <div id="outbox" role="group" aria-label="Submissions awaiting confirmation"></div>
         <form @submit=${submit} id="composer">
-          <div id="draft-image" role="status"></div>
+          <div id="draft-image"></div>
+          <input id="image-file" type="file" accept="image/png,image/jpeg" @change=${pickImage} hidden />
           <label class="sr-only" for="draft">Message ${agentName}</label>
           <textarea
             @keydown=${draftKeydown}
@@ -109,6 +111,10 @@ export class SolaApp extends SolaElement {
             required
           ></textarea>
           <div class="composer-actions">
+            <button id="attach-image" type="button" hidden
+              @click=${() => $('image-file').click()}>
+              <sola-icon name="Paperclip"></sola-icon> Attach image
+            </button>
             <span id="compose-hint" role="status"
               >Enter to send · Shift + Enter for a new line</span
             >

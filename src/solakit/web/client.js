@@ -25,7 +25,9 @@ export const write = (key, value) => {
 };
 export async function api(path, options = {}) {
   const headers = new Headers(options.headers);
-  if (options.body !== undefined) {
+  if (options.body instanceof Blob) {
+    headers.set('Content-Type', options.body.type);
+  } else if (options.body !== undefined) {
     headers.set('Content-Type', 'application/json');
     options = { ...options, body: JSON.stringify(options.body) };
   }
