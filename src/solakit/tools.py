@@ -5,6 +5,7 @@ from typing import Annotated, Literal
 
 from pydantic import Field
 
+from solakit.git import GitDiff, GitPublish, GitTarget, run_git
 from solakit.records import RecordID
 from solakit.sdk import Origin, Tool, ToolArguments, ToolContext, ToolError, ToolResult
 from solakit.shell import ShellExec, execute_shell
@@ -288,6 +289,34 @@ TOOLS = (
         "you can cite, and untrusted snippets that are excerpts.",
         WebSearch,
         search_web,
+    ),
+    Tool(
+        "git.status",
+        "List checkout branch and changed filenames for a configured alias.",
+        GitTarget,
+        run_git,
+    ),
+    Tool(
+        "git.diff",
+        "Read bounded tracked changes against HEAD for a configured checkout alias.",
+        GitDiff,
+        run_git,
+    ),
+    Tool(
+        "git.pull",
+        "Fast-forward a clean configured checkout from origin.",
+        GitTarget,
+        run_git,
+        True,
+        frozenset({Origin.INTERACTIVE}),
+    ),
+    Tool(
+        "git.publish",
+        "Commit only the listed files in a configured checkout and push to origin.",
+        GitPublish,
+        run_git,
+        True,
+        frozenset({Origin.INTERACTIVE}),
     ),
     Tool(
         "shell.exec",

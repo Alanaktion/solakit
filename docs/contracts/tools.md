@@ -207,6 +207,8 @@ opened directory trees or concurrently redefining Git metadata.
 | `files.read` / `files.write` | Tool grant + roots + guards | Same | Same | Same admitted narrower profile |
 | `transcripts.search` | Messages in shared sessions only | Own session only | Own run only | Bound session; own run if ephemeral |
 | `web.search` | Tool grant + stable enabled Brave credential reference | Same | Same | Same admitted narrower profile |
+| `git.status`, `git.diff` | Tool grant + stable checkout alias inside effective workspace roots | Same | Same | Same admitted narrower profile |
+| `git.pull`, `git.publish` | Same checkout authority + interactive origin + checkout outside letters reservation | Same | Same | Denied, including manual job runs |
 | `shell.exec` | Enabled + literal grant + guarded starting directory | Same | Same | Denied, including manual job runs |
 | `runtime.status` | Own run/service health | Own run | Own run | Own run |
 | `memory.recall` | Recorded, scoped OpenViking 0.5 recall when enabled | Denied | Denied | Bound memory scope |
@@ -228,6 +230,40 @@ retain at most the existing 1 MiB text bound. Installing/selecting the example p
 does not load or grant it.
 
 Phase 7 memory lifecycle, limits and recovery are defined in the [memory contract](memory.md).
+
+## Configured Git checkouts
+
+Configure named checkouts with `[git.repositories.<alias>]`. Each call checks
+the alias, canonical path and expected branch against the admitted and
+current configuration and verifies workspace access. Older admissions
+default to an empty set of checkout aliases. Git requires an ordinary checkout
+with its own `.git` directory. Linked worktrees, nested repositories, aliased
+metadata, and checkouts that overlap protected source, runtime data or prompt
+files are denied. A letters reservation allows inspection and blocks generic
+Git and blog mutations.
+
+| Tool | Behavior |
+| --- | --- |
+| `git.status(repository)` | Reports the current branch (null when detached) and staged, unstaged and untracked filenames. Caps output at 16 KiB and indicates truncation. |
+| `git.diff(repository, path=None)` | Shows tracked differences in the worktree against HEAD, optionally restricted to one filename. Caps patch output at 32 KiB and indicates truncation. |
+| `git.pull(repository)` | Fetches the configured branch from `origin` and only fast-forwards a clean checkout on that branch. Returns the old and new commit IDs. |
+| `git.publish(repository, paths, message)` | Requires an empty index and local HEAD equal to the freshly fetched `origin` branch. Stages and commits the explicitly named files, then pushes that commit to the configured branch. Unrelated changes stay local. |
+
+Git uses literal repository-relative filenames. Directories, globs, Git
+metadata, and symlink and hardlink aliases are denied. A tracked deletion
+requires an existing parent directory. Local inspection disables optional index
+updates, external diff drivers and text converters. Treat diff text as external
+content.
+
+Mutations use the dispatch effect receipt and recheck authority after acquiring
+the checkout lock, which is shared with blog publications. Git uses a
+noninteractive environment and the operator's trusted repository configuration
+and credentials. Local hooks are disabled. Fetch and push diagnostics omit
+remote URLs and raw command output. Publication requires one matching fetch
+and push destination for `origin`. A failed push leaves the commit locally for
+operator inspection. Failures report the last verified phase and commit when
+known, and an unverified push outcome is marked uncertain. A later publication
+requires HEAD to match the upstream again.
 
 ## Public web search
 

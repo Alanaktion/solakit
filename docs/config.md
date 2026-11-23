@@ -67,7 +67,8 @@ match `[A-Za-z0-9_][A-Za-z0-9_.-]*` and contain at most 128 characters. Module n
 must also be importable Python modules.
 
 Built-ins currently include `files.list`, `files.read`, `files.search`, `files.write`,
-`images.generate`, `transcripts.search`, `web.search`, `shell.exec`,
+`images.generate`, `transcripts.search`, `web.search`, `git.status`, `git.diff`,
+`git.pull`, `git.publish`, `shell.exec`,
 `runtime.status`, `memory.recall`, `memory.remember`, and `jobs.list`, `jobs.create`,
 `jobs.update`, `jobs.pause`, `jobs.resume`, `jobs.run_now`, `jobs.delete`,
 `jobs.pause_all`, `blog.list`, `blog.read`, `blog.create`, `blog.publish`,
@@ -77,7 +78,7 @@ Built-ins are always registered; enable them in the selected profile's
 it is rejected. There are no separate `resources` or `effects` settings. See the
 [tool contract](contracts/tools.md) for protected paths and pack permissions.
 
-The other supported top-level keys are tables: `model`, `http`, `memory`, `images`, `blog`, `web_search`, `shell`,
+The other supported top-level keys are tables: `model`, `http`, `memory`, `images`, `blog`, `git`, `letters`, `web_search`, `shell`,
 `defaults`, `profiles`, `proactive_budgets` and `background`, described below.
 The example pack's image adapter remains a fixture; the optional built-in image
 service uses the fixed [ComfyUI workflow](image-workflows.md).
@@ -128,6 +129,21 @@ One unfinished generation is allowed globally. Set `defaults.budgets.tool_timeou
 high enough for the selected endpoint (for example 600, within `active_seconds`).
 The usual run deadline still applies. Cancellation stops waiting; provider work
 may continue and is observed separately. See [recovery](image-workflows.md).
+
+## `[git.repositories.<alias>]`
+
+Set `path` to an existing checkout and `branch` to the expected local and origin
+branch, such as `main`. Relative paths resolve from the configuration file.
+List the alias and its purpose in an operator-owned profile prompt fragment so
+Sola can select it in tool calls. Include the checkout in the profile's
+workspace roots and grant the individual tools it needs. Empty
+configuration disables the tools. Matching wildcard grants can expose newly
+configured Git tools to new admissions. Pull and publication also require an
+interactive run.
+
+Set `[letters] repository` to reserve an existing correspondence checkout.
+The reservation allows Git inspection and denies generic Git and blog writes.
+See the [Git tool contract](contracts/tools.md#configured-git-checkouts).
 
 ## `[web_search]`
 

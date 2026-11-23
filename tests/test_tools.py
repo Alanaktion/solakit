@@ -70,10 +70,12 @@ def opened(
     blog_repository: Path | None = None,
     web_search_env: str | None = None,
     shell_enabled: bool = False,
+    git_repositories: dict[str, dict[str, str]] | None = None,
+    letters_repository: Path | None = None,
 ) -> Iterator[Harness]:
     root = root.resolve()
     workspace = root / "workspace"
-    workspace.mkdir()
+    workspace.mkdir(exist_ok=True)
     registry = load_registry(modules)
     for tool in extra:
         registry.register(tool)
@@ -89,6 +91,8 @@ def opened(
                 "blog": {"repository": str(blog_repository)} if blog_repository else {},
                 "web_search": {"api_key_env": web_search_env},
                 "shell": {"enabled": shell_enabled},
+                "git": {"repositories": git_repositories or {}},
+                "letters": {"repository": str(letters_repository)} if letters_repository else {},
                 "soul_file": str(soul) if soul else None,
                 "defaults": {
                     "workspace_roots": [str(workspace)],

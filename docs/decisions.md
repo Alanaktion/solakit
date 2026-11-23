@@ -71,6 +71,8 @@ Statuses distinguish operator-confirmed requirements, implementer-selected rever
 
 | V2-47 | Selected / implementer, 2026-11-23 | Add opt-in interactive `shell.exec` with an inherited literal grant. Recheck enablement, grants and cwd at launch. Pass literal argv with a minimal environment and bound output under the existing tool budgets. Commands have the server account's filesystem and network privileges. Record exit or uncertainty in standard receipts and terminate the owned process group. Supersedes V2-13 for this tool | [Tool contract](contracts/tools.md#literal-command-execution), [validation](validation/shell.md) |
 
+| V2-48 | Selected / implementer, 2026-11-23 | Add optional named Git checkouts for status, diff, fast-forward pull and selected-file publication. Freeze checkout identity with admission and recheck grants and workspace roots on use. Keep mutations interactive, serialize them with blog work on the same checkout, and reserve configured correspondence checkouts for letters writes. Require a freshly verified matching upstream before committing selected files, then use a normal push. Retain failed local commits for operator inspection and report the last verified phase in receipts | [Tool contract](contracts/tools.md#configured-git-checkouts), [validation](validation/git-tools.md) |
+
 ## Unavailable references and remaining verification
 
 The outline refers to D1–D6 and companion source specifications that are not present in this checkout. Similarly named legacy refactor IDs are unrelated. Their absence is recorded; these v2 contracts replace the ambiguity for this release. Newly supplied requirements should become explicit decision changes, not retroactive assumptions.

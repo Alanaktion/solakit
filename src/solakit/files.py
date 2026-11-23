@@ -1,18 +1,22 @@
 """Bounded descriptor-relative file operations for local macOS/Linux workspaces."""
 
+from __future__ import annotations
+
 import os
 import stat
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from pydantic import JsonValue
 
-from solakit.config import EffectiveProfile
 from solakit.evidence import digest
 from solakit.records import ErrorCode, new_id
 from solakit.sdk import ToolError
+
+if TYPE_CHECKING:
+    from solakit.config import EffectiveProfile
 
 MAX_FILE_BYTES = 1024 * 1024
 DIRECTORY = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
@@ -84,7 +88,9 @@ class GuardedFiles:
         self.record_artifact = record_artifact
 
     @contextmanager
-    def _parent(self, raw: str, *, write: bool) -> Iterator[tuple[int, str]]:
+    def _parent(
+        self, raw: str, *, write: bool, protect_git: bool = False
+    ) -> Iterator[tuple[int, str]]:
         profile = self.authority("files.write" if write else "files.read")
         if not raw or "\x00" in raw or ".." in Path(raw).parts:
             raise _deny()
@@ -96,10 +102,8 @@ class GuardedFiles:
             path.is_relative_to(root) for root in profile.workspace_roots
         ):
             raise _deny()
-        protected = set(self.protected) | {profile.data_dir}
-        protected.update(profile.fragments)
-        protected.update(p for p in (profile.soul_file, profile.curated_memory_file) if p)
-        if write:
+        protected = self.protected_paths(profile)
+        if write or protect_git:
             protected |= _git_roots(profile.workspace_roots)
             if any(part.casefold() == ".git" for part in path.parts):
                 raise _deny()
@@ -139,9 +143,16 @@ class GuardedFiles:
         if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
             raise _deny()
 
+    def protected_paths(self, profile: EffectiveProfile) -> set[Path]:
+        return (
+            set(self.protected)
+            | {profile.data_dir, *profile.fragments}
+            | {p for p in (profile.soul_file, profile.curated_memory_file) if p is not None}
+        )
+
     @contextmanager
-    def command_directory(self, path: str) -> Iterator[int]:
-        with self._parent(path, write=True) as (parent, name):
+    def command_directory(self, path: str, *, write: bool = True) -> Iterator[int]:
+        with self._parent(path, write=write, protect_git=True) as (parent, name):
             fd = os.open(name or ".", DIRECTORY, dir_fd=parent)
             try:
                 yield fd

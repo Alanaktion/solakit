@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo
 import yaml
 from pydantic import JsonValue
 
+from solakit.config import checkout_reserved
 from solakit.files import MAX_FILE_BYTES, GuardedFiles
 from solakit.images import MAX_IMAGE_BYTES, validate_png
 from solakit.records import ErrorCode
@@ -65,15 +66,14 @@ def markdown(metadata: dict[str, Any], body: str) -> str:
 
 
 class BlogService:
-    def __init__(self) -> None:
-        self.lock = asyncio.Lock()
-
     @staticmethod
     def repository(files: GuardedFiles, *, write: bool) -> Path:
         profile = files.authority("files.write" if write else "files.read")
         root = profile.blog_repository
         if root is None:
             raise ToolError("Configure blog.repository before using blog or dream tools")
+        if write and checkout_reserved(root, profile.git_reserved):
+            raise ToolError("Checkout is reserved for letters", ErrorCode.TOOL_DENIED)
         if not any(root.is_relative_to(parent) for parent in profile.workspace_roots):
             raise ToolError("Blog repository is outside granted roots", ErrorCode.TOOL_DENIED)
         # Check the checkout through the same descriptor traversal and protected-path rules.
@@ -87,10 +87,11 @@ class BlogService:
         action: str,
         args: ToolArguments,
         files: GuardedFiles,
+        lock: asyncio.Lock,
         *,
         cover: bytes | None = None,
     ) -> JsonValue:
-        async with self.lock:
+        async with lock:
             write = action.endswith((".create", ".publish"))
             root = self.repository(files, write=write)
             timezone = files.authority("").background.timezone

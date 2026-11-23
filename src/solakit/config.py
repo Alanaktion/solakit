@@ -1,6 +1,7 @@
 """Strict operator TOML and immutable, traceable authority snapshots."""
 
 import tomllib
+from contextlib import suppress
 from fnmatch import fnmatchcase
 from ipaddress import ip_address, ip_network
 from pathlib import Path
@@ -98,8 +99,51 @@ class ImageSettings(Value):
         return ModelSettings.endpoint(value).rstrip("/")
 
 
-class BlogSettings(Value):
+class CheckoutSettings(Value):
     repository: str | None = None
+
+
+class GitRepository(Value):
+    path: Annotated[Path, Field(strict=False)]
+    branch: Annotated[str, Field(min_length=1, max_length=255)]
+
+    @field_validator("path", mode="before")
+    @classmethod
+    def nonempty_path(cls, value: object) -> object:
+        if isinstance(value, str) and not value.strip():
+            raise ValueError("checkout path must not be empty")
+        return value
+
+
+class GitSettings(Value):
+    repositories: dict[Name, GitRepository] = Field(default_factory=dict)
+
+
+GIT_READ = frozenset({"git.status", "git.diff"})
+GIT_WRITE = frozenset({"git.pull", "git.publish"})
+
+
+def same_path(path: Path, other: Path) -> bool:
+    if path == other:
+        return True
+    with suppress(FileNotFoundError):
+        return path.samefile(other)
+    return False
+
+
+def checkout_reserved(path: Path, reserved: frozenset[Path]) -> bool:
+    return any(same_path(path, other) for other in reserved)
+
+
+def _git_tools(
+    repositories: dict[str, GitRepository], reserved: frozenset[Path], origin: Origin
+) -> frozenset[str]:
+    tools = GIT_READ if repositories else frozenset()
+    if origin == Origin.INTERACTIVE and any(
+        not checkout_reserved(repo.path, reserved) for repo in repositories.values()
+    ):
+        tools |= GIT_WRITE
+    return tools
 
 
 class WebSearchSettings(Value):
@@ -232,7 +276,9 @@ class OperatorConfig(Value):
     model: ModelSettings = Field(default_factory=ModelSettings)
     memory: MemorySettings = Field(default_factory=MemorySettings)
     images: ImageSettings = Field(default_factory=ImageSettings)
-    blog: BlogSettings = Field(default_factory=BlogSettings)
+    blog: CheckoutSettings = Field(default_factory=CheckoutSettings)
+    git: GitSettings = Field(default_factory=GitSettings)
+    letters: CheckoutSettings = Field(default_factory=CheckoutSettings)
     web_search: WebSearchSettings = Field(default_factory=WebSearchSettings)
     shell: ShellSettings = Field(default_factory=ShellSettings)
     tool_modules: list[Name] = Field(default_factory=list)
@@ -263,6 +309,8 @@ class EffectiveProfile(Value):
     memory: MemorySettings = Field(default_factory=MemorySettings)
     images: ImageSettings = Field(default_factory=ImageSettings)
     blog_repository: Path | None = None
+    git_repositories: dict[str, GitRepository] = Field(default_factory=dict)
+    git_reserved: frozenset[Path] = Field(default_factory=frozenset)
     web_search: WebSearchSettings = Field(default_factory=WebSearchSettings)
     shell: ShellSettings = Field(default_factory=ShellSettings)
     shell_granted: bool = False
@@ -448,6 +496,8 @@ def resolve_profile(
         ("memory", "memory"),
         ("images", "images"),
         ("blog_repository", "blog"),
+        ("git_repositories", "git"),
+        ("git_reserved", "letters"),
         ("web_search", "web_search"),
         ("shell", "shell"),
         ("background", "background"),
@@ -469,6 +519,17 @@ def resolve_profile(
     )
     sources.pop("budgets")
     tools = grants & registered
+    repositories = {}
+    for alias, repo in config.git.repositories.items():
+        root = _paths([str(repo.path)], base, directories=True)[0]
+        if any(root.is_relative_to(parent) for parent in roots):
+            repositories[alias] = GitRepository(path=root, branch=repo.branch)
+    reserved = frozenset(
+        _paths([config.letters.repository], base, directories=True)
+        if config.letters.repository is not None
+        else ()
+    )
+    tools -= (GIT_READ | GIT_WRITE) - _git_tools(repositories, reserved, origin)
     if not config.web_search.api_key_env:
         tools -= {"web.search"}
     if not (config.shell.enabled and shell_granted and origin == Origin.INTERACTIVE):
@@ -499,6 +560,8 @@ def resolve_profile(
         blog_repository=_paths([config.blog.repository], base, directories=True)[0]
         if config.blog.repository is not None
         else None,
+        git_repositories=repositories,
+        git_reserved=reserved,
         web_search=config.web_search,
         shell=config.shell,
         shell_granted=shell_granted,
@@ -541,6 +604,14 @@ def restrict_to_admission(
         )
     )
     tools = current.tools & admitted.tools & current.granted_tools & admitted.granted_tools
+    repositories = {
+        alias: repo
+        for alias, repo in admitted.git_repositories.items()
+        if current.git_repositories.get(alias) == repo
+        and any(repo.path.is_relative_to(root) for root in roots)
+    }
+    reserved = current.git_reserved | admitted.git_reserved
+    tools -= (GIT_READ | GIT_WRITE) - _git_tools(repositories, reserved, admitted.origin)
     if not admitted.web_search.api_key_env or current.web_search != admitted.web_search:
         tools -= {"web.search"}
     shell_granted = current.shell_granted and admitted.shell_granted
@@ -555,6 +626,8 @@ def restrict_to_admission(
     changes = {
         "model_image_inputs": current.model_image_inputs and admitted.model_image_inputs,
         "workspace_roots": roots,
+        "git_repositories": repositories,
+        "git_reserved": reserved,
         "granted_tools": current.granted_tools & admitted.granted_tools,
         "shell_granted": shell_granted,
         "tools": tools,

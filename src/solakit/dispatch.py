@@ -56,12 +56,20 @@ class Dispatcher:
         self.jobs: JobService | None = None
         self.images: ImageService | None = None
         self.blog: BlogService | None = None
+        self._checkout_locks: dict[tuple[int, int], asyncio.Lock] = {}
         package = Path(__file__).resolve().parent
         checkout = package.parent.parent
         self.protected: tuple[Path, ...] = (
             checkout if (checkout / "pyproject.toml").is_file() else package,
         )
         self.protected += tuple(Path(path).resolve().parent for path in registry.code_roots)
+
+    def checkout_lock(self, root: Path) -> asyncio.Lock:
+        info = root.stat()
+        key = (info.st_dev, info.st_ino)
+        if key not in self._checkout_locks:
+            self._checkout_locks[key] = asyncio.Lock()
+        return self._checkout_locks[key]
 
     def bind(self, run_id: str) -> ToolSession:
         admitted = EffectiveProfile.model_validate_json(
@@ -221,8 +229,13 @@ class ToolSession:
                 code=ErrorCode.EFFECT_UNCERTAIN,
                 message=message + invocation.uncertain_advice,
             )
-        elif status == "denied" and invocation.effect == "confirmed":
-            status = "failed"
+        else:
+            if failure is not None and call.name in ("git.pull", "git.publish"):
+                failure = failure.model_copy(
+                    update={"message": failure.message + invocation.uncertain_advice}
+                )
+            if status == "denied" and invocation.effect == "confirmed":
+                status = "failed"
         receipt = ToolReceipt(
             origin=call.origin,
             session_id=call.session_id,
@@ -363,6 +376,8 @@ class Invocation:
         service = self.dispatcher.blog
         if service is None:
             raise ToolError("Blog service is unavailable")
+        if profile.blog_repository is None:
+            raise ToolError("Configure blog.repository before using blog or dream tools")
         args = self.dispatcher.registry.tools[action].arguments.model_validate_json(
             canonical(arguments)
         )
@@ -400,7 +415,9 @@ class Invocation:
             self.confirm_effect,
             self.record_artifact,
         )
-        return await service.execute(action, args, files, cover=cover)
+        return await service.execute(
+            action, args, files, self.dispatcher.checkout_lock(profile.blog_repository), cover=cover
+        )
 
     def transcript_search(self, query: str, *, limit: int = 20) -> JsonValue:
         profile = self.authority()
