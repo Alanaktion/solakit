@@ -550,24 +550,25 @@ function renderTopics() {
 function revealTopic() {
   $(`topic-${selected}`)?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 }
-async function loadPinnedTopics(archived) {
+async function loadPinnedTopics(archived, signal) {
   const items = [];
   let after = null;
   do {
     const result = await api(
-      `/sessions?limit=100&include_ephemeral=true&pinned=true&archived=${archived}${after ? `&after=${encodeURIComponent(after)}` : ''}`
+      `/sessions?limit=100&include_ephemeral=true&pinned=true&archived=${archived}${after ? `&after=${encodeURIComponent(after)}` : ''}`,
+      { signal }
     );
     items.push(...result.items);
     after = result.items.length === 100 ? result.next : null;
   } while (after);
   return items;
 }
-async function loadTopics(more = false) {
+async function loadTopics(more = false, signal) {
   const token = ++topicGeneration;
   const archived = $('archived-topics').checked;
   const [result, pinned] = await Promise.all([
-    api(`/sessions?limit=50&include_ephemeral=true&pinned=false&archived=${archived}&q=${encodeURIComponent($('topic-search').value)}${more && topicCursor ? `&after=${encodeURIComponent(topicCursor)}` : ''}`),
-    more ? [] : loadPinnedTopics(archived)
+    api(`/sessions?limit=50&include_ephemeral=true&pinned=false&archived=${archived}&q=${encodeURIComponent($('topic-search').value)}${more && topicCursor ? `&after=${encodeURIComponent(topicCursor)}` : ''}`, { signal }),
+    more ? [] : loadPinnedTopics(archived, signal)
   ]);
   if (token !== topicGeneration) return;
   if (!more) {
@@ -585,6 +586,35 @@ async function loadTopics(more = false) {
   topicCursor = result.next;
   $('more-topics').hidden = result.items.length < 50;
   renderTopics();
+}
+
+async function openManagedTopic(id) {
+  topics.set(id, await api(`/sessions/${id}`));
+  await selectTopic(id);
+}
+
+function markManagedTopicsArchived(ids) {
+  ++topicGeneration;
+  for (const id of ids) {
+    const topic = topics.get(id);
+    if (topic) topics.set(id, { ...topic, archived: true });
+  }
+  renderTopics();
+  setTopicHeading();
+}
+
+async function refreshManagedTopics(ids, signal) {
+  const id = selected;
+  const refreshSelected = async () => {
+    if (!ids.includes(id)) return;
+    topics.set(id, await api(`/sessions/${id}`, { signal }));
+    renderTopics();
+    if (id === selected) setTopicHeading();
+  };
+  const results = await Promise.allSettled([loadTopics(false, signal), refreshSelected()]);
+  for (const result of results) {
+    if (result.status === 'rejected') throw result.reason;
+  }
 }
 function renderOutbox() {
   renderTemplate(
@@ -824,6 +854,9 @@ document.querySelector('sola-app').actions = {
   initialize,
   newTopic,
   loadTopics,
+  openManagedTopic,
+  markManagedTopicsArchived,
+  refreshManagedTopics,
   openSettings,
   logout,
   editTopic,

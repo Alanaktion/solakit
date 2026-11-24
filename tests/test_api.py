@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 from collections.abc import AsyncIterator, Iterator
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -17,7 +18,7 @@ from solakit.api import create_app
 from solakit.api.auth import COOKIE, AuthService
 from solakit.api.client import MAX_STREAMS, PAGE_BYTES, ClientService
 from solakit.config import EffectiveProfile, HTTPSettings
-from solakit.records import Message, Origin, RunState, new_id
+from solakit.records import Message, Origin, RunState, SessionMode, new_id
 from solakit.runtime import compose
 from solakit.storage.evidence import canonical
 
@@ -386,6 +387,57 @@ def test_session_title_search_filters_before_pagination(client: TestClient) -> N
     assert client.get(path, params={"q": "missing"}).json()["items"] == []
     assert client.get(path, params={"q": "x" * 257}).status_code == 422
     assert client.get(path, params={"q": "travel", "after": "bad"}).status_code == 422
+
+
+def test_session_catalog_filters_at_the_authenticated_boundary(
+    client: TestClient, app: FastAPI
+) -> None:
+    path = "/api/v1/sessions/catalog"
+    for resource in (path, f"{path}/profiles"):
+        assert client.get(resource).status_code == 401
+    login(client)
+    assert client.portal
+
+    def populate() -> tuple[str, str, str]:
+        store = app.state.context.store
+        match = store.create_session(title="Straße plans", mode=SessionMode.ISOLATED)
+        empty = store.create_session(title=match.title, mode=SessionMode.ISOLATED)
+        for profile in ("retired.profile", "default"):
+            run = store.admit(match.id, request_id=new_id(), content="Fixture", profile=profile)
+            store.transition_run(run.id, RunState.CANCELLED)
+        store.archive_sessions([match.id])
+        return match.id, empty.id, run.created_at.isoformat()
+
+    match, empty, activity = client.portal.call(populate)
+    assert client.get(f"{path}/profiles").json() == {"items": ["default", "retired.profile"]}
+    params = {
+        "q": " STRASSE ",
+        "mode": "isolated",
+        "profile": "retired.profile",
+        "status": "all",
+        "activity_from": activity,
+        "created_before": (
+            datetime.fromisoformat(activity) + timedelta(microseconds=1)
+        ).isoformat(),
+    }
+    result = client.get(path, params=params)
+    assert result.status_code == 200, result.text
+    page = result.json()
+    assert page["next"] is None
+    assert [item["id"] for item in page["items"]] == [match]
+    assert datetime.fromisoformat(page["items"][0]["last_activity_at"]) == datetime.fromisoformat(
+        activity
+    )
+    assert client.get(path, params=params | {"status": "active"}).json()["items"] == []
+    assert client.get(path, params=params | {"activity_before": activity}).status_code == 422
+    assert client.get(path, params={"created_from": "2026-11-24T00:00:00"}).status_code == 422
+    assert (
+        client.get(path, params={"activity_from": "2026-11-24T00:00:00+02:00"}).status_code == 422
+    )
+    assert client.get(path, params={"after": "invalid"}).status_code == 422
+    [item] = client.get(path).json()["items"]
+    assert item["id"] == empty
+    assert item["last_activity_at"] == item["created_at"]
 
 
 def test_session_pinned_filter_preserves_creation_cursor_and_title_search(
@@ -984,6 +1036,7 @@ def test_chat_shell_is_public_but_runtime_stays_authenticated(client: TestClient
         "artifact.js",
         "settings.js",
         "evidence.js",
+        "topics.js",
         "client.js",
         "ui.js",
         "markdown.js",

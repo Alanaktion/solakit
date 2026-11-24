@@ -6,6 +6,7 @@ import subprocess
 import sys
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -22,7 +23,9 @@ from solakit.records import (
     Message,
     ModelStep,
     Origin,
+    Run,
     RunState,
+    Session,
     SessionMode,
     ToolCall,
     ToolReceipt,
@@ -170,6 +173,80 @@ def test_bulk_archive_is_atomic_idempotent_and_durable(tmp_path: Path) -> None:
         assert len(store.list_sessions(archived=True)) == 2
         store.update_session(first.id, archived=False)
         store.admit(first.id, request_id=new_id(), content="restored", profile="default")
+
+
+def test_session_catalog_uses_stable_creation_keys_and_recorded_admission_dates(
+    tmp_path: Path,
+) -> None:
+    created = datetime(2026, 11, 23, tzinfo=UTC)
+    activity = created + timedelta(days=1, microseconds=1)
+    earlier = Session(id=f"{0:032x}", created_at=created, origin=Origin.SYSTEM)
+    once = Session(
+        id=f"{1:032x}",
+        created_at=created,
+        origin=Origin.SYSTEM,
+        mode=SessionMode.EPHEMERAL,
+        archived=True,
+    )
+    delegated = Session(
+        id=f"{2:032x}",
+        created_at=created,
+        origin=Origin.DELEGATED,
+        mode=SessionMode.ISOLATED,
+        parent_session_id=earlier.id,
+    )
+    with opened(tmp_path / "data") as store:
+        topics = (earlier, once, delegated)
+
+        def prepare() -> None:
+            store.db.executemany("INSERT INTO sessions VALUES (?,0)", [(s.id,) for s in topics])
+
+        store._commit(topics, prepare=prepare)
+        runs = tuple(
+            Run(
+                origin=Origin.SYSTEM,
+                session_id=once.id,
+                request_id=new_id(),
+                profile=name,
+                created_at=at,
+                started_at=at,
+                ended_at=at + timedelta(days=30),
+                state=RunState.COMPLETED,
+            )
+            for name, at in (
+                ("legacy", activity),
+                ("default", activity - timedelta(microseconds=1)),
+            )
+        )
+        store._commit(runs)
+
+        def catalog(
+            after: tuple[str, str] | None = None,
+            *,
+            profile: str | None = None,
+            activity_before: datetime | None = None,
+        ) -> tuple[list[tuple[Session, datetime]], bool]:
+            return store.session_catalog(
+                after=after,
+                limit=1,
+                archived=None,
+                q="",
+                profile=profile,
+                mode=None,
+                created_from=created,
+                created_before=created + timedelta(days=1),
+                activity_from=None,
+                activity_before=activity_before,
+            )
+
+        assert catalog() == ([(delegated, created)], True)
+        assert catalog((created.isoformat(), delegated.id)) == ([(once, activity)], True)
+        assert catalog((created.isoformat(), once.id)) == ([(earlier, created)], False)
+        assert catalog(profile="default", activity_before=activity) == ([], False)
+        assert catalog(profile="default", activity_before=activity + timedelta(microseconds=1)) == (
+            [(once, activity)],
+            False,
+        )
 
 
 def test_restart_skips_archived_history_but_reads_still_verify(

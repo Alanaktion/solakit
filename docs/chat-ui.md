@@ -90,6 +90,20 @@ their drafts remain editable. Single-use topics require a new topic for another
 run. Error notices can be dismissed without removing an uncertain submission
 from the outbox. The selected topic stays visible in narrow-screen navigation.
 
+Use **Manage topics** to browse across active and archived topics. Filters combine
+title, profile, memory mode, status, creation date and last activity. A profile
+matches any run that used it, including profiles removed from configuration.
+Last activity uses the most recent run submission and falls back to the creation
+date for topics without runs. Both date ranges include their end dates in your
+browser's time zone. Click a title to open its conversation.
+
+Select individual topics, all visible active topics, or all active topics that
+match the filters. Selection persists while you load more rows and clears when
+filters change. **Archive selected** confirms the count before sending the
+selected IDs. If archiving pauses, the dialog shows the confirmed count and
+offers to retry the remaining topics. To restore a topic, open it from the
+archived results and clear **Archive topic** in Topic details.
+
 Settings uses six keyboard-accessible tabs, with a separate dialog for job
 creation and editing. Use the X or Escape to close Settings. Arrow keys move
 between tabs. Home and End select the first or last tab. Navigation stays visible
@@ -161,6 +175,7 @@ and is excluded from the job target picker.
 
 - `app.js`, `turn.js`, `job.js`, `artifact.js`: Lit components and their rendering.
 - `settings.js`: Settings/job-dialog templates and their API actions.
+- `topics.js`: the filterable topic manager and bulk archive workflow.
 - `evidence.js`: independently paged run records/model requests and artifact panels.
 - `client.js`, `ui.js`: authenticated requests, tab storage, shared DOM/error helpers and the light-DOM base.
 - `chat.js`: conversation state, topics, drafts/outbox, SSE/polling and startup wiring.

@@ -126,6 +126,8 @@ means unavailable service/state.
 | Resource | Operations and behavior |
 | --- | --- |
 | `/sessions` | POST creates shared/isolated/ephemeral topic, title <=256 characters; GET pages stable creation order, optional `q` title and `pinned` filters |
+| `/sessions/catalog` | GET operator topic catalog with filters and newest-first creation cursor |
+| `/sessions/catalog/profiles` | GET `{ "items": [name, ...] }` with sorted configured and recorded profile names |
 | `/sessions/{id}` | GET; PATCH title/archived/pinned; mode stays frozen |
 | `/sessions/archive` | POST `{ "session_ids": [id, ...] }` (1–100); returns `{ "archived": count }`; validates all IDs before one state transaction; duplicates/already archived sessions are no-ops |
 | `/sessions/{id}/messages` | GET public conversation pages; private background inputs/tools remain in run records |
@@ -193,6 +195,16 @@ sequence pages contain `sequence`, `kind`, `record`, and `truncated`. Run update
 do not move their admission position: use GET or events to refresh their state.
 Search is a bounded ranked query, without a pagination cursor. Metadata catalogs
 are bounded single responses.
+
+The topic catalog includes all memory modes and delegated topics. It combines
+`q` (case-insensitive title substring), `profile` (exact match on any recorded
+run), `mode`, and `status` (`active` by default, `archived`, or `all`). The
+optional `created_from`, `created_before`, `activity_from`, and `activity_before`
+parameters take aware UTC timestamps. `*_from` is inclusive and `*_before` is
+exclusive. Each item extends session metadata with `last_activity_at`, the most
+recent run's admission time or the creation time for a topic without runs. The
+catalog orders pages newest first by `(created_at,id)` and sets `next` to `null`
+on the last page.
 
 Messages, session runs and run records additionally accept `before=0` for their
 newest bounded page, or `before=<sequence>` for strictly older records. They

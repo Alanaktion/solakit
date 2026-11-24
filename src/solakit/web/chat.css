@@ -193,6 +193,14 @@ input[type='checkbox'] {
     'Noto Color Emoji';
   padding: 0 8px 8px;
 }
+.topic-search-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+#manage-topics {
+  white-space: nowrap;
+}
 #topics {
   flex: 1;
   overflow: auto;
@@ -668,6 +676,110 @@ dialog > details > summary {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 12px;
 }
+sola-topic-manager {
+  display: contents;
+}
+#topic-manager {
+  scroll-padding-top: 90px;
+}
+.manager-filters,
+.manager-dates {
+  border: 0;
+  margin: 0;
+  min-width: 0;
+  padding: 0;
+}
+.manager-filters label {
+  margin: 0;
+  min-width: 0;
+}
+.manager-filter-options,
+.manager-date-options,
+.manager-dates {
+  display: grid;
+  gap: 8px;
+}
+.manager-filter-options {
+  grid-template-columns: minmax(0, 2fr) repeat(3, minmax(0, 1fr));
+}
+.manager-date-options,
+.manager-dates {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.manager-date-options {
+  gap: 16px;
+  margin: 12px 0 16px;
+}
+.manager-dates legend {
+  padding: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+.manager-dates input {
+  min-width: 0;
+}
+.manager-toolbar,
+.manager-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.manager-toolbar {
+  justify-content: space-between;
+  border-top: 1px solid var(--line);
+  padding: 8px 0;
+}
+.manager-selection {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--paper);
+}
+.manager-toolbar label,
+.manager-toolbar p {
+  margin: 0;
+}
+.manager-error {
+  color: var(--danger);
+}
+.manager-status {
+  margin: 8px 0;
+}
+.manager-rows {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 12px;
+}
+.manager-rows li {
+  display: grid;
+  grid-template-columns: var(--control-height) minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+}
+.manager-checkbox {
+  margin: 0;
+  justify-content: center;
+}
+.manager-checkbox input {
+  margin: 0;
+}
+.manager-topic-title {
+  padding: 4px 8px;
+  border-color: transparent;
+  font-weight: 600;
+  text-align: start;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.manager-topic-meta {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: 12px;
+  padding: 0 8px;
+}
 #job-tools {
   min-width: 0;
   border: 1px solid var(--line);
@@ -767,9 +879,12 @@ dialog > details > summary {
     justify-self: start;
     white-space: nowrap;
   }
-  #topic-search {
+  .topic-search-tools {
     grid-column: 1 / -1;
     grid-row: 3;
+    flex-direction: row;
+  }
+  #topic-search {
     min-width: 0;
   }
   #topics {
@@ -836,6 +951,16 @@ dialog > details > summary {
   .fields {
     grid-template-columns: 1fr;
     gap: 0;
+  }
+  .manager-filter-options {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .manager-date-options {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+  .manager-actions button {
+    padding-inline: 8px;
   }
   .message.user {
     padding: 8px 12px;

@@ -2,6 +2,7 @@
 
 import sqlite3
 from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
@@ -720,6 +721,72 @@ class Store:
             ),
         ).fetchall()
         return [self.session(row[0]) for row in rows]
+
+    def session_catalog(
+        self,
+        *,
+        after: tuple[str, str] | None,
+        limit: int,
+        archived: bool | None,
+        q: str,
+        profile: str | None,
+        mode: SessionMode | None,
+        created_from: datetime | None,
+        created_before: datetime | None,
+        activity_from: datetime | None,
+        activity_before: datetime | None,
+    ) -> tuple[list[tuple[Session, datetime]], bool]:
+        page_limit(limit)
+        conditions = [
+            "s.kind='session'",
+            "instr(casefold(json_extract(s.body,'$.title')),:title)>0",
+            "(:archived IS NULL OR json_extract(s.body,'$.archived')=:archived)",
+            "(:mode IS NULL OR json_extract(s.body,'$.mode')=:mode)",
+        ]
+        params: dict[str, str | int | None] = {
+            "title": q.strip().casefold(),
+            "archived": archived,
+            "mode": mode,
+            "limit": limit + 1,
+        }
+        if after is not None:
+            conditions.append("(s.created_at,s.id)<(:after_at,:after_id)")
+            params["after_at"], params["after_id"] = after
+        if profile is not None:
+            conditions.append(
+                "EXISTS (SELECT 1 FROM entities r WHERE r.kind='run' AND r.session_id=s.id "
+                "AND json_extract(r.body,'$.profile')=:profile)"
+            )
+            params["profile"] = profile
+        for name, condition, value in (
+            ("created_from", "s.created_at>=:created_from", created_from),
+            ("created_before", "s.created_at<:created_before", created_before),
+            ("activity_from", "last_activity_at>=:activity_from", activity_from),
+            ("activity_before", "last_activity_at<:activity_before", activity_before),
+        ):
+            if value is not None:
+                conditions.append(condition)
+                params[name] = value.isoformat()
+        rows = self.db.execute(
+            "SELECT s.*, COALESCE((SELECT MAX(r.created_at) FROM entities r "
+            "WHERE r.kind='run' AND r.session_id=s.id), s.created_at) AS last_activity_at "
+            f"FROM entities s WHERE {' AND '.join(conditions)} "
+            "ORDER BY s.created_at DESC,s.id DESC LIMIT :limit",
+            params,
+        ).fetchall()
+        return [
+            (self._read_row(row, Session), datetime.fromisoformat(row["last_activity_at"]))
+            for row in rows[:limit]
+        ], len(rows) > limit
+
+    def session_catalog_profiles(self) -> set[str]:
+        return {
+            row[0]
+            for row in self.db.execute(
+                "SELECT DISTINCT json_extract(body,'$.profile') FROM entities WHERE kind='run'"
+            )
+            if row[0]
+        }
 
     def admit(
         self,

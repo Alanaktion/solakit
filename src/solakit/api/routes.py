@@ -39,6 +39,7 @@ from solakit.records import (
     SchedulerControl,
     Session,
     SessionMode,
+    Timestamp,
 )
 from solakit.runtime import ApplicationContext, compose
 from solakit.storage.evidence import StorageError, canonical
@@ -62,6 +63,7 @@ WEB_ASSETS = (
     "artifact.js",
     "settings.js",
     "evidence.js",
+    "topics.js",
     "client.js",
     "ui.js",
     "markdown.js",
@@ -226,6 +228,28 @@ class SessionPatch(Input):
 
 class SessionArchive(Input):
     session_ids: list[RecordID] = Field(min_length=1, max_length=100)
+
+
+class SessionCatalogQuery(Input):
+    limit: int = Field(default=50, ge=1, le=100)
+    after: str | None = None
+    status: Literal["active", "archived", "all"] = "active"
+    q: str = Field(default="", max_length=256)
+    profile: str | None = Field(default=None, min_length=1, max_length=256)
+    mode: SessionMode | None = None
+    created_from: Timestamp | None = None
+    created_before: Timestamp | None = None
+    activity_from: Timestamp | None = None
+    activity_before: Timestamp | None = None
+
+
+class SessionCatalogItem(Session):
+    last_activity_at: Timestamp
+
+
+class SessionCatalogPage(BaseModel):
+    items: list[SessionCatalogItem]
+    next: str | None
 
 
 class ImageReference(Input):
@@ -514,6 +538,42 @@ def create_app(
     @app.post("/api/v1/sessions/archive")
     async def archive_sessions(body: SessionArchive) -> dict[str, int]:
         return {"archived": store.archive_sessions(body.session_ids)}
+
+    @app.get("/api/v1/sessions/catalog")
+    async def session_catalog(query: Annotated[SessionCatalogQuery, Query()]) -> SessionCatalogPage:
+        for start, end, name in (
+            (query.created_from, query.created_before, "Creation"),
+            (query.activity_from, query.activity_before, "Activity"),
+        ):
+            if start is not None and end is not None and start >= end:
+                raise RequestError(422, "invalid_date_range", f"{name} start must precede end")
+        items, has_more = store.session_catalog(
+            after=time_cursor(query.after),
+            limit=query.limit,
+            archived=None if query.status == "all" else query.status == "archived",
+            q=query.q,
+            profile=query.profile,
+            mode=query.mode,
+            created_from=query.created_from,
+            created_before=query.created_before,
+            activity_from=query.activity_from,
+            activity_before=query.activity_before,
+        )
+        result = SessionCatalogPage(
+            items=[
+                SessionCatalogItem(**topic.model_dump(), last_activity_at=activity)
+                for topic, activity in items
+            ],
+            next=f"{items[-1][0].created_at.isoformat()},{items[-1][0].id}" if has_more else None,
+        )
+        bounded(result.model_dump(mode="json"))
+        return result
+
+    @app.get("/api/v1/sessions/catalog/profiles")
+    async def session_catalog_profiles() -> dict[str, list[str]]:
+        profiles = sorted(store.session_catalog_profiles().union(service.profiles))
+        bounded({"items": profiles})
+        return {"items": profiles}
 
     @app.get("/api/v1/sessions/{session_id}")
     async def session(session_id: ID) -> Session:

@@ -319,6 +319,123 @@ try {
       await audit('topic-search');
     }
   );
+  await check('topic manager filters, paged bulk archive and retry after a lost response', async () => {
+    const tag = `Bulk archive fixture ${Date.now()}`;
+    const ids = await page.evaluate(async (tag) => {
+      const { api, uid } = await import('/assets/client.js');
+      const ids = [];
+      for (let i = 0; i < 102; i++) {
+        const topic = await api('/sessions', { method: 'POST', body: { title: `${tag} ${i}` } });
+        ids.push(topic.id);
+      }
+      await api('/runs?wait=5', {
+        method: 'POST', headers: { 'Idempotency-Key': uid() },
+        body: { session_id: ids.at(-1), content: 'Keep this transcript after archiving.' }
+      });
+      return ids;
+    }, tag);
+
+    const launcher = page.getByRole('button', { name: 'Manage topics' });
+    const manager = page.getByRole('dialog', { name: 'Manage topics' });
+    const title = manager.getByRole('searchbox', { name: 'Title' });
+    const profile = manager.getByRole('combobox', { name: 'Profile' });
+    const status = manager.getByRole('combobox', { name: 'Status' });
+    const openLatest = manager.getByRole('button', { name: `${tag} 101`, exact: true });
+    const selection = (count) => manager.getByRole('status').filter({
+      hasText: new RegExp(`^${count} selected\\.`)
+    });
+    await launcher.focus();
+    await page.keyboard.press('Enter');
+    await title.waitFor();
+    assert(await title.evaluate((input) => input === document.activeElement));
+    await title.fill(tag);
+    await openLatest.waitFor();
+    await profile.selectOption('default');
+    const today = await page.evaluate(() => {
+      const now = new Date();
+      return [now.getFullYear(), now.getMonth() + 1, now.getDate()]
+        .map((part) => String(part).padStart(2, '0')).join('-');
+    });
+    await manager.getByLabel('Created through').fill(today);
+    await manager.getByLabel('Last activity from').fill(today);
+    await manager.getByRole('status').filter({ hasText: '1 topic loaded.' }).waitFor();
+    await page.setViewportSize({ width: 320, height: 760 });
+    assert(await manager.evaluate((dialog) => dialog.scrollWidth <= dialog.clientWidth));
+    await audit('topic-manager-mobile');
+    await page.screenshot({ path: path.join(options.output, 'topic-manager-mobile.png') });
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.keyboard.press('Escape');
+    await manager.waitFor({ state: 'hidden' });
+    assert(await launcher.evaluate((button) => button === document.activeElement));
+
+    await launcher.click();
+    await openLatest.click();
+    const content = 'Keep this transcript after archiving.';
+    await page.locator('#turns').getByText(content, { exact: true }).waitFor();
+    const draft = page.locator('#draft');
+    await draft.fill('Draft kept through bulk archive');
+    await launcher.click();
+    await profile.selectOption('');
+    await manager.getByRole('status').filter({ hasText: /^50 topics loaded/ }).waitFor();
+    const latestCheckbox = manager.getByRole('checkbox', { name: `Select ${tag} 101` });
+    await latestCheckbox.focus();
+    await page.keyboard.press('Space');
+    await selection(1).waitFor();
+    await status.selectOption('all');
+    await selection(0).waitFor();
+    await manager.getByRole('checkbox', { name: 'Select visible active topics' }).check();
+    await selection(50).waitFor();
+    await manager.getByRole('button', { name: 'Load more topics' }).click();
+    await manager.getByRole('status').filter({ hasText: /^100 topics loaded/ }).waitFor();
+    await selection(50).waitFor();
+    await manager.getByRole('button', { name: 'Select all matching active topics' }).click();
+    await selection(102).waitFor();
+    await page.screenshot({ path: path.join(options.output, 'topic-manager-selection.png') });
+
+    const submitted = [];
+    const archiveRoute = async (route) => {
+      submitted.push(route.request().postDataJSON().session_ids);
+      const response = await route.fetch();
+      assert(response.ok());
+      if (submitted.length === 2) await route.abort('failed');
+      else await route.fulfill({ response });
+    };
+    await page.route('**/api/v1/sessions/archive', archiveRoute);
+    const archive = manager.getByRole('button', { name: 'Archive selected' });
+    let confirmation;
+    page.once('dialog', async (dialog) => {
+      confirmation = dialog.message();
+      await dialog.dismiss();
+    });
+    await archive.click();
+    assert(confirmation.startsWith('Archive 102 topics?'));
+    assert.equal(submitted.length, 0);
+    const late = await page.evaluate(async (tag) => {
+      const { api } = await import('/assets/client.js');
+      return api('/sessions', { method: 'POST', body: { title: `${tag} created after selection` } });
+    }, tag);
+    page.once('dialog', (dialog) => dialog.accept());
+    await archive.click();
+    await manager.getByRole('alert').filter({ hasText: 'Archive paused.' }).waitFor();
+    await manager.getByRole('status').filter({ hasText: '100 of 102 topics confirmed archived.' }).waitFor();
+    await manager.getByRole('button', { name: 'Retry archive (2)' }).click();
+    await manager.getByRole('status').filter({ hasText: '102 topics archived.' }).waitFor();
+    await page.unroute('**/api/v1/sessions/archive', archiveRoute);
+    assert.deepEqual(submitted.map((batch) => batch.length), [100, 2, 2]);
+    assert.deepEqual(submitted[2], submitted[1]);
+    assert.deepEqual(new Set([...submitted[0], ...submitted[1]]), new Set(ids));
+    assert(!submitted.flat().includes(late.id));
+    await status.selectOption('archived');
+    await openLatest.waitFor();
+    assert(await latestCheckbox.isDisabled());
+    await manager.getByRole('button', { name: 'Close topic manager' }).click();
+    await page.locator('#topic-mode').getByText('archived', { exact: false }).waitFor();
+    await page.locator('#turns').getByText(content, { exact: true }).waitFor();
+    assert.equal(await draft.inputValue(), 'Draft kept through bulk archive');
+    assert(await page.locator('#send').isDisabled());
+    await page.locator('#topic-' + fixture.topic).click();
+    await page.locator('.compaction-summary').first().waitFor();
+  });
   await page.screenshot({
     path: path.join(options.output, 'chat-desktop.png'),
     fullPage: true
@@ -1296,8 +1413,10 @@ try {
     await page.setViewportSize({ width: 320, height: 256 });
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
     await page.locator('#draft').focus();
-    const box = await page.locator('#draft').boundingBox();
-    assert(box.y >= 0 && box.y < 256);
+    await waitFor(() => {
+      const { y } = document.getElementById('draft').getBoundingClientRect();
+      return y >= 0 && y < innerHeight;
+    });
     await page.setViewportSize({ width: 390, height: 844 });
   });
   await check('single-use topics explain why another submission is unavailable', async () => {

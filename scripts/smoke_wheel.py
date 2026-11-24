@@ -30,6 +30,7 @@ def main() -> None:
                 "artifact.js",
                 "settings.js",
                 "evidence.js",
+                "topics.js",
                 "client.js",
                 "ui.js",
                 "markdown.js",

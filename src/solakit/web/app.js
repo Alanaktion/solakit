@@ -1,6 +1,7 @@
 import { html } from './lit-core.min.js';
 import { $, action, SolaElement, agentName } from './ui.js';
 import { settingsTemplate } from './settings.js';
+import './topics.js';
 
 export class SolaApp extends SolaElement {
   static properties = { actions: { attribute: false } };
@@ -9,6 +10,9 @@ export class SolaApp extends SolaElement {
     const {
       newTopic,
       loadTopics,
+      openManagedTopic,
+      markManagedTopicsArchived,
+      refreshManagedTopics,
       openSettings,
       logout,
       editTopic,
@@ -32,14 +36,20 @@ export class SolaApp extends SolaElement {
         <button @click=${newTopic} id="new-topic">
           <sola-icon name="Plus"></sola-icon> New topic
         </button>
-        <input
-          id="topic-search"
-          type="search"
-          aria-label="Search topics by title"
-          placeholder="Search topics…"
-          maxlength="256"
-          @input=${action(() => loadTopics())}
-        />
+        <div class="topic-search-tools">
+          <input
+            id="topic-search"
+            type="search"
+            aria-label="Search topics by title"
+            placeholder="Search topics…"
+            maxlength="256"
+            @input=${action(() => loadTopics())}
+          />
+          <button type="button" id="manage-topics" aria-haspopup="dialog"
+            @click=${action(() => $('topic-manager-component').show())}>
+            <sola-icon name="ListChecks"></sola-icon> Manage topics
+          </button>
+        </div>
         <nav id="topics" aria-label="Choose a topic"></nav>
         <button @click=${action(() => loadTopics(true))} id="more-topics" hidden>
           More topics
@@ -175,6 +185,9 @@ export class SolaApp extends SolaElement {
           </div>
         </form>
       </dialog>
+      <sola-topic-manager id="topic-manager-component" .openTopic=${openManagedTopic}
+        .markArchived=${markManagedTopicsArchived} .refreshSidebar=${refreshManagedTopics}>
+      </sola-topic-manager>
       ${settingsTemplate(this.actions)}
       <dialog id="evidence" class="wide" aria-labelledby="evidence-title" closedby="any">
         <header>
