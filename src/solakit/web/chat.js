@@ -233,7 +233,10 @@ async function refresh(ids = []) {
   if (token !== generation) return;
   render();
   const replies = [...messages.values()]
-    .filter((row) => row.sequence > lastSequence && row.record.role === 'assistant')
+    .filter(({ sequence, record }) =>
+      sequence > lastSequence && record.role === 'assistant' &&
+      !turns.get(record.run_id)?.summaryIds.has(record.id)
+    )
     .sort((a, b) => a.sequence - b.sequence);
   // Replacing the text also announces a new reply identical to the previous one.
   if (replies.length)

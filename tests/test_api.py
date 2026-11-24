@@ -1122,3 +1122,22 @@ def test_large_chat_records_keep_attribution_and_tool_correlation() -> None:
     assert view["record"]["tool_call_id"] == receipt.tool_call_id
     assert view["record"]["status"] == "succeeded"
     assert "result" not in view["record"]
+
+
+def test_large_compaction_record_keeps_summary_message_id() -> None:
+    from solakit.api.client import record_view
+    from solakit.records import CompactionBoundary
+
+    sources = tuple(new_id() for _ in range(2000))
+    boundary = CompactionBoundary(
+        origin=Origin.INTERACTIVE,
+        session_id=new_id(),
+        run_id=new_id(),
+        source_message_ids=sources,
+        through_message_id=sources[-1],
+        summary_message_id=new_id(),
+    )
+    view = record_view(1, boundary)
+    assert view["truncated"]
+    assert view["record"]["summary_message_id"] == boundary.summary_message_id
+    assert "source_message_ids" not in view["record"]

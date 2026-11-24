@@ -349,6 +349,8 @@ try {
           const root = getComputedStyle(document.documentElement);
           const primary = getComputedStyle(document.querySelector('#send'));
           const muted = getComputedStyle(document.querySelector('#connection')).color;
+          const summary = document.querySelector('.compaction-summary');
+          const summaryStyle = getComputedStyle(summary);
           return {
             background: root.backgroundColor,
             luminance: luminance(root.backgroundColor),
@@ -361,6 +363,11 @@ try {
                 getComputedStyle(document.querySelector('.sidebar')).backgroundColor
               ),
               primary: contrast(primary.color, primary.backgroundColor),
+              summary: contrast(summaryStyle.color, summaryStyle.backgroundColor),
+              summaryLabel: contrast(
+                getComputedStyle(summary.querySelector('.author')).color,
+                summaryStyle.backgroundColor
+              ),
               error: contrast(
                 getComputedStyle(document.querySelector('#topic-error')).color,
                 root.backgroundColor
@@ -498,6 +505,12 @@ try {
     assert(body.includes('Memory extraction · ambiguous'));
     assert(body.includes('original turns retained'));
     assert.equal(await page.locator('#turns img, #turns script').count(), 0);
+    const summary = page.getByRole('article', { name: 'Context summary', exact: true });
+    assert.equal(await summary.count(), 1);
+    assert.match(await summary.innerText(), /earlier fixture turns established a working plan/);
+    assert.equal(await summary.locator('li').count(), 2);
+    const reply = summary.locator('..').getByRole('article', { name: agentName, exact: true });
+    assert.match(await reply.innerText(), /Settled answer 500/);
     const safe = await page.evaluate(async () => {
       const { markdown } = await import('/assets/markdown.js');
       const holder = document.createElement('div');

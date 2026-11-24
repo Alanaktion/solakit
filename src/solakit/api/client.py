@@ -11,6 +11,7 @@ from solakit.config import EffectiveProfile
 from solakit.engine.prompts import PromptInput, assemble, inspect_prompt
 from solakit.records import (
     Artifact,
+    CompactionBoundary,
     Message,
     ModelRequest,
     Origin,
@@ -45,6 +46,8 @@ def record_view(sequence: int, record: Record) -> dict[str, Any]:
         }
         if isinstance(record, Message):
             body.update(role=record.role, tool_call_id=record.tool_call_id)
+        if isinstance(record, CompactionBoundary):
+            body["summary_message_id"] = record.summary_message_id
         if isinstance(record, ToolCall):
             body["name"] = record.name[:256]
         if isinstance(record, ToolReceipt):

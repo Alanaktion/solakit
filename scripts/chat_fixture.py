@@ -246,8 +246,19 @@ def main() -> None:
                     store.append(commit)
                     store.transition_memory(commit.id, MemoryState.RUNNING)
                     store.transition_memory(commit.id, MemoryState.AMBIGUOUS)
-                store.append(message)
                 if i == 499:
+                    summary = Message(
+                        origin=run.origin,
+                        session_id=topic.id,
+                        run_id=run.id,
+                        role="assistant",
+                        content=(
+                            "The earlier fixture turns established a working plan.\n\n"
+                            "- **Decided** to keep the existing topic.\n"
+                            "- **Next** review the remaining work."
+                        ),
+                    )
+                    store.append(summary)
                     store.append(
                         CompactionBoundary(
                             origin=run.origin,
@@ -255,9 +266,10 @@ def main() -> None:
                             run_id=run.id,
                             source_message_ids=tuple(source_ids[-3:]),
                             through_message_id=source_ids[-1],
-                            summary_message_id=message.id,
+                            summary_message_id=summary.id,
                         )
                     )
+                store.append(message)
                 source_ids.append(message.id)
                 store.transition_run(run.id, RunState.COMPLETED)
             other = store.create_session(title="A fresh topic")

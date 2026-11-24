@@ -316,6 +316,17 @@ main {
   border-radius: var(--radius);
   padding: 8px 12px;
 }
+.message.compaction-summary {
+  margin-block: 16px 8px;
+  padding: 12px 16px;
+  border-inline-start: 3px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--tint);
+}
+.compaction-summary .author {
+  color: var(--accent);
+  margin-bottom: 8px;
+}
 .message p:last-child {
   margin-bottom: 0;
 }

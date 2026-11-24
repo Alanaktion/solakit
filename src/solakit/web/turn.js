@@ -47,6 +47,7 @@ class SolaTurn extends SolaElement {
     this.workEntries = new Map();
     this.messageNodes = new Map();
     this.entryNodes = new Map();
+    this.summaryIds = new Set();
     this.preview = '';
     this.elapsed = '';
   }
@@ -80,7 +81,13 @@ class SolaTurn extends SolaElement {
       );
       this.messageNodes.set(m.id, message);
     }
-    return this.messageNodes.get(m.id);
+    const message = this.messageNodes.get(m.id);
+    // A boundary can arrive after its message has already been rendered.
+    if (this.summaryIds.has(m.id) && !message.classList.contains('compaction-summary')) {
+      message.classList.add('compaction-summary');
+      message.firstElementChild.textContent = 'Context summary';
+    }
+    return message;
   }
 
   renderEntry(entry) {
@@ -232,12 +239,14 @@ class SolaTurn extends SolaElement {
           label: `Memory extraction · ${r.state === 'completed' ? 'completed — saved' : r.state}`,
           reconcile: ['ambiguous', 'failed'].includes(r.state)
         });
-      if (kind === 'compaction')
+      if (kind === 'compaction') {
+        this.summaryIds.add(r.summary_message_id);
         entries.push({
           ...entry,
           tone: 'info',
           label: 'Earlier context summarized · original turns retained'
         });
+      }
       if (kind === 'delivery')
         entries.push({ ...entry, tone: tone(r.state), label: `Scheduled message · ${r.state}` });
       if (kind === 'recovery') entries.push({ ...entry, tone: 'info', label: 'Recovery note' });

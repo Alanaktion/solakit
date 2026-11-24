@@ -74,8 +74,10 @@ loads each run's records back to its start, then refreshes recent activity; the
 evidence dialog pages through all records. Tool
 results are associated with their call IDs. Tool errors, uncertain effects,
 interrupted work, memory extraction state and staged notes have separate labels.
-A staged note is not a claim that memory extraction succeeded. Context summary
-markers retain original turns; topic details can rename, pin or archive a topic.
+A staged note is not a claim that memory extraction succeeded. Compaction text
+appears in a tinted **Context summary** card, with a separate disclosure for
+the compaction record. The original turns remain in the conversation. Topic
+details can rename, pin or archive a topic.
 Use **Search topics** above the topic list to find a title/name by a partial,
 case-insensitive match, including topics beyond the first page. Pinned topics
 always appear first, including pins beyond the first page and pins whose titles

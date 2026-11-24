@@ -201,7 +201,9 @@ sequence to use as the next `before` cursor. An empty page ends backward paging.
 Do not combine a nonzero `after` with `before`. Existing forward paging is
 unchanged. Limits and byte caps apply before reversing a backward page, so large
 records cannot skip unseen history. Truncated message/receipt views retain
-origin, role and tool-call correlation; content stays bounded or artifact-backed.
+origin, role and tool-call correlation. Truncated compaction records retain
+`summary_message_id` so clients can identify the summary in the conversation.
+Content stays bounded or artifact-backed.
 
 Sequence pages stop around 512 KiB of canonical data, even before the requested
 count. Individual execution records above 64 KiB return IDs and directly linked
