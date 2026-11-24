@@ -17,13 +17,13 @@ from pydantic import ValidationError
 from test_api import BASE, PASSWORD, login
 from test_run_loop import call, harness, reply, wire
 
+from solakit.adapters.vision import INSTRUCTION
 from solakit.api import create_app
-from solakit.compaction import Compactor, select
 from solakit.config import EffectiveProfile, OperatorConfig, VisionSettings
-from solakit.images import UPLOAD_BYTES, UPLOAD_TTL, normalize_upload
+from solakit.engine.compaction import Compactor, select
 from solakit.records import Artifact, Message, Run, new_id
 from solakit.runtime import ApplicationContext
-from solakit.vision import INSTRUCTION
+from solakit.tools.images import UPLOAD_BYTES, UPLOAD_TTL, normalize_upload
 
 PIN = "fixture-vision"
 OBSERVATION = "Visible text reads ORBIT-8392."

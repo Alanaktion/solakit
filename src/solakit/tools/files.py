@@ -11,9 +11,9 @@ from typing import TYPE_CHECKING, cast
 
 from pydantic import JsonValue
 
-from solakit.evidence import digest
 from solakit.records import ErrorCode, new_id
 from solakit.sdk import ToolError
+from solakit.storage.evidence import digest
 
 if TYPE_CHECKING:
     from solakit.config import EffectiveProfile

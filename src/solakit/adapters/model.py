@@ -11,9 +11,8 @@ from openai import APIError, APIStatusError, APITimeoutError, AsyncOpenAI
 from pydantic import Field, JsonValue
 
 from solakit.config import EffectiveProfile
-from solakit.events import Previews
-from solakit.evidence import canonical, checked_json
-from solakit.prompts import PreparedPrompt, inspect_prompt
+from solakit.engine.events import Previews
+from solakit.engine.prompts import PreparedPrompt, inspect_prompt
 from solakit.records import (
     Artifact,
     ErrorCode,
@@ -28,7 +27,8 @@ from solakit.records import (
     new_id,
 )
 from solakit.redaction import Redactor
-from solakit.store import Store
+from solakit.storage.evidence import canonical, checked_json
+from solakit.storage.store import Store
 
 MAX_RESPONSE_BYTES = 4 * 1024 * 1024
 VISION_RESPONSE_BYTES = 64 * 1024

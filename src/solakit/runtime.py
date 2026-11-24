@@ -9,17 +9,17 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
 from solakit.config import EffectiveProfile
-from solakit.evidence import ensure_directory
-from solakit.store import Store
+from solakit.storage.evidence import ensure_directory
+from solakit.storage.store import Store
 
 if TYPE_CHECKING:
-    from solakit.blog import BlogService
-    from solakit.dispatch import Dispatcher
-    from solakit.images import ImageService
-    from solakit.jobs import JobService
-    from solakit.memory import MemoryService
-    from solakit.model import ModelAdapter
-    from solakit.run_loop import RunLoop
+    from solakit.adapters.memory import MemoryService
+    from solakit.adapters.model import ModelAdapter
+    from solakit.engine.jobs import JobService
+    from solakit.engine.run_loop import RunLoop
+    from solakit.tools.blog import BlogService
+    from solakit.tools.dispatch import Dispatcher
+    from solakit.tools.images import ImageService
 
 
 class LifecycleError(RuntimeError):
@@ -159,16 +159,16 @@ def compose(
     current_profile: Callable[[EffectiveProfile], EffectiveProfile] | None = None,
 ) -> ApplicationContext:
     """Resources are supplied in dependency order, closed in reverse order."""
-    from solakit.blog import BlogService
-    from solakit.dispatch import Dispatcher
-    from solakit.images import ImageService
-    from solakit.jobs import JobService
-    from solakit.memory import MemoryService, OpenViking
-    from solakit.model import ModelAdapter
+    from solakit.adapters.memory import MemoryService, OpenViking
+    from solakit.adapters.model import ModelAdapter
+    from solakit.adapters.vision import VisionAdapter
+    from solakit.engine.jobs import JobService
+    from solakit.engine.run_loop import RunLoop
     from solakit.redaction import Redactor
-    from solakit.registry import load_registry
-    from solakit.run_loop import RunLoop
-    from solakit.vision import VisionAdapter
+    from solakit.tools.blog import BlogService
+    from solakit.tools.dispatch import Dispatcher
+    from solakit.tools.images import ImageService
+    from solakit.tools.registry import load_registry
 
     store = Store(profile.data_dir)
     context = ApplicationContext(profile=profile, store=store)

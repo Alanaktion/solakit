@@ -9,6 +9,12 @@ lives in `src/solakit/`; packaged Lit components, JavaScript, and styles live in
 reliability evaluations in `evals/`, and the public SDK example in
 `examples/phase5_pack/`.
 
+Within `src/solakit/`, `api/` owns HTTP routes, authentication, and client views.
+`engine/` owns run execution, scheduling, prompts, and compaction. `adapters/`
+contains model, vision, and memory provider clients. `storage/` owns evidence,
+SQLite, search, backups, and legacy imports. `tools/` contains built-in tools,
+registration, dispatch, and their integrations. Trusted packs import `solakit.sdk`.
+
 Start with `docs/plans/README.md`, then consult `docs/product.md` and
 `docs/decisions.md`. Later confirmed decisions supersede earlier proposals.
 

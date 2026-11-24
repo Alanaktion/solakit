@@ -13,7 +13,7 @@ from scripts.probe_model import load_key
 from solakit.config import DEFAULT_CONFIG, OperatorConfig, load_config, resolve_profile
 from solakit.records import Message, RunState, SessionMode, ToolCall, ToolReceipt, new_id
 from solakit.runtime import compose
-from solakit.web_search import BRAVE_WEB_SEARCH_URL
+from solakit.tools.web_search import BRAVE_WEB_SEARCH_URL
 
 FIXTURE_ENV = "SOLA_WEB_SEARCH_PROBE_FIXTURE_KEY"
 PRIVATE_LABEL = "TRACKING-PRIVATE-HARRIER-27"

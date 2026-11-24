@@ -7,20 +7,6 @@ from typing import TYPE_CHECKING, cast
 
 from pydantic import JsonValue, TypeAdapter
 
-from solakit.evidence import (
-    RECORDS,
-    CorruptionError,
-    Entry,
-    EvidenceLog,
-    Reference,
-    StorageError,
-    canonical,
-    digest,
-    ensure_directory,
-    event_type,
-    publish,
-    sync_directory,
-)
 from solakit.records import (
     Artifact,
     CompactionBoundary,
@@ -55,6 +41,20 @@ from solakit.records import (
     ToolReceipt,
     new_id,
     utc_now,
+)
+from solakit.storage.evidence import (
+    RECORDS,
+    CorruptionError,
+    Entry,
+    EvidenceLog,
+    Reference,
+    StorageError,
+    canonical,
+    digest,
+    ensure_directory,
+    event_type,
+    publish,
+    sync_directory,
 )
 
 if TYPE_CHECKING:
@@ -210,7 +210,7 @@ class Store:
             self.log.recover(archived=archived)
             self._reconcile(active_only=True)
             self._flush()
-            from solakit.compaction import recover
+            from solakit.engine.compaction import recover
 
             recover(self)
             self._recover_work()
@@ -341,7 +341,7 @@ class Store:
             raise
 
     def _index(self) -> None:
-        from solakit.search import update_index
+        from solakit.storage.search import update_index
 
         try:
             update_index(self.log)
@@ -740,7 +740,7 @@ class Store:
         upload: bytes | None = None,
         parent_tool_call_id: str | None = None,
     ) -> Run:
-        from solakit.lineage import current_run, deny_autonomous_successor
+        from solakit.engine.lineage import current_run, deny_autonomous_successor
 
         deny_autonomous_successor()
         valid_id(request_id)
@@ -1017,7 +1017,7 @@ class Store:
                 raise ValueError("memory payload hash mismatch")
         if isinstance(record, CompactionBoundary):
             if record.manifest is not None:
-                from solakit.compaction import active_boundary, verify
+                from solakit.engine.compaction import active_boundary, verify
 
                 manifest, _ = verify(self, record)
                 active = active_boundary(self, record.session_id)

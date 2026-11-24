@@ -8,16 +8,16 @@ from time import monotonic
 
 from pydantic import JsonValue
 
+from solakit.adapters.memory import OpenViking
+from solakit.adapters.model import ModelAdapter, ModelError
+from solakit.adapters.vision import VisionAdapter
 from solakit.config import EffectiveProfile, load_config, resolve_profile
-from solakit.evidence import canonical
-from solakit.memory import OpenViking
-from solakit.model import ModelAdapter, ModelError
-from solakit.prompts import PromptInput, PromptTurn, assemble
+from solakit.engine.prompts import PromptInput, PromptTurn, assemble
 from solakit.records import RunState, new_id, utc_now
 from solakit.redaction import Redactor
-from solakit.registry import load_registry
-from solakit.store import Store
-from solakit.vision import VisionAdapter
+from solakit.storage.evidence import canonical
+from solakit.storage.store import Store
+from solakit.tools.registry import load_registry
 
 
 def explain_profile(profile: EffectiveProfile) -> dict[str, object]:

@@ -8,8 +8,8 @@ from pathlib import Path
 import pytest
 
 from scripts.probe_model import image_probe, load_key
-from solakit.evidence import canonical, digest
-from solakit.prompts import PreparedPrompt, inspect_prompt
+from solakit.engine.prompts import PreparedPrompt, inspect_prompt
+from solakit.storage.evidence import canonical, digest
 
 
 def test_probe_dotenv_reads_literal_value_without_executing_it(

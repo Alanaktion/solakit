@@ -7,9 +7,8 @@ import pytest
 
 from scripts.import_memory_history import batches, import_history
 from scripts.migration import write
+from solakit.adapters.memory import MemoryError, OpenViking
 from solakit.config import EffectiveProfile, MemorySettings
-from solakit.evidence import canonical
-from solakit.memory import MemoryError, OpenViking
 from solakit.records import (
     CompactionBoundary,
     Message,
@@ -23,7 +22,8 @@ from solakit.records import (
 )
 from solakit.redaction import Redactor
 from solakit.runtime import DataDirectoryLock, OwnershipError
-from solakit.store import Store
+from solakit.storage.evidence import canonical
+from solakit.storage.store import Store
 
 
 @pytest.fixture

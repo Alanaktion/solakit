@@ -14,7 +14,7 @@ from evals.cases import Case, digest
 from evals.sandbox import Sandbox
 from evals.scoring import score
 from solakit.config import EffectiveProfile, OperatorConfig, resolve_profile
-from solakit.evidence import canonical
+from solakit.engine.run_loop import records
 from solakit.records import (
     ErrorCode,
     Message,
@@ -27,10 +27,10 @@ from solakit.records import (
     new_id,
     utc_now,
 )
-from solakit.registry import Registry
-from solakit.run_loop import records
 from solakit.runtime import compose
 from solakit.sdk import Tool, ToolArguments, ToolContext, ToolError, ToolResult
+from solakit.storage.evidence import canonical
+from solakit.tools.registry import Registry
 
 
 class Read(ToolArguments):

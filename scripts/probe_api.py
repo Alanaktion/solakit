@@ -15,9 +15,9 @@ import uvicorn
 from scripts.probe_model import load_key
 from solakit.api import create_app
 from solakit.config import HTTPSettings, OperatorConfig, load_config, resolve_profile
-from solakit.evidence import canonical, publish
 from solakit.records import new_id, utc_now
 from solakit.runtime import compose
+from solakit.storage.evidence import canonical, publish
 
 
 async def probe(args: argparse.Namespace) -> None:

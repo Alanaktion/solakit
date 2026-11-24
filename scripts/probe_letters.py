@@ -15,8 +15,8 @@ from solakit.config import (
     load_config,
     resolve_profile,
 )
+from solakit.engine.run_loop import records
 from solakit.records import RunState, SessionMode, ToolCall, ToolReceipt, new_id
-from solakit.run_loop import records
 from solakit.runtime import compose
 
 

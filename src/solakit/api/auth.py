@@ -9,7 +9,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from solakit.config import HTTPSettings
-from solakit.store import Store
+from solakit.storage.store import Store
 
 COOKIE = "sola_session"
 CSRF_COOKIE = "sola_csrf"

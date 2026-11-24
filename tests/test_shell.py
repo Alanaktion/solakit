@@ -13,7 +13,7 @@ from test_tools import changed, opened
 
 from solakit.config import EffectiveProfile, OperatorConfig, ShellSettings, resolve_profile
 from solakit.records import ErrorCode, Origin, RunState, ToolReceipt, new_id
-from solakit.shell import MAX_STREAM_BYTES
+from solakit.tools.shell import MAX_STREAM_BYTES
 
 
 @pytest.mark.parametrize(

@@ -7,7 +7,8 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from solakit.evidence import (
+from solakit.records import new_id
+from solakit.storage.evidence import (
     CorruptionError,
     Entry,
     EvidenceLog,
@@ -18,7 +19,6 @@ from solakit.evidence import (
     parse_entry,
     sync_directory,
 )
-from solakit.records import new_id
 
 SCHEMA = """
 CREATE TABLE sources(segment TEXT PRIMARY KEY, size INTEGER NOT NULL, sha256 TEXT NOT NULL);
@@ -195,11 +195,11 @@ def search(
     if type(limit) is not int or not 1 <= limit <= 100:
         raise ValueError("search limit must be between 1 and 100")
     if session_id is not None:
-        from solakit.store import valid_id
+        from solakit.storage.store import valid_id
 
         valid_id(session_id)
     if run_id is not None:
-        from solakit.store import valid_id
+        from solakit.storage.store import valid_id
 
         valid_id(run_id)
     log = EvidenceLog(root)

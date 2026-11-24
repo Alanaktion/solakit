@@ -8,8 +8,8 @@ from typing import TypedDict
 from pydantic import JsonValue
 
 from solakit.config import EffectiveProfile
-from solakit.evidence import canonical, checked_json, digest
 from solakit.records import Artifact, Message, RecordID, SessionMode, Timestamp, ToolProposal, Value
+from solakit.storage.evidence import canonical, checked_json, digest
 
 
 class PromptTurn(Value):
@@ -127,7 +127,7 @@ def assemble(profile: EffectiveProfile, frozen: PromptInput) -> PreparedPrompt:
             raise ValueError("Image inputs are unsupported for the configured model")
         if any(existing["sha256"] == image.sha256 for existing in images):
             return
-        from solakit.images import read_png
+        from solakit.tools.images import read_png
 
         raw, width, height = read_png(profile.data_dir, image)
         messages[-1]["content"] = [

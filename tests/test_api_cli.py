@@ -6,10 +6,10 @@ from typing import Any
 import pytest
 from fastapi import FastAPI
 
+from solakit.adapters.memory import OpenViking
+from solakit.adapters.model import ModelAdapter
 from solakit.cli import main
-from solakit.memory import OpenViking
-from solakit.model import ModelAdapter
-from solakit.store import Store
+from solakit.storage.store import Store
 
 
 def config_file(tmp_path: Path) -> Path:

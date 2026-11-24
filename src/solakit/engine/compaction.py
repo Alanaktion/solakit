@@ -8,15 +8,7 @@ from typing import TYPE_CHECKING
 from pydantic import JsonValue
 
 from solakit.config import EffectiveProfile
-from solakit.evidence import (
-    CorruptionError,
-    Reference,
-    canonical,
-    checked_json,
-    digest,
-    read_artifact,
-)
-from solakit.prompts import ContextLimit, PreparedPrompt, PromptInput, PromptTurn, assemble
+from solakit.engine.prompts import ContextLimit, PreparedPrompt, PromptInput, PromptTurn, assemble
 from solakit.records import (
     RUN_TRANSITIONS,
     Artifact,
@@ -33,10 +25,18 @@ from solakit.records import (
     new_id,
     utc_now,
 )
+from solakit.storage.evidence import (
+    CorruptionError,
+    Reference,
+    canonical,
+    checked_json,
+    digest,
+    read_artifact,
+)
 
 if TYPE_CHECKING:
-    from solakit.model import ModelAdapter
-    from solakit.store import Store
+    from solakit.adapters.model import ModelAdapter
+    from solakit.storage.store import Store
 
 
 INSTRUCTIONS = """Summarize the supplied JSON source material for future conversation context.
@@ -113,7 +113,7 @@ def source_hash(refs: tuple[Reference, ...]) -> str:
 
 
 def safe(store: Store, run: Run) -> bool:
-    from solakit.run_loop import records
+    from solakit.engine.run_loop import records
 
     if run.state in RUN_TRANSITIONS:
         return False
@@ -266,7 +266,7 @@ class Selection:
 
 
 def select(store: Store, run: Run, cap: int) -> Selection:
-    from solakit.run_loop import project_run
+    from solakit.engine.run_loop import project_run
 
     previous = previous_runs(store, run)
     boundary = active_boundary(store, run.session_id)
@@ -318,7 +318,7 @@ class Compactor:
         selection: Selection,
     ) -> tuple[PreparedPrompt, int, Selection]:
         """Only the run's session owner calls this, before its first conversation step."""
-        from solakit.model import ModelError
+        from solakit.adapters.model import ModelError
 
         started = asyncio.get_running_loop().time()
         admitted = profile
@@ -443,7 +443,7 @@ class Compactor:
         selection: Selection,
         eligible: list[Run],
     ) -> tuple[PreparedPrompt, tuple[Reference, ...]]:
-        from solakit.run_loop import project_run
+        from solakit.engine.run_loop import project_run
 
         refs = sources(self.store, eligible)
         material = {

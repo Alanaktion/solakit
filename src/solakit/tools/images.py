@@ -17,7 +17,9 @@ from PIL import Image, ImageOps
 from pydantic import JsonValue
 
 from solakit.config import ImageSettings
-from solakit.evidence import (
+from solakit.records import Artifact, ErrorCode, ImageGeneration, ToolCall, new_id
+from solakit.sdk import ToolError
+from solakit.storage.evidence import (
     CorruptionError,
     canonical,
     checked_json,
@@ -26,10 +28,8 @@ from solakit.evidence import (
     publish,
     read_artifact,
 )
-from solakit.records import Artifact, ErrorCode, ImageGeneration, ToolCall, new_id
-from solakit.sdk import ToolError
-from solakit.store import Store, valid_id
-from solakit.tools import GenerateImage
+from solakit.storage.store import Store, valid_id
+from solakit.tools.builtins import GenerateImage
 
 MAX_IMAGE_BYTES = 16 * 1024 * 1024
 UPLOAD_BYTES = 8 * 1024 * 1024
@@ -41,7 +41,7 @@ MAX_RESPONSE_BYTES = 1024 * 1024
 
 
 def workflow(args: GenerateImage) -> tuple[bytes, dict[str, Any]]:
-    raw = files("solakit").joinpath("image-workflow.json").read_bytes()
+    raw = files("solakit.tools").joinpath("image-workflow.json").read_bytes()
     graph = json.loads(raw)
     graph["45"]["inputs"]["text"] = args.prompt
     graph["41"]["inputs"]["width"] = args.width

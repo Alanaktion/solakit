@@ -5,11 +5,11 @@ import asyncio
 import json
 from pathlib import Path
 
-from solakit.backup import backup, restore
-from solakit.legacy import import_fixture, retain_tree
 from solakit.runtime import DataDirectoryLock
-from solakit.search import rebuild
-from solakit.store import Store
+from solakit.storage.backup import backup, restore
+from solakit.storage.legacy import import_fixture, retain_tree
+from solakit.storage.search import rebuild
+from solakit.storage.store import Store
 
 
 async def run(args: argparse.Namespace) -> dict[str, object]:

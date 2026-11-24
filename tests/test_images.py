@@ -11,12 +11,12 @@ from pydantic import ValidationError
 from test_tools import opened
 
 from solakit.config import ImageSettings
-from solakit.evidence import canonical, digest
-from solakit.images import MAX_IMAGE_BYTES, ImageService, validate_png, workflow
 from solakit.records import ImageGeneration, ToolReceipt
 from solakit.sdk import ToolError
-from solakit.store import Store
-from solakit.tools import GenerateImage
+from solakit.storage.evidence import canonical, digest
+from solakit.storage.store import Store
+from solakit.tools.builtins import GenerateImage
+from solakit.tools.images import MAX_IMAGE_BYTES, ImageService, validate_png, workflow
 
 
 def png(width: int = 768, height: int = 768) -> bytes:

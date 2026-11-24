@@ -10,10 +10,10 @@ from urllib.parse import urlsplit
 import httpx2
 from pydantic import Field, JsonValue, field_validator
 
-from solakit.evidence import checked_json
 from solakit.records import ErrorCode
 from solakit.redaction import Redactor
 from solakit.sdk import ToolArguments, ToolError
+from solakit.storage.evidence import checked_json
 
 BRAVE_WEB_SEARCH_URL = "https://api.search.brave.com/res/v1/web/search"
 MAX_RESPONSE_BYTES = 512 * 1024

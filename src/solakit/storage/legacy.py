@@ -3,7 +3,7 @@
 from pathlib import Path
 from uuid import NAMESPACE_URL, uuid5
 
-from solakit.evidence import (
+from solakit.storage.evidence import (
     Entry,
     canonical,
     checked_json,
@@ -12,12 +12,12 @@ from solakit.evidence import (
     publish,
     sync_directory,
 )
-from solakit.store import Store
+from solakit.storage.store import Store
 
 
 def retain_tree(store: Store, source: Path) -> dict[str, object]:
     """Retain a copied legacy tree without loading code or activating configuration."""
-    from solakit.backup import _copy, file_metadata
+    from solakit.storage.backup import _copy, file_metadata
 
     if source.is_symlink() or not source.is_dir():
         raise ValueError("retention source must be a copied directory, without symlinks")

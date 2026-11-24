@@ -6,14 +6,14 @@ import shutil
 import sqlite3
 from pathlib import Path
 
-from solakit.evidence import (
+from solakit.storage.evidence import (
     CorruptionError,
     canonical,
     checked_json,
     publish,
     sync_directory,
 )
-from solakit.store import Store
+from solakit.storage.store import Store
 
 
 def file_metadata(path: Path) -> dict[str, object]:

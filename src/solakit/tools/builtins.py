@@ -5,12 +5,12 @@ from typing import Annotated, Literal
 
 from pydantic import Field
 
-from solakit.git import GitDiff, GitPublish, GitTarget, run_git
-from solakit.letters import Inbox, ReadLetter, ReplyLetter, SendLetter, run_letters
 from solakit.records import RecordID
 from solakit.sdk import Origin, Tool, ToolArguments, ToolContext, ToolError, ToolResult
-from solakit.shell import ShellExec, execute_shell
-from solakit.web_search import WebSearch
+from solakit.tools.git import GitDiff, GitPublish, GitTarget, run_git
+from solakit.tools.letters import Inbox, ReadLetter, ReplyLetter, SendLetter, run_letters
+from solakit.tools.shell import ShellExec, execute_shell
+from solakit.tools.web_search import WebSearch
 
 
 class Read(ToolArguments):
@@ -58,7 +58,7 @@ class Delegate(ToolArguments):
 
 
 async def delegate(context: ToolContext, args: Delegate) -> ToolResult:
-    from solakit.dispatch import Invocation
+    from solakit.tools.dispatch import Invocation
 
     if not isinstance(context.services, Invocation):
         raise ToolError("Delegation requires the built-in dispatcher")
@@ -138,7 +138,7 @@ async def search_files(context: ToolContext, args: SearchFiles) -> ToolResult:
 
 
 async def search_web(context: ToolContext, args: WebSearch) -> ToolResult:
-    from solakit.dispatch import Invocation
+    from solakit.tools.dispatch import Invocation
 
     if not isinstance(context.services, Invocation):
         raise ToolError("Web search requires the built-in dispatcher")
@@ -146,8 +146,8 @@ async def search_web(context: ToolContext, args: WebSearch) -> ToolResult:
 
 
 async def run_shell(context: ToolContext, args: ShellExec) -> ToolResult:
-    from solakit.dispatch import Invocation
-    from solakit.files import GuardedFiles
+    from solakit.tools.dispatch import Invocation
+    from solakit.tools.files import GuardedFiles
 
     if not isinstance(context.services, Invocation) or not isinstance(context.files, GuardedFiles):
         raise ToolError("Shell execution requires the built-in dispatcher")

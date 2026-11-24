@@ -6,12 +6,12 @@ from typing import Any
 import httpx2
 from PIL import Image
 
+from solakit.adapters.model import ModelAdapter, ModelError
 from solakit.config import EffectiveProfile
-from solakit.evidence import canonical, digest
-from solakit.images import pixel_png, read_png
-from solakit.model import ModelAdapter, ModelError
-from solakit.prompts import PreparedPrompt, image_part
+from solakit.engine.prompts import PreparedPrompt, image_part
 from solakit.records import ErrorCode, Message, ModelStep, Run
+from solakit.storage.evidence import canonical, digest
+from solakit.tools.images import pixel_png, read_png
 
 INSTRUCTION = (
     "Describe visible details relevant to the user's question. "

@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from solakit.config import Budgets, OperatorConfig, load_config, resolve_profile
-from solakit.evidence import canonical, digest, ensure_directory, publish
+from solakit.storage.evidence import canonical, digest, ensure_directory, publish
 
 TOOL_MAP = {
     "files.read": "files.read",

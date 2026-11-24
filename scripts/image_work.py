@@ -5,9 +5,9 @@ import asyncio
 from pathlib import Path
 
 from solakit.config import DEFAULT_CONFIG, load_config, resolve_profile
-from solakit.images import ImageService
 from solakit.runtime import DataDirectoryLock
-from solakit.store import Store
+from solakit.storage.store import Store
+from solakit.tools.images import ImageService
 
 
 async def run(args: argparse.Namespace) -> None:

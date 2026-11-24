@@ -9,15 +9,12 @@ from typing import TYPE_CHECKING
 
 from pydantic import JsonValue
 
-from solakit.compaction import Compactor, select
+from solakit.adapters.memory import MemoryService
+from solakit.adapters.model import ModelAdapter, ModelError
 from solakit.config import ConfigError, EffectiveProfile, restrict_to_admission
-from solakit.dispatch import WORKER_TOOLS, Dispatcher, receipt_content
-from solakit.evidence import StorageError, canonical
-from solakit.images import ImageUploads
-from solakit.lineage import current_run, deny_autonomous_successor
-from solakit.memory import MemoryService
-from solakit.model import ModelAdapter, ModelError
-from solakit.prompts import ContextLimit, PromptInput, PromptTurn, assemble
+from solakit.engine.compaction import Compactor, select
+from solakit.engine.lineage import current_run, deny_autonomous_successor
+from solakit.engine.prompts import ContextLimit, PromptInput, PromptTurn, assemble
 from solakit.records import (
     RUN_TRANSITIONS,
     Artifact,
@@ -36,11 +33,14 @@ from solakit.records import (
     utc_now,
 )
 from solakit.sdk import ToolError
-from solakit.store import Store
+from solakit.storage.evidence import StorageError, canonical
+from solakit.storage.store import Store
+from solakit.tools.dispatch import WORKER_TOOLS, Dispatcher, receipt_content
+from solakit.tools.images import ImageUploads
 
 if TYPE_CHECKING:
-    from solakit.jobs import JobService
-    from solakit.vision import VisionAdapter
+    from solakit.adapters.vision import VisionAdapter
+    from solakit.engine.jobs import JobService
 
 _ACTIONS = (
     r"read|write|save|create|generate|publish|search|recall|remember|list|show|check|inspect|use"

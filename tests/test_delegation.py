@@ -12,11 +12,11 @@ from test_run_loop import call, harness, reply, wire
 
 from solakit.api import create_app
 from solakit.config import EffectiveProfile
-from solakit.evidence import StorageError
+from solakit.engine.run_loop import records
 from solakit.records import Delegation, Job, Origin, Run, RunState, SessionMode, ToolReceipt, new_id
-from solakit.run_loop import records
 from solakit.runtime import ApplicationContext
-from solakit.store import Store
+from solakit.storage.evidence import StorageError
+from solakit.storage.store import Store
 
 BRIEF = "From survey.txt, report the species and count."
 REQUEST = "Delegate the survey."

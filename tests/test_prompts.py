@@ -7,9 +7,9 @@ from typing import Any
 import pytest
 
 from solakit.config import EffectiveProfile, load_config, resolve_profile
-from solakit.evidence import canonical, digest
-from solakit.prompts import PreparedPrompt, PromptInput, assemble, inspect_prompt
+from solakit.engine.prompts import PreparedPrompt, PromptInput, assemble, inspect_prompt
 from solakit.records import SessionMode
+from solakit.storage.evidence import canonical, digest
 
 FIXTURES = Path(__file__).parent / "fixtures/prompts"
 
@@ -167,7 +167,7 @@ def test_offline_cli_frozen_and_recorded_without_importing_clients(tmp_path: Pat
 
 
 def test_complete_tool_projection_and_ephemeral_lineage(profile: EffectiveProfile) -> None:
-    from solakit.prompts import PromptTurn
+    from solakit.engine.prompts import PromptTurn
     from solakit.records import Message, Origin, ToolProposal, new_id, utc_now
 
     user = Message(

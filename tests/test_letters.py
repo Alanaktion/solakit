@@ -15,13 +15,13 @@ from test_tools import Harness, changed, opened
 from scripts.letters_work import reconcile, seed, v1_hash
 from scripts.probe_git import configure_author, git, repository
 from solakit.config import LETTERS_TOOLS
-from solakit.evidence import digest
-from solakit.files import GuardedFiles
-from solakit.git import GitCheckout
-from solakit.letters import guarded_checkout
+from solakit.engine.run_loop import records, render_receipt
 from solakit.records import ErrorCode, LetterPublication, Origin, RunState, ToolReceipt
-from solakit.run_loop import records, render_receipt
 from solakit.sdk import ToolError
+from solakit.storage.evidence import digest
+from solakit.tools.files import GuardedFiles
+from solakit.tools.git import GitCheckout
+from solakit.tools.letters import guarded_checkout
 
 SETTINGS = {"branch": "main", "author": "sola", "peer": "dingus", "directory": "letters"}
 
@@ -173,7 +173,7 @@ def test_publication_validation_and_restart_idempotence(
         def now(tz: tzinfo | None = None) -> datetime:
             return datetime(2026, 11, 4, 2, tzinfo=UTC).astimezone(tz)
 
-    monkeypatch.setattr("solakit.letters.datetime", Boundary)
+    monkeypatch.setattr("solakit.tools.letters.datetime", Boundary)
     body = "# Letter 002 — from Sola\n\nExact words.\n"
     with opened(tmp_path, letters_repository=checkout, letters_settings=SETTINGS) as h:
         original = git(checkout, "rev-parse", "HEAD")

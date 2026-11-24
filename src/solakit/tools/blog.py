@@ -13,11 +13,11 @@ import yaml
 from pydantic import JsonValue
 
 from solakit.config import checkout_reserved
-from solakit.files import MAX_FILE_BYTES, GuardedFiles
-from solakit.images import MAX_IMAGE_BYTES, validate_png
 from solakit.records import ErrorCode
 from solakit.sdk import ToolArguments, ToolError
-from solakit.tools import BlogCreate, ContentPage, ContentTarget, DreamCreate
+from solakit.tools.builtins import BlogCreate, ContentPage, ContentTarget, DreamCreate
+from solakit.tools.files import MAX_FILE_BYTES, GuardedFiles
+from solakit.tools.images import MAX_IMAGE_BYTES, validate_png
 
 CONTENT_PATHS = (
     "src/content/blog/*.md",

@@ -2,8 +2,8 @@
 
 Phase 4, implemented and locally/live verified on 2026-11-16. See
 [verification](../validation/phase-04.md). Prompt assembly lives in
-[`prompts.py`](../../src/solakit/prompts.py); the oMLX/SDK boundary is
-[`model.py`](../../src/solakit/model.py). The model adapter returns owned values,
+[`prompts.py`](../../src/solakit/engine/prompts.py); the oMLX/SDK boundary is
+[`model.py`](../../src/solakit/adapters/model.py). The model adapter returns owned values,
 never provider response objects. There is no tool execution or conversation loop.
 
 ## Ownership and identity

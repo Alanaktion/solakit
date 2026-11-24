@@ -14,12 +14,12 @@ from starlette.types import Message as ASGIMessage
 from test_run_loop import call, harness, reply, wire
 
 from solakit.api import create_app
-from solakit.auth import COOKIE, AuthService
-from solakit.client import MAX_STREAMS, PAGE_BYTES, ClientService
+from solakit.api.auth import COOKIE, AuthService
+from solakit.api.client import MAX_STREAMS, PAGE_BYTES, ClientService
 from solakit.config import EffectiveProfile, HTTPSettings
-from solakit.evidence import canonical
 from solakit.records import Message, Origin, RunState, new_id
 from solakit.runtime import compose
+from solakit.storage.evidence import canonical
 
 BASE = "http://127.0.0.1:8765"
 PASSWORD = "synthetic-operator-secret"
@@ -875,8 +875,8 @@ def test_direct_http_cookie_login_and_exact_host_origin_checks(
 def test_slow_sse_send_releases_slot_and_does_not_block_runs(
     profile: EffectiveProfile, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import solakit.api as boundary
-    import solakit.client as views
+    import solakit.api.client as views
+    import solakit.api.routes as boundary
 
     monkeypatch.setenv("SOLA_OPERATOR_PASSWORD", PASSWORD)
     monkeypatch.setattr(boundary, "SEND_TIMEOUT_SECONDS", 0.1)
@@ -1094,7 +1094,7 @@ def test_recent_history_pages_backwards_without_changing_forward_clients(
 
 
 def test_large_chat_records_keep_attribution_and_tool_correlation() -> None:
-    from solakit.client import record_view
+    from solakit.api.client import record_view
     from solakit.records import ToolReceipt
 
     message = Message(

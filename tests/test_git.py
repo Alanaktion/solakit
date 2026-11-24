@@ -9,9 +9,9 @@ from test_tools import changed, opened
 
 from scripts.probe_git import configure_author, git, repository
 from solakit.config import EffectiveProfile, OperatorConfig, resolve_profile, restrict_to_admission
-from solakit.dispatch import Invocation
-from solakit.git import GitCheckout
 from solakit.records import Origin, ToolReceipt
+from solakit.tools.dispatch import Invocation
+from solakit.tools.git import GitCheckout
 
 
 def aliases(**checkouts: Path) -> dict[str, dict[str, str]]:

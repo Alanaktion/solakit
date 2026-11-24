@@ -9,6 +9,7 @@ import pytest
 from pydantic import ValidationError
 
 from scripts.migrate_config import migrate
+from solakit.adapters.memory import MemoryError, MemoryService, OpenViking
 from solakit.config import (
     ConfigError,
     EffectiveProfile,
@@ -16,8 +17,6 @@ from solakit.config import (
     load_config,
     resolve_profile,
 )
-from solakit.evidence import canonical, digest
-from solakit.memory import MemoryError, MemoryService, OpenViking
 from solakit.records import (
     MemoryCommit,
     MemoryState,
@@ -31,7 +30,8 @@ from solakit.records import (
     utc_now,
 )
 from solakit.redaction import Redactor
-from solakit.store import Store
+from solakit.storage.evidence import canonical, digest
+from solakit.storage.store import Store
 
 
 def enabled(profile: EffectiveProfile) -> EffectiveProfile:

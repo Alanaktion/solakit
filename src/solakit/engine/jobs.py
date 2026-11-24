@@ -18,8 +18,7 @@ from solakit.config import (
     letters_tools,
     restrict_to_admission,
 )
-from solakit.evidence import canonical, digest
-from solakit.lineage import deny_autonomous_successor
+from solakit.engine.lineage import deny_autonomous_successor
 from solakit.records import (
     Delivery,
     DeliveryState,
@@ -36,10 +35,11 @@ from solakit.records import (
     new_id,
     utc_now,
 )
-from solakit.store import Store, valid_id
+from solakit.storage.evidence import canonical, digest
+from solakit.storage.store import Store, valid_id
 
 if TYPE_CHECKING:
-    from solakit.run_loop import RunLoop
+    from solakit.engine.run_loop import RunLoop
 
 CONTROL_ID = "0" * 32
 AUTONOMOUS = (Origin.SCHEDULED, Origin.PROACTIVE)

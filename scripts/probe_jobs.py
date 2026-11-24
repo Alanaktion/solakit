@@ -9,7 +9,7 @@ from pathlib import Path
 
 from scripts.probe_model import load_key
 from solakit.config import MemorySettings, OperatorConfig, load_config, resolve_profile
-from solakit.evidence import canonical, publish
+from solakit.engine.run_loop import records
 from solakit.records import (
     Delivery,
     Job,
@@ -21,8 +21,8 @@ from solakit.records import (
     new_id,
     utc_now,
 )
-from solakit.run_loop import records
 from solakit.runtime import compose
+from solakit.storage.evidence import canonical, publish
 
 
 async def probe(args: argparse.Namespace) -> None:

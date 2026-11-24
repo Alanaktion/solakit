@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from pydantic import Field, ValidationError, field_validator, model_validator
 
 from solakit.records import Origin, SchemaVersion, SessionMode, Value
-from solakit.registry import RegistryError, load_registry
+from solakit.tools.registry import RegistryError, load_registry
 
 Count = Annotated[int, Field(ge=1, le=256)]
 Seconds = Annotated[int, Field(ge=1, le=86400)]

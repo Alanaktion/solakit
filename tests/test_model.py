@@ -7,12 +7,12 @@ from typing import Any
 import httpx2
 import pytest
 
+from solakit.adapters.model import ModelError, assemble_stream, normalize
 from solakit.config import EffectiveProfile
-from solakit.evidence import canonical
-from solakit.model import ModelError, assemble_stream, normalize
-from solakit.prompts import PromptInput, assemble
+from solakit.engine.prompts import PromptInput, assemble
 from solakit.records import ModelRequest, ModelStep, new_id, utc_now
 from solakit.runtime import compose
+from solakit.storage.evidence import canonical
 
 PIN = "fixture-qwen"
 

@@ -11,10 +11,10 @@ from tempfile import TemporaryDirectory
 from typing import Any
 
 from scripts.probe_model import load_key
-from solakit.client import ClientService
-from solakit.compaction import active_boundary
+from solakit.api.client import ClientService
 from solakit.config import MemorySettings, OperatorConfig, load_config, resolve_profile
-from solakit.evidence import canonical, digest, publish
+from solakit.engine.compaction import active_boundary
+from solakit.engine.run_loop import records
 from solakit.records import (
     ImageGeneration,
     Job,
@@ -29,8 +29,8 @@ from solakit.records import (
     new_id,
     utc_now,
 )
-from solakit.run_loop import records
 from solakit.runtime import compose
+from solakit.storage.evidence import canonical, digest, publish
 
 
 async def probe(args: argparse.Namespace) -> None:

@@ -17,7 +17,7 @@ def main() -> None:
         with ZipFile(wheel) as archive:
             assert all(name.startswith(("solakit/", "solakit-")) for name in archive.namelist())
             assert (
-                archive.read("solakit/image-workflow.json")
+                archive.read("solakit/tools/image-workflow.json")
                 == (checkout / "examples/image-workflow.json").read_bytes()
             )
             for asset in (

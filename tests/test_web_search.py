@@ -7,7 +7,7 @@ from test_tools import changed, opened
 
 from solakit.config import EffectiveProfile, WebSearchSettings
 from solakit.records import ErrorCode, ToolCall, ToolReceipt
-from solakit.web_search import BRAVE_WEB_SEARCH_URL, MAX_RESPONSE_BYTES, MAX_URL_LENGTH
+from solakit.tools.web_search import BRAVE_WEB_SEARCH_URL, MAX_RESPONSE_BYTES, MAX_URL_LENGTH
 
 KEY_ENV = "TEST_SOLA_BRAVE_API_KEY"
 TOKEN = "synthetic-search-credential"

@@ -11,17 +11,6 @@ from typing import Any
 
 import pytest
 
-from solakit.backup import backup, restore
-from solakit.evidence import (
-    CorruptionError,
-    Entry,
-    EvidenceLog,
-    StorageError,
-    canonical,
-    digest,
-    parse_entry,
-)
-from solakit.legacy import import_fixture
 from solakit.records import (
     CompactionBoundary,
     Delivery,
@@ -40,8 +29,19 @@ from solakit.records import (
     new_id,
 )
 from solakit.runtime import DataDirectoryLock
-from solakit.search import SearchUnavailable, rebuild, search
-from solakit.store import Store, no_fault
+from solakit.storage.backup import backup, restore
+from solakit.storage.evidence import (
+    CorruptionError,
+    Entry,
+    EvidenceLog,
+    StorageError,
+    canonical,
+    digest,
+    parse_entry,
+)
+from solakit.storage.legacy import import_fixture
+from solakit.storage.search import SearchUnavailable, rebuild, search
+from solakit.storage.store import Store, no_fault
 
 
 @contextmanager
@@ -175,7 +175,7 @@ def test_bulk_archive_is_atomic_idempotent_and_durable(tmp_path: Path) -> None:
 def test_restart_skips_archived_history_but_reads_still_verify(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import solakit.evidence as evidence
+    import solakit.storage.evidence as evidence
 
     root = tmp_path / "data"
     with opened(root) as store:
@@ -302,7 +302,7 @@ import asyncio, os, sys
 from pathlib import Path
 from typing import Any
 from solakit.runtime import DataDirectoryLock
-from solakit.store import Store
+from solakit.storage.store import Store
 root, session, request, stage = sys.argv[1:]
 owner = DataDirectoryLock(Path(root)); owner.acquire()
 store = Store(Path(root)); asyncio.run(store.start())
@@ -475,7 +475,7 @@ def test_invalid_ids_never_form_paths(tmp_path: Path, identity: str) -> None:
 def test_index_failure_does_not_negate_durability(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import solakit.search as projection
+    import solakit.storage.search as projection
 
     root = tmp_path / "data"
     with opened(root) as store:
@@ -747,7 +747,7 @@ def test_operational_routing_corruption_is_detected(tmp_path: Path, damage: str)
 def test_incremental_index_only_parses_new_evidence(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import solakit.search as projection
+    import solakit.storage.search as projection
 
     with opened(tmp_path / "data") as store:
         session = store.create_session()

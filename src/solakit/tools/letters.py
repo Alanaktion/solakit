@@ -11,17 +11,17 @@ from zoneinfo import ZoneInfo
 
 from pydantic import Field, JsonValue, field_validator
 
-from solakit.evidence import canonical, digest
-from solakit.files import GuardedFiles
-from solakit.git import GitCheckout
 from solakit.records import ErrorCode, LetterPublication, LetterResult
 from solakit.sdk import ToolArguments, ToolError, ToolResult
+from solakit.storage.evidence import canonical, digest
+from solakit.tools.files import GuardedFiles
+from solakit.tools.git import GitCheckout
 
 if TYPE_CHECKING:
     from solakit.config import EffectiveProfile, LettersCheckout
-    from solakit.dispatch import Invocation
     from solakit.redaction import Redactor
     from solakit.sdk import ToolContext
+    from solakit.tools.dispatch import Invocation
 
 NAME = re.compile(r"([0-9]{3,})-([0-9]{4}-[0-9]{2}-[0-9]{2})-([a-z][a-z0-9_-]*)\.md")
 LAYOUT = "{body}\n"
@@ -212,7 +212,7 @@ def result_page(
     invocation: Invocation,
     args: Inbox | ReadLetter,
 ) -> ToolResult:
-    from solakit.dispatch import receipt_content
+    from solakit.tools.dispatch import receipt_content
 
     cap = invocation.authority().budgets.tool_result_bytes
     if isinstance(args, Inbox):
@@ -483,7 +483,7 @@ async def publish(
 
 async def run_letters(context: ToolContext, args: Inbox | ReadLetter | SendLetter) -> ToolResult:
     from solakit.config import LETTERS_TOOLS
-    from solakit.dispatch import Invocation
+    from solakit.tools.dispatch import Invocation
 
     invocation, files = context.services, context.files
     if (

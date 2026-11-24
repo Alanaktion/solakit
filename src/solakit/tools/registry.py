@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any
 from pydantic import JsonValue
 
 from solakit.sdk import SDK_VERSION, Origin, Tool, ToolArguments
-from solakit.tools import TOOLS
+from solakit.tools.builtins import TOOLS
 
 if TYPE_CHECKING:
     from solakit.config import EffectiveProfile

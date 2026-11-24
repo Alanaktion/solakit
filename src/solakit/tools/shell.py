@@ -9,13 +9,13 @@ from typing import TYPE_CHECKING, Annotated, BinaryIO
 
 from pydantic import Field, field_validator
 
-from solakit.process import DIRECTORY_LAUNCHER, kill_group, open_pipe, read_pipe, reap_group
 from solakit.records import ErrorCode
 from solakit.sdk import ToolArguments, ToolError, ToolResult
+from solakit.tools.process import DIRECTORY_LAUNCHER, kill_group, open_pipe, read_pipe, reap_group
 
 if TYPE_CHECKING:
-    from solakit.dispatch import Invocation
-    from solakit.files import GuardedFiles
+    from solakit.tools.dispatch import Invocation
+    from solakit.tools.files import GuardedFiles
 
 MAX_STREAM_BYTES = 16 * 1024
 

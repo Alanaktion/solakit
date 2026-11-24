@@ -8,12 +8,12 @@ from typing import Any
 import pytest
 from test_run_loop import call, harness, reply, wire
 
-from solakit.compaction import INSTRUCTIONS, active_boundary, manifest_for, select
+from solakit.adapters.memory import MemoryService
+from solakit.adapters.model import ModelError, ModelResult
 from solakit.config import EffectiveProfile
-from solakit.evidence import CorruptionError, canonical, digest
-from solakit.memory import MemoryService
-from solakit.model import ModelError, ModelResult
-from solakit.prompts import PreparedPrompt
+from solakit.engine.compaction import INSTRUCTIONS, active_boundary, manifest_for, select
+from solakit.engine.prompts import PreparedPrompt
+from solakit.engine.run_loop import records
 from solakit.records import (
     ErrorCode,
     Failure,
@@ -28,10 +28,10 @@ from solakit.records import (
     ToolReceipt,
     new_id,
 )
-from solakit.run_loop import records
 from solakit.sdk import Tool, ToolArguments, ToolContext, ToolResult
-from solakit.search import search
-from solakit.store import Store
+from solakit.storage.evidence import CorruptionError, canonical, digest
+from solakit.storage.search import search
+from solakit.storage.store import Store
 
 
 def compact_profile(profile: EffectiveProfile) -> EffectiveProfile:

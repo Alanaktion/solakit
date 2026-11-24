@@ -9,13 +9,13 @@ from uuid import NAMESPACE_URL, uuid5
 
 from pydantic import JsonValue
 
+from solakit.adapters.memory import OpenViking, scope
 from solakit.config import DEFAULT_CONFIG, EffectiveProfile, load_config, resolve_profile
-from solakit.evidence import canonical, checked_json, digest, ensure_directory, publish
-from solakit.memory import OpenViking, scope
 from solakit.records import MemoryCommit, Message, Origin, SessionMode
 from solakit.redaction import Redactor
 from solakit.runtime import DataDirectoryLock
-from solakit.store import Store
+from solakit.storage.evidence import canonical, checked_json, digest, ensure_directory, publish
+from solakit.storage.store import Store
 
 
 def commit(

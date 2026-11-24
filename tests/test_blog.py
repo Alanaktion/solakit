@@ -13,12 +13,10 @@ import pytest
 from test_images import Provider, png, service
 from test_tools import Harness, opened
 
-from solakit.blog import BlogService, content_date, frontmatter
+from solakit.adapters.model import ModelAdapter
 from solakit.config import ConfigError, OperatorConfig, resolve_profile, restrict_to_admission
-from solakit.evidence import canonical
-from solakit.files import GuardedFiles
-from solakit.jobs import JobService
-from solakit.model import ModelAdapter
+from solakit.engine.jobs import JobService
+from solakit.engine.run_loop import RunLoop, requested_tools
 from solakit.records import (
     ErrorCode,
     Job,
@@ -30,7 +28,9 @@ from solakit.records import (
     ToolReceipt,
     new_id,
 )
-from solakit.run_loop import RunLoop, requested_tools
+from solakit.storage.evidence import canonical
+from solakit.tools.blog import BlogService, content_date, frontmatter
+from solakit.tools.files import GuardedFiles
 
 POEM = "A cold key\nunder the doorstep\nremembers a hand."
 

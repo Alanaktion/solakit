@@ -9,10 +9,14 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from solakit.config import DEFAULT_CONFIG, LettersCheckout, load_config, resolve_profile
-from solakit.evidence import digest
-from solakit.files import GuardedFiles
-from solakit.git import GitCheckout
-from solakit.letters import (
+from solakit.records import LetterPublication, Origin
+from solakit.runtime import DataDirectoryLock
+from solakit.sdk import ToolError
+from solakit.storage.evidence import digest
+from solakit.storage.store import Store
+from solakit.tools.files import GuardedFiles
+from solakit.tools.git import GitCheckout
+from solakit.tools.letters import (
     LAYOUT,
     MAX_RENDERED_BYTES,
     LetterMismatch,
@@ -26,10 +30,6 @@ from solakit.letters import (
     request_hash,
     verify_commit,
 )
-from solakit.records import LetterPublication, Origin
-from solakit.runtime import DataDirectoryLock
-from solakit.sdk import ToolError
-from solakit.store import Store
 
 COMMIT = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
 REPLY = re.compile(r"Reply to letter ([0-9]+) as ([a-z][a-z0-9_-]*)")

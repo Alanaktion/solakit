@@ -4,10 +4,10 @@ from pathlib import Path
 
 import pytest
 
-from solakit.backup import backup, restore
-from solakit.evidence import digest
-from solakit.legacy import import_fixture, retain_tree
-from solakit.store import Store
+from solakit.storage.backup import backup, restore
+from solakit.storage.evidence import digest
+from solakit.storage.legacy import import_fixture, retain_tree
+from solakit.storage.store import Store
 
 
 def test_deferred_pack_retention_without_loading_or_replaying(tmp_path: Path) -> None:

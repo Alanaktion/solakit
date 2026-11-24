@@ -14,7 +14,6 @@ import httpx2
 from pydantic import JsonValue
 
 from solakit.config import EffectiveProfile, MemorySettings, restrict_to_admission
-from solakit.evidence import canonical, checked_json, digest
 from solakit.records import (
     ErrorCode,
     Failure,
@@ -29,7 +28,8 @@ from solakit.records import (
     utc_now,
 )
 from solakit.redaction import Redactor
-from solakit.store import Store
+from solakit.storage.evidence import canonical, checked_json, digest
+from solakit.storage.store import Store
 
 
 class MemoryError(ValueError):

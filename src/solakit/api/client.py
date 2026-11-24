@@ -6,11 +6,9 @@ from typing import Any
 
 from pydantic import JsonValue
 
-from solakit.auth import AuthService, Login, RequestError
+from solakit.api.auth import AuthService, Login, RequestError
 from solakit.config import EffectiveProfile
-from solakit.evidence import RECORDS, canonical, read_artifact
-from solakit.images import MAX_IMAGE_BYTES, normalize_upload
-from solakit.prompts import PromptInput, assemble, inspect_prompt
+from solakit.engine.prompts import PromptInput, assemble, inspect_prompt
 from solakit.records import (
     Artifact,
     Message,
@@ -24,6 +22,8 @@ from solakit.records import (
     new_id,
 )
 from solakit.runtime import ApplicationContext
+from solakit.storage.evidence import RECORDS, canonical, read_artifact
+from solakit.tools.images import MAX_IMAGE_BYTES, normalize_upload
 
 PAGE_BYTES = 512 * 1024
 RECORD_BYTES = 64 * 1024
@@ -294,7 +294,7 @@ class ClientService:
     def artifact(
         self, run_id: str, identity: str, offset: int, limit: int, *, preview: bool = False
     ) -> tuple[bytes, Artifact]:
-        from solakit.store import valid_id
+        from solakit.storage.store import valid_id
 
         valid_id(identity)
         if not 1 <= limit <= ARTIFACT_BYTES or offset < 0:

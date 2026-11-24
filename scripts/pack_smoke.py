@@ -5,10 +5,10 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from solakit.config import OperatorConfig, resolve_profile
-from solakit.dispatch import Dispatcher
 from solakit.records import ModelStep, RunState, ToolCall, new_id
-from solakit.registry import load_registry
-from solakit.store import Store
+from solakit.storage.store import Store
+from solakit.tools.dispatch import Dispatcher
+from solakit.tools.registry import load_registry
 
 
 async def main() -> None:

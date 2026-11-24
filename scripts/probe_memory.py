@@ -8,12 +8,12 @@ from pathlib import Path
 
 from pydantic import JsonValue
 
+from solakit.adapters.memory import MemoryService, OpenViking
 from solakit.config import MemorySettings, OperatorConfig, resolve_profile
-from solakit.evidence import canonical, publish
-from solakit.memory import MemoryService, OpenViking
 from solakit.records import MemoryCommit, Message, RunState, new_id, utc_now
 from solakit.redaction import Redactor
-from solakit.store import Store
+from solakit.storage.evidence import canonical, publish
+from solakit.storage.store import Store
 
 
 async def probe(args: argparse.Namespace) -> None:

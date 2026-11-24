@@ -9,8 +9,6 @@ from typing import TYPE_CHECKING, Literal, cast
 from pydantic import JsonValue, ValidationError
 
 from solakit.config import ConfigError, EffectiveProfile, restrict_to_admission
-from solakit.evidence import CorruptionError, StorageError, canonical, digest, read_artifact
-from solakit.files import GuardedFiles
 from solakit.records import (
     Artifact,
     ErrorCode,
@@ -25,18 +23,20 @@ from solakit.records import (
     utc_now,
 )
 from solakit.redaction import Redactor
-from solakit.registry import Registry
 from solakit.sdk import ToolContext, ToolError, ToolResult
-from solakit.search import search
-from solakit.store import Store
-from solakit.web_search import BraveSearch, WebSearch
+from solakit.storage.evidence import CorruptionError, StorageError, canonical, digest, read_artifact
+from solakit.storage.search import search
+from solakit.storage.store import Store
+from solakit.tools.files import GuardedFiles
+from solakit.tools.registry import Registry
+from solakit.tools.web_search import BraveSearch, WebSearch
 
 if TYPE_CHECKING:
-    from solakit.blog import BlogService
-    from solakit.images import ImageService
-    from solakit.jobs import JobService
-    from solakit.memory import MemoryService
-    from solakit.run_loop import RunLoop
+    from solakit.adapters.memory import MemoryService
+    from solakit.engine.jobs import JobService
+    from solakit.engine.run_loop import RunLoop
+    from solakit.tools.blog import BlogService
+    from solakit.tools.images import ImageService
 
 MAX_ARGUMENT_BYTES = 65536
 MAX_ARTIFACT_BYTES = 1024 * 1024
@@ -88,7 +88,7 @@ class Dispatcher:
         self.images: ImageService | None = None
         self.blog: BlogService | None = None
         self._checkout_locks: dict[tuple[int, int], asyncio.Lock] = {}
-        package = Path(__file__).resolve().parent
+        package = Path(__file__).resolve().parents[1]
         checkout = package.parent.parent
         self.protected: tuple[Path, ...] = (
             checkout if (checkout / "pyproject.toml").is_file() else package,
@@ -496,7 +496,7 @@ class Invocation:
         self.authority("files.write")
         if self.dispatcher.images is None:
             raise ToolError("ComfyUI image generation is unavailable")
-        from solakit.tools import GenerateImage
+        from solakit.tools.builtins import GenerateImage
 
         args = GenerateImage(
             prompt=prompt,
@@ -530,11 +530,11 @@ class Invocation:
         args = self.dispatcher.registry.tools[action].arguments.model_validate_json(
             canonical(arguments)
         )
-        from solakit.tools import BlogCreate
+        from solakit.tools.builtins import BlogCreate
 
         cover = None
         if isinstance(args, BlogCreate) and args.cover_artifact_id is not None:
-            from solakit.images import MAX_IMAGE_BYTES
+            from solakit.tools.images import MAX_IMAGE_BYTES
 
             scope = "run_id" if profile.mode == SessionMode.EPHEMERAL else "session_id"
             identity = self.run_id if scope == "run_id" else self.call.session_id
@@ -622,7 +622,7 @@ class Invocation:
             raise ToolError("Memory is disabled for this run", ErrorCode.TOOL_DENIED)
         if self.dispatcher.memory is None:
             raise ToolError("Semantic memory is unavailable", ErrorCode.MEMORY_UNAVAILABLE)
-        from solakit.memory import MemoryError
+        from solakit.adapters.memory import MemoryError
 
         try:
             self.dispatcher.memory.adapter.check(profile)

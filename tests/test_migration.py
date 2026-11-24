@@ -8,13 +8,13 @@ from pathlib import Path
 import pytest
 
 from scripts.migration import identity, import_legacy
+from solakit.adapters.memory import MemoryService, OpenViking
 from solakit.config import MemorySettings
-from solakit.jobs import CONTROL_ID
-from solakit.memory import MemoryService, OpenViking
+from solakit.engine.jobs import CONTROL_ID
 from solakit.records import ModelStep, RunState
 from solakit.redaction import Redactor
-from solakit.search import search
-from solakit.store import Store
+from solakit.storage.search import search
+from solakit.storage.store import Store
 
 AT = "2026-11-16T12:00:00+00:00"
 

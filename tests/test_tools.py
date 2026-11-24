@@ -14,9 +14,6 @@ import pytest
 from pydantic import ConfigDict
 
 from solakit.config import EffectiveProfile, OperatorConfig, resolve_profile, restrict_to_admission
-from solakit.dispatch import MAX_ARTIFACT_BYTES, Dispatcher, ToolSession
-from solakit.evidence import StorageError, digest
-from solakit.files import MAX_FILE_BYTES
 from solakit.records import (
     ErrorCode,
     ModelStep,
@@ -27,10 +24,13 @@ from solakit.records import (
     ToolReceipt,
     new_id,
 )
-from solakit.registry import Registry, RegistryError, load_registry
 from solakit.sdk import Tool, ToolArguments, ToolContext, ToolError, ToolResult
-from solakit.store import Store
-from solakit.tools import TOOLS
+from solakit.storage.evidence import StorageError, digest
+from solakit.storage.store import Store
+from solakit.tools.builtins import TOOLS
+from solakit.tools.dispatch import MAX_ARTIFACT_BYTES, Dispatcher, ToolSession
+from solakit.tools.files import MAX_FILE_BYTES
+from solakit.tools.registry import Registry, RegistryError, load_registry
 
 
 @dataclass

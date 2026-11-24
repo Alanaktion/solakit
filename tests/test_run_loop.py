@@ -7,7 +7,7 @@ import httpx2
 import pytest
 
 from solakit.config import EffectiveProfile
-from solakit.evidence import canonical
+from solakit.engine.run_loop import QueueFull, project_run, records, render_receipt, requested_tools
 from solakit.records import (
     ErrorCode,
     ModelStep,
@@ -18,11 +18,11 @@ from solakit.records import (
     ToolReceipt,
     new_id,
 )
-from solakit.registry import Registry
-from solakit.run_loop import QueueFull, project_run, records, render_receipt, requested_tools
 from solakit.runtime import ApplicationContext, compose
 from solakit.sdk import Tool, ToolArguments, ToolContext, ToolResult
-from solakit.tools import TOOLS
+from solakit.storage.evidence import canonical
+from solakit.tools.builtins import TOOLS
+from solakit.tools.registry import Registry
 
 
 def reply(text: str = "Finished.", *, calls: list[dict[str, Any]] | None = None) -> dict[str, Any]:
@@ -547,8 +547,8 @@ def test_faults_never_acknowledge_success_or_replay_effects(
     monkeypatch: pytest.MonkeyPatch,
     fault_kind: str,
 ) -> None:
-    from solakit.evidence import StorageError
     from solakit.records import ToolCall
+    from solakit.storage.evidence import StorageError
 
     async def scenario() -> None:
         async def respond(body: dict[str, Any]) -> bytes:
@@ -675,7 +675,7 @@ def test_run_budgets_and_model_wait_cancellation(profile: EffectiveProfile, budg
 
 @pytest.mark.parametrize("invalid", ["pin", "archived"])
 def test_restart_revalidates_queued_admission(profile: EffectiveProfile, invalid: str) -> None:
-    from solakit.store import Store
+    from solakit.storage.store import Store
 
     async def scenario() -> None:
         store = Store(profile.data_dir)

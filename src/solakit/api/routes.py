@@ -19,8 +19,8 @@ from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt
 from starlette.exceptions import HTTPException
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from solakit.auth import COOKIE, CSRF_COOKIE, AuthService, Login, RequestError
-from solakit.client import ARTIFACT_BYTES, MAX_STREAMS, PAGE_BYTES, ClientService, page
+from solakit.api.auth import COOKIE, CSRF_COOKIE, AuthService, Login, RequestError
+from solakit.api.client import ARTIFACT_BYTES, MAX_STREAMS, PAGE_BYTES, ClientService, page
 from solakit.config import (
     DEFAULT_CONFIG,
     ConfigError,
@@ -28,8 +28,7 @@ from solakit.config import (
     load_config,
     resolve_profile,
 )
-from solakit.evidence import StorageError, canonical
-from solakit.images import UPLOAD_BYTES, UPLOAD_FORMATS
+from solakit.engine.run_loop import QueueFull
 from solakit.records import (
     RUN_TRANSITIONS,
     Job,
@@ -41,9 +40,10 @@ from solakit.records import (
     Session,
     SessionMode,
 )
-from solakit.run_loop import QueueFull
 from solakit.runtime import ApplicationContext, compose
-from solakit.search import search
+from solakit.storage.evidence import StorageError, canonical
+from solakit.storage.search import search
+from solakit.tools.images import UPLOAD_BYTES, UPLOAD_FORMATS
 
 ID = Annotated[str, Path(pattern=r"^[0-9a-f]{32}$")]
 Limit = Annotated[int, Query(ge=1, le=100)]
@@ -52,6 +52,7 @@ SEND_TIMEOUT_SECONDS = 30
 IMAGE_UPLOAD_PATH = "/api/v1/sessions/{session_id}/image-uploads"
 UPLOAD_ROUTE = re.compile(r"/api/v1/sessions/[0-9a-f]{32}/image-uploads")
 
+WEB_DIR = FilePath(__file__).resolve().parents[1] / "web"
 WEB_ASSETS = (
     "chat.css",
     "chat.js",
@@ -90,7 +91,7 @@ def history_page(rows: list[tuple[int, Any]], after: int, before: int | None) ->
 
 
 def time_cursor(value: str | None) -> tuple[str, str] | None:
-    from solakit.store import TIME_ADAPTER, valid_id
+    from solakit.storage.store import TIME_ADAPTER, valid_id
 
     if value is None:
         return None
@@ -310,7 +311,7 @@ class EventResponse(StreamingResponse):
 
 
 def idempotency(request: Request) -> str:
-    from solakit.store import valid_id
+    from solakit.storage.store import valid_id
 
     values = request.headers.getlist("idempotency-key")
     if len(values) != 1:
@@ -361,7 +362,7 @@ def create_app(
 
     @app.get("/", include_in_schema=False)
     async def chat() -> HTMLResponse:
-        shell = (FilePath(__file__).parent / "web" / "index.html").read_text(encoding="utf-8")
+        shell = (WEB_DIR / "index.html").read_text(encoding="utf-8")
         return HTMLResponse(
             shell.replace("{{agent_name}}", escape(context.profile.agent_name)),
             headers={
@@ -387,7 +388,7 @@ def create_app(
     async def asset(name: str) -> FileResponse:
         if name not in WEB_ASSETS:
             raise HTTPException(404)
-        return FileResponse(FilePath(__file__).parent / "web" / name)
+        return FileResponse(WEB_DIR / name)
 
     @app.exception_handler(HTTPException)
     async def http_error(request: Request, error: HTTPException) -> JSONResponse:

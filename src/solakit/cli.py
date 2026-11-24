@@ -137,7 +137,7 @@ def main() -> None:
             raise SystemExit(2)
     elif args.command == "config":
         from solakit.diagnostics import config_diff, explain_profile
-        from solakit.registry import RegistryError
+        from solakit.tools.registry import RegistryError
 
         try:
             if args.action == "diff":
@@ -171,7 +171,7 @@ def main() -> None:
     elif args.command == "prompt":
         from datetime import datetime
 
-        from solakit.prompts import PreparedPrompt, PromptInput, assemble, inspect_prompt
+        from solakit.engine.prompts import PreparedPrompt, PromptInput, assemble, inspect_prompt
         from solakit.records import Message, new_id, utc_now
 
         try:
@@ -215,8 +215,8 @@ def main() -> None:
         except ValueError, OSError:
             parser.error("prompt input/configuration is invalid or unavailable")
     elif args.command == "search":
-        from solakit.evidence import CorruptionError, StorageError
-        from solakit.search import search
+        from solakit.storage.evidence import CorruptionError, StorageError
+        from solakit.storage.search import search
 
         try:
             root = args.data_dir

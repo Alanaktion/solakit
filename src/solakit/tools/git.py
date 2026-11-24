@@ -9,15 +9,15 @@ from typing import TYPE_CHECKING, Annotated, BinaryIO
 
 from pydantic import Field, JsonValue
 
-from solakit.files import DIRECTORY, GuardedFiles
-from solakit.process import DIRECTORY_LAUNCHER, open_pipe, read_pipe, reap_group
 from solakit.records import ErrorCode
 from solakit.sdk import ToolArguments, ToolError, ToolResult
+from solakit.tools.files import DIRECTORY, GuardedFiles
+from solakit.tools.process import DIRECTORY_LAUNCHER, open_pipe, read_pipe, reap_group
 
 if TYPE_CHECKING:
     from solakit.config import EffectiveProfile
-    from solakit.dispatch import Invocation
     from solakit.sdk import ToolContext
+    from solakit.tools.dispatch import Invocation
 
 MAX_STATUS_BYTES = 16 * 1024
 MAX_DIFF_BYTES = 32 * 1024
@@ -483,7 +483,7 @@ class GitCheckout:
 
 async def run_git(context: ToolContext, args: GitTarget) -> ToolResult:
     from solakit.config import GIT_READ, GIT_WRITE, checkout_reserved
-    from solakit.dispatch import Invocation
+    from solakit.tools.dispatch import Invocation
 
     invocation, files = context.services, context.files
     if not isinstance(invocation, Invocation) or not isinstance(files, GuardedFiles):

@@ -4,12 +4,12 @@ import argparse
 import asyncio
 import json
 
+from solakit.adapters.memory import MemoryService, OpenViking
 from solakit.config import DEFAULT_CONFIG, load_config, resolve_profile
-from solakit.memory import MemoryService, OpenViking
 from solakit.records import MemoryCommit
 from solakit.redaction import Redactor
 from solakit.runtime import DataDirectoryLock
-from solakit.store import Store
+from solakit.storage.store import Store
 
 
 async def reconcile(service: MemoryService, identity: str, task_id: str) -> MemoryCommit:

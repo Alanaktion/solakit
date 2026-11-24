@@ -15,7 +15,6 @@ from fastapi import FastAPI
 
 from solakit.api import create_app
 from solakit.config import EffectiveProfile, OperatorConfig, resolve_profile
-from solakit.evidence import canonical
 from solakit.records import (
     Artifact,
     CompactionBoundary,
@@ -32,10 +31,11 @@ from solakit.records import (
     ToolReceipt,
     new_id,
 )
-from solakit.registry import Registry
 from solakit.runtime import compose
 from solakit.sdk import Tool, ToolArguments, ToolContext, ToolResult
-from solakit.tools import TOOLS
+from solakit.storage.evidence import canonical
+from solakit.tools.builtins import TOOLS
+from solakit.tools.registry import Registry
 
 PASSWORD = "phase11-disposable-fixture"
 HOSTILE = '<img src=x onerror="window.PWNED=true"> [bad](javascript:alert(1)) **Safe bold**'
@@ -280,7 +280,7 @@ def main() -> None:
                 "agent_name": profile.agent_name,
             }
             if args.image_fixture:
-                from solakit.images import validate_png
+                from solakit.tools.images import validate_png
 
                 raw = args.image_fixture.read_bytes()
                 width, height = int.from_bytes(raw[16:20]), int.from_bytes(raw[20:24])

@@ -6,11 +6,11 @@ import json
 from pathlib import Path
 
 from scripts.probe_model import load_key
-from solakit.compaction import active_boundary, manifest_for
 from solakit.config import OperatorConfig, load_config, resolve_profile
-from solakit.evidence import canonical, digest, publish
+from solakit.engine.compaction import active_boundary, manifest_for
 from solakit.records import Message, ModelStep, RunState, new_id, utc_now
 from solakit.runtime import compose
+from solakit.storage.evidence import canonical, digest, publish
 
 
 async def probe(args: argparse.Namespace) -> None:

@@ -7,9 +7,9 @@ import pytest
 from test_run_loop import call, harness, reply, wire
 
 from solakit.config import BackgroundSettings, EffectiveProfile
-from solakit.evidence import StorageError, canonical
-from solakit.jobs import next_due, quiet_until
-from solakit.lineage import current_run
+from solakit.engine.jobs import next_due, quiet_until
+from solakit.engine.lineage import current_run
+from solakit.engine.run_loop import records
 from solakit.records import (
     Delivery,
     DeliveryState,
@@ -22,11 +22,11 @@ from solakit.records import (
     ToolReceipt,
     new_id,
 )
-from solakit.run_loop import records
 from solakit.runtime import ApplicationContext
 from solakit.sdk import Tool, ToolArguments, ToolContext, ToolError, ToolResult
-from solakit.search import rebuild
-from solakit.tools import TOOLS
+from solakit.storage.evidence import StorageError, canonical
+from solakit.storage.search import rebuild
+from solakit.tools.builtins import TOOLS
 
 
 @dataclass
