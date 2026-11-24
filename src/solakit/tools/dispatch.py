@@ -59,15 +59,22 @@ WORKER_TOOLS = frozenset(
 )
 
 
-def receipt_content(status: str, effect: str, result: JsonValue, failure: Failure | None) -> bytes:
-    return canonical(
-        {
-            "status": status,
-            "effect": effect,
-            "result": result,
-            "failure": failure.model_dump(mode="json") if failure else None,
-        }
-    )
+def receipt_content(
+    status: str,
+    effect: str,
+    result: JsonValue,
+    failure: Failure | None,
+    truncated: JsonValue = None,
+) -> bytes:
+    content: dict[str, JsonValue] = {
+        "status": status,
+        "effect": effect,
+        "result": result,
+        "failure": failure.model_dump(mode="json") if failure else None,
+    }
+    if truncated is not None:
+        content["truncated"] = truncated
+    return canonical(content)
 
 
 class Dispatcher:

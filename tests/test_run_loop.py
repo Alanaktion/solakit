@@ -539,6 +539,64 @@ def test_combined_receipt_render_is_bounded(cap: int) -> None:
     assert len(render_receipt(receipt, cap).encode()) <= cap
     exact = receipt.model_copy(update={"result": "blue\n"})
     assert json.loads(render_receipt(exact, 1000))["result"] == "blue\n"
+    assert "truncated" not in json.loads(render_receipt(exact, 1000))
+
+
+@pytest.mark.parametrize("result", ['"quoted"\n' * 300, {"rows": ["λ" * 40] * 40}])
+def test_truncated_receipt_stays_valid_json_with_notice(result: Any) -> None:
+    receipt = ToolReceipt(
+        origin=Origin.INTERACTIVE,
+        session_id=new_id(),
+        run_id=new_id(),
+        tool_call_id=new_id(),
+        status="succeeded",
+        result=result,
+    )
+    full = len(result.encode()) if isinstance(result, str) else len(canonical(result))
+    rendered = render_receipt(receipt, 600)
+    content = json.loads(rendered)
+    assert len(rendered.encode()) <= 600 and content["status"] == "succeeded"
+    assert content["truncated"]["original_bytes"] == full
+    assert content["truncated"]["shown_bytes"] == len(content["result"].encode()) > 0
+    # Results already cut by the dispatcher keep their original size in the notice.
+    cut = receipt.model_copy(
+        update={"result": "abc[truncated]", "truncated": True, "result_bytes": 99_999}
+    )
+    assert json.loads(render_receipt(cut, 600))["truncated"]["original_bytes"] == 99_999
+
+
+def test_long_runs_shrink_earlier_tool_results(profile: EffectiveProfile) -> None:
+    async def big(ctx: ToolContext, args: ToolArguments) -> ToolResult:
+        return ToolResult(data="x" * 7000)
+
+    async def scenario() -> None:
+        budgets = profile.budgets.model_copy(update={"tool_result_bytes": 8192})
+        app, requests = harness(
+            profile.model_copy(update={"budgets": budgets}),
+            [*(reply("", calls=[call("test.big")]) for _ in range(4)), reply("Done.")],
+            (Tool("test.big", "Large result", ToolArguments, big),),
+        )
+        await app.start()
+        assert app.store and app.runs
+        try:
+            session = app.store.create_session()
+            run = app.runs.submit(
+                session.id, profile=app.profile, content="Use test.big", request_id=new_id()
+            )
+            assert (await app.runs.wait(run.id, timeout=3)).state == RunState.COMPLETED
+            results = [
+                json.loads(m["content"]) for m in requests[-1]["messages"] if m["role"] == "tool"
+            ]
+            assert len(results) == 4
+            assert all("truncated" in r for r in results[:-1])
+            assert results[-1]["result"] == "x" * 7000 and "truncated" not in results[-1]
+            # Evidence keeps the full result; only the projection shrank.
+            receipts = [r for r in records(app.store, run.id) if isinstance(r, ToolReceipt)]
+            assert all(r.result == "x" * 7000 for r in receipts)
+        finally:
+            await app.stop()
+
+    asyncio.run(scenario())
 
 
 @pytest.mark.parametrize("fault_kind", ["admission", "intent", "receipt", "stream"])

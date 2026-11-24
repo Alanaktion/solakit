@@ -127,10 +127,37 @@ def requested_tools(text: str, names: Sequence[str]) -> set[str]:
     }
 
 
+TRUNCATION_NOTE = "Result truncated to fit the context budget; request a narrower range or page."
+MIN_PROJECTED_RESULT_BYTES = 1024
+
+
 def render_receipt(receipt: ToolReceipt, cap: int) -> str:
+    """Render valid receipt JSON within cap, telling the model when its result was cut."""
     raw = receipt_content(receipt.status, receipt.effect, receipt.result, receipt.failure)
+    if len(raw) <= cap and not receipt.truncated:
+        return raw.decode()
+    result = receipt.result
+    encoded = (result if isinstance(result, str) else canonical(result).decode()).encode()
+    original = max(receipt.result_bytes, len(encoded)) if receipt.truncated else len(encoded)
+    budget = len(encoded)
+    while budget >= 0:
+        shown = encoded[:budget].decode(errors="ignore")
+        size = len(shown.encode())
+        notice: JsonValue = {
+            "shown_bytes": size,
+            "original_bytes": original,
+            "note": TRUNCATION_NOTE,
+        }
+        content = receipt_content(
+            receipt.status, receipt.effect, shown, receipt.failure, truncated=notice
+        )
+        if len(content) <= cap:
+            return content.decode()
+        # JSON escaping makes size nonlinear, so shrink proportionally; strictly decreasing.
+        budget = min(size - 1, size * cap // len(content))
     if len(raw) <= cap:
         return raw.decode()
+    # The cap cannot hold even an empty structured notice.
     marker = b"[truncated]" if cap >= 11 else b"!"
     return raw[: cap - len(marker)].decode(errors="ignore") + marker.decode()
 
@@ -144,9 +171,17 @@ def records(store: Store, run_id: str) -> list[Record]:
     return result
 
 
-def project_run(store: Store, run_id: str, cap: int) -> tuple[PromptTurn, ...]:
-    """Project execution evidence, pairing even rejected/unexecuted proposals honestly."""
+def project_run(
+    store: Store, run_id: str, cap: int, older_cap: int | None = None
+) -> tuple[PromptTurn, ...]:
+    """Project execution evidence, pairing even rejected/unexecuted proposals honestly.
+
+    older_cap renders results before the latest tool batch smaller so a long run still fits.
+    """
     source = records(store, run_id)
+    latest = next(
+        (r.id for r in reversed(source) if isinstance(r, ModelStep) and r.tool_calls), None
+    )
     calls = {r.id: r for r in source if isinstance(r, ToolCall)}
     receipts = {
         (calls[r.tool_call_id].model_step_id, calls[r.tool_call_id].provider_tool_call_id): r
@@ -200,7 +235,10 @@ def project_run(store: Store, run_id: str, cap: int) -> tuple[PromptTurn, ...]:
                         session_id=record.session_id,
                         role="tool",
                         tool_call_id=proposal.provider_tool_call_id,
-                        content=render_receipt(receipt, cap)
+                        content=render_receipt(
+                            receipt,
+                            cap if older_cap is None or record.id == latest else older_cap,
+                        )
                         if receipt
                         else "Not executed. Inspect the recovery evidence and correct the call.",
                     )
@@ -708,7 +746,20 @@ class RunLoop:
                     # Summary inference yielded control. Recheck grants and budgets before chat.
                     continue
             else:
-                prompt = assemble(profile, selection.apply(frozen) if selection else frozen)
+                older_cap = profile.budgets.tool_result_bytes
+                while True:
+                    try:
+                        prompt = assemble(profile, selection.apply(frozen) if selection else frozen)
+                        break
+                    except ContextLimit:
+                        # Shrink earlier results in this run before failing; evidence is unchanged.
+                        older_cap //= 2
+                        if older_cap < MIN_PROJECTED_RESULT_BYTES:
+                            raise
+                        shrunk = project_run(
+                            self.store, run.id, profile.budgets.tool_result_bytes, older_cap
+                        )
+                        frozen = frozen.model_copy(update={"continuation": shrunk[1:]})
             async with asyncio.timeout(
                 profile.budgets.active_seconds - (asyncio.get_running_loop().time() - started)
             ):
