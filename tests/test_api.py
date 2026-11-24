@@ -669,7 +669,7 @@ def test_image_attachment_scope_idempotency_and_unsupported(
 
     def enable() -> None:
         app.state.context.profile = app.state.context.profile.model_copy(
-            update={"model_image_inputs": True}
+            update={"model_image_inputs": True, "tools": frozenset(), "granted_tools": frozenset()}
         )
 
     client.portal.call(enable)

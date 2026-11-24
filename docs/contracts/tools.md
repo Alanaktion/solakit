@@ -191,6 +191,18 @@ Writes default to no-overwrite; overwrite must be `true`. Existing file modes
 are not preserved when replacing with a new private inode. Both read and write
 are limited to 1 MiB per file.
 
+| Tool | Arguments | Behavior |
+| --- | --- | --- |
+| `files.rename` | `source`, `destination` | Atomically rename or move one regular file on the same filesystem. The destination must be vacant. |
+| `files.copy` | `source`, `destination` | Copy up to 1 MiB of bytes (including binary) to a vacant destination as a private file. The receipt returns the byte count and SHA-256. |
+| `files.mkdir` | `path` | Create one private directory under an existing parent. |
+| `files.delete` | `path` | Permanently remove one regular file. |
+
+Each operation uses its own tool grant and the usual mutation receipts. Transfer
+tools check both paths, with Git metadata protection on both sides. Rename, copy,
+and delete operate on single files. Scheduled and proactive mutations require
+explicit job workspace roots and follow the same quiet-hours treatment as `files.write`.
+
 Writes deny every case variant of a `.git` component, symlink aliases, and
 metadata directories referenced by worktree `.git` files or `commondir`, including
 nested worktrees, ancestor repositories, and bare repository directories. Discovery rescans granted trees;
@@ -204,7 +216,8 @@ opened directory trees or concurrently redefining Git metadata.
 
 | Access | Shared interactive | Isolated | Ephemeral | Scheduled/proactive |
 | --- | --- | --- | --- | --- |
-| `files.read` / `files.write` | Tool grant + roots + guards | Same | Same | Same admitted narrower profile |
+| `files.list`, `files.read`, `files.search` | Tool grant + roots + guards | Same | Same | Same admitted narrower profile |
+| `files.write`, `files.rename`, `files.copy`, `files.mkdir`, `files.delete` | Tool grant + roots + guards | Same | Same | Same with explicit job workspace roots |
 | `transcripts.search` | Messages in shared sessions only | Own session only | Own run only | Bound session; own run if ephemeral |
 | `web.search` | Tool grant + stable enabled Brave credential reference | Same | Same | Same admitted narrower profile |
 | `git.status`, `git.diff` | Tool grant + stable checkout alias inside effective workspace roots | Same | Same | Same admitted narrower profile |

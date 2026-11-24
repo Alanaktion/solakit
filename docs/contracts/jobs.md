@@ -26,10 +26,10 @@ Supported schedules:
 The application service validates profiles, model/runtime identity, session mode,
 archival, IANA zones, schedules, roots and budget ceilings. A supplied tool list
 must be a subset of currently granted/loaded tools. An omitted list inherits the
-profile. Background file writes require explicit job `workspace_roots` under the
-profile's roots; without them, reads remain granted but `files.write` is omitted
-and guarded writes through other packs are denied. A profile cannot broaden the
-invoking interactive run through job tools. Current revocations intersect frozen
+profile. Background file mutations require explicit job `workspace_roots` under
+the profile's roots. Without them, file read grants still apply, the file mutation
+tools are omitted, and guarded writes through other packs are denied. A profile
+cannot broaden the invoking interactive run through job tools. Current revocations intersect frozen
 admission authority again at execution/guarded access.
 
 ```python

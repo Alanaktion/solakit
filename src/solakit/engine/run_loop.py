@@ -46,6 +46,7 @@ _ACTIONS = (
     r"read|write|save|create|generate|publish|search|recall|remember|list|show|check|inspect|use"
     r"|delegate"
 )
+_NAMED_ENTRY = r"(?:(?:a|the|this|that|new)\s+)*(?:files?|directory|folder)\b"
 
 
 class QueueFull(RuntimeError):
@@ -63,19 +64,29 @@ def requested_tools(text: str, names: Sequence[str]) -> set[str]:
     file_target = bool(
         re.search(
             r"\b[\w-]+\.[a-zA-Z0-9]{1,8}\b|(?:/|\\)[\w-]+|"
-            r"\b(?:read|write|save|create|list)\s+(?:(?:a|the|this|that|new)\s+)?"
-            r"(?:files?|directory|folder)\b",
+            rf"\b(?:read|write|save|create|list|copy|rename|move)\s+{_NAMED_ENTRY}",
             text,
         )
     )
     text = re.sub(r'```.*?```|"[^"]*"|“[^”]*”', "", text, flags=re.S).strip().lower()
     prefix = r"^(?:please\s+)?(?:(?:can|could|would|will) you\s+|i (?:want|need) you to\s+)?"
-    if not re.match(prefix + rf"(?:{_ACTIONS})\b", text):
+    file_command = re.match(prefix + r"(copy|rename|move|mkdir)\b", text)
+    if not file_command and not re.match(prefix + rf"(?:{_ACTIONS})\b", text):
         return set()
     if re.match(prefix + r"show\b.*\b(?:how to|example|meaning)\b", text):
         return set()
     actions = set(re.findall(rf"\b(?:{_ACTIONS})\b", text))
-    if "save" in actions or "create" in actions:
+    creates_directory = re.match(
+        prefix + r"create\s+(?:(?:a|the|new)\s+)*(?:directory|folder)\b", text
+    )
+    if file_command:
+        verb = file_command[1]
+        actions.add("rename" if verb == "move" else verb)
+    if creates_directory:
+        actions.add("mkdir")
+    if "mkdir" in actions:
+        file_target = True
+    if "save" in actions or ("create" in actions and not creates_directory):
         actions.add("write")
     image_target = bool(re.search(r"\b(?:images?|photos?|pictures?|illustration)\b", text))
     if "create" in actions and image_target:

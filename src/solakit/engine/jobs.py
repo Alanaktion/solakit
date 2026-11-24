@@ -37,12 +37,14 @@ from solakit.records import (
 )
 from solakit.storage.evidence import canonical, digest
 from solakit.storage.store import Store, valid_id
+from solakit.tools.files import FILE_MUTATIONS
 
 if TYPE_CHECKING:
     from solakit.engine.run_loop import RunLoop
 
 CONTROL_ID = "0" * 32
 AUTONOMOUS = (Origin.SCHEDULED, Origin.PROACTIVE)
+LOCAL_EFFECTS = FILE_MUTATIONS | {"memory.remember"}
 WAKE_INSTRUCTIONS = (
     "\n\nThis is an operator-enabled background occurrence. Inspect only the bound topic, "
     "scoped recall and granted resources. Perform useful permitted work, leave one concise "
@@ -234,7 +236,7 @@ class JobService:
             ):
                 raise ValueError("job roots exceed current profile roots")
         else:
-            tools -= {"files.write", "images.generate", "letters.inbox"}
+            tools -= FILE_MUTATIONS | {"images.generate", "letters.inbox"}
         changes = {"model_calls": 8, "tool_calls": 12, "active_seconds": 600}
         changes.update(selected.proactive_budgets.model_dump(exclude_none=True))
         changes = {
@@ -489,7 +491,7 @@ class JobService:
             return not any(
                 name in current.tools
                 and tool.consequential
-                and name not in ("files.write", "memory.remember")
+                and name not in LOCAL_EFFECTS
                 and not name.startswith("jobs.")
                 for name, tool in self.runs.dispatcher.registry.tools.items()
             )
@@ -500,7 +502,7 @@ class JobService:
             raise ValueError("job was deleted before execution")
 
     def effect_allowed(self, run: Run, tool: str) -> bool:
-        if run.occurrence_id is None or tool in ("files.write", "memory.remember"):
+        if run.occurrence_id is None or tool in LOCAL_EFFECTS:
             return True
         if self.control().paused:
             return False

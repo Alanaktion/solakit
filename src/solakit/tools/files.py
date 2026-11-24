@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import ctypes
 import os
 import stat
+import sys
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -20,6 +22,11 @@ if TYPE_CHECKING:
 
 MAX_FILE_BYTES = 1024 * 1024
 DIRECTORY = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+FILE_MUTATIONS = frozenset(
+    {"files.write", "files.copy", "files.rename", "files.mkdir", "files.delete"}
+)
+RENAME_EXCL = 0x00000004  # macOS
+RENAME_NOREPLACE = 1  # Linux
 
 
 def _deny() -> ToolError:
@@ -145,6 +152,14 @@ class GuardedFiles:
         if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
             raise _deny()
 
+    @staticmethod
+    def _require_vacant(parent: int, name: str) -> None:
+        try:
+            os.stat(name, dir_fd=parent, follow_symlinks=False)
+        except FileNotFoundError:
+            return
+        raise ToolError("Destination already exists", ErrorCode.INVALID_INPUT)
+
     def protected_paths(self, profile: EffectiveProfile) -> set[Path]:
         return (
             set(self.protected)
@@ -168,8 +183,8 @@ class GuardedFiles:
         except UnicodeError:
             raise ToolError("File is not UTF-8 text", ErrorCode.INVALID_INPUT) from None
 
-    def read_bytes(self, path: str, *, limit: int) -> bytes:
-        with self._parent(path, write=False) as (parent, name):
+    def read_bytes(self, path: str, *, limit: int, protect_git: bool = False) -> bytes:
+        with self._parent(path, write=False, protect_git=protect_git) as (parent, name):
             fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent)
             with os.fdopen(fd, "rb") as stream:
                 self._regular(os.fstat(stream.fileno()))
@@ -177,6 +192,61 @@ class GuardedFiles:
         if len(raw) > limit:
             raise ToolError("File exceeds read limit", ErrorCode.BUDGET_EXCEEDED)
         return raw
+
+    def copy_file(self, source: str, destination: str) -> dict[str, JsonValue]:
+        raw = self.read_bytes(source, limit=MAX_FILE_BYTES, protect_git=True)
+        return {"source": source, **self.write_bytes(destination, raw, limit=MAX_FILE_BYTES)}
+
+    def rename_file(self, source: str, destination: str) -> dict[str, JsonValue]:
+        with (
+            self._parent(source, write=True) as (src_fd, src_name),
+            self._parent(destination, write=True) as (dst_fd, dst_name),
+        ):
+            self._regular(os.stat(src_name, dir_fd=src_fd, follow_symlinks=False))
+            self._require_vacant(dst_fd, dst_name)
+            libc = ctypes.CDLL(None, use_errno=True)
+            # Python's os.rename cannot atomically require a vacant destination.
+            try:
+                if sys.platform == "darwin":
+                    rename, flags = libc.renameatx_np, RENAME_EXCL
+                else:
+                    rename, flags = libc.renameat2, RENAME_NOREPLACE
+            except AttributeError:
+                raise ToolError("Exclusive rename is unavailable on this platform") from None
+            rename.argtypes = (
+                ctypes.c_int,
+                ctypes.c_char_p,
+                ctypes.c_int,
+                ctypes.c_char_p,
+                ctypes.c_uint,
+            )
+            src_bytes, dst_bytes = os.fsencode(src_name), os.fsencode(dst_name)
+            self.begin_effect(())
+            if rename(src_fd, src_bytes, dst_fd, dst_bytes, flags) != 0:
+                error = ctypes.get_errno()
+                raise ToolError(f"Rename failed: {os.strerror(error)}")
+            self.confirm_effect()
+            os.fsync(dst_fd)
+            os.fsync(src_fd)
+        return {"source": source, "path": destination}
+
+    def make_directory(self, path: str) -> dict[str, JsonValue]:
+        with self._parent(path, write=True) as (parent, name):
+            self._require_vacant(parent, name)
+            self.begin_effect(())
+            os.mkdir(name, mode=0o700, dir_fd=parent)
+            self.confirm_effect()
+            os.fsync(parent)
+        return {"path": path, "kind": "directory"}
+
+    def delete_file(self, path: str) -> dict[str, JsonValue]:
+        with self._parent(path, write=True) as (parent, name):
+            self._regular(os.stat(name, dir_fd=parent, follow_symlinks=False))
+            self.begin_effect(())
+            os.unlink(name, dir_fd=parent)
+            self.confirm_effect()
+            os.fsync(parent)
+        return {"path": path, "deleted": True}
 
     def list_directory(self, path: str, *, limit: int = 100) -> JsonValue:
         if type(limit) is not int or not 1 <= limit <= 100:

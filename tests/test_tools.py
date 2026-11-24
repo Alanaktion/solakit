@@ -28,7 +28,7 @@ from solakit.sdk import Tool, ToolArguments, ToolContext, ToolError, ToolResult
 from solakit.storage.evidence import StorageError, digest
 from solakit.storage.store import Store
 from solakit.tools.builtins import TOOLS
-from solakit.tools.dispatch import MAX_ARTIFACT_BYTES, Dispatcher, ToolSession
+from solakit.tools.dispatch import MAX_ARTIFACT_BYTES, Dispatcher, Invocation, ToolSession
 from solakit.tools.files import MAX_FILE_BYTES
 from solakit.tools.registry import Registry, RegistryError, load_registry
 
@@ -770,6 +770,96 @@ def test_file_workflow_list_search_unicode_and_artifact(tmp_path: Path) -> None:
         assert (
             h.dispatch("files.write", path="missing/result.txt", content="bad").status == "denied"
         )
+
+
+def test_file_management_with_only_named_grants(tmp_path: Path) -> None:
+    grants = ["files.copy", "files.rename", "files.mkdir", "files.delete"]
+    with opened(tmp_path, grants=grants) as h:
+        names = set()
+        for schema in h.session.schemas():
+            function = schema["function"]
+            assert isinstance(function, dict)
+            names.add(function["name"])
+        assert names == set(grants)
+        source = h.root / "café.bin"
+        payload = b"\xff\x00\x01"
+        source.write_bytes(payload)
+        inode = source.stat().st_ino
+        for name, arguments in (
+            ("files.mkdir", {"path": "archive"}),
+            ("files.copy", {"source": source.name, "destination": "copy.bin"}),
+            ("files.rename", {"source": source.name, "destination": "archive/moved.bin"}),
+        ):
+            receipt = h.dispatch(name, **arguments)
+            assert (receipt.status, receipt.effect) == ("succeeded", "confirmed"), receipt
+        moved = h.root / "archive/moved.bin"
+        assert moved.stat().st_ino == inode and moved.read_bytes() == payload
+        assert not source.exists() and (h.root / "copy.bin").read_bytes() == payload
+        removed = h.dispatch("files.delete", path="copy.bin")
+        assert (removed.status, removed.effect) == ("succeeded", "confirmed")
+        assert not (h.root / "copy.bin").exists()
+
+
+@pytest.mark.parametrize("name", ["files.copy", "files.rename"])
+def test_file_transfers_checks_both_paths(tmp_path: Path, name: str) -> None:
+    with opened(tmp_path, identity=True) as h:
+        (h.root / "source").write_bytes(b"source")
+        (h.root / "occupied").write_bytes(b"occupied")
+        (h.root / "link").symlink_to(h.root / "source")
+        (h.root / ".git").mkdir()
+        (h.root / ".git/config").write_text("private")
+        (h.root / "linked").write_bytes(b"linked")
+        os.link(h.root / "linked", h.root / "hardlink")
+        for source, destination in (
+            ("SOUL.md", "new"),
+            (".git/config", "new"),
+            ("link", "new"),
+            ("hardlink", "new"),
+            (".", "new"),
+            ("source", "../escape"),
+            ("source", "SOUL.md"),
+            ("source", ".git/new"),
+            ("source", "missing/new"),
+        ):
+            receipt = h.dispatch(name, source=source, destination=destination)
+            assert (receipt.status, receipt.effect) == ("denied", "none"), receipt
+        collision = h.dispatch(name, source="source", destination="occupied")
+        assert (collision.status, collision.effect) == ("failed", "none")
+        assert (h.root / "source").read_bytes() == b"source"
+        assert (h.root / "occupied").read_bytes() == b"occupied"
+        assert not (h.root / "new").exists()
+
+
+def test_rename_preserves_destination_created_during_call(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with opened(tmp_path) as h:
+        source, destination = h.root / "source", h.root / "destination"
+        source.write_bytes(b"source")
+        begin = Invocation.begin_effect
+
+        def occupy(invocation: Invocation, credentials: tuple[str, ...]) -> None:
+            begin(invocation, credentials)
+            destination.write_bytes(b"concurrent")
+
+        monkeypatch.setattr(Invocation, "begin_effect", occupy)
+        receipt = h.dispatch("files.rename", source=source.name, destination=destination.name)
+        assert receipt.status == "uncertain"
+        assert source.read_bytes() == b"source" and destination.read_bytes() == b"concurrent"
+
+
+def test_copy_limit_and_single_entry_mutations(tmp_path: Path) -> None:
+    with opened(tmp_path, identity=True) as h:
+        (h.root / "large").write_bytes(b"x" * (MAX_FILE_BYTES + 1))
+        (h.root / "directory").mkdir()
+        (h.root / "link").symlink_to(h.root / "large")
+        copy = h.dispatch("files.copy", source="large", destination="copy")
+        assert copy.failure and copy.failure.code == ErrorCode.BUDGET_EXCEEDED
+        assert copy.effect == "none" and not (h.root / "copy").exists()
+        for path in ("directory", "SOUL.md", "link"):
+            assert h.dispatch("files.delete", path=path).status == "denied"
+        assert h.dispatch("files.mkdir", path="missing/child").status == "denied"
+        assert not (h.root / "missing").exists()
 
 
 def test_file_scans_are_bounded_and_skip_protected_aliases(tmp_path: Path) -> None:

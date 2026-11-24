@@ -22,6 +22,11 @@ class Write(Read):
     overwrite: bool = False
 
 
+class Transfer(ToolArguments):
+    source: Annotated[str, Field(min_length=1, max_length=4096)]
+    destination: Annotated[str, Field(min_length=1, max_length=4096)]
+
+
 class ListFiles(ToolArguments):
     path: Annotated[str, Field(min_length=1, max_length=4096)] = "."
     limit: Annotated[int, Field(ge=1, le=100)] = 100
@@ -166,6 +171,22 @@ async def write(context: ToolContext, args: Write) -> ToolResult:
     )
 
 
+async def copy_file(context: ToolContext, args: Transfer) -> ToolResult:
+    return ToolResult(data=context.files.copy_file(args.source, args.destination))
+
+
+async def rename_file(context: ToolContext, args: Transfer) -> ToolResult:
+    return ToolResult(data=context.files.rename_file(args.source, args.destination))
+
+
+async def make_directory(context: ToolContext, args: Read) -> ToolResult:
+    return ToolResult(data=context.files.make_directory(args.path))
+
+
+async def delete_file(context: ToolContext, args: Read) -> ToolResult:
+    return ToolResult(data=context.files.delete_file(args.path))
+
+
 async def transcripts(context: ToolContext, args: Query) -> ToolResult:
     return ToolResult(data=context.services.transcript_search(args.query, limit=args.limit))
 
@@ -258,6 +279,34 @@ TOOLS = (
         Write,
         write,
         True,
+    ),
+    Tool(
+        "files.copy",
+        "Copy one file (up to 1 MiB, including binary) to a new path in an existing directory.",
+        Transfer,
+        copy_file,
+        consequential=True,
+    ),
+    Tool(
+        "files.rename",
+        "Rename or move one file on the same filesystem to a new path under an existing directory.",
+        Transfer,
+        rename_file,
+        consequential=True,
+    ),
+    Tool(
+        "files.mkdir",
+        "Create one new directory under an existing parent directory.",
+        Read,
+        make_directory,
+        consequential=True,
+    ),
+    Tool(
+        "files.delete",
+        "Permanently delete one regular file from a granted workspace.",
+        Read,
+        delete_file,
+        consequential=True,
     ),
     Tool(
         "images.generate",

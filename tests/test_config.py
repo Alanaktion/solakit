@@ -314,7 +314,16 @@ def test_wildcards_expand_registered_names_and_children_only_narrow(tmp_path: Pa
         }
     )
     admitted = resolve_profile(config)
-    files = {"files.list", "files.read", "files.search", "files.write"}
+    files = {
+        "files.list",
+        "files.read",
+        "files.search",
+        "files.write",
+        "files.copy",
+        "files.rename",
+        "files.mkdir",
+        "files.delete",
+    }
     assert admitted.tools == files
     assert admitted.granted_tools == files | {"not.loaded"}
     job = resolve_profile(config, "job", origin=Origin.SCHEDULED)

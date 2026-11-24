@@ -68,6 +68,7 @@ match `[A-Za-z0-9_][A-Za-z0-9_.-]*` and contain at most 128 characters. Module n
 must also be importable Python modules.
 
 Built-ins currently include `files.list`, `files.read`, `files.search`, `files.write`,
+`files.rename`, `files.copy`, `files.mkdir`, `files.delete`,
 `images.generate`, `transcripts.search`, `web.search`, `git.status`, `git.diff`,
 `git.pull`, `git.publish`, `shell.exec`, `delegate.run`,
 `runtime.status`, `memory.recall`, `memory.remember`, and `jobs.list`, `jobs.create`,
@@ -78,6 +79,8 @@ Built-ins are always registered; enable them in the selected profile's
 `tools`. Remove the obsolete top-level `loaded_tools` key from existing configuration;
 it is rejected. There are no separate `resources` or `effects` settings. See the
 [tool contract](contracts/tools.md) for protected paths and pack permissions.
+`files.*` expands to all registered file tools at admission, including the four
+file management tools. Use exact names to grant a subset.
 
 The other supported top-level keys are tables: `model`, `http`, `memory`, `images`, `blog`, `git`, `letters`, `web_search`, `shell`,
 `defaults`, `profiles`, `proactive_budgets` and `background`, described below.

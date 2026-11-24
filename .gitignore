@@ -18,6 +18,7 @@ config.toml
 docs/validation/*
 !docs/validation/cli-diagnostics.md
 !docs/validation/delegation.md
+!docs/validation/file-tools.md
 !docs/validation/harness-review.md
 !docs/validation/letters-tools.md
 !docs/validation/package-layout.md

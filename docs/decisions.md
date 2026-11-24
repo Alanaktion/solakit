@@ -78,6 +78,7 @@ Statuses distinguish operator-confirmed requirements, implementer-selected rever
 
 | V2-51 | Selected / implementer, 2026-11-23 | Add opt-in `delegate.run` from interactive parents to one configured isolated worker profile. Intersect frozen and current grants and roots. Reserve an existing active slot after serving eligible queued runs. Use the same inference permit, charge the parent's budgets, and commit both the child admission and the parent evidence link atomically. | [Tool contract](contracts/tools.md#bounded-delegation), [validation](validation/delegation.md) |
 | V2-52 | Operator request, 2026-11-23 | Extend the public CLI with explicit synthetic model diagnostics and offline effective grant comparison. Keep inference opt-in and use disposable evidence. Supersedes the four-command limit in V2-31. | [CLI](cli.md), [validation](validation/cli-diagnostics.md) |
+| V2-53 | Selected / implementer, 2026-11-24 | Add separately grantable `files.rename`, `files.copy`, `files.mkdir`, and `files.delete`. Use guarded workspace paths and standard mutation receipts. File transfers require a vacant destination, and background mutations require explicit job roots. | [Tool contract](contracts/tools.md#workspace-behavior-and-access-matrix), [validation](validation/file-tools.md) |
 
 ## Unavailable references and remaining verification
 

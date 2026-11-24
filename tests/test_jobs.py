@@ -524,6 +524,58 @@ def test_narrow_job_tools_and_permissions(profile: EffectiveProfile) -> None:
     asyncio.run(scenario())
 
 
+@pytest.mark.parametrize("explicit_roots", [False, True])
+def test_background_file_rename_requires_explicit_roots(
+    profile: EffectiveProfile, explicit_roots: bool
+) -> None:
+    async def scenario() -> None:
+        clock = Clock(datetime(2026, 11, 17, 5, tzinfo=UTC))
+        root = profile.workspace_roots[0]
+        (root / "source.txt").write_text("local file")
+        app, requests = harness(
+            profile,
+            [
+                reply(
+                    "",
+                    calls=[
+                        call("files.rename", '{"source":"source.txt","destination":"renamed.txt"}')
+                    ],
+                ),
+                reply("Finished."),
+            ],
+        )
+        assert app.jobs
+        app.jobs.clock = clock
+        await app.start()
+        assert app.store and app.runs
+        try:
+            job(
+                app,
+                clock,
+                enabled=True,
+                tools=("files.rename",),
+                workspace_roots=(str(root),) if explicit_roots else None,
+            )
+            await app.jobs.tick()
+            occurrence = occurrences(app)[0]
+            assert occurrence.run_id
+            await app.runs.wait(occurrence.run_id, timeout=3)
+            receipt = next(
+                record
+                for record in records(app.store, occurrence.run_id)
+                if isinstance(record, ToolReceipt)
+            )
+            assert (receipt.status, receipt.effect) == (
+                ("succeeded", "confirmed") if explicit_roots else ("denied", "none")
+            )
+            assert ("files.rename" in str(requests[0].get("tools", []))) == explicit_roots
+            assert (root / "renamed.txt").exists() == explicit_roots
+        finally:
+            await app.stop()
+
+    asyncio.run(scenario())
+
+
 def test_pending_bound_active_and_interactive_fairness(profile: EffectiveProfile) -> None:
     async def scenario() -> None:
         clock = Clock()
