@@ -16,6 +16,7 @@ wheels/
 .env
 config.toml
 docs/validation/*
+!docs/validation/cli-diagnostics.md
 !docs/validation/delegation.md
 !docs/validation/harness-review.md
 !docs/validation/letters-tools.md

@@ -15,6 +15,10 @@ from solakit.config import (
 )
 
 
+def selected_profile(path: Path | None, name: str) -> EffectiveProfile:
+    return resolve_profile(load_config(path), name, base=(path or DEFAULT_CONFIG).resolve().parent)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="sola")
     parser.add_argument("--version", action="version", version=version("solakit"))
@@ -23,7 +27,20 @@ def main() -> None:
     check = commands.add_parser(
         "check", help="validate local configuration without starting services"
     )
-    for command in (serve, check):
+    doctor = commands.add_parser("doctor", help="run synthetic live model and service diagnostics")
+    doctor.add_argument(
+        "--quick", action="store_true", help="skip reasoning and repeated-prefix probes"
+    )
+    doctor.add_argument("--json", action="store_true", help="print machine-readable results")
+    configuration = commands.add_parser("config", help="inspect effective configuration offline")
+    actions = configuration.add_subparsers(dest="action", required=True)
+    explain = actions.add_parser("explain", help="show effective profile and visible schema size")
+    explain.add_argument("profile", nargs="?", default="default")
+    explain.add_argument("--config", type=Path)
+    difference = actions.add_parser("diff", help="compare effective grants across two TOML files")
+    difference.add_argument("old", type=Path)
+    difference.add_argument("new", type=Path)
+    for command in (serve, check, doctor):
         command.add_argument("--config", type=Path)
         command.add_argument("--profile", default="default")
     check.add_argument("--explain", action="store_true")
@@ -89,11 +106,7 @@ def main() -> None:
         }
         live_results: dict[str, dict[str, str]] = {}
         try:
-            profile = resolve_profile(
-                load_config(args.config),
-                args.profile,
-                base=(args.config or DEFAULT_CONFIG).resolve().parent,
-            )
+            profile = selected_profile(args.config, args.profile)
         except ConfigError as error:
             report["configuration_error"] = str(error)
         else:
@@ -102,6 +115,8 @@ def main() -> None:
                 report["effective_config"] = profile.explain()
             if args.live:
                 import asyncio
+
+                from solakit.diagnostics import live_check
 
                 live_results = asyncio.run(live_check(profile))
                 report["live"] = live_results
@@ -120,6 +135,39 @@ def main() -> None:
             args.config is not None or DEFAULT_CONFIG.exists()
         ):
             raise SystemExit(2)
+    elif args.command == "config":
+        from solakit.diagnostics import config_diff, explain_profile
+        from solakit.registry import RegistryError
+
+        try:
+            if args.action == "diff":
+                details = config_diff(args.old, args.new)
+            else:
+                profile = selected_profile(args.config, args.profile)
+                details = explain_profile(profile)
+        except (ConfigError, RegistryError) as error:
+            parser.error(str(error))
+        print(json.dumps(details, indent=2))
+    elif args.command == "doctor":
+        import asyncio
+
+        from solakit.diagnostics import run_doctor
+
+        try:
+            profile = selected_profile(args.config, args.profile)
+        except ConfigError as error:
+            parser.error(str(error))
+        doctor_results = asyncio.run(run_doctor(profile, quick=args.quick))
+        if args.json:
+            print(json.dumps(doctor_results, indent=2))
+        else:
+            for name, result in doctor_results.items():
+                detail = "  ".join(
+                    f"{key}={value}" for key, value in result.items() if key != "status"
+                )
+                print(f"{result['status'].upper():9} {name}  {detail}".rstrip())
+        if any(result["status"] == "failed" for result in doctor_results.values()):
+            raise SystemExit(1)
     elif args.command == "prompt":
         from datetime import datetime
 
@@ -137,11 +185,7 @@ def main() -> None:
                     args.request_body.read_bytes(), args.manifest.read_bytes()
                 )
             else:
-                profile = resolve_profile(
-                    load_config(args.config),
-                    args.profile,
-                    base=(args.config or DEFAULT_CONFIG).resolve().parent,
-                )
+                profile = selected_profile(args.config, args.profile)
                 if args.frozen:
                     if any(value is not None for value in (args.text, args.recall_file, args.at)):
                         parser.error(
@@ -192,43 +236,3 @@ def main() -> None:
         print(json.dumps({"status": "available", "results": results}, ensure_ascii=False, indent=2))
     else:
         parser.error(f"{args.command} is not implemented yet; see its phase plan")
-
-
-async def live_check(profile: EffectiveProfile) -> dict[str, dict[str, str]]:
-    import asyncio
-
-    from solakit.memory import OpenViking
-    from solakit.model import ModelAdapter
-    from solakit.redaction import Redactor
-    from solakit.store import Store
-
-    redactor = Redactor()
-    model = ModelAdapter(profile, Store(profile.data_dir), asyncio.Semaphore(1), redactor=redactor)
-    memory = OpenViking(profile.memory, redactor)
-    results: dict[str, dict[str, str]] = {}
-    try:
-        try:
-            await model.start()
-            await model.verify()
-            results["model"] = {"status": "available", "pin": profile.model_pin}
-        except Exception:
-            results["model"] = {"status": "failed", "error": "Model health/pin check failed"}
-        if profile.memory.enabled:
-            try:
-                await memory.start()
-                verified = await memory.verify()
-                results["memory"] = {"status": "available", "version": str(verified["version"])}
-            except Exception:
-                results["memory"] = {
-                    "status": "failed",
-                    "error": "Memory health/version check failed",
-                }
-        else:
-            results["memory"] = {"status": "disabled"}
-    finally:
-        for name, adapter in (("memory", memory), ("model", model)):
-            try:
-                await adapter.stop()
-            except Exception:
-                results[name] = {"status": "failed", "error": "Client cleanup failed"}
-    return results

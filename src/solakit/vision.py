@@ -1,6 +1,7 @@
 """Pinned image recognition over the shared model transport."""
 
 from io import BytesIO
+from typing import Any
 
 import httpx2
 from PIL import Image
@@ -38,6 +39,10 @@ class VisionAdapter(ModelAdapter):
     async def start(self) -> None:
         # A missing vision credential must not stop the text service.
         pass
+
+    async def verify(self) -> dict[str, Any]:
+        await super().start()
+        return await super().verify()
 
     @staticmethod
     def model_profile(profile: EffectiveProfile) -> EffectiveProfile:

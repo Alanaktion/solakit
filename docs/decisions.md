@@ -77,6 +77,7 @@ Statuses distinguish operator-confirmed requirements, implementer-selected rever
 | V2-50 | Selected / implementer, 2026-11-23 | Add four named letters tools for one reserved Git checkout. Permit read and inbox in scheduled profiles, with explicit job roots for inbox. Keep publication interactive, preserve the v1 body-plus-LF format and commit subjects, and record durable publication identities and phases. The operator verifies interrupted and v1 work before enabling or retrying publication. | [Letters contract](contracts/tools.md#git-backed-letters), [validation](validation/letters-tools.md) |
 
 | V2-51 | Selected / implementer, 2026-11-23 | Add opt-in `delegate.run` from interactive parents to one configured isolated worker profile. Intersect frozen and current grants and roots. Reserve an existing active slot after serving eligible queued runs. Use the same inference permit, charge the parent's budgets, and commit both the child admission and the parent evidence link atomically. | [Tool contract](contracts/tools.md#bounded-delegation), [validation](validation/delegation.md) |
+| V2-52 | Operator request, 2026-11-23 | Extend the public CLI with explicit synthetic model diagnostics and offline effective grant comparison. Keep inference opt-in and use disposable evidence. Supersedes the four-command limit in V2-31. | [CLI](cli.md), [validation](validation/cli-diagnostics.md) |
 
 ## Unavailable references and remaining verification
 

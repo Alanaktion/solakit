@@ -37,7 +37,7 @@ evidence store and owns a pinned oMLX client before serving
 health; startup contacts oMLX only when resuming queued work. Phase 6 adds the
 [headless run service](docs/contracts/run-loop.md): durable bounded queues,
 model/tool turns, cancellation, recovery and inspectable outcomes.
-The four public commands are `serve`, `check`, `prompt`, and `search`. Search works offline:
+Run `sola doctor` for live diagnostics or `sola config diff old.toml new.toml` to review grant changes offline. See the [operator CLI guide](docs/cli.md). Search works offline:
 
 ```sh
 uv run sola search 'exact phrase' --data-dir /absolute/sola-data

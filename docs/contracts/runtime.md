@@ -193,7 +193,7 @@ operational redaction, not a content scrubber for private conversation evidence.
 as JSON. `runtime_configured` means local validation passed, not that the pin or
 remote services were verified. Invalid explicit/existing config exits 2. A missing
 default config reports an unconfigured installation and exits 0 for clean-install
-checks. The four public commands remain `serve`, `check`, `prompt`, and `search`.
+checks. See the [operator CLI guide](../cli.md) for explicit live probes and offline profile comparisons.
 
 ## Budgets
 
