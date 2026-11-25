@@ -60,7 +60,7 @@ Place these before any `[table]` header.
 | `soul_file` | optional path string: omitted | Operator-owned UTF-8 identity file, read verbatim. Must be an existing file when configured. |
 | `curated_memory_file` | optional path string: omitted | Operator-owned UTF-8 curated memory file, read verbatim; independent of OpenViking being enabled. Must exist when configured. |
 | `delegation_worker` | optional profile name: omitted | Selects one worker profile for `delegate.run`. Interactive caller profiles also need the tool grant. Workers use isolated topics and the intersection of worker and parent grants and roots. |
-| `shutdown_timeout_seconds` | integer: `5` | Bounded runtime cleanup timeout, 1–60 seconds. |
+| `shutdown_timeout_seconds` | integer: `5` | Deadline in seconds for each of the two shutdown stages, HTTP connection drain and runtime cleanup. Range 1–60. |
 | `tool_modules` | array of name strings: `[]` | Explicit importable modules for installed trusted Python packs. Each exports `SDK_VERSION = 1` and `TOOLS`; configuration resolution imports and registers them. Imports execute trusted code; registration grants no access. Missing modules or invalid declarations fail resolution. |
 
 Names used for modules, profile names and memory account/user must

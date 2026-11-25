@@ -12,6 +12,7 @@ tool_modules = []
 # transcripts.search, web.search, git.status/diff/pull/publish, shell.exec, delegate.run, runtime.status,
 # memory.recall, memory.remember; jobs.list/create/update/pause/resume/run_now/delete/pause_all.
 # blog.list/read/create/publish; dreams.list/read/create (always publishes).
+# Separate deadlines for the HTTP connection drain and runtime cleanup.
 shutdown_timeout_seconds = 5
 # Operator-owned UTF-8 files, read verbatim; optional and never created by Sola.
 # soul_file = "SOUL.md"

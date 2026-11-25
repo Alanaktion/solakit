@@ -237,7 +237,8 @@ A failed start preserves the startup error and, if needed, cleanup errors.
 Repeated/concurrent starts or stops are serialized and idempotent; a cleanly
 stopped context can restart on its single owning event loop.
 
-Shutdown has a total deadline (`shutdown_timeout_seconds`: default 5, range 1–60).
+Runtime cleanup has a total deadline (`shutdown_timeout_seconds`, default 5,
+range 1–60). `sola serve` applies the same value to the preceding HTTP drain.
 Close failures still attempt the remaining resources. A timeout cancels the cleanup
 task and returns an inspectable error without waiting forever for cancellation.
 On any failed/uncertain cleanup the context becomes `failed`, retains ownership,

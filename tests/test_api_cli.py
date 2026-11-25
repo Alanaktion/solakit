@@ -1,6 +1,11 @@
 import json
+import os
+import signal
+import socket
+import subprocess
 import sys
 from pathlib import Path
+from time import monotonic, sleep
 from typing import Any
 
 import pytest
@@ -83,23 +88,88 @@ def test_serve_uses_configured_single_worker_and_ignores_proxy_headers(
         target.write(
             f'\n[http]\nhost = "{host}"\nport = 9876\nallowed_origins = ["http://{host}:9876"]\n'
         )
-    options: dict[str, Any] = {}
+    servers: list[uvicorn.Server] = []
 
-    def serve(app: FastAPI, **kwargs: Any) -> None:
-        options.update(kwargs)
-        assert app.state.context.state == "stopped"
+    def serve(server: uvicorn.Server) -> None:
+        servers.append(server)
 
-    monkeypatch.setattr(uvicorn, "run", serve)
+    monkeypatch.setattr(uvicorn.Server, "run", serve)
     monkeypatch.setattr(sys, "argv", ["sola", "serve", "--config", str(config)])
     main()
-    assert options == {
-        "host": host,
-        "port": 9876,
-        "workers": 1,
-        "proxy_headers": False,
-        "access_log": False,
-    }
+    (server,) = servers
+    settings = server.config
+    assert isinstance(settings.app, FastAPI)
+    assert settings.app.state.context.state == "stopped"
+    assert settings.host == host
+    assert settings.port == 9876
+    assert settings.workers == 1
+    assert not settings.proxy_headers
+    assert not settings.access_log
+    assert settings.timeout_graceful_shutdown == 5
     assert not (tmp_path / "data").exists()
+
+
+@pytest.mark.parametrize("force_signal", [None, signal.SIGINT, signal.SIGTERM])
+def test_serve_shuts_down_with_open_event_stream(
+    tmp_path: Path, force_signal: signal.Signals | None
+) -> None:
+    import httpx2
+
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        port = listener.getsockname()[1]
+    origin = f"http://127.0.0.1:{port}"
+    config = config_file(tmp_path)
+    timeout = 1 if force_signal is None else 5
+    config.write_text(
+        f"shutdown_timeout_seconds = {timeout}\n"
+        + config.read_text()
+        + f'\n[http]\nport = {port}\nallowed_origins = ["{origin}"]\n'
+    )
+    password = "synthetic-operator-secret"
+    log = tmp_path / "server.log"
+    cli = [sys.executable, "-c", "from solakit.cli import main\nmain()"]
+    with (
+        log.open("w") as output,
+        subprocess.Popen(
+            [*cli, "serve", "--config", str(config)],
+            env=os.environ | {"SOLA_OPERATOR_PASSWORD": password},
+            stdout=output,
+            stderr=subprocess.STDOUT,
+        ) as process,
+    ):
+
+        def wait_for_log(message: str) -> None:
+            deadline = monotonic() + 5
+            while message not in log.read_text():
+                assert process.poll() is None and monotonic() < deadline, log.read_text()
+                sleep(0.01)
+
+        try:
+            wait_for_log(f"Uvicorn running on {origin}")
+            with httpx2.Client(base_url=origin, trust_env=False) as client:
+                login = client.post(
+                    "/api/v1/auth/login",
+                    headers={"Origin": origin},
+                    json={"password": password, "transport": "bearer"},
+                )
+                assert login.status_code == 200
+                client.headers["Authorization"] = "Bearer " + login.json()["token"]
+                session = client.post("/api/v1/sessions", json={}).json()["id"]
+                with client.stream("GET", f"/api/v1/sessions/{session}/events") as stream:
+                    lines = stream.iter_lines()
+                    assert next(lines) == f"id: {session}:0"
+                    assert next(lines) == "event: snapshot"
+                    process.send_signal(force_signal or signal.SIGTERM)
+                    wait_for_log("Waiting for connections to close.")
+                    if force_signal is not None:
+                        process.send_signal(force_signal)
+                    assert process.wait(timeout=3) == -(force_signal or signal.SIGTERM)
+            if force_signal is None:
+                assert "Application shutdown complete." in log.read_text()
+        finally:
+            if process.poll() is None:
+                process.kill()
 
 
 @pytest.mark.parametrize("bad_args", [False, True])

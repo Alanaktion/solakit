@@ -3,8 +3,11 @@
 import argparse
 import json
 import platform
+import signal
+from contextlib import suppress
 from importlib.metadata import version
 from pathlib import Path
+from types import FrameType
 
 from solakit.config import (
     DEFAULT_CONFIG,
@@ -68,6 +71,15 @@ def main() -> None:
         from solakit.api import create_app
         from solakit.runtime import compose
 
+        class Server(uvicorn.Server):
+            def handle_exit(self, sig: int, frame: FrameType | None) -> None:
+                if self.should_exit:
+                    # Uvicorn can still wait for active sockets after setting force_exit.
+                    signal.signal(sig, signal.SIG_DFL)
+                    signal.raise_signal(sig)
+                else:
+                    super().handle_exit(sig, frame)
+
         def current_profile(admitted: EffectiveProfile) -> EffectiveProfile:
             return resolve_profile(
                 load_config(args.config),
@@ -86,7 +98,7 @@ def main() -> None:
             )
         except ConfigError as error:
             parser.error(str(error))
-        uvicorn.run(
+        server_config = uvicorn.Config(
             create_app(
                 compose(profile, current_profile=current_profile),
                 profile_names=tuple(config.profiles),
@@ -96,7 +108,10 @@ def main() -> None:
             workers=1,
             proxy_headers=False,
             access_log=False,
+            timeout_graceful_shutdown=profile.shutdown_timeout_seconds,
         )
+        with suppress(KeyboardInterrupt):
+            Server(server_config).run()
     elif args.command == "check":
         report: dict[str, object] = {
             "phase": "api-cli-events",

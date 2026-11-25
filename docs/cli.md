@@ -44,3 +44,8 @@ invalid config or an unconfigured live check exits with status 2. Relative paths
 resolve beside the selected TOML. `serve` disables access logs and proxy-header
 trust and always uses one worker; a second data owner fails to start. Default
 checks and prompt/search do not read login/model credentials.
+
+Ctrl+C or SIGTERM starts graceful shutdown. `serve` uses `shutdown_timeout_seconds`
+as the deadline for draining active HTTP connections before runtime cleanup
+begins. Runtime cleanup has its own deadline of the same length. A second Ctrl+C
+or SIGTERM terminates the process immediately, skipping any remaining cleanup.
