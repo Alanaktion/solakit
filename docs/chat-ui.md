@@ -104,6 +104,14 @@ selected IDs. If archiving pauses, the dialog shows the confirmed count and
 offers to retry the remaining topics. To restore a topic, open it from the
 archived results and clear **Archive topic** in Topic details.
 
+Use **Export** on any result in **Manage topics** to download its conversation,
+run evidence, artifacts, and delegated topics as a Solakit ZIP. You can also
+export from Topic details. Queued and running turns must finish before export.
+Choose **Import topic** in **Manage topics** to upload a ZIP. The copy opens
+with its original memory mode and archive status. If the upload response is lost,
+**Retry import** reuses the same request and opens the same copy. Choosing a file
+for a new import creates another copy.
+
 Settings uses six keyboard-accessible tabs, with a separate dialog for job
 creation and editing. Use the X or Escape to close Settings. Arrow keys move
 between tabs. Home and End select the first or last tab. Navigation stays visible

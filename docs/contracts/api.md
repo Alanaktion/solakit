@@ -117,6 +117,7 @@ are 32 lowercase hex characters. Timestamps are aware UTC ISO strings. Unknown
 body fields and malformed path/query/body fields receive 422. Bodies are capped
 at 128 KiB, even without Content-Length. The binary image upload route has an
 8 MiB cap on the actual bytes received after authentication and CSRF checks.
+Session archives have a 128 MiB transfer limit and their own content type.
 Errors use `{"error":{"code":"…","message":"…"}}` with a safe message.
 404 means missing resource, 409 means conflicting state/current authority, 429
 means a capacity limit, 413 means bounded input/output exceeded, 415 means an
@@ -130,6 +131,8 @@ means unavailable service/state.
 | `/sessions/catalog/profiles` | GET `{ "items": [name, ...] }` with sorted configured and recorded profile names |
 | `/sessions/{id}` | GET; PATCH title/archived/pinned; mode stays frozen |
 | `/sessions/archive` | POST `{ "session_ids": [id, ...] }` (1–100); returns `{ "archived": count }`; validates all IDs before one state transaction; duplicates/already archived sessions are no-ops |
+| `/sessions/{id}/export` | GET a Solakit ZIP download for one topic and its delegated descendants |
+| `/sessions/import` | POST one Solakit ZIP with an Idempotency-Key. Returns 201 and `{ "session_id": id }` for the copied root |
 | `/sessions/{id}/messages` | GET public conversation pages; private background inputs/tools remain in run records |
 | `/sessions/{id}/runs` | GET admission-order run pages; current state in each record |
 | `/sessions/{id}/image-uploads` | POST one binary `image/png`, `image/jpeg`, or `image/webp`. Returns 201 and `{upload_id}` for a normalized, temporary PNG |
@@ -154,6 +157,26 @@ means unavailable service/state.
 | `/search` | GET q, limit, optional session_id; independent evidence-backed search, no live memory call |
 | `/prompt` | POST profile, content, optional hashes; private draft inspection using the assembler/tools, no recall/history/inference |
 
+### Session transfer
+
+Export returns `application/zip` as `solakit-session-{id}.zip`. All runs
+in the topic and its delegated descendants must have reached a terminal state.
+If a run is queued or running, the endpoint returns `409`. Export includes
+private session evidence such as exact recorded prompts, tool activity, and
+artifacts. [Archive format and validation rules](storage.md#session-transfer)
+
+Send the ZIP bytes as the import request body with `Content-Type: application/zip`
+and a 32-character lowercase hex `Idempotency-Key`. Cookie callers also send
+the configured Origin and CSRF header. Import creates a new copy with its own
+session and run IDs. The same key and identical bytes return the original copy’s
+ID. A different payload with the same key returns `409`. A new key creates
+another copy. A wrong content type returns `415`, malformed or unsupported
+archives return `422`, and archives that exceed the byte or item limit return
+`413`. Use the returned session ID with the normal session, event, and search
+routes.
+
+### Session listings
+
 `GET /sessions?q=travel` matches a literal substring of the topic title/name,
 ignoring case with Unicode case folding. Queries are limited to 256 characters;
 leading/trailing whitespace is ignored and an empty query leaves the list unfiltered.
@@ -164,6 +187,8 @@ The optional `pinned=true` or `pinned=false` filter selects pinned or unpinned
 topics before pagination; omitting it includes both. The API retains creation
 order. The sidebar separately loads pins without a title query and places them
 before the paginated, title-filtered unpinned topics.
+
+### Run admission and delegation
 
 Admission returns `{ "run": Run }` and Location. 202 means durably accepted and
 pending; 200 means terminal, including failed/cancelled outcomes. Wait timeouts

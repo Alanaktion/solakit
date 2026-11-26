@@ -33,6 +33,7 @@ from solakit.storage.evidence import (
     digest,
     read_artifact,
 )
+from solakit.storage.store import LOCAL_RUN
 
 if TYPE_CHECKING:
     from solakit.adapters.model import ModelAdapter
@@ -112,6 +113,12 @@ def source_hash(refs: tuple[Reference, ...]) -> str:
     return digest(canonical([ref.model_dump(mode="json") for ref in refs]))
 
 
+def through_run(store: Store, boundary: CompactionBoundary, manifest: Manifest) -> str:
+    if store.imported_run(boundary.run_id):
+        return store._load("message", boundary.through_message_id, Message).run_id
+    return manifest.source_run_ids[-1]
+
+
 def safe(store: Store, run: Run) -> bool:
     from solakit.engine.run_loop import records
 
@@ -130,9 +137,10 @@ def verify(store: Store, boundary: CompactionBoundary) -> tuple[Manifest, Messag
     """Validate the complete frozen source range and summary before activation/recovery."""
     manifest = manifest_for(store, boundary)
     owner = store.run(boundary.run_id)
+    imported = store.imported_run(owner.id)
     if (
         manifest.version != 1
-        or manifest.boundary_id != boundary.id
+        or (not imported and manifest.boundary_id != boundary.id)
         or owner.session_id != boundary.session_id
         or owner.origin != boundary.origin
         or store.session(boundary.session_id).mode == SessionMode.EPHEMERAL
@@ -140,11 +148,24 @@ def verify(store: Store, boundary: CompactionBoundary) -> tuple[Manifest, Messag
     ):
         raise CorruptionError("invalid compaction owner or range")
     previous = previous_runs(store, owner)
+    if imported:
+        # Import validates the source manifest against the bundled records and physical
+        # references. Here the local message IDs anchor the verified historical summary.
+        summary = store._load("message", boundary.summary_message_id, Message)
+        through = through_run(store, boundary, manifest)
+        if (
+            boundary.state != "committed"
+            or (summary.session_id, summary.run_id, summary.role)
+            != (owner.session_id, owner.id, "assistant")
+            or not any(run.id == through for run in previous)
+        ):
+            raise CorruptionError("invalid imported compaction anchor")
+        return manifest, summary
     if manifest.prior_boundary_id:
         prior = store._load("compaction", manifest.prior_boundary_id, CompactionBoundary)
         if prior.state != "committed" or prior.session_id != boundary.session_id:
             raise CorruptionError("invalid prior compaction")
-        through = manifest_for(store, prior).source_run_ids[-1]
+        through = through_run(store, prior, manifest_for(store, prior))
         previous = previous[next(i for i, r in enumerate(previous) if r.id == through) + 1 :]
     selected = previous[: len(manifest.source_run_ids)]
     if tuple(r.id for r in selected) != manifest.source_run_ids or not all(
@@ -229,7 +250,7 @@ def finish(store: Store, boundary: CompactionBoundary) -> None:
 
 def recover(store: Store) -> None:
     for row in store.db.execute(
-        "SELECT id FROM entities WHERE kind='compaction' "
+        f"SELECT id FROM entities WHERE kind='compaction' AND {LOCAL_RUN} "
         "AND json_extract(body,'$.manifest') IS NOT NULL "
         "AND (json_extract(body,'$.state')!='committed' OR session_id NOT IN ("
         "SELECT id FROM entities WHERE kind='session' AND json_extract(body,'$.archived')=1)) "
@@ -274,7 +295,7 @@ def select(store: Store, run: Run, cap: int) -> Selection:
     provenance: dict[str, JsonValue] | None = None
     if boundary:
         manifest, summary = verify(store, boundary)
-        through = manifest.source_run_ids[-1]
+        through = through_run(store, boundary, manifest)
         offset = next(i for i, r in enumerate(previous) if r.id == through) + 1
         provenance = {
             "boundary_id": boundary.id,

@@ -1,7 +1,7 @@
 """Operational SQLite state and durable session services; caller owns the data lock."""
 
 import sqlite3
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
@@ -121,12 +121,20 @@ PRAGMA user_version=2;
 
 ARCHIVED_SESSIONS = (
     "SELECT id FROM entities WHERE kind='session' AND json_extract(body,'$.archived')=1"
+    " AND id NOT IN (SELECT json_extract(body,'$.event.session_id') FROM outbox "
+    "WHERE delivered=0 AND json_extract(body,'$.event.session_id') IS NOT NULL)"
 )
 ARCHIVED_ENTRIES = (
     "SELECT id FROM outbox WHERE delivered=1 "
     "AND coalesce(json_extract(body,'$.event.session_id'),"
     "CASE WHEN json_extract(body,'$.kind')='legacy' THEN "
     "json_extract(body,'$.details.session_id') END) IN (" + ARCHIVED_SESSIONS + ")"
+)
+TRANSFER_RUN = "session-transfer:run:"
+TRANSFER_SOURCE = "session_transfer"
+LOCAL_RUN = (
+    f"run_id NOT IN (SELECT substr(source,{len(TRANSFER_RUN) + 1}) FROM imports "
+    f"WHERE source GLOB '{TRANSFER_RUN}*')"
 )
 
 
@@ -253,11 +261,18 @@ class Store:
             if entry.kind in RECORDS:
                 key = (entry.kind, str(entry.record["id"]))
                 latest[key] = entry
+                if key not in first_sequence and entry.kind == "run":
+                    if bool(entry.details.get(TRANSFER_SOURCE)) != self.imported_run(key[1]):
+                        raise CorruptionError("run import marker differs from evidence")
                 first_sequence.setdefault(key, entry.event.sequence if entry.event else 0)
-                if entry.event and entry.event.type == "run.admitted":
+                if (
+                    entry.event
+                    and entry.event.type == "run.admitted"
+                    and not entry.details.get(TRANSFER_SOURCE)
+                ):
                     admissions[str(entry.record["request_id"])] = (
                         digest(canonical(entry.details)),
-                        str(entry.record["id"]),
+                        key[1],
                     )
             if entry.event:
                 event = entry.event
@@ -365,7 +380,6 @@ class Store:
                 "SELECT sequence FROM sessions WHERE id=?", (session_id,)
             ).fetchone()[0]
             sequence += 1
-            self.db.execute("UPDATE sessions SET sequence=? WHERE id=?", (sequence, session_id))
             event = DurableEvent.model_validate(
                 {
                     "event_id": entry_id,
@@ -376,28 +390,43 @@ class Store:
                     "payload": {"kind": kind, "record_id": record.id},
                 }
             )
-        entry = Entry(
+        return Entry(
             id=entry_id,
             kind=kind,  # type: ignore[arg-type]
             record=record.model_dump(mode="json"),
             event=event,
             details=details,
         )
+
+    def _save_entry(self, entry: Entry) -> None:
+        identity = entry.record["id"]
+        event = entry.event
+        session_id = identity if entry.kind == "session" else entry.record.get("session_id")
+        sequence = event.sequence if event else 0
+        if (
+            event
+            and not self.db.execute(
+                "UPDATE sessions SET sequence=? WHERE id=? AND sequence=?",
+                (sequence, session_id, sequence - 1),
+            ).rowcount
+        ):
+            raise CorruptionError("invalid next session sequence")
+        record = RECORDS[entry.kind].model_validate_json(canonical(entry.record))
         self.db.execute(
             "INSERT INTO entities VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(kind,id) DO UPDATE SET "
             "body=excluded.body,entry_id=excluded.entry_id",
             (
-                kind,
-                record.id,
+                entry.kind,
+                identity,
                 session_id,
-                getattr(record, "run_id", record.id if kind == "run" else None),
+                event.run_id if event else entry.record.get("run_id"),
                 sequence,
                 record.created_at.isoformat(),
                 canonical(entry.record).decode(),
                 entry.id,
             ),
         )
-        return entry
+        self.db.execute("INSERT INTO outbox(id,body) VALUES (?,?)", (entry.id, entry.encoded()))
 
     def _commit(
         self,
@@ -406,15 +435,15 @@ class Store:
         details: dict[str, object] | None = None,
         prepare: Callable[[], None] = lambda: None,
     ) -> None:
+        self._commit_entries((self._entry(record, details or {}) for record in records), prepare)
+
+    def _commit_entries(self, entries: Iterable[Entry], prepare: Callable[[], None]) -> None:
         self._flush()
         try:
             with self.db:
                 prepare()
-                for record in records:
-                    entry = self._entry(record, details or {})
-                    self.db.execute(
-                        "INSERT INTO outbox(id,body) VALUES (?,?)", (entry.id, entry.encoded())
-                    )
+                for entry in entries:
+                    self._save_entry(entry)
             self.fault("state_commit")
             self._flush()
             self._index()
@@ -451,6 +480,18 @@ class Store:
 
     def run(self, identity: str) -> Run:
         return self._load("run", identity, Run)
+
+    def imported_run(self, identity: str) -> bool:
+        return (
+            self.db.execute(
+                "SELECT 1 FROM imports WHERE source=?", (TRANSFER_RUN + identity,)
+            ).fetchone()
+            is not None
+        )
+
+    def require_local_run(self, identity: str) -> None:
+        if self.imported_run(identity):
+            raise ValueError("Imported run evidence is historical")
 
     def job(self, identity: str) -> Job:
         return self._load("job", identity, Job)
@@ -558,6 +599,7 @@ class Store:
     def admitted_profile(self, run_id: str) -> EffectiveProfile:
         from solakit.config import EffectiveProfile
 
+        self.require_local_run(run_id)
         return EffectiveProfile.model_validate_json(canonical(self.admission_profile(run_id)))
 
     def tool_attempts(self, run_id: str) -> int:
@@ -971,6 +1013,7 @@ class Store:
     def transition_run(
         self, identity: str, state: RunState, *, reason: Failure | None = None
     ) -> Run:
+        self.require_local_run(identity)
         run = self.run(identity).transition(state, at=utc_now(), reason=reason)
         records: tuple[StoredRecord, ...] = (run,)
         if run.occurrence_id is not None and state not in (RunState.QUEUED, RunState.RUNNING):
@@ -1004,6 +1047,7 @@ class Store:
         | RecoveryNote,
     ) -> None:
         kind = next(name for name, cls in RECORDS.items() if isinstance(record, cls))
+        self.require_local_run(record.run_id)
         run = self.run(record.run_id)
         if run.session_id != record.session_id or run.origin != record.origin:
             raise ValueError("record lineage differs from its run")
@@ -1135,14 +1179,18 @@ class Store:
     def transition_delivery(
         self, identity: str, state: DeliveryState, *, reason: Failure | None = None
     ) -> Delivery:
-        record = self._load("delivery", identity, Delivery).transition(state, reason=reason)
+        record = self._load("delivery", identity, Delivery)
+        self.require_local_run(record.run_id)
+        record = record.transition(state, reason=reason)
         self._commit((record,))
         return record
 
     def transition_memory(
         self, identity: str, state: MemoryState, *, reason: Failure | None = None, **changes: object
     ) -> MemoryCommit:
-        record = self._load("memory", identity, MemoryCommit).transition(state, reason=reason)
+        record = self._load("memory", identity, MemoryCommit)
+        self.require_local_run(record.run_id)
+        record = record.transition(state, reason=reason)
         record = MemoryCommit.model_validate(record.model_dump() | changes)
         self._commit((record,))
         return record
@@ -1244,12 +1292,12 @@ class Store:
             message="Process stopped before outcome was recorded",
         )
         for row in self.db.execute(
-            "SELECT kind,id FROM entities WHERE "
+            f"SELECT kind,id FROM entities WHERE {LOCAL_RUN} AND ("
             "(kind='run' AND json_extract(body,'$.state')='running') OR "
             "(kind='run' AND json_extract(body,'$.state')='queued' "
             "AND json_extract(body,'$.parent_tool_call_id') IS NOT NULL) OR "
             "(kind='delivery' AND json_extract(body,'$.state')='sending') OR "
-            "(kind='memory' AND json_extract(body,'$.state')='running')"
+            "(kind='memory' AND json_extract(body,'$.state')='running'))"
         ).fetchall():
             if row["kind"] == "run":
                 self.transition_run(row["id"], RunState.INTERRUPTED, reason=reason)
@@ -1263,7 +1311,7 @@ class Store:
                     self.transition_memory(memory.id, MemoryState.AMBIGUOUS, reason=reason)
 
         for row in self.db.execute(
-            "SELECT body FROM entities AS tool WHERE kind='tool' AND NOT EXISTS ("
+            f"SELECT body FROM entities AS tool WHERE kind='tool' AND {LOCAL_RUN} AND NOT EXISTS ("
             "SELECT 1 FROM entities AS receipt WHERE receipt.kind='receipt' "
             "AND json_extract(receipt.body,'$.tool_call_id')=tool.id)"
         ).fetchall():

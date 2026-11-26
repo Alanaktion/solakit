@@ -254,7 +254,7 @@ def project_run(
                         else "Not executed. Inspect the recovery evidence and correct the call.",
                     )
                 )
-        elif isinstance(record, RecoveryNote):
+        elif isinstance(record, RecoveryNote) and not store.imported_run(run_id):
             turns.append(
                 PromptTurn(
                     source_id=record.id,

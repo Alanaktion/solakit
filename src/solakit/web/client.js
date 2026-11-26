@@ -23,7 +23,7 @@ export const write = (key, value) => {
     );
   }
 };
-export async function api(path, options = {}) {
+export async function api(path, { responseType, ...options } = {}) {
   const headers = new Headers(options.headers);
   if (options.body instanceof Blob) {
     headers.set('Content-Type', options.body.type);
@@ -51,5 +51,16 @@ export async function api(path, options = {}) {
     const body = await response.json().catch(() => ({}));
     throw new Error(body.error?.message || `Request failed (${response.status}).`);
   }
-  return response.status === 204 ? null : response.json();
+  if (response.status === 204) return null;
+  return responseType === 'blob' ? response.blob() : response.json();
+}
+
+export async function downloadTopic(id) {
+  const archive = await api(`/sessions/${id}/export`, { responseType: 'blob' });
+  const url = URL.createObjectURL(archive);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `solakit-session-${id}.zip`;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

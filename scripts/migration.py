@@ -291,10 +291,12 @@ def write(store: Store, batch: list[StoredRecord | Entry]) -> None:
         for record in batch:
             if isinstance(record, Session):
                 store.db.execute("INSERT INTO sessions VALUES (?,0)", (record.id,))
-            entry = record if isinstance(record, Entry) else store._entry(record, {})
-            store.db.execute(
-                "INSERT INTO outbox(id,body) VALUES (?,?)", (entry.id, entry.encoded())
-            )
+            if isinstance(record, Entry):
+                store.db.execute(
+                    "INSERT INTO outbox(id,body) VALUES (?,?)", (record.id, record.encoded())
+                )
+            else:
+                store._save_entry(store._entry(record, {}))
     store._flush()
 
 

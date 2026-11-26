@@ -1,5 +1,5 @@
 import { html } from './lit-core.min.js';
-import { api } from './client.js';
+import { api, downloadTopic } from './client.js';
 import { action, SolaElement } from './ui.js';
 
 const batchSize = 100;
@@ -34,9 +34,12 @@ export class SolaTopicManager extends SolaElement {
     message: { state: true },
     listError: { state: true },
     archiveError: { state: true },
+    exporting: { state: true },
+    exportError: { state: true },
     profiles: { state: true },
     profileError: { state: true },
     openTopic: { attribute: false },
+    openImport: { attribute: false },
     markArchived: { attribute: false },
     refreshSidebar: { attribute: false }
   };
@@ -46,6 +49,7 @@ export class SolaTopicManager extends SolaElement {
     this.rows = [];
     this.selected = new Set();
     this.profiles = [];
+    this.exporting = new Set();
   }
 
   get dialog() {
@@ -72,6 +76,7 @@ export class SolaTopicManager extends SolaElement {
     this.busy = null;
     this.pending = null;
     this.archiveError = '';
+    this.exportError = null;
   }
 
   async loadProfiles() {
@@ -97,6 +102,7 @@ export class SolaTopicManager extends SolaElement {
     this.next = null;
     this.selected = new Set();
     this.message = this.archiveError = this.listError = '';
+    this.exportError = null;
 
     const form = new FormData(this.querySelector('form'));
     const filters = new URLSearchParams();
@@ -169,6 +175,21 @@ export class SolaTopicManager extends SolaElement {
       } while (next);
       this.selected = ids;
     });
+  }
+
+  async exportTopic(topic) {
+    if (this.exporting.has(topic.id)) return;
+    this.exporting = new Set([...this.exporting, topic.id]);
+    if (this.exportError?.id === topic.id) this.exportError = null;
+    try {
+      await downloadTopic(topic.id);
+    } catch (error) {
+      if (this.dialog.open) this.exportError = { id: topic.id, message: error.message };
+    } finally {
+      const exporting = new Set(this.exporting);
+      exporting.delete(topic.id);
+      this.exporting = exporting;
+    }
   }
 
   check(ids, checked) {
@@ -261,8 +282,14 @@ export class SolaTopicManager extends SolaElement {
         @close=${this.reset} @cancel=${(event) => { if (archiving) event.preventDefault(); }}>
         <header>
           <h2 id="topic-manager-title">Manage topics</h2>
-          <button class="dialog-close" type="button" aria-label="Close topic manager"
-            ?disabled=${archiving} @click=${this.close}><sola-icon name="X"></sola-icon></button>
+          <div class="manager-actions">
+            <button type="button" id="import-topic" aria-haspopup="dialog"
+              ?disabled=${archiving} @click=${() => this.openImport()}>
+              <sola-icon name="Upload"></sola-icon> Import topic
+            </button>
+            <button class="dialog-close" type="button" aria-label="Close topic manager"
+              ?disabled=${archiving} @click=${this.close}><sola-icon name="X"></sola-icon></button>
+          </div>
         </header>
         <form @submit=${(event) => { event.preventDefault(); this.applyFilters(); }}
           @change=${this.applyFilters}>
@@ -335,13 +362,23 @@ export class SolaTopicManager extends SolaElement {
                   @change=${(event) => this.check([topic.id], event.target.checked)} />
               </label>
               <div class="manager-row-details">
-                <button class="manager-topic-title" type="button" ?disabled=${archiving}
-                  @click=${action(() => { this.close(); return this.openTopic(topic.id); })}>${titleOf(topic)}</button>
+                <div class="manager-row-heading">
+                  <button class="manager-topic-title" type="button" ?disabled=${archiving}
+                    @click=${action(() => { this.close(); return this.openTopic(topic.id); })}>${titleOf(topic)}</button>
+                  <button type="button"
+                    aria-label=${`${this.exporting.has(topic.id) ? 'Exporting' : 'Export'} ${titleOf(topic)}`}
+                    aria-disabled=${this.exporting.has(topic.id)}
+                    @click=${() => this.exportTopic(topic)}>
+                    ${this.exporting.has(topic.id) ? 'Exporting…' : 'Export'}
+                  </button>
+                </div>
                 <div class="meta manager-topic-meta">
                   <span>${modes[topic.mode]} · ${topic.archived ? 'Archived' : 'Active'}</span>
                   <span>Created ${this.renderDate(topic.created_at)}</span>
                   <span>Last activity ${this.renderDate(topic.last_activity_at)}</span>
                 </div>
+                ${this.exportError?.id === topic.id
+                  ? html`<p class="manager-error" role="alert">${this.exportError.message}</p>` : ''}
               </div>
             </li>
           `)}

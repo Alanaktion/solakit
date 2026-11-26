@@ -36,7 +36,7 @@ from solakit.records import (
     utc_now,
 )
 from solakit.storage.evidence import canonical, digest
-from solakit.storage.store import Store, valid_id
+from solakit.storage.store import LOCAL_RUN, Store, valid_id
 from solakit.tools.files import FILE_MUTATIONS
 
 if TYPE_CHECKING:
@@ -575,7 +575,7 @@ class JobService:
         pending = [
             self.store._load("delivery", row[0], Delivery)
             for row in self.store.db.execute(
-                "SELECT id FROM entities WHERE kind='delivery' "
+                f"SELECT id FROM entities WHERE kind='delivery' AND {LOCAL_RUN} "
                 "AND json_extract(body,'$.state')='pending' "
                 "AND json_extract(body,'$.content') IS NOT NULL ORDER BY created_at DESC,id",
             ).fetchall()
@@ -605,7 +605,7 @@ class JobService:
                 continue
             latest = self.store.db.execute(
                 "SELECT max(json_extract(body,'$.not_before')) FROM entities WHERE kind='delivery' "
-                "AND session_id=? AND json_extract(body,'$.state')='delivered' "
+                f"AND {LOCAL_RUN} AND session_id=? AND json_extract(body,'$.state')='delivered' "
                 "AND json_extract(body,'$.content') IS NOT NULL",
                 (delivery.session_id,),
             ).fetchone()[0]
@@ -617,7 +617,7 @@ class JobService:
             ):
                 continue
             duplicate = self.store.db.execute(
-                "SELECT 1 FROM entities WHERE kind='delivery' AND session_id=? "
+                f"SELECT 1 FROM entities WHERE kind='delivery' AND {LOCAL_RUN} AND session_id=? "
                 "AND json_extract(body,'$.content')=? AND json_extract(body,'$.state')='delivered' "
                 "AND json_extract(body,'$.not_before')>?",
                 (

@@ -188,6 +188,28 @@ def test_vision_pixels_evidence_history_compaction_and_reattachment(
         assert support["role"] == "user"
         assert json.loads(support["content"]) == {"untrusted_visual_observation": OBSERVATION}
 
+    exported = client.get(f"/api/v1/sessions/{session}/export")
+    assert exported.status_code == 200, exported.text[:200]
+    imported = client.post(
+        "/api/v1/sessions/import",
+        headers={"Content-Type": "application/zip", "Idempotency-Key": new_id()},
+        content=exported.content,
+    )
+    assert imported.status_code == 201, imported.text
+    copy = imported.json()["session_id"]
+    messages = client.get(f"/api/v1/sessions/{copy}/messages").json()["items"]
+    copied_input = next(row["record"] for row in messages if row["record"]["role"] == "user")
+    copied_run = copied_input["run_id"]
+    copied_image = copied_input["image"]["path"]
+    assert copied_run != run_id and copied_image != f"artifacts/{identity}"
+    assert client.get(f"/api/v1/runs/{copied_run}/{copied_image}?preview=true").content == raw
+    copied_request = client.get(f"/api/v1/runs/{copied_run}/prompts").json()["items"][0]["record"]
+    assert (
+        client.get(f"/api/v1/runs/{copied_run}/{copied_request['body']['path']}").content
+        == (state["vision"][0])
+    )
+    assert len(state["vision"]) == 1
+
     follow = submit(client, session, question="Repeat that.")
     assert follow.json()["run"]["state"] == "completed" and len(state["vision"]) == 1
     assert OBSERVATION in json.dumps(state["text"][-1])

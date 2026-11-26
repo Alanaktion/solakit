@@ -44,6 +44,13 @@ from solakit.records import (
 from solakit.runtime import ApplicationContext, compose
 from solakit.storage.evidence import StorageError, canonical
 from solakit.storage.search import search
+from solakit.storage.session_transfer import (
+    TRANSFER_BYTES,
+    TransferConflict,
+    TransferLimit,
+    export_session,
+    import_session,
+)
 from solakit.tools.images import UPLOAD_BYTES, UPLOAD_FORMATS
 
 ID = Annotated[str, Path(pattern=r"^[0-9a-f]{32}$")]
@@ -51,6 +58,8 @@ Limit = Annotated[int, Query(ge=1, le=100)]
 After = Annotated[int, Query(ge=0)]
 SEND_TIMEOUT_SECONDS = 30
 IMAGE_UPLOAD_PATH = "/api/v1/sessions/{session_id}/image-uploads"
+SESSION_IMPORT_PATH = "/api/v1/sessions/import"
+SESSION_EXPORT_PATH = "/api/v1/sessions/{session_id}/export"
 UPLOAD_ROUTE = re.compile(r"/api/v1/sessions/[0-9a-f]{32}/image-uploads")
 
 WEB_DIR = FilePath(__file__).resolve().parents[1] / "web"
@@ -135,8 +144,10 @@ class Boundary:
 
         consumed = 0
         upload = request.method == "POST" and UPLOAD_ROUTE.fullmatch(request.url.path)
-        cap = UPLOAD_BYTES if upload else 128 * 1024
-        body_limit_message = f"Request body exceeds {'8 MiB' if upload else '128 KiB'}"
+        transfer = request.method == "POST" and request.url.path == SESSION_IMPORT_PATH
+        cap = TRANSFER_BYTES if transfer else UPLOAD_BYTES if upload else 128 * 1024
+        size_label = "128 MiB" if transfer else "8 MiB" if upload else "128 KiB"
+        body_limit_message = f"Request body exceeds {size_label}"
 
         async def bounded_receive() -> Message:
             nonlocal consumed
@@ -228,6 +239,10 @@ class SessionPatch(Input):
 
 class SessionArchive(Input):
     session_ids: list[RecordID] = Field(min_length=1, max_length=100)
+
+
+class SessionImport(Input):
+    session_id: RecordID
 
 
 class SessionCatalogQuery(Input):
@@ -539,6 +554,31 @@ def create_app(
     async def archive_sessions(body: SessionArchive) -> dict[str, int]:
         return {"archived": store.archive_sessions(body.session_ids)}
 
+    @app.post(
+        SESSION_IMPORT_PATH,
+        status_code=201,
+        openapi_extra={
+            "requestBody": {
+                "required": True,
+                "content": {"application/zip": {"schema": {"type": "string", "format": "binary"}}},
+            }
+        },
+    )
+    async def import_topic(request: Request) -> SessionImport:
+        if request.headers.get("content-type", "").strip().lower() != "application/zip":
+            raise RequestError(415, "unsupported_media_type", "Send a Solakit ZIP archive")
+        key = idempotency(request)
+        try:
+            return SessionImport(session_id=import_session(store, await request.body(), key))
+        except TransferLimit as error:
+            raise RequestError(413, "archive_too_large", str(error)) from None
+        except TransferConflict as error:
+            raise RequestError(409, "conflict", str(error)) from None
+        except ValueError, TypeError, KeyError, RecursionError:
+            raise RequestError(
+                422, "invalid_archive", "Invalid or unsupported Solakit ZIP archive"
+            ) from None
+
     @app.get("/api/v1/sessions/catalog")
     async def session_catalog(query: Annotated[SessionCatalogQuery, Query()]) -> SessionCatalogPage:
         for start, end, name in (
@@ -578,6 +618,22 @@ def create_app(
     @app.get("/api/v1/sessions/{session_id}")
     async def session(session_id: ID) -> Session:
         return store.session(session_id)
+
+    @app.get(SESSION_EXPORT_PATH, response_class=Response)
+    async def export_topic(session_id: ID) -> Response:
+        try:
+            raw = export_session(store, session_id)
+        except TransferLimit as error:
+            raise RequestError(413, "archive_too_large", str(error)) from None
+        except TransferConflict as error:
+            raise RequestError(409, "conflict", str(error)) from None
+        return Response(
+            raw,
+            media_type="application/zip",
+            headers={
+                "Content-Disposition": f'attachment; filename="solakit-session-{session_id}.zip"'
+            },
+        )
 
     @app.patch("/api/v1/sessions/{session_id}")
     async def update_session(session_id: ID, body: SessionPatch) -> Session:
@@ -833,7 +889,7 @@ def create_app(
                         ]
                     )
                 errors: tuple[int, ...] = (400, 401, 403, 404, 409, 413, 416, 422, 429, 503)
-                if path == IMAGE_UPLOAD_PATH and method == "post":
+                if path in (IMAGE_UPLOAD_PATH, SESSION_IMPORT_PATH) and method == "post":
                     errors += (415,)
                 for code in errors:
                     operation["responses"][str(code)] = {
@@ -842,7 +898,7 @@ def create_app(
                             "application/json": {"schema": {"$ref": "#/components/schemas/Error"}}
                         },
                     }
-        for path in ("/api/v1/runs", "/api/v1/jobs/{job_id}/run"):
+        for path in ("/api/v1/runs", "/api/v1/jobs/{job_id}/run", SESSION_IMPORT_PATH):
             schema["paths"][path]["post"].setdefault("parameters", []).append(
                 {
                     "in": "header",
@@ -884,6 +940,7 @@ def create_app(
         }
         for path, types in (
             (IMAGE_UPLOAD_PATH + "/{upload_id}", ("image/png",)),
+            (SESSION_EXPORT_PATH, ("application/zip",)),
             (
                 "/api/v1/runs/{run_id}/artifacts/{artifact_id}",
                 ("application/octet-stream", "image/png"),

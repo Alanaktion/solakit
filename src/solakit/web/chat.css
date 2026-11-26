@@ -682,6 +682,9 @@ sola-topic-manager {
 #topic-manager {
   scroll-padding-top: 90px;
 }
+#topic-manager > header .manager-actions {
+  margin-inline-start: auto;
+}
 .manager-filters,
 .manager-dates {
   border: 0;
@@ -766,7 +769,14 @@ sola-topic-manager {
 .manager-checkbox input {
   margin: 0;
 }
+.manager-row-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 8px;
+}
 .manager-topic-title {
+  justify-self: start;
   padding: 4px 8px;
   border-color: transparent;
   font-weight: 600;
@@ -880,12 +890,16 @@ sola-topic-manager {
     white-space: nowrap;
   }
   .topic-search-tools {
+    display: grid;
     grid-column: 1 / -1;
     grid-row: 3;
-    flex-direction: row;
+    grid-template-columns: minmax(72px, 1fr) minmax(0, max-content);
   }
   #topic-search {
     min-width: 0;
+  }
+  #manage-topics {
+    white-space: normal;
   }
   #topics {
     display: flex;

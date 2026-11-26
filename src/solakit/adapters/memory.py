@@ -29,7 +29,7 @@ from solakit.records import (
 )
 from solakit.redaction import Redactor
 from solakit.storage.evidence import canonical, checked_json, digest
-from solakit.storage.store import Store
+from solakit.storage.store import LOCAL_RUN, Store
 
 
 class MemoryError(ValueError):
@@ -347,7 +347,7 @@ class MemoryService:
             scope=scope(profile.memory),
         )
         count = self.store.db.execute(
-            "SELECT count(*) FROM entities WHERE kind='memory' "
+            f"SELECT count(*) FROM entities WHERE kind='memory' AND {LOCAL_RUN} "
             "AND json_extract(body,'$.state') IN ('pending','running','accepted','ambiguous')",
         ).fetchone()[0]
         self.store.append(commit)
@@ -371,6 +371,7 @@ class MemoryService:
         for row in self.store.db.execute(
             "SELECT r.id,o.ordinal FROM entities AS r JOIN outbox AS o ON o.id=r.entry_id "
             "WHERE r.kind='run' AND json_extract(r.body,'$.state')='completed' "
+            "AND EXISTS (SELECT 1 FROM admissions WHERE run_id=r.id) "
             "AND o.ordinal>? ORDER BY o.ordinal LIMIT 128",
             (self.after,),
         ).fetchall():
@@ -380,7 +381,7 @@ class MemoryService:
                 pass  # Current revocation/configuration prevents submission.
             self.after = row[1]
         for row in self.store.db.execute(
-            "SELECT id FROM entities WHERE kind='memory' "
+            f"SELECT id FROM entities WHERE kind='memory' AND {LOCAL_RUN} "
             "AND json_extract(body,'$.state') IN ('pending','accepted') "
             "AND julianday(json_extract(body,'$.next_check'))<=julianday(?) "
             "ORDER BY created_at LIMIT 128",
@@ -494,7 +495,7 @@ class MemoryService:
             row[0]: row[1]
             for row in self.store.db.execute(
                 "SELECT json_extract(body,'$.state'), count(*) FROM entities "
-                "WHERE kind='memory' GROUP BY 1",
+                f"WHERE kind='memory' AND {LOCAL_RUN} GROUP BY 1",
             )
         }
         return {"observer": "failed" if self.failure else "running", "commits": counts}

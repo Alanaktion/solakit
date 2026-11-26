@@ -436,6 +436,90 @@ try {
     await page.locator('#topic-' + fixture.topic).click();
     await page.locator('.compaction-summary').first().waitFor();
   });
+  await check('Manage topics exports a result and imports by keyboard with an idempotent retry', async () => {
+    const title = 'Transfer fixture ' + Date.now();
+    const transcript = 'Bring this history to the imported topic.';
+    const original = await page.evaluate(async ({ title, transcript }) => {
+      const { api, uid } = await import('/assets/client.js');
+      const topic = await api('/sessions', { method: 'POST', body: { title, mode: 'isolated' } });
+      await api('/runs?wait=5', {
+        method: 'POST', headers: { 'Idempotency-Key': uid() },
+        body: { session_id: topic.id, content: transcript }
+      });
+      return topic.id;
+    }, { title, transcript });
+    await page.setViewportSize({ width: 320, height: 760 });
+    await page.getByRole('button', { name: 'Manage topics' }).press('Enter');
+    const manager = page.getByRole('dialog', { name: 'Manage topics' });
+    await manager.getByRole('combobox', { name: 'Status' }).selectOption('all');
+    await manager.getByLabel('Created from').fill('');
+    await manager.getByLabel('Created through').fill('');
+    await manager.getByLabel('Last activity from').fill('');
+    await manager.getByLabel('Last activity through').fill('');
+    await manager.getByRole('searchbox', { name: 'Title' }).fill(title);
+    const exportButton = manager.getByRole('button', { name: `Export ${title}`, exact: true });
+    await exportButton.waitFor();
+    await page.route(`**/api/v1/sessions/${original}/export`, (route) => route.fulfill({
+      status: 409,
+      json: { error: { message: 'Wait for queued and running turns to finish before exporting' } }
+    }), { times: 1 });
+    await exportButton.press('Enter');
+    await manager.getByRole('alert').filter({ hasText: 'Wait for queued and running turns' }).waitFor();
+
+    const downloadEvent = page.waitForEvent('download');
+    await exportButton.press('Enter');
+    const download = await downloadEvent;
+    assert.equal(download.suggestedFilename(), `solakit-session-${original}.zip`);
+    const archive = await fs.readFile(await download.path());
+    assert(await manager.isVisible());
+    assert.equal(await page.locator('#topics [aria-current=page]').getAttribute('id'),
+      'topic-' + fixture.topic);
+    await page.screenshot({ path: path.join(options.output, 'topic-manager-transfer.png') });
+
+    const launcher = manager.getByRole('button', { name: 'Import topic', exact: true });
+    await launcher.press('Enter');
+    const dialog = page.getByRole('dialog', { name: 'Import topic' });
+    const file = dialog.getByLabel('Solakit ZIP archive');
+    await file.waitFor();
+    await page.keyboard.press('Escape');
+    await dialog.waitFor({ state: 'hidden' });
+    assert(await launcher.evaluate((button) => button === document.activeElement));
+    await launcher.press('Enter');
+    await file.waitFor();
+    assert(await file.evaluate((input) => input === document.activeElement));
+    await audit('topic-import-mobile');
+    const keys = [];
+    const discardFirstReceipt = async (route) => {
+      keys.push(route.request().headers()['idempotency-key']);
+      const response = await route.fetch();
+      assert.equal(response.status(), 201);
+      if (keys.length === 1) await route.abort('failed');
+      else await route.fulfill({ response });
+    };
+    await page.route('**/api/v1/sessions/import', discardFirstReceipt);
+    await file.setInputFiles({
+      name: download.suggestedFilename(), mimeType: 'application/zip', buffer: archive
+    });
+    await dialog.getByRole('button', { name: 'Import topic' }).press('Enter');
+    const retry = dialog.getByRole('button', { name: 'Retry import' });
+    await retry.waitFor();
+    assert.match(await dialog.getByRole('alert').innerText(), /Retry with the same file/);
+    assert(await retry.evaluate((button) => button === document.activeElement));
+    await page.screenshot({ path: path.join(options.output, 'topic-import-mobile.png') });
+    await retry.press('Enter');
+    await dialog.waitFor({ state: 'hidden' });
+    await manager.waitFor({ state: 'hidden' });
+    await page.unroute('**/api/v1/sessions/import', discardFirstReceipt);
+    assert(keys[0] && keys[0] === keys[1]);
+    await page.locator('#turns').getByText(transcript, { exact: true }).waitFor();
+    assert.equal(await page.locator('#topic-title').innerText(), title);
+    assert.notEqual(await page.locator('#topics [aria-current=page]').getAttribute('id'),
+      'topic-' + original);
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'history');
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.locator('#topic-' + fixture.topic).click();
+    await page.locator('.compaction-summary').first().waitFor();
+  });
   await page.screenshot({
     path: path.join(options.output, 'chat-desktop.png'),
     fullPage: true

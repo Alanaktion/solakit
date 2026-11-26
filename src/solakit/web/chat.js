@@ -1,6 +1,6 @@
 import { html, nothing, render as renderTemplate } from './lit-core.min.js';
 import { $, active, action, text, showError, agentName } from './ui.js';
-import { api, read, write, uid } from './client.js';
+import { api, downloadTopic, read, write, uid } from './client.js';
 import { openEvidence, moreEvidence, switchEvidence } from './evidence.js';
 import { createSettings } from './settings.js';
 import { SolaApp } from './app.js';
@@ -29,6 +29,7 @@ let messagesDone = false,
   following = true,
   refreshTimer = null;
 let editingTopic = false;
+let importKey = null;
 let draftImage = null;
 let imageInputs = false,
   imageUpload = null;
@@ -768,6 +769,7 @@ function newTopic() {
   $('topic-form').reset();
   $('mode').disabled = false;
   $('pinned').disabled = $('archived').disabled = true;
+  $('export-topic').hidden = true;
   $('topic-dialog').showModal();
 }
 
@@ -782,7 +784,76 @@ function editTopic() {
   $('pinned').disabled = $('archived').disabled = false;
   $('pinned').checked = topic.pinned;
   $('archived').checked = topic.archived;
+  $('export-topic').hidden = false;
   $('topic-dialog').showModal();
+}
+
+async function exportTopic() {
+  const id = selected;
+  const button = $('export-topic');
+  if (!id || button.disabled) return;
+  button.disabled = true;
+  text(button, 'Exporting…');
+  text($('topic-error'), '');
+  try {
+    await downloadTopic(id);
+  } catch (error) {
+    text($('topic-error'), error.message);
+  } finally {
+    button.disabled = false;
+    text(button, 'Export topic');
+  }
+}
+
+function openImport() {
+  $('import-form').reset();
+  chooseImport();
+  $('import-dialog').showModal();
+}
+
+function chooseImport() {
+  const file = $('import-file').files[0];
+  importKey = file ? uid() : null;
+  $('import-submit').disabled = !file;
+  text($('import-submit'), 'Import topic');
+  text($('import-error'), '');
+}
+
+async function importTopic(event) {
+  event.preventDefault();
+  const picker = $('import-file');
+  const submit = $('import-submit');
+  const cancel = $('import-cancel');
+  const file = picker.files[0];
+  if (!file || !importKey || submit.disabled) return;
+  picker.disabled = submit.disabled = cancel.disabled = true;
+  text($('import-error'), '');
+  text($('import-status'), 'Importing topic…');
+  try {
+    const { session_id } = await api('/sessions/import', {
+      method: 'POST',
+      headers: { 'Idempotency-Key': importKey },
+      body: file.slice(0, file.size, 'application/zip')
+    });
+    const topic = await api(`/sessions/${session_id}`);
+    topics.set(topic.id, topic);
+    $('topic-search').value = '';
+    $('archived-topics').checked = topic.archived;
+    await selectTopic(topic.id);
+    await loadTopics();
+    $('import-dialog').close();
+    $('topic-manager-component').close();
+    $('history').focus({ preventScroll: true });
+  } catch (error) {
+    text($('import-error'), error instanceof TypeError
+      ? 'Could not reach Solakit. Retry with the same file.'
+      : error.message);
+    text(submit, 'Retry import');
+  } finally {
+    picker.disabled = submit.disabled = cancel.disabled = false;
+    text($('import-status'), '');
+    if (loggedIn && $('import-dialog').open) submit.focus();
+  }
 }
 
 async function saveTopic(event) {
@@ -869,6 +940,10 @@ document.querySelector('sola-app').actions = {
   pickImage: action(pickImage),
   login,
   saveTopic,
+  exportTopic,
+  openImport,
+  chooseImport,
+  importTopic,
   ...settings,
   connect,
   moreEvidence,

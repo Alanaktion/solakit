@@ -111,3 +111,29 @@ Normalized legacy envelopes preserve source canonical path, hash, line number an
 all original fields; raw bytes are content-addressed separately. They do not
 fabricate v2 operational sessions/jobs or successful historical outcomes.
 See the [maintenance runbook](../backup-restore.md).
+
+## Session transfer
+
+The Solakit session ZIP consists of stored members with versioned
+`manifest.json`, ordered `evidence.jsonl`, `provenance.jsonl`, and
+`artifacts/<sha256>`. The manifest records the root session ID and the length
+and SHA-256 of each other member. Each JSONL row holds the scoped session ID,
+original evidence reference, and complete entry. The bundle includes the selected
+topic and its delegated descendants. Linked occurrences, letter publications,
+and topic-scoped legacy entries are carried in provenance. Each direction
+accepts up to 128 MiB and 50,000 evidence rows and artifact members combined.
+
+Import verifies the bundle and creates fresh local identities. Typed
+conversation and execution references point into the copy. Exact source entries
+and artifact payloads retain their original IDs and checksums for inspection and
+re-export. A standalone delegated topic retains its external lineage in the
+source evidence. A job occurrence or tool publication remains evidence of what
+happened on the source. Import creates no runnable jobs, admission authority,
+deliveries, memory submissions, or provider recovery work from those records.
+
+The store publishes verified immutable artifacts and provenance before committing
+the imported session projection and retry receipt through the existing outbox.
+Imported history carries the last verified committed summary into continuation.
+Subsequent compactions and new runs follow the destination’s normal execution
+and authority rules. Filesystem backups include imported provenance alongside
+the rest of the evidence and operational state.

@@ -25,6 +25,10 @@ export class SolaApp extends SolaElement {
       pickImage,
       login,
       saveTopic,
+      exportTopic,
+      openImport,
+      chooseImport,
+      importTopic,
       moreEvidence,
       switchEvidence,
       settingsKeydown
@@ -175,6 +179,7 @@ export class SolaApp extends SolaElement {
           <label><input type="checkbox" id="pinned" /> Pin topic</label
           ><label><input type="checkbox" id="archived" /> Archive topic</label>
           <div class="actions">
+            <button type="button" id="export-topic" @click=${exportTopic} hidden>Export topic</button>
             <button
               type="button"
               data-close="topic-dialog"
@@ -185,8 +190,23 @@ export class SolaApp extends SolaElement {
           </div>
         </form>
       </dialog>
+      <dialog id="import-dialog" aria-labelledby="import-title"
+        @cancel=${(event) => { if ($('import-file').disabled) event.preventDefault(); }}>
+        <form @submit=${importTopic} id="import-form">
+          <h2 id="import-title">Import topic</h2>
+          <label for="import-file">Solakit ZIP archive</label>
+          <input id="import-file" type="file" accept=".zip,application/zip" @change=${chooseImport} autofocus />
+          <p id="import-error" role="alert"></p>
+          <p id="import-status" role="status"></p>
+          <div class="actions">
+            <button type="button" id="import-cancel" @click=${() => $('import-dialog').close()}>Cancel</button>
+            <button class="primary" id="import-submit" disabled>Import topic</button>
+          </div>
+        </form>
+      </dialog>
       <sola-topic-manager id="topic-manager-component" .openTopic=${openManagedTopic}
-        .markArchived=${markManagedTopicsArchived} .refreshSidebar=${refreshManagedTopics}>
+        .markArchived=${markManagedTopicsArchived} .refreshSidebar=${refreshManagedTopics}
+        .openImport=${openImport}>
       </sola-topic-manager>
       ${settingsTemplate(this.actions)}
       <dialog id="evidence" class="wide" aria-labelledby="evidence-title" closedby="any">

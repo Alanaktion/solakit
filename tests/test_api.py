@@ -128,6 +128,66 @@ def test_csrf_cookie_flags_and_mixed_auth(client: TestClient) -> None:
     assert "Max-Age=" in cookie
 
 
+def test_session_archive_http_round_trip(client: TestClient, app: FastAPI) -> None:
+    path = "/api/v1/sessions/import"
+    headers = {"Content-Type": "application/zip", "Idempotency-Key": new_id()}
+    assert client.post(path, headers=headers, content=b"invalid").status_code == 401
+    keys = login(client)
+    original = client.post("/api/v1/sessions", json={"title": "Portable"}).json()["id"]
+    run = client.post(
+        "/api/v1/runs?wait=5",
+        headers={"Idempotency-Key": new_id()},
+        json={"session_id": original, "content": "Searchable archive content"},
+    )
+    assert run.status_code == 200, run.text
+    export = client.get(f"/api/v1/sessions/{original}/export")
+    assert export.is_success and export.headers["content-type"] == "application/zip"
+    assert export.headers["cache-control"] == "no-store"
+    assert f"solakit-session-{original}.zip" in export.headers["content-disposition"]
+    assert client.get(f"/api/v1/sessions/{new_id()}/export").status_code == 404
+    del client.headers["X-CSRF-Token"]
+    assert client.post(path, headers=headers, content=export.content).status_code == 403
+    client.headers["X-CSRF-Token"] = keys["csrf_token"]
+    assert client.post(path, content=export.content).status_code == 415
+    assert client.post(path, headers=headers, content=b"invalid").status_code == 422
+    assert (
+        client.post(
+            path, headers=headers | {"Content-Length": str(128 * 1024**2 + 1)}, content=b""
+        ).status_code
+        == 413
+    )
+
+    imported = client.post(path, headers=headers, content=export.content)
+    assert imported.status_code == 201, imported.text
+    assert client.post(path, headers=headers, content=export.content).json() == imported.json()
+    assert client.post(path, headers=headers, content=export.content + b"other").status_code == 409
+    copied = imported.json()["session_id"]
+    assert original != copied
+    assert client.get(f"/api/v1/sessions/{copied}").json()["title"] == "Portable"
+    assert (
+        client.get(f"/api/v1/sessions/{copied}/messages").json()["items"][0]["record"]["content"]
+        == "Searchable archive content"
+    )
+    copied_run = client.get(f"/api/v1/sessions/{copied}/runs").json()["items"][0]["record"]["id"]
+    assert copied_run != run.json()["run"]["id"]
+    prompt = client.get(f"/api/v1/runs/{copied_run}/prompts").json()["items"][0]["record"]
+    artifact = client.get(
+        f"/api/v1/runs/{copied_run}/artifacts/{prompt['body']['path'].split('/')[-1]}"
+    )
+    assert artifact.is_success and b"Searchable archive content" in artifact.content
+
+    from solakit.storage.store import Store
+
+    store = app.state.context.store
+    assert isinstance(store, Store) and client.portal
+
+    async def enqueue_without_pump() -> str:
+        return store.admit(copied, request_id=new_id(), content="Queued", profile="default").id
+
+    client.portal.call(enqueue_without_pump)
+    assert client.get(f"/api/v1/sessions/{copied}/export").status_code == 409
+
+
 def test_bearer_no_origin_logout_and_revoke_all(client: TestClient) -> None:
     result = login(client, bearer=True)
     assert not client.cookies

@@ -28,7 +28,7 @@ from solakit.storage.evidence import (
     publish,
     read_artifact,
 )
-from solakit.storage.store import Store, valid_id
+from solakit.storage.store import LOCAL_RUN, Store, valid_id
 from solakit.tools.builtins import GenerateImage
 
 MAX_IMAGE_BYTES = 16 * 1024 * 1024
@@ -301,7 +301,7 @@ class ImageService:
 
     def unfinished(self) -> list[ImageGeneration]:
         rows = self.store.db.execute(
-            "SELECT id FROM entities WHERE kind='image' AND "
+            f"SELECT id FROM entities WHERE kind='image' AND {LOCAL_RUN} AND "
             "json_extract(body,'$.state') NOT IN ('downloaded','failed')"
         ).fetchall()
         return [self.get(row[0]) for row in rows]
@@ -518,6 +518,7 @@ class ImageService:
             raise ValueError("submission ID must be a canonical UUID")
         async with self.lock:
             generation = self.get(identity)
+            self.store.require_local_run(generation.run_id)
             if generation.endpoint != self.settings.base_url or generation.state in (
                 "downloaded",
                 "failed",
