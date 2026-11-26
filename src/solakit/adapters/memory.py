@@ -306,10 +306,12 @@ class MemoryService:
         profile = self.profile(run.id)
         if run.state != RunState.COMPLETED or not eligible(profile) or not profile.memory.enabled:
             return
+        # A successful retry extracts the original message and every attempt's notes.
+        attempts = [attempt.id for attempt in self.store.retry_chain(run.id)]
         rows = self.store.db.execute(
-            "SELECT kind,body FROM entities WHERE run_id=? AND kind IN ('message','memory_note') "
-            "ORDER BY sequence",
-            (run.id,),
+            f"SELECT kind,body FROM entities WHERE run_id IN ({','.join('?' * len(attempts))}) "
+            "AND kind IN ('message','memory_note') ORDER BY sequence",
+            attempts,
         ).fetchall()
         messages = [Message.model_validate_json(r["body"]) for r in rows if r["kind"] == "message"]
         notes = [

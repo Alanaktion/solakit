@@ -517,10 +517,17 @@ def _validate_links(record: Record, records: dict[tuple[str, str], Record]) -> N
     ):
         same_run("message", record.message_id)
     if isinstance(record, MemoryCommit):
-        for identity in record.source_ids:
-            same_run("message", identity)
-        for identity in record.note_ids:
-            same_run("memory_note", identity)
+        attempts: set[object] = set()
+        attempt: str | None = record.run_id
+        while attempt is not None and attempt not in attempts:
+            attempts.add(attempt)
+            owner = records.get(("run", attempt))
+            attempt = owner.retry_of if isinstance(owner, Run) else None
+        for kind, identities in (("message", record.source_ids), ("memory_note", record.note_ids)):
+            for identity in identities:
+                parent = records.get((kind, identity))
+                if parent is None or getattr(parent, "run_id", None) not in attempts:
+                    raise ValueError("record link crosses its run")
     if isinstance(record, CompactionBoundary):
         if record.through_message_id != record.source_message_ids[-1]:
             raise ValueError("compaction boundary differs from source range")

@@ -18,6 +18,7 @@ from solakit.engine.prompts import ContextLimit, PromptInput, PromptTurn, assemb
 from solakit.records import (
     RUN_TRANSITIONS,
     Artifact,
+    CompactionBoundary,
     ErrorCode,
     Failure,
     Message,
@@ -33,7 +34,7 @@ from solakit.records import (
     utc_now,
 )
 from solakit.sdk import ToolError
-from solakit.storage.evidence import StorageError, canonical
+from solakit.storage.evidence import StorageError, canonical, digest
 from solakit.storage.store import Store
 from solakit.tools.dispatch import WORKER_TOOLS, Dispatcher, receipt_content
 from solakit.tools.images import ImageUploads
@@ -190,6 +191,8 @@ def project_run(
     older_cap renders results before the latest tool batch smaller so a long run still fits.
     """
     source = records(store, run_id)
+    # A retried attempt contributes only settled exchanges; partial replies are discarded.
+    superseded = store.superseded(run_id)
     latest = next(
         (r.id for r in reversed(source) if isinstance(r, ModelStep) and r.tool_calls), None
     )
@@ -227,7 +230,12 @@ def project_run(
                         )
                     )
                 continue
-            if not record.content and not record.tool_calls:
+            proposals = record.tool_calls
+            if superseded:
+                proposals = tuple(
+                    p for p in proposals if (record.id, p.provider_tool_call_id) in receipts
+                )
+            if not proposals and (superseded or not record.content):
                 continue
             turns.append(
                 PromptTurn(
@@ -235,10 +243,10 @@ def project_run(
                     session_id=record.session_id,
                     role="assistant",
                     content=record.content,
-                    tool_calls=record.tool_calls,
+                    tool_calls=proposals,
                 )
             )
-            for proposal in record.tool_calls:
+            for proposal in proposals:
                 receipt = receipts.get((record.id, proposal.provider_tool_call_id))
                 turns.append(
                     PromptTurn(
@@ -254,7 +262,7 @@ def project_run(
                         else "Not executed. Inspect the recovery evidence and correct the call.",
                     )
                 )
-        elif isinstance(record, RecoveryNote) and not store.imported_run(run_id):
+        elif isinstance(record, RecoveryNote) and not superseded and not store.imported_run(run_id):
             turns.append(
                 PromptTurn(
                     source_id=record.id,
@@ -264,7 +272,7 @@ def project_run(
                 )
             )
     run = store.run(run_id)
-    if run.state not in RUN_TRANSITIONS and run.state != RunState.COMPLETED:
+    if not superseded and run.state not in RUN_TRANSITIONS and run.state != RunState.COMPLETED:
         turns.append(
             PromptTurn(
                 source_id=run.id,
@@ -390,6 +398,83 @@ class RunLoop:
         self._notify()
         if upload_id is not None and upload is not None:
             self.uploads.discard(session_id, upload_id)
+        return run
+
+    def _retry_admission(self, run: Run) -> dict[str, object]:
+        """The frozen admission of a failed reply that may be retried, or ValueError."""
+        if (
+            run.state != RunState.FAILED
+            or run.origin != Origin.INTERACTIVE
+            or run.parent_tool_call_id is not None
+            or self.store.imported_run(run.id)
+            or self.store.session(run.session_id).archived
+            or self.store.runs(run.session_id, before=0, limit=1)[0][1].id != run.id
+        ):
+            raise ValueError("only the latest failed local reply can be retried")
+        for attempt in self.store.retry_chain(run.id):
+            source = records(self.store, attempt.id)
+            summaries = {r.summary_message_id for r in source if isinstance(r, CompactionBoundary)}
+            if any(
+                isinstance(r, Message) and r.role == "assistant" and r.id not in summaries
+                for r in source
+            ):
+                raise ValueError("a reply was already saved")
+            receipts = {r.tool_call_id: r for r in source if isinstance(r, ToolReceipt)}
+            if any(
+                r.id not in receipts or receipts[r.id].effect == "uncertain"
+                for r in source
+                if isinstance(r, ToolCall)
+            ):
+                raise ValueError("a tool outcome is uncertain or missing")
+        admitted = self.store.admitted_profile(run.id)
+        self.dispatcher.profile(run, admitted)
+        if (admitted.model_pin, admitted.model_base_url) != (
+            self.model.profile.model_pin,
+            self.model.profile.model_base_url,
+        ):
+            raise ConfigError("runtime/model identity changed; a new admission is required")
+        return self.store.admission_profile(run.id)
+
+    def retryable(self, session_id: str) -> str | None:
+        latest = self.store.runs(session_id, before=0, limit=1)
+        if not latest:
+            return None
+        try:
+            self._retry_admission(latest[0][1])
+        except ValueError, ConfigError:
+            return None
+        return latest[0][1].id
+
+    def retry(self, run_id: str) -> Run:
+        """Synchronous, so concurrent requests share one successor."""
+        deny_autonomous_successor()
+        if not self.accepting or self.failure is not None:
+            raise RuntimeError("run service unavailable")
+        failed = self.store.run(run_id)
+        request_id = digest(canonical(["retry", run_id]))[:32]
+        if existing := self.store.request(request_id):
+            if existing.retry_of != run_id:
+                raise ValueError("retry identity belongs to another submission")
+            return existing
+        admission = self._retry_admission(failed)
+        if len(self.store.queued_runs()) >= self.max_pending:
+            raise QueueFull("pending admission limit reached")
+        original = records(self.store, self.store.retry_chain(run_id)[0].id)
+        content = next(r.content for r in original if isinstance(r, Message) and r.role == "user")
+        try:
+            run = self.store.admit(
+                failed.session_id,
+                request_id=request_id,
+                content=content,
+                profile=failed.profile,
+                admission=admission,
+                retry_of=run_id,
+            )
+        except BaseException as error:
+            if self.store.failed:
+                self._fault(error)
+            raise
+        self._notify()
         return run
 
     def cancel(self, run_id: str) -> Run:
@@ -627,6 +712,30 @@ class RunLoop:
         finally:
             current_run.reset(lineage_token)
 
+    def _skip(self, call: ToolCall, prior: ToolReceipt) -> ToolReceipt:
+        """Record a repeated proposal without dispatch, pointing at the earlier receipt."""
+        result: JsonValue = {
+            "note": "Not dispatched: an earlier attempt already made this exact call.",
+            "receipt_id": prior.id,
+            "status": prior.status,
+            "effect": prior.effect,
+            "result": prior.result,
+        }
+        encoded = canonical(result)
+        self.store.append(call)
+        receipt = ToolReceipt(
+            origin=call.origin,
+            session_id=call.session_id,
+            run_id=call.run_id,
+            tool_call_id=call.id,
+            status="succeeded",
+            result=result,
+            result_bytes=len(encoded),
+            result_sha256=digest(encoded),
+        )
+        self.store.append(receipt)
+        return receipt
+
     async def _observe(self, run: Run, admitted: EffectiveProfile, user: Message) -> None:
         current = self.dispatcher.profile(run, admitted)
         if current.budgets.model_calls < 2:
@@ -668,15 +777,42 @@ class RunLoop:
             return profile
 
         tools = self.dispatcher.bind(run.id)
-        source = records(self.store, run.id)
-        user = next(r for r in source if isinstance(r, Message) and r.role == "user")
+        chain = self.store.retry_chain(run.id)
+        source = records(self.store, chain[0].id)
+        original = next(r for r in source if isinstance(r, Message) and r.role == "user")
+        user = original.model_copy(update={"run_id": run.id})
+        # Calls an earlier attempt already settled, keyed by exact name and arguments.
+        settled: dict[bytes, ToolReceipt] = {}
+        analyzed = False
+        done: set[str] = set()
+        for attempt in chain[:-1]:
+            earlier = records(self.store, attempt.id)
+            calls = {r.id: r for r in earlier if isinstance(r, ToolCall)}
+            for record in earlier:
+                if isinstance(record, ModelStep):
+                    analyzed |= record.purpose == "vision" and not record.failure
+                elif isinstance(record, ToolReceipt) and (
+                    record.status == "succeeded" or record.effect == "confirmed"
+                ):
+                    call_made = calls[record.tool_call_id]
+                    key = canonical([call_made.name, call_made.arguments])
+                    settled.setdefault(key, record)
+                    done.add(call_made.name)
         first_index = 1
-        if user.image_route == "vision":
+        if user.image_route == "vision" and not analyzed:
             await self._observe(run, admitted, user)
             first_index += 1
         selection = None
         if admitted.mode != SessionMode.EPHEMERAL:
             selection = select(self.store, run, admitted.budgets.tool_result_bytes)
+
+        def project(cap: int, older_cap: int | None = None) -> tuple[PromptTurn, ...]:
+            return tuple(
+                turn
+                for attempt in chain
+                for turn in project_run(self.store, attempt.id, cap, older_cap)
+            )
+
         recall = None
         if self.memory and run.parent_tool_call_id is None:
             history = selection.turns if selection else ()
@@ -698,7 +834,7 @@ class RunLoop:
         elif admitted.memory_mode == "required":
             raise RunFailure(ErrorCode.MEMORY_UNAVAILABLE, "Required memory service is unavailable")
         hidden = self.deferred
-        attempted: set[str] = set()
+        attempted = set(done)
         requested = requested_tools(user.content, tuple(self.dispatcher.registry.tools))
         if not requested:
             requested = requested_tools(
@@ -735,7 +871,7 @@ class RunLoop:
             ):
                 raise RunFailure(ErrorCode.BUDGET_EXCEEDED, "Run budget exhausted")
             report_only = child_calls > 0 and index + child_calls == profile.budgets.model_calls
-            projected = project_run(self.store, run.id, profile.budgets.tool_result_bytes)
+            projected = project(profile.budgets.tool_result_bytes)
             eligible = frozenset() if report_only else tools.eligible()
             frozen = PromptInput(
                 at=utc_now(),
@@ -767,9 +903,7 @@ class RunLoop:
                         older_cap //= 2
                         if older_cap < MIN_PROJECTED_RESULT_BYTES:
                             raise
-                        shrunk = project_run(
-                            self.store, run.id, profile.budgets.tool_result_bytes, older_cap
-                        )
+                        shrunk = project(profile.budgets.tool_result_bytes, older_cap)
                         frozen = frozen.model_copy(update={"continuation": shrunk[1:]})
             async with asyncio.timeout(
                 profile.budgets.active_seconds - (asyncio.get_running_loop().time() - started)
@@ -828,14 +962,19 @@ class RunLoop:
                         arguments=proposed.arguments,
                     )
                     declared = self.dispatcher.registry.tools.get(call.name)
+                    prior = settled.get(canonical([call.name, call.arguments]))
                     if (
-                        self.jobs is not None
+                        prior is None
+                        and self.jobs is not None
                         and declared is not None
                         and declared.consequential
                         and call.name in tools.eligible()
                     ):
                         await self.jobs.wait_for_effect(run, call.name)
-                    receipt = await tools.dispatch(call)
+                    if prior is None:
+                        receipt = await tools.dispatch(call)
+                    else:
+                        receipt = self._skip(call, prior)
                     delegated |= call.name == "delegate.run"
                     attempted.add(call.name)
                     self.store.append(

@@ -1559,6 +1559,37 @@ try {
     await page.screenshot({ path: path.join(options.output, 'image-mobile.png'), fullPage: true });
     await audit('image-attachment');
   });
+  await check('retry resumes a failed reply in the same turn and keeps the draft', async () => {
+    await page.locator('#new-topic').click();
+    await page.locator('#topic-name').fill('Retry a failed reply');
+    await page.locator('#mode').selectOption('shared');
+    await page.locator('#topic-form button.primary').click();
+    await page.locator('#topic-dialog').waitFor({ state: 'hidden' });
+    await send('tool flaky browser');
+    const turn = page.locator('sola-turn');
+    const retry = turn.getByRole('button', { name: 'Retry', exact: true });
+    await retry.waitFor({ timeout: 20000 });
+    await page.locator('#draft').fill('unsent draft');
+    await audit('failed reply with retry');
+    await retry.click();
+    await turn.getByText(/Sola heard: tool flaky browser/).waitFor({ timeout: 20000 });
+    for (const reloaded of [false, true]) {
+      if (reloaded) {
+        await page.reload();
+        await turn.getByText(/Sola heard: tool flaky browser/).waitFor();
+      }
+      await turn.locator('.run-bar [role=status]', { hasText: 'completed' }).waitFor({ timeout: 20000 });
+      assert.equal(await turn.count(), 1);
+      assert.equal(await turn.locator('.message.assistant').count(), 1);
+      assert.equal(await turn.locator('.message.user').count(), 1);
+      assert.equal(await turn.locator('details summary', { hasText: 'fixture.pause' }).count(), 1);
+      assert(await retry.isHidden());
+      assert(await turn.getByRole('button', { name: 'Attempt 1 evidence' }).isVisible());
+    }
+    assert.equal(await page.locator('#draft').inputValue(), 'unsent draft');
+    await page.screenshot({ path: path.join(options.output, 'retry.png') });
+    await page.locator('#draft').fill('');
+  });
   await check('delegation links open the authenticated child transcript and run evidence', async () => {
     await page.locator('#new-topic').click();
     await page.locator('#topic-name').fill('Delegation browser verification');

@@ -37,6 +37,8 @@ class SolaTurn extends SolaElement {
     run: { attribute: false },
     messageRows: { attribute: false },
     workEntries: { attribute: false },
+    retryable: { state: true },
+    retrying: { state: true },
     preview: { state: true },
     elapsed: { state: true }
   };
@@ -50,6 +52,7 @@ class SolaTurn extends SolaElement {
     this.summaryIds = new Set();
     this.preview = '';
     this.elapsed = '';
+    this.attempts = [];
   }
 
   renderMessage(row) {
@@ -119,7 +122,7 @@ class SolaTurn extends SolaElement {
             ></sola-icon>
           </summary>
           <pre tabindex="0">${JSON.stringify(entry.body, null, 2)}</pre>
-          ${entry.body.artifact ? html`<sola-artifact .runId=${this.dataset.runId} .reference=${entry.body.artifact}></sola-artifact>` : nothing}
+          ${entry.body.artifact ? html`<sola-artifact .runId=${entry.body.run_id || this.dataset.runId} .reference=${entry.body.artifact}></sola-artifact>` : nothing}
           ${
             entry.reconcile
               ? html`
@@ -158,7 +161,8 @@ class SolaTurn extends SolaElement {
     const entries = [...this.workEntries.values()];
     const analyzing = run?.state === 'running' &&
       this.messageRows.some(({ record }) => record.image_route === 'vision') &&
-      !entries.some(({ body }) => body.purpose === 'vision');
+      !entries.some(({ body }) =>
+        body.purpose === 'vision' && (body.run_id === run.id || !body.failure));
     // One sequence-ordered timeline: request, tool work, then the reply it produced.
     const timeline = [
       ...this.messageRows.map((row) => [row.sequence, this.renderMessage(row)]),
@@ -187,8 +191,23 @@ class SolaTurn extends SolaElement {
         </button>
         <button
           type="button"
+          ?hidden=${!this.retryable}
+          ?disabled=${this.retrying}
+          @click=${action(() => this.retryRun())}
+        >
+          <sola-icon name="RotateCcw"></sola-icon> Retry
+        </button>
+        ${this.attempts.slice(0, -1).map(
+          (id, index) => html`
+            <button type="button" aria-haspopup="dialog" @click=${action(() => openEvidence(id))}>
+              <sola-icon name="FileSearch"></sola-icon> Attempt ${index + 1} evidence
+            </button>
+          `
+        )}
+        <button
+          type="button"
           aria-haspopup="dialog"
-          @click=${action(() => openEvidence(this.dataset.runId))}
+          @click=${action(() => openEvidence(run?.id ?? this.dataset.runId))}
         >
           <sola-icon name="FileSearch"></sola-icon> Inspect evidence
         </button>

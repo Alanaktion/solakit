@@ -657,9 +657,12 @@ def create_app(
         limit: Limit = 50,
         before: Annotated[int | None, Query(ge=0)] = None,
     ) -> dict[str, Any]:
-        return history_page(
+        result = history_page(
             store.runs(session_id, after=after, limit=limit, before=before), after, before
         )
+        if before == 0:
+            result["retryable"] = runs.retryable(session_id)
+        return result
 
     @app.post(
         IMAGE_UPLOAD_PATH,
@@ -715,6 +718,15 @@ def create_app(
             except TimeoutError:
                 pass
         return store.run(run_id)
+
+    @app.post("/api/v1/runs/{run_id}/retry")
+    async def retry(run_id: ID) -> Response:
+        run = runs.retry(run_id)
+        return JSONResponse(
+            {"run": run.model_dump(mode="json")},
+            status_code=202 if run.state in RUN_TRANSITIONS else 200,
+            headers={"Location": f"/api/v1/runs/{run.id}"},
+        )
 
     @app.post("/api/v1/runs/{run_id}/cancel")
     async def cancel(run_id: ID) -> Run:

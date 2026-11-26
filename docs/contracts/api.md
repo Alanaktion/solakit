@@ -134,12 +134,13 @@ means unavailable service/state.
 | `/sessions/{id}/export` | GET a Solakit ZIP download for one topic and its delegated descendants |
 | `/sessions/import` | POST one Solakit ZIP with an Idempotency-Key. Returns 201 and `{ "session_id": id }` for the copied root |
 | `/sessions/{id}/messages` | GET public conversation pages; private background inputs/tools remain in run records |
-| `/sessions/{id}/runs` | GET admission-order run pages; current state in each record |
+| `/sessions/{id}/runs` | GET admission-order run pages; current state in each record. The newest page (`before=0`) adds `retryable`, a run ID or null |
 | `/sessions/{id}/image-uploads` | POST one binary `image/png`, `image/jpeg`, or `image/webp`. Returns 201 and `{upload_id}` for a normalized, temporary PNG |
 | `/sessions/{id}/image-uploads/{upload_id}` | GET the staged PNG while it is available |
 | `/runs` | POST session_id, optional profile (server selection, normally `default`), content (1–32768 UTF-8 bytes), optional image reference `{upload_id}` or `{run_id, artifact_id}`; required Idempotency-Key; optional wait=0..30 seconds |
 | `/runs/{id}` | GET current run, optional wait=0..30; wait expiry returns its current state |
 | `/runs/{id}/cancel` | POST explicit cancellation; completed outcomes remain immutable |
+| `/runs/{id}/retry` | POST [retry of a failed reply](#retrying-a-failed-reply); no body |
 | `/runs/{id}/records` | GET ordered execution evidence including tool receipts and memory work |
 | `/runs/{id}/prompts` | GET exact recorded model-request references for conversation, compaction and vision |
 | `/runs/{id}/artifacts/{id}` | GET bounded verified bytes of a directly linked request/manifest/response/tool artifact |
@@ -203,6 +204,24 @@ upload IDs return 404. Queue checks, archival, ephemeral lifetime, current
 revocations and cancellation remain shared services. See [image inputs](../image-workflows.md).
 Session/job creation and edits do not promise admission-key idempotency. Manual
 job retry returns its original occurrence even after a definition edit.
+
+#### Retrying a failed reply
+
+`POST /runs/{id}/retry` admits a new run with `retry_of` set to the failed run and
+returns the same `{ "run": Run }` response as admission. It records no user
+message: the original message, attachment and frozen admission are reused,
+current permissions apply, and the new run has its own budgets. Repeating the
+request returns the same successor, so a lost response is safe to resubmit.
+
+A run is eligible while it is the topic's latest run, failed, local, interactive
+and not delegated, the topic is not archived, no attempt saved a reply, and every
+recorded tool call has a certain receipt. Other states return 409; a full queue
+returns 429. Cancelled and interrupted runs are not eligible.
+
+Generation sees the settled tool exchanges of earlier attempts and none of their
+partial reply text. A successful completed vision analysis is reused. A proposal
+with the same name and arguments as an earlier successful or confirmed-effect
+call is not dispatched; its receipt points to the earlier one.
 
 Delegated topics carry `parent_session_id` and are available through authenticated
 session and run reads. The parent run's `delegation` evidence row links the

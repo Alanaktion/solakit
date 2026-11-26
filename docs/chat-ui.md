@@ -68,6 +68,12 @@ working, check for succeeded/completed, cross for failed/denied, `!` for
 uncertain/ambiguous, dashed circle for queued/pending and dash for cancelled.
 The state is always written in words beside the icon.
 
+**Retry** appears beside the latest failed reply when it is safe to resume. It
+continues the same turn: your message stays once, earlier tool disclosures stay
+visible, and **Attempt N evidence** opens each earlier attempt. The composer
+draft is untouched. Retry is absent for archived topics, cancelled or
+interrupted runs, saved replies and uncertain or missing tool outcomes.
+
 Use **Cancel run** to request cancellation and **Inspect evidence** for records,
 exact model-request references, receipts and verified artifact chunks. The chat
 loads each run's records back to its start, then refreshes recent activity; the

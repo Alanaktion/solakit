@@ -18,6 +18,7 @@ let selected = null,
   generation = 0,
   source = null,
   polling = null,
+  retryable = null,
   retryStream = null;
 let loggedIn = false,
   topicGeneration = 0,
@@ -90,17 +91,51 @@ function merge(kind, rows) {
     }
   }
 }
+// Linked attempts share one turn, keyed by the oldest loaded one.
+function rootOf(id) {
+  let previous;
+  while ((previous = runs.get(id)?.record.retry_of) && runs.has(previous)) id = previous;
+  return id;
+}
+async function loadAttempts(token) {
+  const tried = new Set();
+  while (token === generation) {
+    const missing = [...runs.values()]
+      .map((row) => row.record.retry_of)
+      .filter((id) => id && !runs.has(id) && !tried.has(id));
+    if (!missing.length) return;
+    for (const id of missing) tried.add(id);
+    await Promise.all(missing.map((id) => loadRecords(id, token)));
+  }
+}
 function turnFor(id) {
   if (!turns.has(id)) {
     const turn = document.createElement('sola-turn');
     turn.className = 'turn';
     turn.dataset.runId = id;
     turn.cancelRun = async () => {
-      const result = await api(`/runs/${id}/cancel`, { method: 'POST' });
-      merge('run', [{ ...runs.get(id), record: result }]);
+      const latest = turn.run.id;
+      const result = await api(`/runs/${latest}/cancel`, { method: 'POST' });
+      merge('run', [{ ...runs.get(latest), record: result }]);
       render();
     };
-    turn.refreshRun = () => queueRefresh(id);
+    turn.retryRun = async () => {
+      turn.retrying = true;
+      try {
+        const result = await api(`/runs/${turn.run.id}/retry`, { method: 'POST' });
+        if (!turn.isConnected) return;
+        merge('run', [{ record: result.run, sequence: Number.MAX_SAFE_INTEGER }]);
+        render();
+        queueRefresh(result.run.id);
+      } catch (error) {
+        // The server may have accepted it even though the response was lost.
+        queueRefresh();
+        throw error;
+      } finally {
+        turn.retrying = false;
+      }
+    };
+    turn.refreshRun = () => queueRefresh(turn.run?.id ?? id);
     turns.set(id, turn);
   }
   return turns.get(id);
@@ -118,22 +153,34 @@ function render() {
         Math.min(position.get(row.record.run_id) ?? Infinity, row.sequence)
       );
     for (const [id, row] of runs) position.set(id, row.sequence ?? position.get(id));
-    const sorted = [...ids].sort((a, b) => position.get(a) - position.get(b));
+    const attempts = new Map();
+    for (const id of [...ids].sort((a, b) => position.get(a) - position.get(b))) {
+      const root = rootOf(id);
+      attempts.set(root, [...(attempts.get(root) || []), id]);
+    }
+    for (const [id, turn] of turns)
+      if (!attempts.has(id)) {
+        turn.remove();
+        turns.delete(id);
+      }
+    const sorted = [...attempts.keys()];
     let next = null;
     for (let index = sorted.length - 1; index >= 0; index--) {
       const id = sorted[index],
         turn = turnFor(id),
-        run = runs.get(id)?.record;
+        linked = attempts.get(id),
+        run = runs.get(linked.at(-1))?.record;
       // Move only misplaced turns so settled ones keep focus and selections.
       if (!turn.isConnected || turn.nextElementSibling !== next)
         $('turns').insertBefore(turn, next);
       next = turn;
       turn.messageRows = [...messages.values()]
-        .filter((row) => row.record.run_id === id && row.record.role !== 'tool')
+        .filter((row) => linked.includes(row.record.run_id) && row.record.role !== 'tool')
         .sort((a, b) => a.sequence - b.sequence);
       turn.run = run;
       if (run && !active(run)) turn.preview = '';
-      turn.setRecords(records.get(id));
+      turn.attempts = linked;
+      turn.setRecords(new Map(linked.flatMap((attempt) => [...(records.get(attempt) || [])])));
       // Flush Lit before measuring scroll anchors and following the latest content.
       turn.performUpdate();
     }
@@ -143,8 +190,8 @@ function render() {
   updateComposer();
 }
 function updateTimers() {
-  for (const [id, turn] of turns) {
-    const r = runs.get(id)?.record;
+  for (const turn of turns.values()) {
+    const r = runs.get(turn.run?.id)?.record;
     if (!r?.started_at) {
       turn.elapsed = '';
       turn.performUpdate();
@@ -220,6 +267,7 @@ async function refresh(ids = []) {
       .map((row) => row.record.id),
     ...missing
   ]);
+  retryable = runPage.retryable;
   await Promise.all(
     [...inspect].map(async (id) => {
       if (!latestRuns.has(id)) {
@@ -231,12 +279,13 @@ async function refresh(ids = []) {
       await loadRecords(id, token);
     })
   );
+  await loadAttempts(token);
   if (token !== generation) return;
   render();
   const replies = [...messages.values()]
     .filter(({ sequence, record }) =>
       sequence > lastSequence && record.role === 'assistant' &&
-      !turns.get(record.run_id)?.summaryIds.has(record.id)
+      !turns.get(rootOf(record.run_id))?.summaryIds.has(record.id)
     )
     .sort((a, b) => a.sequence - b.sequence);
   // Replacing the text also announces a new reply identical to the previous one.
@@ -278,6 +327,7 @@ async function older() {
     ...mp.items.map((row) => row.record.run_id)
   ]);
   await Promise.all([...inspect].map((id) => loadRecords(id, token)));
+  await loadAttempts(token);
   if (token !== generation) return;
   const follow = following;
   following = false;
@@ -362,7 +412,7 @@ function connect() {
       if (cursor && data.sequence <= Number(cursor.split(':')[1])) return;
       cursor = event.lastEventId;
       if (['model.recorded', 'run.terminal'].includes(type)) {
-        const turn = turns.get(data.run_id);
+        const turn = turns.get(rootOf(data.run_id));
         if (turn) {
           turn.preview = '';
           turn.performUpdate();
@@ -376,7 +426,7 @@ function connect() {
     const p = JSON.parse(event.data),
       run = runs.get(p.run_id)?.record;
     if (!run || !active(run)) return;
-    const turn = turnFor(p.run_id);
+    const turn = turnFor(rootOf(p.run_id));
     preserveScroll(() => {
       turn.preview = `${p.truncated ? '…' : ''}${p.text}`;
       turn.performUpdate();
@@ -419,6 +469,8 @@ function updateComposer() {
         <sola-icon name="X"></sola-icon> Remove image
       </button>` : nothing, $('draft-image'));
   const topic = topics.get(selected);
+  for (const turn of turns.values())
+    turn.retryable = !topic?.archived && !!turn.run && turn.run.id === retryable;
   const delegated = !!topic?.parent_session_id;
   const used =
     topic?.mode === 'ephemeral' &&
@@ -504,6 +556,7 @@ async function selectTopic(id) {
   runs.clear();
   records.clear();
   turns.clear();
+  retryable = null;
   $('turns').replaceChildren();
   text($('reply-status'), '');
   olderMessages = olderRuns = 0;

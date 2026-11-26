@@ -481,6 +481,29 @@ class Store:
     def run(self, identity: str) -> Run:
         return self._load("run", identity, Run)
 
+    def retried_by(self, identity: str) -> Run | None:
+        row = self.db.execute(
+            "SELECT id FROM entities WHERE kind='run' AND session_id=? "
+            "AND json_extract(body,'$.retry_of')=?",
+            (self.run(identity).session_id, identity),
+        ).fetchone()
+        return self.run(row[0]) if row else None
+
+    def retry_chain(self, identity: str) -> list[Run]:
+        """Every attempt up to this one, original first."""
+        chain = [self.run(identity)]
+        while previous := chain[-1].retry_of:
+            chain.append(self.run(previous))
+        return chain[::-1]
+
+    def superseded(self, identity: str) -> bool:
+        """A later retry of this attempt has started."""
+        while following := self.retried_by(identity):
+            if following.started_at is not None:
+                return True
+            identity = following.id
+        return False
+
     def imported_run(self, identity: str) -> bool:
         return (
             self.db.execute(
@@ -941,6 +964,7 @@ class Store:
             raise ValueError("archived sessions cannot admit work")
         if (
             session.mode == SessionMode.EPHEMERAL
+            and retry_of is None
             and self.db.execute(
                 "SELECT 1 FROM entities WHERE kind='run' AND session_id=?", (session_id,)
             ).fetchone()
@@ -1000,7 +1024,9 @@ class Store:
                     child_run_id=run.id,
                 ),
             )
-        self._commit((*claimed, run, message), details=details, prepare=prepare)
+        # A retry answers the original message, so it records none of its own.
+        records = (run,) if retry_of is not None else (run, message)
+        self._commit((*claimed, *records), details=details, prepare=prepare)
         return run
 
     def job_topic_archive(self, run: Run) -> tuple[Session, ...]:

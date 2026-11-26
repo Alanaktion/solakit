@@ -15,13 +15,6 @@ wheels/
 # Local reference files
 .env
 config.toml
+
+# Keep validation docs local-only
 docs/validation/*
-!docs/validation/cli-diagnostics.md
-!docs/validation/delegation.md
-!docs/validation/file-tools.md
-!docs/validation/harness-review.md
-!docs/validation/letters-tools.md
-!docs/validation/package-layout.md
-!docs/validation/service.md
-!docs/validation/session-transfer.md
-!docs/validation/topic-manager.md

@@ -89,7 +89,7 @@ def previous_runs(store: Store, run: Run) -> list[Run]:
         for _, previous in page:
             if previous.id == run.id:
                 return result
-            if previous.started_at is not None:
+            if previous.started_at is not None or store.superseded(previous.id):
                 result.append(previous)
         after = page[-1][0]
     return result
@@ -115,7 +115,13 @@ def source_hash(refs: tuple[Reference, ...]) -> str:
 
 def through_run(store: Store, boundary: CompactionBoundary, manifest: Manifest) -> str:
     if store.imported_run(boundary.run_id):
-        return store._load("message", boundary.through_message_id, Message).run_id
+        identity = store._load("message", boundary.through_message_id, Message).run_id
+        # A failed retry has no message of its own; its chain stays inside the summary.
+        while (following := store.retried_by(identity)) and following.started_at is not None:
+            if not store.imported_run(following.id):
+                break
+            identity = following.id
+        return identity
     return manifest.source_run_ids[-1]
 
 
@@ -289,7 +295,9 @@ class Selection:
 def select(store: Store, run: Run, cap: int) -> Selection:
     from solakit.engine.run_loop import project_run
 
-    previous = previous_runs(store, run)
+    # The current reply's own attempts are projected as its continuation, not as history.
+    attempts = {r.id for r in store.retry_chain(run.id)}
+    previous = [r for r in previous_runs(store, run) if r.id not in attempts]
     boundary = active_boundary(store, run.session_id)
     summary = None
     provenance: dict[str, JsonValue] | None = None
@@ -358,15 +366,20 @@ class Compactor:
                 assemble(profile, frozen)
             candidate = None
             eligible: list[Run] = []
-            for previous in selection.runs[:-2]:
-                if not safe(self.store, previous):
+            turns: list[list[Run]] = []
+            for previous in selection.runs:
+                if turns and previous.retry_of == turns[-1][-1].id:
+                    turns[-1].append(previous)
+                else:
+                    turns.append([previous])
+            for attempts in turns[:-2]:
+                if not all(safe(self.store, previous) for previous in attempts):
                     break
-                eligible.append(previous)
                 try:
-                    candidate = self.summary_prompt(profile, run, selection, eligible)
+                    candidate = self.summary_prompt(profile, run, selection, [*eligible, *attempts])
                 except ContextLimit:
-                    eligible.pop()
                     break
+                eligible += attempts
             if candidate is None or index >= profile.budgets.model_calls:
                 if old is not None:
                     return old, index, selection

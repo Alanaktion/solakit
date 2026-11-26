@@ -119,6 +119,7 @@ def main() -> None:
         return default_profile(admitted)
 
     context.tools.current = current_profile
+    flaked: set[str] = set()
 
     async def respond(request: httpx2.Request) -> httpx2.Response:
         if request.url.path.endswith("/models"):
@@ -128,6 +129,10 @@ def main() -> None:
         if isinstance(latest, list):
             latest = next(part["text"] for part in latest if part.get("type") == "text")
         if latest.startswith("fail"):
+            return httpx2.Response(503)
+        # "tool flaky" fails once after its tool result, so Retry can finish the turn.
+        if "flaky" in latest and body["messages"][-1]["role"] == "tool" and latest not in flaked:
+            flaked.add(latest)
             return httpx2.Response(503)
         delegation = latest == "Delegate the browser fixture."
         tool = (latest.startswith("tool") or delegation) and body["messages"][-1]["role"] != "tool"
