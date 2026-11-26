@@ -33,6 +33,7 @@ def main(argv: list[str] | None = None) -> None:
     for action, help_text in (
         ("create", "install a LaunchAgent"),
         ("start", "start the agent and enable launch at login"),
+        ("restart", "restart the runtime and enable launch at login"),
         ("stop", "stop the agent and disable launch at login"),
         ("status", "show the agent's process state and log paths"),
     ):

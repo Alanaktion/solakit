@@ -32,6 +32,7 @@ def test_service_lifecycle(
 
     loaded: dict[str, str] = {}
     enabled: set[str] = set()
+    unloading: set[str] = set()
     calls: list[str] = []
     failure = ""
 
@@ -42,6 +43,9 @@ def test_service_lifecycle(
         if failure == action:
             return subprocess.CompletedProcess(argv, 112, "", "GUI domain unavailable")
         if action == "print":
+            if target in unloading:
+                unloading.remove(target)
+                return subprocess.CompletedProcess(argv, 0, "\tstate = SIGTERMed\n", "")
             if target in loaded:
                 return subprocess.CompletedProcess(argv, 0, loaded[target], "")
             return subprocess.CompletedProcess(argv, 113, "", "Could not find specified service")
@@ -53,10 +57,12 @@ def test_service_lifecycle(
             definition = plistlib.loads(Path(paths[0]).read_bytes())
             service_target = f"{target}/{definition['Label']}"
             assert service_target in enabled and service_target not in loaded
+            assert service_target not in unloading
             loaded[service_target] = "\tstate = running\n\tpid = 123\n"
         elif action == "bootout":
-            assert target not in enabled
             del loaded[target]
+            if target in enabled:
+                unloading.add(target)
         else:
             pytest.fail(f"unexpected launchctl command {action}")
         return subprocess.CompletedProcess(argv, 0, "", "")
@@ -64,6 +70,10 @@ def test_service_lifecycle(
     monkeypatch.setattr(subprocess, "run", launchctl)
     cli.main(["service", "status"])
     assert capsys.readouterr().out.startswith("not created:")
+    with pytest.raises(SystemExit) as error:
+        cli.main(["service", "restart"])
+    assert error.value.code == 2
+    assert "run sola service create" in capsys.readouterr().err
     cli.main(["service", "create"])
     plist_dir = tmp_path / "Library" / "LaunchAgents"
     (plist,) = plist_dir.glob("*.plist")
@@ -93,7 +103,7 @@ def test_service_lifecycle(
     failure = ""
     cli.main(["service", "start", "--config", alias.name])
     cli.main(["service", "start"])
-    cli.main(["service", "start", "--config", other.name])
+    cli.main(["service", "restart", "--config", other.name])
     assert len(loaded) == 2 and calls.count("bootstrap") == 3
     capsys.readouterr()
     cli.main(["service", "status"])
@@ -101,13 +111,25 @@ def test_service_lifecycle(
     assert status.startswith("running (PID 123):") and definition["StandardErrorPath"] in status
 
     target = f"gui/501/{definition['Label']}"
+    failure = "bootout"
+    with pytest.raises(SystemExit) as error:
+        cli.main(["service", "restart"])
+    assert error.value.code == 2
+    assert calls[-3:] == ["enable", "print", "bootout"]
+    assert "launchctl bootout failed" in capsys.readouterr().err
+    failure = ""
+    cli.main(["service", "restart", "--config", alias.name])
+    assert calls[-6:] == ["enable", "print", "bootout", "print", "print", "bootstrap"]
+    assert target in loaded and target in enabled and len(loaded) == 2
+    assert capsys.readouterr().out.startswith("Restart requested:")
+
     loaded[target] = "\tstate = spawn scheduled\n"
     cli.main(["service", "status"])
     assert capsys.readouterr().out.startswith("loaded:")
     config.unlink()
     cli.main(["service", "stop"])
     cli.main(["service", "stop"])
-    assert target not in enabled and len(loaded) == 1 and calls.count("bootout") == 1
+    assert target not in enabled and len(loaded) == 1 and calls.count("bootout") == 3
     capsys.readouterr()
     cli.main(["service", "status"])
     assert capsys.readouterr().out.startswith("stopped:")

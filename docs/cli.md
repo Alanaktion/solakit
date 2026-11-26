@@ -5,7 +5,7 @@ Run `sola --help` for the command list.
 - `sola serve --config config.toml --profile default` composes one app/worker and
   owns the data directory. Configure `[http]` binding/origins and the operator
   credential environment variable; see the [API deployment contract](contracts/api.md).
-- `sola service create|start|stop|status [--config PATH]` manages a macOS LaunchAgent.
+- `sola service create|start|restart|stop|status [--config PATH]` manages a macOS LaunchAgent.
   See [Run Sola at login](#run-sola-at-login).
 - `sola check --config config.toml [--profile default] [--explain]` validates the
   installation/configuration offline. Explain includes narrowed effective roots,
@@ -56,10 +56,13 @@ or SIGTERM terminates the process immediately, skipping any remaining cleanup.
 
 Run these commands as the macOS user who will run the agent, while signed into
 the desktop. `create` installs a disabled LaunchAgent in `~/Library/LaunchAgents`.
-`start` launches it now and enables automatic launch at future logins. launchd
-restarts the runtime if it exits while enabled. `stop` unloads it and disables
-future launches until the next `start`. `status` reports the launchd process state,
-PID when running, and the installed agent's log paths under `~/Library/Logs/sola`.
+`start` launches it now and enables automatic launch at future logins.
+`restart` shuts down a running instance gracefully and launches a fresh process
+to pick up code, config, or environment changes. It also starts a stopped
+instance. launchd restarts the runtime if it exits while enabled. `stop` unloads
+it and disables future launches until the next `start` or `restart`. `status`
+reports the launchd process state, PID when running, and the installed agent's
+log paths under `~/Library/Logs/sola`.
 
 Each command defaults to `~/.config/sola/config.toml`. Pass the same `--config`
 path to manage a second instance. Each concurrently running instance needs a
@@ -70,6 +73,7 @@ to match its URL. Relative paths within a config resolve beside that TOML.
 sola service create --env-file ~/.config/sola/.env
 sola service start
 sola service status
+sola service restart
 sola service create --config ~/.config/sola/second.toml --env-file ~/.config/sola/second.env
 sola service start --config ~/.config/sola/second.toml
 sola service stop --config ~/.config/sola/second.toml
@@ -87,7 +91,7 @@ SOLA_OPERATOR_PASSWORD = "replace-with-your-password"
 The plist stores the credential file and uv executable paths. At launch, uv
 loads the file and runs Sola with the existing Python installation. The service
 suppresses uv's dotenv parse warnings because they can include credential values.
-Stop and start the service after editing the file. Terminal exports belong to
+Restart the service after editing the file. Terminal exports belong to
 the shell session. Supply any runtime credentials through the file or the user's
 launchd environment. If you move the file, Python installation, or uv binary,
 stop the service, remove the plist shown by `create`, then recreate and start it.

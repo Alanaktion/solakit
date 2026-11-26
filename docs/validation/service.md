@@ -23,3 +23,9 @@ and format checks, strict mypy, and the clean wheel smoke test passed.
 
 A full logout and login was not exercised. Login startup was checked through
 launchd's persisted enable and disable settings.
+
+The manual restart follow-up started two stopped, disposable agents with
+`restart`, then restarted one while the other was running. The old process
+completed shutdown before the replacement came up with a new PID and picked up
+an updated `.env` password. The other agent kept serving with the same PID.
+Focused service and CLI smoke tests, Ruff, and strict mypy passed.

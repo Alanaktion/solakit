@@ -9,11 +9,13 @@ import subprocess
 import sys
 from hashlib import sha256
 from pathlib import Path
+from time import monotonic, sleep
 
 from solakit.config import load_config, resolve_profile
 from solakit.storage.evidence import publish
 
 SERVICE_NOT_FOUND = 113  # launchctl's "Could not find specified service"
+EXIT_TIMEOUT_SECONDS = 125  # HTTP drain and runtime cleanup can each take 60 seconds.
 
 
 class ServiceError(RuntimeError):
@@ -90,8 +92,7 @@ def manage_service(action: str, config: Path, env_file: Path | None) -> None:
             "Disabled": True,
             "KeepAlive": True,
             "Umask": 0o077,
-            # The HTTP drain and runtime cleanup can each take up to 60 seconds.
-            "ExitTimeOut": 125,
+            "ExitTimeOut": EXIT_TIMEOUT_SECONDS,
             "StandardOutPath": str(stdout),
             "StandardErrorPath": str(stderr),
         }
@@ -122,16 +123,25 @@ def manage_service(action: str, config: Path, env_file: Path | None) -> None:
 
     with plist.open("rb") as installed:
         fcntl.flock(installed, fcntl.LOCK_EX)
-        if action == "start":
-            launchctl("enable", target)
-            if launchctl("print", target, allow_missing=True) is None:
-                launchctl("bootstrap", domain, str(plist))
-            print(f"Start requested: {config}")
-        elif action == "stop":
-            launchctl("disable", target)
-            if launchctl("print", target, allow_missing=True) is not None:
-                launchctl("bootout", target, allow_missing=True)
+        stopping = action == "stop"
+        launchctl("disable" if stopping else "enable", target)
+        loaded = launchctl("print", target, allow_missing=True) is not None
+        if loaded and action != "start":
+            launchctl("bootout", target, allow_missing=True)
+            if not stopping:
+                # launchctl bootout returns before launchd finishes unloading the service.
+                deadline = monotonic() + EXIT_TIMEOUT_SECONDS + 5
+                while launchctl("print", target, allow_missing=True) is not None:
+                    if monotonic() >= deadline:
+                        raise ServiceError(f"timed out waiting for launchd to unload {config}")
+                    sleep(0.2)
+            loaded = False
+        if stopping:
             print(f"Stopped: {config}")
+        else:
+            if not loaded:
+                launchctl("bootstrap", domain, str(plist))
+            print(f"{action.capitalize()} requested: {config}")
 
 
 def run_service(config: str, env_file: str | None = None, uv: str | None = None) -> None:
