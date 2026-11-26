@@ -50,9 +50,13 @@ uv run python -m scripts.memory_work --config /path/to/config.toml \
 
 The script only performs remote reads, checks the supported version range and task type/session
 ownership, and appends a local accepted transition. Restart Sola to resume polling.
-The same action can resume capped observation of known accepted work. A completed
-task proves extraction completion, not successful retrieval. If no task can be
-identified, leave the ambiguous record visible; no safe automatic replay is claimed.
+The same action can resume observation after a status outage or an older polling
+cap. If OpenViking still reports `pending` or `running`, check the `SessionCommit`
+queue through `GET /api/v1/observer/queue?format=json`. Compare pending, in-progress,
+and processed counts over time to distinguish stalled workers from a draining
+backlog. A completed task proves extraction completion, not successful retrieval.
+If no task can be identified, leave the ambiguous record visible; no safe automatic
+replay is claimed.
 Failed/cancelled run notes require operator inspection and a new intentional request.
 
 ## Live gate

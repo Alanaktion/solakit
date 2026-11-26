@@ -581,6 +581,61 @@ tools = ["files.*"]
     assert (tmp_path / "normalized/legacy.source.toml").stat().st_mode & 0o777 == 0o600
 
 
+@pytest.mark.parametrize(
+    ("status", "expected", "reason"),
+    [
+        ("pending", MemoryState.ACCEPTED, None),
+        ("running", MemoryState.ACCEPTED, None),
+        ("cancelling", MemoryState.ACCEPTED, None),
+        ("completed", MemoryState.COMPLETED, None),
+        (
+            "failed",
+            MemoryState.FAILED,
+            "OpenViking reported extraction failed; inspect provider task",
+        ),
+        (
+            "cancelled",
+            MemoryState.FAILED,
+            "OpenViking reported extraction cancelled; inspect provider task",
+        ),
+    ],
+)
+def test_reachable_task_status_after_observation_cap(
+    profile: EffectiveProfile, status: str, expected: MemoryState, reason: str | None
+) -> None:
+    async def scenario() -> None:
+        selected = enabled(profile)
+        store = Store(selected.data_dir)
+        service = tracker(store, selected, [])
+        await store.start()
+        try:
+            run = completed(store, selected)
+            service.enqueue(run)
+            work = commit(store, run)
+            store.transition_memory(work.id, MemoryState.RUNNING)
+            store.transition_memory(
+                work.id, MemoryState.ACCEPTED, provider_commit_id="task", attempts=12
+            )
+
+            def respond(request: httpx2.Request) -> httpx2.Response:
+                assert request.method == "GET" and request.url.path == "/api/v1/tasks/task"
+                return httpx2.Response(200, json={"status": "ok", "result": {"status": status}})
+
+            service.adapter.transport = httpx2.MockTransport(respond)
+            await service.adapter.start()
+            service.adapter.verified = True
+            await service.tick()
+            work = commit(store, run)
+            assert work.state == expected and work.attempts == 13
+            assert work.provider_commit_id == "task"
+            assert (work.reason.message if work.reason else None) == reason
+        finally:
+            await service.adapter.stop()
+            await store.stop()
+
+    asyncio.run(scenario())
+
+
 def test_accepted_observation_outage_is_bounded(profile: EffectiveProfile) -> None:
     async def scenario() -> None:
         selected = enabled(profile)
@@ -593,15 +648,48 @@ def test_accepted_observation_outage_is_bounded(profile: EffectiveProfile) -> No
             work = commit(store, run)
             store.transition_memory(work.id, MemoryState.RUNNING)
             store.transition_memory(
-                work.id, MemoryState.ACCEPTED, provider_commit_id="task", attempts=11
+                work.id, MemoryState.ACCEPTED, provider_commit_id="task", attempts=40
             )
-            service.adapter.transport = httpx2.MockTransport(lambda r: httpx2.Response(503))
+            unavailable = True
+
+            def respond(request: httpx2.Request) -> httpx2.Response:
+                if request.url.path == "/health":
+                    return httpx2.Response(200, json={"status": "ok", "version": "0.5.5"})
+                if unavailable:
+                    return httpx2.Response(503)
+                return httpx2.Response(200, json={"status": "ok", "result": {"status": "pending"}})
+
+            service.adapter.transport = httpx2.MockTransport(respond)
             await service.adapter.start()
             await service.tick()
             work = commit(store, run)
+            assert work.state == MemoryState.ACCEPTED and work.attempts == 1
+            assert work.reason and work.reason.message == "OpenViking task status unavailable"
+            unavailable = False
+            store.transition_memory(
+                work.id, MemoryState.ACCEPTED, reason=work.reason, next_check=utc_now()
+            )
+            await service.tick()
+            work = commit(store, run)
+            assert work.state == MemoryState.ACCEPTED and work.attempts == 1
+            assert work.reason is None
+            unavailable = True
+            for _ in range(12):
+                store.transition_memory(
+                    work.id,
+                    MemoryState.ACCEPTED,
+                    reason=work.reason,
+                    next_check=utc_now(),
+                )
+                await service.tick()
+                work = commit(store, run)
             assert work.state == MemoryState.FAILED and work.attempts == 12
             assert work.provider_commit_id == "task"
             assert work.reason
+            assert (
+                work.reason.message
+                == "OpenViking task status unavailable after 12 consecutive checks"
+            )
         finally:
             await service.adapter.stop()
             await store.stop()

@@ -66,7 +66,7 @@ submission or extraction, and memory failure does not rewrite their terminal sta
 | running | Submission started; acceptance is not yet durably recorded |
 | accepted | Provider task ID recorded; extraction may still be running |
 | completed | Provider reports completed extraction; retrieval is a separate check |
-| failed | Known extraction/configuration/cap failure; provider reference retained |
+| failed | Provider reported failure or cancellation, configuration rejected, or an availability/budget cap was reached; provider reference retained |
 | ambiguous | Submission response was lost or process stopped during submission |
 | skipped | Reserved local lifecycle outcome; no automatic submission |
 
@@ -80,11 +80,14 @@ authority between session creation, batch addition, and commit. Acceptance requi
 
 OpenViking 0.5.5 provides no verified idempotency guarantee for this sequence. A lost
 response or interrupted submission becomes ambiguous and is **never replayed**.
-Pending work survives restart; accepted work resumes polling. Preflight outages and
-status checks use persisted exponential backoff (2 seconds to 300 seconds), with
-12 observations before a visible failure. A default cap of 128 unfinished/ambiguous
-commits refuses additional work visibly. Batches over 100 messages or 64 KiB fail
-locally. Failed work is not silently retried; references remain inspectable.
+Pending work survives restart; accepted work resumes polling. Preflight and task
+status checks use persisted exponential backoff (2 seconds to 300 seconds). Twelve
+consecutive unavailable checks cause a visible failure. As long as OpenViking
+reports `pending`, `running`, or `cancelling`, Solakit keeps observing the accepted
+task at the bounded interval. A successful check clears the outage streak. A
+default cap of 128 unfinished/ambiguous commits refuses additional work visibly.
+Batches over 100 messages or 64 KiB fail locally. Failed work is not silently
+retried; references remain inspectable.
 
 ## Copied configuration migration
 

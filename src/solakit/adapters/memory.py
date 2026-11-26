@@ -36,6 +36,12 @@ class MemoryError(ValueError):
     pass
 
 
+_STATUS_UNAVAILABLE = Failure(
+    code=ErrorCode.MEMORY_UNAVAILABLE,
+    message="OpenViking task status unavailable",
+)
+
+
 def scope(settings: MemorySettings) -> dict[str, JsonValue]:
     return {"account": settings.account, "user": settings.user, "roots": list(settings.roots)}
 
@@ -440,16 +446,27 @@ class MemoryService:
             except MemoryError:
                 status = "unavailable"
             attempts = commit.attempts + 1
+            # A reachable long-running task and a broken status endpoint have separate streaks.
+            if (status == "unavailable") != (commit.reason == _STATUS_UNAVAILABLE):
+                attempts = 1
             state = MemoryState.ACCEPTED
             reason = None
             if status == "completed":
                 state = MemoryState.COMPLETED
-            elif status in ("failed", "cancelled") or attempts >= 12:
+            elif status in ("failed", "cancelled"):
                 state = MemoryState.FAILED
                 reason = Failure(
                     code=ErrorCode.MEMORY_UNAVAILABLE,
-                    message="Extraction failed or observation cap reached; inspect provider task",
+                    message=f"OpenViking reported extraction {status}; inspect provider task",
                 )
+            elif status == "unavailable":
+                reason = _STATUS_UNAVAILABLE
+                if attempts >= 12:
+                    state = MemoryState.FAILED
+                    reason = Failure(
+                        code=ErrorCode.MEMORY_UNAVAILABLE,
+                        message="OpenViking task status unavailable after 12 consecutive checks",
+                    )
             self.store.transition_memory(
                 commit.id,
                 state,
@@ -495,7 +512,7 @@ class MemoryService:
             or result.get("task_type") != "session_commit"
             or result.get("resource_id") != "sola-" + work.id
             or result.get("status")
-            not in ("pending", "running", "completed", "failed", "cancelled")
+            not in ("pending", "running", "cancelling", "completed", "failed", "cancelled")
         ):
             raise ValueError("provider task does not identify this commit's session")
         return self.store.transition_memory(
