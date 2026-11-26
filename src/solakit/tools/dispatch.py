@@ -1,6 +1,7 @@
 """Durable tool attempts, authority revalidation, guarded services and bounded results."""
 
 import asyncio
+import os
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -28,6 +29,7 @@ from solakit.storage.evidence import CorruptionError, StorageError, canonical, d
 from solakit.storage.search import search
 from solakit.storage.store import Store
 from solakit.tools.files import GuardedFiles
+from solakit.tools.mcp import McpCall, McpClient, McpList
 from solakit.tools.registry import Registry
 from solakit.tools.web_search import BraveSearch, WebSearch
 
@@ -89,6 +91,7 @@ class Dispatcher:
         self.store, self.registry, self.current = store, registry, current
         self.redactor = redactor or Redactor()
         self.web_search = BraveSearch(self.redactor)
+        self.mcp = McpClient()
         self.memory: MemoryService | None = None
         self.jobs: JobService | None = None
         self.runs: RunLoop | None = None
@@ -482,6 +485,38 @@ class Invocation:
         return ToolResult(
             data=await self.dispatcher.web_search.search(args, self._authorize_web_search)
         )
+
+    async def mcp(self, args: McpList | McpCall) -> ToolResult:
+        server = self.authority().mcp_servers.get(args.server)
+        if server is None:
+            raise ToolError("Unknown MCP server", ErrorCode.INVALID_INPUT)
+        secrets = {name: os.environ.get(env, "") for name, env in server.headers_env.items()}
+        if any(not value.strip() for value in secrets.values()):
+            raise ToolError("MCP server credential is missing", ErrorCode.CONFIGURATION)
+        self.dispatcher.redactor.register(*secrets.values())
+        headers = server.headers | secrets
+        if isinstance(args, McpList):
+            params: dict[str, JsonValue] = {"cursor": args.cursor} if args.cursor else {}
+            return ToolResult(
+                data=await self.dispatcher.mcp.request(server.url, headers, "tools/list", params)
+            )
+        result = await self.dispatcher.mcp.request(
+            server.url,
+            headers,
+            "tools/call",
+            {"name": args.tool, "arguments": args.arguments},
+            self.begin_effect,
+        )
+        self.confirm_effect()
+        if result.get("isError") is True:
+            content = result.get("content")
+            text = " ".join(
+                text
+                for part in (content if isinstance(content, list) else [])
+                if isinstance(part, dict) and isinstance(text := part.get("text"), str)
+            )
+            raise ToolError("MCP tool error: " + (text or "no details"))
+        return ToolResult(data=result)
 
     def confirm_effect(self) -> None:
         if self.closed:

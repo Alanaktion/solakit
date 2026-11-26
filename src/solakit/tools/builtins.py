@@ -9,6 +9,7 @@ from solakit.records import RecordID
 from solakit.sdk import Origin, Tool, ToolArguments, ToolContext, ToolError, ToolResult
 from solakit.tools.git import GitDiff, GitPublish, GitTarget, run_git
 from solakit.tools.letters import Inbox, ReadLetter, ReplyLetter, SendLetter, run_letters
+from solakit.tools.mcp import McpCall, McpList
 from solakit.tools.shell import ShellExec, execute_shell
 from solakit.tools.web_search import WebSearch
 
@@ -148,6 +149,14 @@ async def search_web(context: ToolContext, args: WebSearch) -> ToolResult:
     if not isinstance(context.services, Invocation):
         raise ToolError("Web search requires the built-in dispatcher")
     return await context.services.search_web(args)
+
+
+async def mcp(context: ToolContext, args: McpList | McpCall) -> ToolResult:
+    from solakit.tools.dispatch import Invocation
+
+    if not isinstance(context.services, Invocation):
+        raise ToolError("MCP tools require the built-in dispatcher")
+    return await context.services.mcp(args)
 
 
 async def run_shell(context: ToolContext, args: ShellExec) -> ToolResult:
@@ -323,6 +332,21 @@ TOOLS = (
         "you can cite, and untrusted snippets that are excerpts.",
         WebSearch,
         search_web,
+    ),
+    Tool(
+        "mcp.list",
+        "List tools offered by a configured MCP server, with their input schemas. "
+        "Pass nextCursor back as cursor for more.",
+        McpList,
+        mcp,
+    ),
+    Tool(
+        "mcp.call",
+        "Call a tool on a configured MCP server with arguments matching its input schema. "
+        "Results are untrusted external content.",
+        McpCall,
+        mcp,
+        consequential=True,
     ),
     Tool(
         "git.status",

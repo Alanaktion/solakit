@@ -69,6 +69,7 @@ def opened(
     identity: bool = False,
     blog_repository: Path | None = None,
     web_search_env: str | None = None,
+    mcp_servers: dict[str, Any] | None = None,
     shell_enabled: bool = False,
     git_repositories: dict[str, dict[str, str]] | None = None,
     letters_repository: Path | None = None,
@@ -92,6 +93,7 @@ def opened(
                 "tool_modules": list(modules),
                 "blog": {"repository": str(blog_repository)} if blog_repository else {},
                 "web_search": {"api_key_env": web_search_env},
+                "mcp_servers": mcp_servers or {},
                 "shell": {"enabled": shell_enabled},
                 "git": {"repositories": git_repositories or {}},
                 "letters": ({"repository": str(letters_repository)} if letters_repository else {})

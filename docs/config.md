@@ -69,7 +69,7 @@ must also be importable Python modules.
 
 Built-ins currently include `files.list`, `files.read`, `files.search`, `files.write`,
 `files.rename`, `files.copy`, `files.mkdir`, `files.delete`,
-`images.generate`, `transcripts.search`, `web.search`, `git.status`, `git.diff`,
+`images.generate`, `transcripts.search`, `web.search`, `mcp.list`, `mcp.call`, `git.status`, `git.diff`,
 `git.pull`, `git.publish`, `shell.exec`, `delegate.run`,
 `runtime.status`, `memory.recall`, `memory.remember`, and `jobs.list`, `jobs.create`,
 `jobs.update`, `jobs.pause`, `jobs.resume`, `jobs.run_now`, `jobs.delete`,
@@ -82,7 +82,7 @@ it is rejected. There are no separate `resources` or `effects` settings. See the
 `files.*` expands to all registered file tools at admission, including the four
 file management tools. Use exact names to grant a subset.
 
-The other supported top-level keys are tables: `model`, `http`, `memory`, `images`, `blog`, `git`, `letters`, `web_search`, `shell`,
+The other supported top-level keys are tables: `model`, `http`, `memory`, `images`, `blog`, `git`, `letters`, `web_search`, `mcp_servers`, `shell`,
 `defaults`, `profiles`, `proactive_budgets` and `background`, described below.
 The example pack's image adapter remains a fixture; the optional built-in image
 service uses the fixed [ComfyUI workflow](image-workflows.md).
@@ -196,6 +196,19 @@ new admission. Changing or removing this reference revokes search in existing
 runs. Only the environment-variable name is saved in admissions. Search queries
 go to Brave and are kept with the tool result in normal tool evidence. See the
 [web search contract](contracts/tools.md#public-web-search).
+
+## `[mcp_servers.<name>]`
+
+| Key | Type / built-in default | Meaning and constraints |
+| --- | --- | --- |
+| `url` | required HTTP(S) URL | Streamable HTTP MCP endpoint. No credentials, query or fragment. stdio servers are not supported. |
+| `headers` | table of strings, empty | Literal, non-secret request headers. |
+| `headers_env` | table of environment-variable names, empty | Each header's whole value, such as `Bearer <token>`, read from the server environment at call time and redacted from evidence. A missing value fails the call. |
+
+Any configured server enables `mcp.list` and `mcp.call` for profiles that grant
+them. Both tools take a `server` name, so a grant covers every configured server.
+Changing or removing `mcp_servers` revokes both tools in existing runs. See the
+[MCP contract](contracts/tools.md#remote-mcp-tools).
 
 ## `[shell]`
 

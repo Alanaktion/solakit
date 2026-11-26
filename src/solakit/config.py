@@ -20,6 +20,7 @@ Name = Annotated[str, Field(pattern=r"^[a-zA-Z0-9_][a-zA-Z0-9_.-]*$", max_length
 ToolGrant = Annotated[str, Field(pattern=r"^[a-zA-Z0-9_*?][a-zA-Z0-9_.*?-]*$", max_length=128)]
 AgentName = Annotated[str, Field(min_length=1, max_length=128, pattern=r"\S")]
 MemoryMode = Literal["off", "optional", "required"]
+MCP_TOOLS = frozenset({"mcp.list", "mcp.call"})
 DEFAULT_CONFIG = Path.home() / ".config/sola/config.toml"
 
 
@@ -213,6 +214,20 @@ class WebSearchSettings(Value):
     )
 
 
+class McpServer(Value):
+    url: str
+    # Literal headers suit non-secrets; headers_env names variables holding whole header values.
+    headers: dict[str, str] = Field(default_factory=dict, repr=False)
+    headers_env: dict[str, Annotated[str, Field(pattern=r"^[A-Za-z_][A-Za-z0-9_]*$")]] = Field(
+        default_factory=dict, repr=False
+    )
+
+    @field_validator("url")
+    @classmethod
+    def endpoint(cls, value: str) -> str:
+        return ModelSettings.endpoint(value)
+
+
 class ShellSettings(Value):
     enabled: bool = False
 
@@ -342,6 +357,7 @@ class OperatorConfig(Value):
     git: GitSettings = Field(default_factory=GitSettings)
     letters: LettersSettings = Field(default_factory=LettersSettings)
     web_search: WebSearchSettings = Field(default_factory=WebSearchSettings)
+    mcp_servers: dict[Name, McpServer] = Field(default_factory=dict)
     shell: ShellSettings = Field(default_factory=ShellSettings)
     delegation_worker: Name | None = None
     tool_modules: list[Name] = Field(default_factory=list)
@@ -387,6 +403,7 @@ class EffectiveProfile(Value):
     git_reserved: frozenset[Path] = Field(default_factory=frozenset)
     letters: LettersCheckout | None = None
     web_search: WebSearchSettings = Field(default_factory=WebSearchSettings)
+    mcp_servers: dict[Name, McpServer] = Field(default_factory=dict)
     shell: ShellSettings = Field(default_factory=ShellSettings)
     shell_granted: bool = False
     delegation_worker: Name | None = None
@@ -414,6 +431,9 @@ class EffectiveProfile(Value):
             values["vision"]["api_key_env"] = "<redacted>"
         values["memory"]["api_key_env"] = "<redacted>" if self.memory.api_key_env else None
         values["web_search"]["api_key_env"] = "<redacted>" if self.web_search.api_key_env else None
+        for server in values["mcp_servers"].values():
+            for key in ("headers", "headers_env"):
+                server[key] = dict.fromkeys(server[key], "<redacted>")
         values["http"]["password_env"] = "<redacted>"
         return {"values": values, "sources": dict(self.sources)}
 
@@ -579,6 +599,7 @@ def resolve_profile(
         ("git_reserved", "letters"),
         ("letters", "letters"),
         ("web_search", "web_search"),
+        ("mcp_servers", "mcp_servers"),
         ("shell", "shell"),
         ("delegation_worker", "delegation_worker"),
         ("background", "background"),
@@ -637,6 +658,8 @@ def resolve_profile(
     tools -= (GIT_READ | GIT_WRITE) - _git_tools(repositories, reserved, origin)
     if not config.web_search.api_key_env:
         tools -= {"web.search"}
+    if not config.mcp_servers:
+        tools -= MCP_TOOLS
     if not (config.shell.enabled and shell_granted and origin == Origin.INTERACTIVE):
         tools -= {"shell.exec"}
     if not config.delegation_worker or origin != Origin.INTERACTIVE:
@@ -670,6 +693,7 @@ def resolve_profile(
         git_reserved=reserved,
         letters=letters,
         web_search=config.web_search,
+        mcp_servers=config.mcp_servers,
         shell=config.shell,
         shell_granted=shell_granted,
         delegation_worker=config.delegation_worker,
@@ -728,6 +752,8 @@ def restrict_to_admission(
         tools -= CONTENT_WRITE
     if not admitted.web_search.api_key_env or current.web_search != admitted.web_search:
         tools -= {"web.search"}
+    if not admitted.mcp_servers or current.mcp_servers != admitted.mcp_servers:
+        tools -= MCP_TOOLS
     if not admitted.delegation_worker or current.delegation_worker != admitted.delegation_worker:
         tools -= {"delegate.run"}
     shell_granted = current.shell_granted and admitted.shell_granted

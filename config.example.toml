@@ -9,7 +9,7 @@ data_dir = "~/.local/share/sola"
 tool_modules = []
 # Built-ins: files.list, files.read, files.search, files.write,
 # files.rename, files.copy, files.mkdir, files.delete, images.generate,
-# transcripts.search, web.search, git.status/diff/pull/publish, shell.exec, delegate.run, runtime.status,
+# transcripts.search, web.search, mcp.list, mcp.call, git.status/diff/pull/publish, shell.exec, delegate.run, runtime.status,
 # memory.recall, memory.remember; jobs.list/create/update/pause/resume/run_now/delete/pause_all.
 # blog.list/read/create/publish; dreams.list/read/create (always publishes).
 # Separate deadlines for the HTTP connection drain and runtime cleanup.
@@ -73,6 +73,13 @@ max_checks = 300
 # Existing wildcard grants can match web.search on new admissions once enabled.
 [web_search]
 # api_key_env = "BRAVE_SEARCH_API_KEY"
+
+# Optional remote MCP servers (Streamable HTTP only). Grant mcp.list and mcp.call.
+# headers_env maps a header name to an environment variable holding its whole value.
+# [mcp_servers.wiki]
+# url = "https://wiki.example/mcp"
+# headers = { "X-Workspace" = "personal" }
+# headers_env = { Authorization = "WIKI_MCP_AUTHORIZATION" } # e.g. "Bearer <token>"
 
 # To enable interactive commands, set enabled and include "shell.exec" literally in tools.
 # Commands have the server account's filesystem and network privileges.

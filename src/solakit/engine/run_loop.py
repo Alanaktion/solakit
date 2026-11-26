@@ -126,6 +126,7 @@ def requested_tools(text: str, names: Sequence[str]) -> set[str]:
             or name in explicit
             or bool(re.search(r"\b(?:blogs?|posts?)\b", text))
         )
+        and (not name.startswith("mcp.") or name in explicit or bool(re.search(r"\bmcp\b", text)))
         and (
             not name.startswith("dreams.")
             or name in explicit

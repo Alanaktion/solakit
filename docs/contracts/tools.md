@@ -220,6 +220,7 @@ opened directory trees or concurrently redefining Git metadata.
 | `files.write`, `files.rename`, `files.copy`, `files.mkdir`, `files.delete` | Tool grant + roots + guards | Same | Same | Same with explicit job workspace roots |
 | `transcripts.search` | Messages in shared sessions only | Own session only | Own run only | Bound session; own run if ephemeral |
 | `web.search` | Tool grant + stable enabled Brave credential reference | Same | Same | Same admitted narrower profile |
+| `mcp.list`, `mcp.call` | Tool grant + stable configured `mcp_servers` | Same | Same | Same admitted narrower profile |
 | `git.status`, `git.diff` | Tool grant + stable checkout alias inside effective workspace roots | Same | Same | Same admitted narrower profile |
 | `git.pull`, `git.publish` | Same checkout authority + interactive origin + checkout outside letters reservation | Same | Same | Denied, including manual job runs |
 | `letters.read` | Named grant + configured checkout in current and admitted roots | Same | Same | Scheduled only |
@@ -362,6 +363,21 @@ call. The query and returned excerpts are stored in regular tool evidence.
 Admissions without a `[web_search]` reference, including older admissions, keep
 search ineligible. Changing the reference or removing the grant revokes search
 from an existing run. Matching wildcard grants can confer search in new runs.
+
+## Remote MCP tools
+
+`mcp.list(server, cursor=None)` returns the server's raw `tools/list` result:
+tool names, descriptions and input schemas, plus `nextCursor` when there are more pages.
+`mcp.call(server, tool, arguments={})` returns the raw `tools/call` result.
+A result with `isError: true` becomes a failed receipt that includes the tool's text.
+Each call opens a fresh MCP session over Streamable HTTP (`initialize`,
+`notifications/initialized`, then the request). It accepts JSON or SSE responses
+and works within a 30-second deadline and a 1 MiB response cap. HTTPS is verified,
+and redirects and proxy environment variables are ignored. `mcp.call` is
+consequential: its effect starts just before `tools/call` is sent, so a
+transport failure after that point leaves an uncertain receipt. Results are
+untrusted external content. OAuth flows, server-initiated requests, and stdio
+servers are not supported.
 
 ## Literal command execution
 
