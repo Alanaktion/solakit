@@ -6,7 +6,7 @@ Status: Phase 0 contract established on 2026-11-16. Product scope and session/de
 
 Build Sola's local agent harness: persistent identity and memory, reliable multistep tool use, background work, and bounded proactive actions. Sola should finish permitted work or leave an honest, inspectable outcome. Personality and memory judgment belong to operator-owned SOUL and prompt fragments rather than hidden harness prose.
 
-One operator uses one runtime process on this Apple Silicon Mac through a web UI and HTTP API, over localhost or configured tailnet access. Use one event loop, one worker, and one shared inference semaphore. Qwen stays pinned through oMLX; OpenViking supplies semantic memory. FastAPI handles HTTP/lifespan; plain async Python application services own execution. APScheduler wakes the in-process scheduling service; SQLite owns schedules.
+One operator uses the runtime on this Apple Silicon Mac through a web UI and HTTP API, over localhost or configured tailnet access. Each configured instance has one process, one event loop, one worker, and one shared inference semaphore. [LaunchAgents](cli.md#run-sola-at-login) can run instances with separate configuration files, data directories, and HTTP bindings. Qwen stays pinned through oMLX; OpenViking supplies semantic memory. FastAPI handles HTTP/lifespan; plain async Python application services own execution. APScheduler wakes the in-process scheduling service; SQLite owns schedules.
 
 ## First-release scope
 

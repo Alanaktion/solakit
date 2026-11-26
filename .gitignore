@@ -22,4 +22,5 @@ docs/validation/*
 !docs/validation/harness-review.md
 !docs/validation/letters-tools.md
 !docs/validation/package-layout.md
+!docs/validation/service.md
 !docs/validation/topic-manager.md

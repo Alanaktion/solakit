@@ -22,11 +22,26 @@ def selected_profile(path: Path | None, name: str) -> EffectiveProfile:
     return resolve_profile(load_config(path), name, base=(path or DEFAULT_CONFIG).resolve().parent)
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="sola")
     parser.add_argument("--version", action="version", version=version("solakit"))
     commands = parser.add_subparsers(dest="command", required=True)
     serve = commands.add_parser("serve", help="serve the runtime at the configured address")
+    service = commands.add_parser("service", help="manage a macOS launchd service")
+    service.set_defaults(env_file=None)
+    service_actions = service.add_subparsers(dest="action", required=True)
+    for action, help_text in (
+        ("create", "install a LaunchAgent"),
+        ("start", "start the agent and enable launch at login"),
+        ("stop", "stop the agent and disable launch at login"),
+        ("status", "show the agent's process state and log paths"),
+    ):
+        action_parser = service_actions.add_parser(action, help=help_text)
+        action_parser.add_argument("--config", type=Path, help=f"default: {DEFAULT_CONFIG}")
+        if action == "create":
+            action_parser.add_argument(
+                "--env-file", type=Path, help="private .env file loaded by uv"
+            )
     check = commands.add_parser(
         "check", help="validate local configuration without starting services"
     )
@@ -64,7 +79,7 @@ def main() -> None:
     search_command.add_argument("--data-dir", type=Path)
     search_command.add_argument("--limit", type=int, default=20)
     search_command.add_argument("--session", dest="session_id")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     if args.command == "serve":
         import uvicorn
 
@@ -112,6 +127,13 @@ def main() -> None:
         )
         with suppress(KeyboardInterrupt):
             Server(server_config).run()
+    elif args.command == "service":
+        from solakit.service import ServiceError, manage_service
+
+        try:
+            manage_service(args.action, args.config or DEFAULT_CONFIG, args.env_file)
+        except (ConfigError, OSError, ServiceError, ValueError) as error:
+            parser.error(str(error))
     elif args.command == "check":
         report: dict[str, object] = {
             "phase": "api-cli-events",
