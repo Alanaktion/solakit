@@ -193,14 +193,15 @@ export class SolaApp extends SolaElement {
       <dialog id="import-dialog" aria-labelledby="import-title"
         @cancel=${(event) => { if ($('import-file').disabled) event.preventDefault(); }}>
         <form @submit=${importTopic} id="import-form">
-          <h2 id="import-title">Import topic</h2>
-          <label for="import-file">Solakit ZIP archive</label>
-          <input id="import-file" type="file" accept=".zip,application/zip" @change=${chooseImport} autofocus />
+          <h2 id="import-title">Import topics</h2>
+          <label for="import-file">Solakit ZIP archives</label>
+          <input id="import-file" type="file" accept=".zip,application/zip" multiple
+            @change=${chooseImport} autofocus />
           <p id="import-error" role="alert"></p>
           <p id="import-status" role="status"></p>
           <div class="actions">
             <button type="button" id="import-cancel" @click=${() => $('import-dialog').close()}>Cancel</button>
-            <button class="primary" id="import-submit" disabled>Import topic</button>
+            <button class="primary" id="import-submit" disabled>Import topics</button>
           </div>
         </form>
       </dialog>

@@ -29,7 +29,7 @@ let messagesDone = false,
   following = true,
   refreshTimer = null;
 let editingTopic = false;
-let importKey = null;
+let importBatch = [];
 let draftImage = null;
 let imageInputs = false,
   imageUpload = null;
@@ -812,11 +812,13 @@ function openImport() {
 }
 
 function chooseImport() {
-  const file = $('import-file').files[0];
-  importKey = file ? uid() : null;
-  $('import-submit').disabled = !file;
-  text($('import-submit'), 'Import topic');
+  importBatch = Array.from($('import-file').files, (file) => ({
+    file, key: uid(), sessionId: null, error: null
+  }));
+  $('import-submit').disabled = !importBatch.length;
+  text($('import-submit'), 'Import topics');
   text($('import-error'), '');
+  text($('import-status'), '');
 }
 
 async function importTopic(event) {
@@ -824,18 +826,44 @@ async function importTopic(event) {
   const picker = $('import-file');
   const submit = $('import-submit');
   const cancel = $('import-cancel');
-  const file = picker.files[0];
-  if (!file || !importKey || submit.disabled) return;
+  if (!importBatch.length || submit.disabled) return;
   picker.disabled = submit.disabled = cancel.disabled = true;
-  text($('import-error'), '');
-  text($('import-status'), 'Importing topic…');
+  const alert = $('import-error');
+  const status = $('import-status');
+  text(alert, '');
   try {
-    const { session_id } = await api('/sessions/import', {
-      method: 'POST',
-      headers: { 'Idempotency-Key': importKey },
-      body: file.slice(0, file.size, 'application/zip')
-    });
-    const topic = await api(`/sessions/${session_id}`);
+    for (const [index, item] of importBatch.entries()) {
+      if (item.sessionId) continue;
+      text(status, `Importing file ${index + 1} of ${importBatch.length}…`);
+      try {
+        const { file, key } = item;
+        const { session_id } = await api('/sessions/import', {
+          method: 'POST',
+          headers: { 'Idempotency-Key': key },
+          body: file.slice(0, file.size, 'application/zip')
+        });
+        item.sessionId = session_id;
+        item.error = null;
+      } catch (error) {
+        item.error = error instanceof TypeError
+          ? 'Could not reach Solakit. Retry with the same file.'
+          : error.message;
+        if (!loggedIn) break;
+      }
+    }
+    const imported = importBatch.filter((item) => item.sessionId).length;
+    text(status, `${imported} of ${importBatch.length} files imported.`);
+    if (imported < importBatch.length) {
+      text(alert, importBatch.filter((item) => item.error)
+        .map((item) => `${item.file.name}: ${item.error}`).join('\n'));
+      text(submit, 'Retry import');
+      if (imported && loggedIn) {
+        void $('topic-manager-component').loadPage();
+        await loadTopics();
+      }
+      return;
+    }
+    const topic = await api(`/sessions/${importBatch.at(-1).sessionId}`);
     topics.set(topic.id, topic);
     $('topic-search').value = '';
     $('archived-topics').checked = topic.archived;
@@ -845,13 +873,10 @@ async function importTopic(event) {
     $('topic-manager-component').close();
     $('history').focus({ preventScroll: true });
   } catch (error) {
-    text($('import-error'), error instanceof TypeError
-      ? 'Could not reach Solakit. Retry with the same file.'
-      : error.message);
+    text(alert, [alert.textContent, error.message].filter(Boolean).join('\n'));
     text(submit, 'Retry import');
   } finally {
     picker.disabled = submit.disabled = cancel.disabled = false;
-    text($('import-status'), '');
     if (loggedIn && $('import-dialog').open) submit.focus();
   }
 }

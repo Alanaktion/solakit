@@ -16,11 +16,13 @@ Verified on 2026-11-25 with Python 3.15.2 and disposable Solakit stores.
   recovered the same copied session for the original request key.
 - Used Chromium with the loopback fixture to export a Manage topics result by
   keyboard while the current conversation stayed selected. Checked how the row
-  displays an active-run error. Opened Import topic from the manager and checked
-  that cancel returns focus to the launcher. Dropped the first successful import
-  response and verified that retry kept its request key and opened a single copy.
-  The mobile import dialog passed the automated axe scan. The browser suite also
-  checked 320-pixel layouts, 200% text, forced colors, and focus behavior.
+  displays an active-run error. Opened Import topics from the manager and checked
+  that cancel returns focus to the launcher. Submitted three ZIPs in order and
+  dropped the second response. The third file still imported, and retry sent only
+  the second file with its original key. The last selected topic opened when the
+  batch finished. The mobile import dialog passed the automated axe scan. The
+  browser suite also checked 320-pixel layouts, 200% text, forced colors, and focus
+  behavior.
 - The locked test suite, Ruff lint and format checks, mypy, and the clean wheel
   smoke check passed.
 

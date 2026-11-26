@@ -107,10 +107,11 @@ archived results and clear **Archive topic** in Topic details.
 Use **Export** on any result in **Manage topics** to download its conversation,
 run evidence, artifacts, and delegated topics as a Solakit ZIP. You can also
 export from Topic details. Queued and running turns must finish before export.
-Choose **Import topic** in **Manage topics** to upload a ZIP. The copy opens
-with its original memory mode and archive status. If the upload response is lost,
-**Retry import** reuses the same request and opens the same copy. Choosing a file
-for a new import creates another copy.
+Choose **Import topics** in **Manage topics** to upload one or more ZIPs. Files
+are submitted in the order provided by the file picker. Each copy keeps its original
+memory mode and archive status. **Retry import** retries unfinished files using
+the same request keys, so a lost response does not create a duplicate. The last
+selected copy opens when the batch finishes.
 
 Settings uses six keyboard-accessible tabs, with a separate dialog for job
 creation and editing. Use the X or Escape to close Settings. Arrow keys move

@@ -285,7 +285,7 @@ export class SolaTopicManager extends SolaElement {
           <div class="manager-actions">
             <button type="button" id="import-topic" aria-haspopup="dialog"
               ?disabled=${archiving} @click=${() => this.openImport()}>
-              <sola-icon name="Upload"></sola-icon> Import topic
+              <sola-icon name="Upload"></sola-icon> Import topics
             </button>
             <button class="dialog-close" type="button" aria-label="Close topic manager"
               ?disabled=${archiving} @click=${this.close}><sola-icon name="X"></sola-icon></button>

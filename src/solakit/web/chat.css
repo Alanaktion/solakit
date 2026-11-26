@@ -812,8 +812,12 @@ sola-topic-manager {
 #settings-error,
 #login-error,
 #evidence-error,
+#import-error,
 #topic-error {
   color: var(--danger);
+}
+#import-error {
+  white-space: pre-line;
 }
 .sr-only,
 .skip:not(:focus) {
