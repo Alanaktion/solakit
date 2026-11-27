@@ -16,6 +16,7 @@ from solakit.engine.compaction import Compactor, select
 from solakit.engine.lineage import current_run, deny_autonomous_successor
 from solakit.engine.prompts import ContextLimit, PromptInput, PromptTurn, assemble
 from solakit.records import (
+    DOCUMENT_TEXT_BYTES,
     RUN_TRANSITIONS,
     Artifact,
     CompactionBoundary,
@@ -36,8 +37,9 @@ from solakit.records import (
 from solakit.sdk import ToolError
 from solakit.storage.evidence import StorageError, canonical, digest
 from solakit.storage.store import Store
+from solakit.storage.uploads import Uploads
 from solakit.tools.dispatch import WORKER_TOOLS, Dispatcher, receipt_content
-from solakit.tools.images import ImageUploads
+from solakit.tools.images import MAX_IMAGE_BYTES
 
 if TYPE_CHECKING:
     from solakit.adapters.vision import VisionAdapter
@@ -227,6 +229,7 @@ def project_run(
                     role="user",
                     content=record.content,
                     image=record.image if record.image_route != "vision" else None,
+                    documents=record.documents,
                 )
             )
         elif isinstance(record, ModelStep):
@@ -319,7 +322,13 @@ class RunLoop:
         dispatcher.runs = self
         self.memory = memory
         self.vision = vision
-        self.uploads = ImageUploads(store.root)
+        self.uploads = Uploads(store.root / "image-uploads", MAX_IMAGE_BYTES)
+        self.document_uploads = Uploads(
+            store.root / "document-uploads",
+            DOCUMENT_TEXT_BYTES + 255 * 4 + 1,
+            per_topic=16,
+            total=64,
+        )
         self.jobs: JobService | None = None
         self.max_pending, self.max_active, self.deferred = max_pending, max_active, deferred
         self.active: dict[str, asyncio.Task[None]] = {}
@@ -340,6 +349,7 @@ class RunLoop:
         if self.worker is not None:
             return
         self.uploads.clean()
+        self.document_uploads.clean()
         self.failure = None
         self.stopping = False
         self.accepting = True
@@ -370,6 +380,8 @@ class RunLoop:
         image_source: tuple[str, str] | None = None,
         upload_id: str | None = None,
         upload: bytes | None = None,
+        document_ids: tuple[str, ...] = (),
+        documents: tuple[tuple[str, bytes], ...] = (),
     ) -> Run:
         deny_autonomous_successor()
         if not self.accepting or self.failure is not None:
@@ -405,6 +417,8 @@ class RunLoop:
                 image_source=image_source,
                 upload_id=upload_id,
                 upload=upload,
+                document_ids=document_ids,
+                documents=documents,
             )
         except BaseException as error:
             if self.store.failed:
@@ -413,6 +427,9 @@ class RunLoop:
         self._notify()
         if upload_id is not None and upload is not None:
             self.uploads.discard(session_id, upload_id)
+        if documents:
+            for identity in document_ids:
+                self.document_uploads.discard(session_id, identity)
         return run
 
     def _retry_admission(self, run: Run) -> dict[str, object]:

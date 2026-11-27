@@ -3,7 +3,6 @@
 import asyncio
 import json
 import struct
-import time
 import zlib
 from collections.abc import Callable
 from importlib.resources import files
@@ -20,23 +19,17 @@ from solakit.config import ImageSettings
 from solakit.records import Artifact, ErrorCode, ImageGeneration, ToolCall, new_id
 from solakit.sdk import ToolError
 from solakit.storage.evidence import (
-    CorruptionError,
     canonical,
     checked_json,
     digest,
-    ensure_directory,
-    publish,
     read_artifact,
 )
-from solakit.storage.store import LOCAL_RUN, Store, valid_id
+from solakit.storage.store import LOCAL_RUN, Store
 from solakit.tools.builtins import GenerateImage
 
 MAX_IMAGE_BYTES = 16 * 1024 * 1024
 UPLOAD_BYTES = 8 * 1024 * 1024
 UPLOAD_FORMATS = {"image/png": "PNG", "image/jpeg": "JPEG", "image/webp": "WEBP"}
-UPLOAD_TTL = 30 * 60
-TOPIC_UPLOADS = 4
-TOTAL_UPLOADS = 16
 MAX_RESPONSE_BYTES = 1024 * 1024
 
 
@@ -172,58 +165,6 @@ def normalize_upload(raw: bytes, media_type: str) -> bytes:
         Image.DecompressionBombError,
     ) as error:
         raise ValueError("Image must be a valid static PNG, JPEG, or WebP within bounds") from error
-
-
-class ImageUploads:
-    def __init__(self, root: Path) -> None:
-        self.root = root / "image-uploads"
-
-    def clean(self) -> list[Path]:
-        if self.root.is_symlink():
-            raise CorruptionError("upload directory cannot be a symlink")
-        ensure_directory(self.root)
-        drafts = []
-        cutoff = time.time() - UPLOAD_TTL
-        for path in self.root.iterdir():
-            if path.is_symlink() or not path.is_file():
-                raise CorruptionError("invalid upload staging file")
-            if path.name.startswith(".") or path.stat().st_mtime <= cutoff:
-                path.unlink()
-            else:
-                drafts.append(path)
-        return drafts
-
-    def stage(self, topic: str, data: bytes) -> str:
-        valid_id(topic)
-        drafts = self.clean()
-        if (
-            len(drafts) >= TOTAL_UPLOADS
-            or sum(draft.name.startswith(topic + "-") for draft in drafts) >= TOPIC_UPLOADS
-        ):
-            raise OverflowError("Image upload storage is full")
-        identity = new_id()
-        publish(self.root / f"{topic}-{identity}", data)
-        return identity
-
-    def read(self, topic: str, identity: str) -> bytes:
-        valid_id(topic)
-        valid_id(identity)
-        path = self.root / f"{topic}-{identity}"
-        if self.root.is_symlink() or path.is_symlink():
-            raise CorruptionError("invalid upload staging path")
-        try:
-            if path.stat().st_mtime <= time.time() - UPLOAD_TTL:
-                raise KeyError(identity)
-            with path.open("rb") as stream:
-                raw = stream.read(MAX_IMAGE_BYTES + 1)
-        except FileNotFoundError:
-            raise KeyError(identity) from None
-        if len(raw) > MAX_IMAGE_BYTES:
-            raise CorruptionError("staged image exceeds size limit")
-        return raw
-
-    def discard(self, topic: str, identity: str) -> None:
-        (self.root / f"{topic}-{identity}").unlink(missing_ok=True)
 
 
 class ComfyUI:

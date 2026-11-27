@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import hashlib
 import json
 import os
@@ -7,6 +8,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+import httpx2
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -18,7 +20,7 @@ from solakit.api import create_app
 from solakit.api.auth import COOKIE, AuthService
 from solakit.api.client import MAX_STREAMS, PAGE_BYTES, ClientService
 from solakit.config import EffectiveProfile, HTTPSettings
-from solakit.records import Message, Origin, RunState, SessionMode, new_id
+from solakit.records import DOCUMENT_TEXT_BYTES, Message, Origin, RunState, SessionMode, new_id
 from solakit.runtime import compose
 from solakit.storage.evidence import canonical
 
@@ -686,6 +688,152 @@ def test_openapi_contract(client: TestClient, app: FastAPI) -> None:
     assert "202" in schema["paths"]["/api/v1/runs"]["post"]["responses"]
     fixture = json.loads(Path("docs/contracts/examples/openapi.json").read_text())
     assert schema == fixture
+
+
+def test_document_upload_scope_prompt_history_and_export(client: TestClient, app: FastAPI) -> None:
+    login(client)
+    session = client.post("/api/v1/sessions", json={"mode": "isolated"}).json()["id"]
+    other = client.post("/api/v1/sessions", json={}).json()["id"]
+    path = f"/api/v1/sessions/{session}/document-uploads"
+    headers = {"Content-Type": "application/octet-stream"}
+    assert client.post(path, params={"filename": "../notes.md"}, headers=headers).status_code == 422
+    assert (
+        client.post(path, params={"filename": r"bad\name.md"}, headers=headers).status_code == 422
+    )
+    assert (
+        client.post(
+            path, params={"filename": "notes.md"}, content=b"\x00", headers=headers
+        ).status_code
+        == 422
+    )
+    assert (
+        client.post(
+            path,
+            params={"filename": "long.txt"},
+            content=b"x" * (DOCUMENT_TEXT_BYTES + 1),
+            headers=headers,
+        ).status_code
+        == 422
+    )
+    assert client.get("/api/v1/health").json()["document_conversion"] is False
+    assert (
+        client.post(
+            path, params={"filename": "test.pdf"}, content=b"%PDF-1.7", headers=headers
+        ).status_code
+        == 415
+    )
+    upload = client.post(
+        path,
+        params={"filename": "Résumé.md"},
+        content="\ufeff# Notes\nLake: blue".encode(),
+        headers=headers,
+    )
+    assert upload.status_code == 201, upload.text
+    upload_id = upload.json()["upload_id"]
+    body = {
+        "session_id": session,
+        "content": "Summarize the notes.",
+        "document_upload_ids": [upload_id],
+    }
+    key = {"Idempotency-Key": new_id()}
+    assert (
+        client.post("/api/v1/runs", json=body | {"session_id": other}, headers=key).status_code
+        == 404
+    )
+    result = client.post("/api/v1/runs?wait=5", json=body, headers=key)
+    assert result.status_code == 200, result.text
+    run = result.json()["run"]
+    assert run["state"] == "completed"
+    assert client.post("/api/v1/runs", json=body, headers=key).json()["run"]["id"] == run["id"]
+    assert (
+        client.post(
+            "/api/v1/runs", json=body | {"document_upload_ids": []}, headers=key
+        ).status_code
+        == 409
+    )
+    assert (
+        client.post("/api/v1/runs", json=body, headers={"Idempotency-Key": new_id()}).status_code
+        == 404
+    )
+
+    def check_prompt(run_id: str) -> None:
+        receipt = client.get(f"/api/v1/runs/{run_id}/prompts").json()["items"][0]["record"]
+        request = client.get(f"/api/v1/runs/{run_id}/{receipt['body']['path']}").json()
+        content = next(
+            json.loads(message["content"])
+            for message in request["messages"]
+            if "untrusted_document_attachments" in message["content"]
+        )
+        assert content["untrusted_document_attachments"] == [
+            {"filename": "Résumé.md", "text": "# Notes\nLake: blue"}
+        ]
+
+    check_prompt(run["id"])
+    messages = client.get(f"/api/v1/sessions/{session}/messages").json()["items"]
+    record = messages[0]["record"]
+    assert record["content"] == body["content"]
+    download = client.get(f"/api/v1/runs/{run['id']}/{record['documents'][0]['path']}")
+    assert download.content == b"# Notes\nLake: blue"
+    followup = client.post(
+        "/api/v1/runs?wait=5",
+        json={"session_id": session, "content": "Which color?"},
+        headers={"Idempotency-Key": new_id()},
+    ).json()["run"]["id"]
+    check_prompt(followup)
+    assert (
+        client.get(f"/api/v1/runs/{followup}/{record['documents'][0]['path']}").status_code == 404
+    )
+
+    archive = client.get(f"/api/v1/sessions/{session}/export")
+    imported = client.post(
+        "/api/v1/sessions/import",
+        content=archive.content,
+        headers={"Content-Type": "application/zip", "Idempotency-Key": new_id()},
+    )
+    assert imported.status_code == 201, imported.text
+    copied_id = imported.json()["session_id"]
+    copied_messages = client.get(f"/api/v1/sessions/{copied_id}/messages").json()["items"]
+    copied = copied_messages[0]["record"]
+    copied_file = client.get(f"/api/v1/runs/{copied['run_id']}/{copied['documents'][0]['path']}")
+    assert copied_file.content == download.content
+
+
+def test_document_conversion_uses_advertised_omlx_endpoint(
+    profile: EffectiveProfile, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("SOLA_OPERATOR_PASSWORD", PASSWORD)
+    context, _ = harness(profile, [])
+    assert context.model
+    pdf = b"%PDF-1.7\nsynthetic PDF bytes"
+
+    async def respond(request: httpx2.Request) -> httpx2.Response:
+        if request.url.path.endswith("/models"):
+            return httpx2.Response(
+                200,
+                json={
+                    "data": [{"id": profile.model_pin}, {"id": "MarkItDown", "owned_by": "omlx"}]
+                },
+            )
+        body = json.loads(request.content)
+        assert body["model"] == "MarkItDown" and body["stream"] is False
+        [part] = body["messages"][0]["content"]
+        assert part["type"] == "file" and part["file"]["filename"] == "fixture.PDF"
+        assert base64.b64decode(part["file"]["file_data"]) == pdf
+        return httpx2.Response(200, json=reply("Extracted Markdown") | {"model": "MarkItDown"})
+
+    context.model.transport = httpx2.MockTransport(respond)
+    with TestClient(create_app(context), base_url=BASE) as client:
+        login(client)
+        assert client.get("/api/v1/health").json()["document_conversion"] is True
+        session = client.post("/api/v1/sessions", json={}).json()["id"]
+        upload = client.post(
+            f"/api/v1/sessions/{session}/document-uploads",
+            content=pdf,
+            params={"filename": "fixture.PDF"},
+            headers={"Content-Type": "application/octet-stream"},
+        )
+        assert upload.status_code == 201, upload.text
+        assert upload.json()["text_bytes"] == len("Extracted Markdown")
 
 
 def test_image_attachment_scope_idempotency_and_unsupported(

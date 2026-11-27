@@ -5,11 +5,20 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TypedDict
 
-from pydantic import JsonValue
+from pydantic import Field, JsonValue
 
 from solakit.config import EffectiveProfile
-from solakit.records import Artifact, Message, RecordID, SessionMode, Timestamp, ToolProposal, Value
-from solakit.storage.evidence import canonical, checked_json, digest
+from solakit.records import (
+    Artifact,
+    Document,
+    Message,
+    RecordID,
+    SessionMode,
+    Timestamp,
+    ToolProposal,
+    Value,
+)
+from solakit.storage.evidence import canonical, checked_json, digest, read_artifact
 
 
 class PromptTurn(Value):
@@ -18,6 +27,7 @@ class PromptTurn(Value):
     role: str
     content: str
     image: Artifact | None = None
+    documents: tuple[Document, ...] = Field(default=(), exclude_if=lambda value: not value)
     tool_calls: tuple[ToolProposal, ...] = ()
     tool_call_id: str | None = None
 
@@ -71,6 +81,20 @@ def image_part(raw: bytes) -> dict[str, JsonValue]:
         "type": "image_url",
         "image_url": {"url": "data:image/png;base64," + base64.b64encode(raw).decode()},
     }
+
+
+def document_content(root: Path, content: str, documents: tuple[Document, ...]) -> str:
+    if not documents:
+        return content
+    return canonical(
+        {
+            "message": content,
+            "untrusted_document_attachments": [
+                {"filename": document.name, "text": read_artifact(root, document).decode()}
+                for document in documents
+            ],
+        }
+    ).decode()
 
 
 class Accounting(TypedDict):
@@ -164,6 +188,9 @@ def assemble(profile: EffectiveProfile, frozen: PromptInput) -> PreparedPrompt:
                     raise ValueError("duplicate projected tool ID")
             sections.append({"section": section, "message_index": len(messages)})
             messages.append(turn.message())
+            messages[-1]["content"] = document_content(
+                profile.data_dir, turn.content, turn.documents
+            )
             if profile.model_image_inputs:
                 attach(turn.image)
         if pending:
@@ -178,7 +205,11 @@ def assemble(profile: EffectiveProfile, frozen: PromptInput) -> PreparedPrompt:
     if frozen.summary is not None:
         add("summary", "assistant", frozen.summary.content)
     for message in frozen.history:
-        add("history", message.role, message.content)
+        add(
+            "history",
+            message.role,
+            document_content(profile.data_dir, message.content, message.documents),
+        )
         if profile.model_image_inputs and message.image_route != "vision":
             attach(message.image)
     project("history", frozen.prior_turns)
@@ -205,7 +236,11 @@ def assemble(profile: EffectiveProfile, frozen: PromptInput) -> PreparedPrompt:
             + ", ".join(frozen.tool_catalog)
             + ". Request an identifiable tool to disclose its schema before execution.",
         )
-    add("input", "user", frozen.input.content)
+    add(
+        "input",
+        "user",
+        document_content(profile.data_dir, frozen.input.content, frozen.input.documents),
+    )
     if frozen.input.image_route != "vision":
         attach(frozen.input.image)
     project("continuation", frozen.continuation)

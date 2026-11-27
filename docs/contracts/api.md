@@ -115,8 +115,8 @@ All responses use `Cache-Control: no-store` and `X-Content-Type-Options: nosniff
 All resource paths below have the `/api/v1` prefix. IDs and Idempotency-Key values
 are 32 lowercase hex characters. Timestamps are aware UTC ISO strings. Unknown
 body fields and malformed path/query/body fields receive 422. Bodies are capped
-at 128 KiB, even without Content-Length. The binary image upload route has an
-8 MiB cap on the actual bytes received after authentication and CSRF checks.
+at 128 KiB, even without Content-Length. Binary image and document upload routes
+cap the actual bytes received at 8 MiB after authentication and CSRF checks.
 Session archives have a 128 MiB transfer limit and their own content type.
 Errors use `{"error":{"code":"…","message":"…"}}` with a safe message.
 404 means missing resource, 409 means conflicting state/current authority, 429
@@ -137,13 +137,14 @@ means unavailable service/state.
 | `/sessions/{id}/runs` | GET admission-order run pages; current state in each record. The newest page (`before=0`) adds `retryable`, a run ID or null |
 | `/sessions/{id}/image-uploads` | POST one binary `image/png`, `image/jpeg`, or `image/webp`. Returns 201 and `{upload_id}` for a normalized, temporary PNG |
 | `/sessions/{id}/image-uploads/{upload_id}` | GET the staged PNG while it is available |
-| `/runs` | POST session_id, optional profile (server selection, normally `default`), content (1–32768 UTF-8 bytes), optional image reference `{upload_id}` or `{run_id, artifact_id}`; required Idempotency-Key; optional wait=0..30 seconds |
+| `/sessions/{id}/document-uploads?filename=…` | POST one file as `application/octet-stream`. Returns 201 and `{upload_id, text_bytes}` for staged UTF-8 text |
+| `/runs` | POST session_id, optional profile (server selection, normally `default`), content (1–32768 UTF-8 bytes), optional image reference `{upload_id}` or `{run_id, artifact_id}`, optional ordered `document_upload_ids` (up to four distinct IDs); required Idempotency-Key; optional wait=0..30 seconds |
 | `/runs/{id}` | GET current run, optional wait=0..30; wait expiry returns its current state |
 | `/runs/{id}/cancel` | POST explicit cancellation; completed outcomes remain immutable |
 | `/runs/{id}/retry` | POST [retry of a failed reply](#retrying-a-failed-reply); no body |
 | `/runs/{id}/records` | GET ordered execution evidence including tool receipts and memory work |
 | `/runs/{id}/prompts` | GET exact recorded model-request references for conversation, compaction and vision |
-| `/runs/{id}/artifacts/{id}` | GET bounded verified bytes of a directly linked request/manifest/response/tool artifact |
+| `/runs/{id}/artifacts/{id}` | GET bounded verified bytes of a directly linked document, request, manifest, response or tool artifact |
 | `/sessions/{id}/events` | GET [SSE protocol](events.md) |
 | `/jobs` | GET stable creation pages; POST creates a disabled definition unless explicitly enabled |
 | `/jobs/{id}` | GET/PATCH/DELETE through existing validation, narrowing and tombstones. PATCH `{"enabled":true/false}` toggles automatic scheduling |
@@ -195,13 +196,22 @@ Admission returns `{ "run": Run }` and Location. 202 means durably accepted and
 pending; 200 means terminal, including failed/cancelled outcomes. Wait timeouts
 and disconnected HTTP/SSE clients leave accepted work running. Same key and same
 payload return the original run/frozen authority, including after grant changes.
-Different content, topic, profile or image conflicts with 409. Image references
+Different content, topic, profile or attachments conflict with 409. Image references
 require a configured image route and either a live draft upload or an authorized
 PNG from the same topic. Admission moves a draft into durable artifact evidence.
 The original admission key and upload ID still return the same run after the
 draft is removed or expires. For a new admission, missing, expired or off-topic
 upload IDs return 404. Queue checks, archival, ephemeral lifetime, current
 revocations and cancellation remain shared services. See [image inputs](../image-workflows.md).
+
+Document uploads accept UTF-8 text and convert PDF, DOCX, and PPTX only when the
+configured oMLX API advertises `MarkItDown` in `/models`. Authenticated
+`/health` reports that capability as `document_conversion`. Document uploads
+expire after 30 minutes. Admission allows 24 KiB of combined document text and
+links it as `documents` on the user message. Each entry contains its original
+filename and an artifact reference for the exact UTF-8 text. Upload IDs follow
+the same topic scope and admission idempotency rules as image uploads.
+
 Session/job creation and edits do not promise admission-key idempotency. Manual
 job retry returns its original occurrence even after a definition edit.
 

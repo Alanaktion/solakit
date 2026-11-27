@@ -23,7 +23,8 @@ from solakit.config import EffectiveProfile, OperatorConfig, VisionSettings
 from solakit.engine.compaction import Compactor, select
 from solakit.records import Artifact, Message, Run, new_id
 from solakit.runtime import ApplicationContext
-from solakit.tools.images import UPLOAD_BYTES, UPLOAD_TTL, normalize_upload
+from solakit.storage.uploads import UPLOAD_TTL
+from solakit.tools.images import UPLOAD_BYTES, normalize_upload
 
 PIN = "fixture-vision"
 OBSERVATION = "Visible text reads ORBIT-8392."

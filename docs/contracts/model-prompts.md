@@ -47,7 +47,7 @@ produce no replacement personality or policy prose.
 | 5 | original user/assistant roles | Explicit selected history, supplied order |
 | 6 | user, `name=recorded_recall` | Optional frozen/recorded recall, verbatim |
 | 7 | system | Separate JSON metadata: UTC time, origin, session mode, profile |
-| 8 | user | Current input, verbatim, with no harness prefix or suffix |
+| 8 | user | Current input, verbatim unless it carries document attachments |
 
 Selected message IDs cover summary, history and input in that order. Selections
 must be distinct and belong to one session. The assembler never performs retrieval,
@@ -55,6 +55,15 @@ reads a clock, silently trims context, or searches another session. Isolated and
 ephemeral prompts reject supplied recall; ephemeral prompts also reject continuing
 history/summary. Current history accepts text user/assistant messages; provider
 tool IDs and complete tool conversation projection arrive in Phase 6.
+
+For user messages with document attachments, the content is a JSON object
+containing the original `message` and an ordered list of
+`untrusted_document_attachments` with `filename` and `text`. The assembler
+verifies the text artifacts and includes their contents in context accounting.
+Retained history, compaction and failed-reply retries use the same text.
+For PDF, DOCX, and PPTX, the configured oMLX API performs conversion at upload
+time via its advertised MarkItDown endpoint. Conversation requests use the
+pinned model and the saved conversion.
 
 Eager function schemas are sorted by function name, with duplicate names rejected,
 and live in the request `tools` field. `eager-v1` is the disclosure view; no deferred

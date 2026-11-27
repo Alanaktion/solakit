@@ -8,7 +8,14 @@ from typing import TYPE_CHECKING
 from pydantic import JsonValue
 
 from solakit.config import EffectiveProfile
-from solakit.engine.prompts import ContextLimit, PreparedPrompt, PromptInput, PromptTurn, assemble
+from solakit.engine.prompts import (
+    ContextLimit,
+    PreparedPrompt,
+    PromptInput,
+    PromptTurn,
+    assemble,
+    document_content,
+)
 from solakit.records import (
     RUN_TRANSITIONS,
     Artifact,
@@ -487,7 +494,8 @@ class Compactor:
             "previous_summary": selection.summary.content if selection.summary else None,
             "previous_boundary_id": selection.boundary.id if selection.boundary else None,
             "turns": [
-                turn.model_dump(mode="json")
+                turn.model_dump(mode="json", exclude={"documents"})
+                | {"content": document_content(profile.data_dir, turn.content, turn.documents)}
                 for r in eligible
                 for turn in project_run(self.store, r.id, profile.budgets.tool_result_bytes)
             ],

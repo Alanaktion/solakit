@@ -538,6 +538,34 @@ details[data-tone='warn'] > summary,
 .message-attachment {
   flex-wrap: wrap;
 }
+.document-attachment {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  overflow-wrap: anywhere;
+}
+.document-attachment button {
+  margin-left: auto;
+}
+#drop-files:not([hidden]) {
+  position: absolute;
+  z-index: 2;
+  inset: 8px;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  border: 2px dashed var(--accent);
+  border-radius: var(--radius);
+  background: var(--backdrop);
+}
+#drop-files span {
+  padding: 8px 16px;
+  border-radius: var(--radius);
+  color: var(--ink);
+  background: var(--paper);
+  font-weight: 600;
+}
 #draft {
   border: 0;
   padding: 8px;

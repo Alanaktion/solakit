@@ -34,6 +34,11 @@ def _utc(value: datetime) -> datetime:
 RecordID = Annotated[str, Field(pattern=r"^[0-9a-f]{32}$")]
 Timestamp = Annotated[datetime, AfterValidator(_utc)]
 ProviderID = Annotated[str, Field(min_length=1, max_length=256)]
+DocumentName = Annotated[
+    str, Field(min_length=1, max_length=255, pattern=r"^[^/\\\x00-\x1f\x7f]+$")
+]
+MAX_DOCUMENTS = 4
+DOCUMENT_TEXT_BYTES = 24 * 1024
 
 
 def _version(value: object) -> object:
@@ -124,6 +129,12 @@ class Artifact(Value):
     )
 
 
+class Document(Artifact):
+    name: DocumentName
+    length: Annotated[int, Field(gt=0, le=DOCUMENT_TEXT_BYTES)]
+    media_type: Literal["text/plain"] = "text/plain"
+
+
 class Message(Record):
     session_id: RecordID
     run_id: RecordID
@@ -132,11 +143,19 @@ class Message(Record):
     tool_call_id: RecordID | None = None
     image: Artifact | None = None
     image_route: Literal["vision"] | None = None
+    documents: tuple[Document, ...] = Field(
+        default=(), max_length=MAX_DOCUMENTS, exclude_if=lambda value: not value
+    )
 
     @model_validator(mode="after")
     def tool_link(self) -> Self:
         if (self.role == "tool") != (self.tool_call_id is not None):
             raise ValueError("tool messages require a tool_call_id; other roles cannot carry one")
+        if self.documents and (
+            self.role != "user"
+            or sum(document.length for document in self.documents) > DOCUMENT_TEXT_BYTES
+        ):
+            raise ValueError("documents require a user message and must fit the text budget")
         return self
 
 

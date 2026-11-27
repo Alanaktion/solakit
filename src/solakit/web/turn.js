@@ -78,6 +78,13 @@ class SolaTurn extends SolaElement {
           <div>
             ${markdown(m.content || (row.truncated ? 'Large message — inspect evidence.' : ''))}
             ${m.image ? html`<sola-artifact .runId=${m.run_id} .reference=${m.image} .thumbnail=${true}></sola-artifact>` : nothing}
+            ${m.documents?.map((file) => html`<div class="document-attachment">
+              <sola-icon name="FileText"></sola-icon>
+              <a href=${`/api/v1/runs/${m.run_id}/${file.path}`}
+                download=${`${file.name}.txt`} aria-label=${`Download text from ${file.name}`}>
+                ${file.name}
+              </a>
+            </div>`)}
           </div>
         `,
         message

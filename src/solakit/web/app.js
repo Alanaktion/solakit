@@ -22,7 +22,9 @@ export class SolaApp extends SolaElement {
       submit,
       draftKeydown,
       saveDraft,
-      pickImage,
+      pickFiles,
+      dragFiles,
+      dropFiles,
       login,
       saveTopic,
       exportTopic,
@@ -70,7 +72,7 @@ export class SolaApp extends SolaElement {
           </button>
         </div>
       </aside>
-      <main>
+      <main @dragenter=${dragFiles} @dragover=${dragFiles} @dragleave=${dragFiles} @drop=${dropFiles}>
         <header class="topbar">
           <div>
             <h1 id="topic-title">Conversation</h1>
@@ -112,7 +114,8 @@ export class SolaApp extends SolaElement {
         <div id="outbox" role="group" aria-label="Submissions awaiting confirmation"></div>
         <form @submit=${submit} id="composer">
           <div id="draft-image"></div>
-          <input id="image-file" type="file" accept="image/png,image/jpeg,image/webp" @change=${pickImage} hidden />
+          <div id="draft-documents"></div>
+          <input id="attachment-files" type="file" multiple @change=${pickFiles} hidden />
           <label class="sr-only" for="draft">Message ${agentName}</label>
           <textarea
             @keydown=${draftKeydown}
@@ -125,9 +128,9 @@ export class SolaApp extends SolaElement {
             required
           ></textarea>
           <div class="composer-actions">
-            <button id="attach-image" type="button" hidden
-              @click=${() => $('image-file').click()}>
-              <sola-icon name="Paperclip"></sola-icon> Attach image
+            <button id="attach-files" type="button" disabled
+              @click=${() => $('attachment-files').click()}>
+              <sola-icon name="Paperclip"></sola-icon> Attach files
             </button>
             <span id="compose-hint" role="status"
               >Enter to send · Shift + Enter for a new line</span
@@ -143,6 +146,7 @@ export class SolaApp extends SolaElement {
             </button>
           </div>
         </form>
+        <div id="drop-files" aria-hidden="true" hidden><span>Drop files to attach</span></div>
       </main>
       <dialog
         @cancel=${(event) => event.preventDefault()}

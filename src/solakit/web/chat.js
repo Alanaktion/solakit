@@ -32,8 +32,11 @@ let messagesDone = false,
 let editingTopic = false;
 let importBatch = [];
 let draftImage = null;
-let imageInputs = false,
-  imageUpload = null;
+let draftDocuments = [];
+let imageInputs = false, documentConversion = false, attachmentUpload = null, dragDepth = 0;
+const imageTypes = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp' };
+const documentTypes = ['.pdf', '.docx', '.pptx'];
+const textTypes = 'text/*,.md,.markdown,.txt,.csv,.tsv,.json,.jsonl,.yaml,.yml,.toml,.xml,.log';
 let refreshChain = Promise.resolve(),
   cursor = null;
 const pendingRuns = new Set();
@@ -51,6 +54,9 @@ const { loadProfiles, openSettings } = settings;
 
 function requireLogin() {
   loggedIn = false;
+  attachmentUpload = null;
+  resetFileDrop();
+  updateComposer();
   stopTransport();
   if (!$('login-dialog').open) {
     $('login-dialog').showModal();
@@ -454,20 +460,32 @@ function saveDraft() {
     write(`sola.draft.${selected}`, {
       content: $('draft').value,
       profile: $('profile').value,
-      image: draftImage
+      image: draftImage,
+      documents: draftDocuments
     });
   updateComposer();
 }
 function updateComposer() {
-  const uploading = imageUpload?.generation === generation;
+  const uploading = attachmentUpload?.generation === generation;
   const imageUrl = draftImage?.upload_id
     ? `/api/v1/sessions/${selected}/image-uploads/${draftImage.upload_id}`
     : draftImage && `/api/v1/runs/${draftImage.run_id}/artifacts/${draftImage.artifact_id}?preview=true`;
-  renderTemplate(uploading ? html`<span role="status">Preparing image…</span>`
-    : imageUrl ? html`<img class="image-thumbnail" src=${imageUrl} alt="Attached image">
+  renderTemplate(imageUrl ? html`<img class="image-thumbnail" src=${imageUrl} alt="Attached image">
       <button type="button" @click=${() => { draftImage = null; saveDraft(); }}>
         <sola-icon name="X"></sola-icon> Remove image
       </button>` : nothing, $('draft-image'));
+  renderTemplate(html`
+    ${draftDocuments.map((file) => html`<div class="document-attachment">
+      <sola-icon name="FileText"></sola-icon>
+      <span>${file.name}</span>
+      <button type="button" aria-label=${`Remove ${file.name}`}
+        @click=${() => {
+          draftDocuments = draftDocuments.filter((item) => item !== file);
+          saveDraft();
+        }}><sola-icon name="X"></sola-icon></button>
+    </div>`)}
+    ${uploading ? html`<span role="status">Preparing attachments…</span>` : nothing}
+  `, $('draft-documents'));
   const topic = topics.get(selected);
   for (const turn of turns.values())
     turn.retryable = !topic?.archived && !!turn.run && turn.run.id === retryable;
@@ -476,9 +494,14 @@ function updateComposer() {
     topic?.mode === 'ephemeral' &&
     (runs.size > 0 || outbox.some((item) => item.session_id === selected));
   $('draft').disabled = !topic || delegated;
-  $('attach-image').hidden = !imageInputs;
-  $('attach-image').disabled = !topic || delegated || topic.archived || used || uploading;
-  $('send').disabled = !topic || delegated || topic.archived || used || uploading || !$('draft').value.trim();
+  const unavailable = !loggedIn || !topic || delegated || topic.archived || used || uploading;
+  $('attach-files').disabled = unavailable;
+  $('attachment-files').accept = [
+    textTypes,
+    ...(imageInputs ? [...new Set(Object.values(imageTypes))] : []),
+    ...(documentConversion ? documentTypes : [])
+  ].join(',');
+  $('send').disabled = unavailable || !$('draft').value.trim();
   $('compose-hint').classList.toggle('explanation', !!(delegated || topic?.archived || used));
   text(
     $('compose-hint'),
@@ -488,26 +511,94 @@ function updateComposer() {
       ? 'Restore this topic in Topic details to send a message.'
       : used
         ? 'This topic allows one run. Start a new topic to continue.'
-        : 'Enter to send · Shift + Enter for a new line'
+        : 'Drop files here or use Attach files · Enter to send'
   );
 }
-async function pickImage(event) {
+function pickFiles(event) {
   const input = event.target;
-  const file = input.files[0];
+  const files = Array.from(input.files);
   input.value = '';
-  if (!file || $('attach-image').disabled) return;
+  return attachFiles(files);
+}
+const isFileDrag = (event) => event.dataTransfer?.types.includes('Files');
+
+function resetFileDrop() {
+  dragDepth = 0;
+  $('drop-files').hidden = true;
+}
+
+function dragFiles(event) {
+  if (event.type === 'dragleave') {
+    dragDepth = Math.max(0, dragDepth - 1);
+    if (!dragDepth) resetFileDrop();
+    return;
+  }
+  if (!isFileDrag(event)) return;
+  event.preventDefault();
+  const enabled = !$('attach-files').disabled;
+  if (event.type === 'dragenter') dragDepth++;
+  event.dataTransfer.dropEffect = enabled ? 'copy' : 'none';
+  $('drop-files').hidden = !enabled;
+}
+
+function dropFiles(event) {
+  resetFileDrop();
+  if (!isFileDrag(event)) return;
+  event.preventDefault();
+  return attachFiles(Array.from(event.dataTransfer.files));
+}
+
+async function attachFiles(files) {
+  if (!files.length || $('attach-files').disabled) return;
   const pending = { generation };
-  imageUpload = pending;
+  attachmentUpload = pending;
   updateComposer();
+  const current = () => attachmentUpload === pending && generation === pending.generation;
+  const path = `/sessions/${selected}`;
+  const errors = [];
+  let attachedImage = false;
   try {
-    const result = await api(`/sessions/${selected}/image-uploads`, { method: 'POST', body: file });
-    if (imageUpload !== pending || generation !== pending.generation) return;
-    draftImage = result;
-    saveDraft();
-    $('draft').focus();
+    for (const file of files) {
+      if (!current()) return;
+      const extension = file.name.split('.').pop().toLowerCase();
+      const imageType = Object.hasOwn(imageTypes, extension) ? imageTypes[extension] : file.type;
+      try {
+        if (imageType.startsWith('image/')) {
+          if (!imageInputs) throw new Error('Image inputs are disabled for this model.');
+          if (!Object.values(imageTypes).includes(imageType))
+            throw new Error('Choose a PNG, JPEG, or WebP image.');
+          if (attachedImage) throw new Error('Attach one image per message.');
+          const result = await api(`${path}/image-uploads`, {
+            method: 'POST', body: file.slice(0, file.size, imageType)
+          });
+          if (!current()) return;
+          draftImage = result;
+          attachedImage = true;
+        } else {
+          if (!documentConversion && documentTypes.includes(`.${extension}`))
+            throw new Error('Document conversion is disabled on the model API.');
+          if (draftDocuments.length >= 4) throw new Error('Attach up to four documents.');
+          const query = new URLSearchParams({ filename: file.name });
+          const result = await api(`${path}/document-uploads?${query}`, {
+            method: 'POST', body: file.slice(0, file.size, 'application/octet-stream')
+          });
+          if (!current()) return;
+          const size = draftDocuments.reduce((bytes, item) => bytes + item.text_bytes, 0);
+          if (size + result.text_bytes > 24 * 1024)
+            throw new Error('Attached document text must fit within 24 KiB per message.');
+          draftDocuments = [...draftDocuments, { ...result, name: file.name }];
+        }
+        saveDraft();
+      } catch (error) {
+        errors.push(`${file.name}: ${error.message}`);
+      }
+    }
+    if (!current()) return;
+    if (errors.length) showError(new Error(errors.join('\n')));
+    else $('draft').focus({ preventScroll: true });
   } finally {
-    if (imageUpload === pending) {
-      imageUpload = null;
+    if (attachmentUpload === pending) {
+      attachmentUpload = null;
       updateComposer();
     }
   }
@@ -545,6 +636,7 @@ async function selectTopic(id) {
     history.replaceState(null, '', url);
   }
   generation++;
+  resetFileDrop();
   const token = generation;
   selected = id;
   cursor = null;
@@ -568,6 +660,7 @@ async function selectTopic(id) {
   $('draft').value = draft.content || '';
   $('profile').value = draft.profile || '';
   draftImage = draft.image || null;
+  draftDocuments = draft.documents || [];
   setTopicHeading();
   renderTopics();
   renderOutbox();
@@ -700,6 +793,7 @@ async function deliver(item) {
         session_id: item.session_id,
         content: item.content,
         ...(item.image ? { image: item.image } : {}),
+        ...(item.documents?.length ? { document_upload_ids: item.documents } : {}),
         ...(item.profile ? { profile: item.profile } : {})
       }
     });
@@ -732,12 +826,14 @@ async function submit(event) {
     profile: $('profile').value,
     content: $('draft').value,
     image: draftImage,
+    documents: draftDocuments.map((file) => file.upload_id),
     sending: false
   };
   outbox.push(item);
   write('sola.outbox', outbox);
   $('draft').value = '';
   draftImage = null;
+  draftDocuments = [];
   saveDraft();
   $('draft').focus();
   await deliver(item);
@@ -748,6 +844,7 @@ async function boot() {
   $('notice').hidden = true;
   await Promise.all([loadTopics(), loadProfiles(), api('/health').then((health) => {
     imageInputs = health.image_inputs;
+    documentConversion = health.document_conversion;
     updateComposer();
   })]);
   const linked = new URLSearchParams(window.location.search).get('session');
@@ -971,6 +1068,9 @@ function initialize() {
     startPolling();
   });
   window.addEventListener('pagehide', saveDraft);
+  for (const type of ['dragover', 'drop']) window.addEventListener(type, (event) => {
+    if (isFileDrag(event)) event.preventDefault();
+  });
   // Images, disclosures and composer resizes change height outside render(); stay pinned.
   const pin = new ResizeObserver(() => {
     if (following) $('history').scrollTop = $('history').scrollHeight;
@@ -992,7 +1092,7 @@ async function logout() {
 document.addEventListener('sola-auth-required', requireLogin);
 document.addEventListener('sola-image-selected', (event) => {
   if (!selected || topics.get(selected)?.archived) return;
-  imageUpload = null;
+  if ($('attach-files').disabled) return;
   draftImage = event.detail;
   saveDraft();
   if ($('evidence').open) $('evidence').close();
@@ -1015,7 +1115,9 @@ document.querySelector('sola-app').actions = {
   submit,
   draftKeydown,
   saveDraft,
-  pickImage: action(pickImage),
+  pickFiles: action(pickFiles),
+  dragFiles,
+  dropFiles: action(dropFiles),
   login,
   saveTopic,
   exportTopic,

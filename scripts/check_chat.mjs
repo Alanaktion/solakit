@@ -1537,6 +1537,53 @@ try {
     assert(await page.locator('#send').isDisabled());
     assert.equal(await page.locator('.message.user').count(), 1);
   });
+  await check('picker and conversation drop stage documents and an image in the same draft', async () => {
+    await page.locator('#new-topic').click();
+    await page.locator('#topic-name').fill('Attachment verification');
+    await page.locator('#mode').selectOption('shared');
+    await page.locator('#topic-form button.primary').click();
+    await page.locator('#topic-dialog').waitFor({ state: 'hidden' });
+    const picker = page.locator('#attachment-files');
+    assert(!(await picker.getAttribute('accept')).includes('.pdf'));
+    await picker.setInputFiles([
+      { name: 'notes.md', mimeType: '', buffer: Buffer.from('# Notes\nMoss green') },
+      { name: 'remove.txt', mimeType: 'text/plain', buffer: Buffer.from('Remove me') }
+    ]);
+    await page.getByRole('button', { name: 'Remove remove.txt', exact: true }).click();
+    const transfer = await page.evaluateHandle(() => {
+      const data = new DataTransfer();
+      data.items.add(new File(['status,ready'], 'records.csv', { type: 'text/csv' }));
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = 64;
+      const png = atob(canvas.toDataURL().split(',')[1]);
+      data.items.add(new File([Uint8Array.from(png, (byte) => byte.charCodeAt(0))], 'pixels.png', { type: 'image/png' }));
+      return data;
+    });
+    const history = page.locator('#history');
+    await history.dispatchEvent('dragenter', { dataTransfer: transfer });
+    await page.locator('#drop-files').waitFor({ state: 'visible' });
+    await page.screenshot({ path: path.join(options.output, 'drop-files.png') });
+    await history.dispatchEvent('drop', { dataTransfer: transfer });
+    await page.locator('#drop-files').waitFor({ state: 'hidden' });
+    await page.getByRole('button', { name: 'Remove records.csv', exact: true }).waitFor();
+    await page.locator('#draft-image img').waitFor();
+    await page.locator('#draft').fill('Read the attached files.');
+    await page.reload();
+    await waitFor(() => document.querySelector('#connection').textContent === 'Connected');
+    assert.equal(await page.locator('#draft').inputValue(), 'Read the attached files.');
+    await page.locator('#draft-image img').waitFor();
+    assert.equal(await page.locator('#draft-documents .document-attachment').count(), 2);
+    await audit('document and image draft');
+    await page.screenshot({ path: path.join(options.output, 'attachment-draft.png') });
+    await page.locator('#send').click();
+    await page.locator('.run-bar').filter({ hasText: 'completed' }).waitFor({ timeout: 30000 });
+    await page.locator('.message.user .message-attachment img').waitFor();
+    const downloaded = page.waitForEvent('download');
+    await page.getByRole('link', { name: 'Download text from notes.md', exact: true }).click();
+    const file = await downloaded;
+    assert.equal(await fs.readFile(await file.path(), 'utf8'), '# Notes\nMoss green');
+    await page.screenshot({ path: path.join(options.output, 'attachment-sent.png') });
+  });
   if (fixture.image_topic) await check('authorized PNG preview, download and image attachment survive reload', async () => {
     await page.locator('#topic-' + fixture.image_topic).click();
     const thumbnail = page.locator('.message-attachment img').first();

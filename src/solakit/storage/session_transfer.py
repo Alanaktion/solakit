@@ -135,6 +135,8 @@ def _references(record: Record) -> Iterator[Artifact]:
     for field in type(record).model_fields:
         if isinstance(value := getattr(record, field), Artifact):
             yield value
+    if isinstance(record, Message):
+        yield from record.documents
 
 
 def _scoped_rows(store: Store, root: str) -> tuple[list[EvidenceRow], list[EvidenceRow]]:
@@ -737,6 +739,11 @@ def _project(row: EvidenceRow, remap: dict[str, str]) -> Entry:
         if isinstance(reference := getattr(record, field), Artifact):
             identity = _asset_id(reference.sha256, reference.media_type)
             projected[field]["path"] = f"artifacts/{identity}"
+    if isinstance(record, Message):
+        for document, reference in zip(
+            projected.get("documents", []), record.documents, strict=True
+        ):
+            document["path"] = f"artifacts/{_asset_id(reference.sha256, reference.media_type)}"
     identity = new_id()
     event = None
     if entry.event is not None:

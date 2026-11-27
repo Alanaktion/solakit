@@ -14,6 +14,8 @@ One operator uses the runtime on this Apple Silicon Mac through a web UI and HTT
 - Shared memory, isolated sessions without OpenViking access, and ephemeral runs with no continuing context but retained execution evidence.
 - Basic file listing, reading, searching, and guarded writes in granted workspace roots. Transcript search, status, and scoped memory operations support the harness.
 - Image generation through explicitly configured existing workflow resources, with artifact references and submission receipts. Image attachments are in scope; actual pinned-model support is a Phase 4 gate, with an explicit unsupported response if unavailable rather than a model substitution.
+- Attach UTF-8 documents in chat. The configured oMLX API can also convert PDF,
+  DOCX, and PPTX when it advertises MarkItDown.
 - Operator-enabled scheduled work and proactive wake-ups, using the same run loop, grants, budgets, and evidence as interactive work.
 - Preservation of existing history, identity/config fragments, operational data, and legacy effect receipts, including data belonging to integrations deferred from v1.
 

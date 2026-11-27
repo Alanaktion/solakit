@@ -30,7 +30,9 @@ from solakit.config import (
 )
 from solakit.engine.run_loop import QueueFull
 from solakit.records import (
+    MAX_DOCUMENTS,
     RUN_TRANSITIONS,
+    DocumentName,
     Job,
     MemoryCommit,
     Occurrence,
@@ -58,9 +60,10 @@ Limit = Annotated[int, Query(ge=1, le=100)]
 After = Annotated[int, Query(ge=0)]
 SEND_TIMEOUT_SECONDS = 30
 IMAGE_UPLOAD_PATH = "/api/v1/sessions/{session_id}/image-uploads"
+DOCUMENT_UPLOAD_PATH = "/api/v1/sessions/{session_id}/document-uploads"
 SESSION_IMPORT_PATH = "/api/v1/sessions/import"
 SESSION_EXPORT_PATH = "/api/v1/sessions/{session_id}/export"
-UPLOAD_ROUTE = re.compile(r"/api/v1/sessions/[0-9a-f]{32}/image-uploads")
+UPLOAD_ROUTE = re.compile(r"/api/v1/sessions/[0-9a-f]{32}/(?:image|document)-uploads")
 
 WEB_DIR = FilePath(__file__).resolve().parents[1] / "web"
 WEB_ASSETS = (
@@ -276,11 +279,16 @@ class UploadReference(Input):
     upload_id: RecordID
 
 
+class DocumentUploadReference(UploadReference):
+    text_bytes: int
+
+
 class Submission(Input):
     session_id: RecordID
     profile: str | None = Field(default=None, min_length=1, max_length=128)
     content: str = Field(min_length=1, max_length=32768)
     image: ImageReference | UploadReference | None = None
+    document_upload_ids: list[RecordID] = Field(default_factory=list, max_length=MAX_DOCUMENTS)
 
 
 class JobPatch(Input):
@@ -473,6 +481,7 @@ def create_app(
             "memory": memory.status(),
             "scheduler_failed": jobs.failure is not None,
             "image_inputs": bool(context.profile.model_image_inputs or context.profile.vision),
+            "document_conversion": await service.model.document_inputs(),
         }
 
     @app.post("/api/v1/auth/login")
@@ -689,6 +698,26 @@ def create_app(
     async def staged_image(session_id: ID, upload_id: ID) -> Response:
         return Response(service.read_upload(session_id, upload_id), media_type="image/png")
 
+    @app.post(
+        DOCUMENT_UPLOAD_PATH,
+        status_code=201,
+        openapi_extra={
+            "requestBody": {
+                "required": True,
+                "content": {
+                    "application/octet-stream": {"schema": {"type": "string", "format": "binary"}}
+                },
+            }
+        },
+    )
+    async def upload_document(
+        session_id: ID, filename: Annotated[DocumentName, Query()], request: Request
+    ) -> DocumentUploadReference:
+        if request.headers.get("content-type", "").strip().lower() != "application/octet-stream":
+            raise RequestError(415, "unsupported_media_type", "Send one binary file")
+        identity, size = await service.upload_document(session_id, await request.body(), filename)
+        return DocumentUploadReference(upload_id=identity, text_bytes=size)
+
     @app.post("/api/v1/runs")
     async def submit(
         body: Submission, request: Request, wait: Annotated[float, Query(ge=0, le=30)] = 0
@@ -703,6 +732,7 @@ def create_app(
             if isinstance(body.image, ImageReference)
             else None,
             upload_id=body.image.upload_id if isinstance(body.image, UploadReference) else None,
+            document_ids=tuple(body.document_upload_ids),
         )
         return JSONResponse(
             {"run": run.model_dump(mode="json")},
@@ -901,7 +931,10 @@ def create_app(
                         ]
                     )
                 errors: tuple[int, ...] = (400, 401, 403, 404, 409, 413, 416, 422, 429, 503)
-                if path in (IMAGE_UPLOAD_PATH, SESSION_IMPORT_PATH) and method == "post":
+                if (
+                    path in (IMAGE_UPLOAD_PATH, DOCUMENT_UPLOAD_PATH, SESSION_IMPORT_PATH)
+                    and method == "post"
+                ):
                     errors += (415,)
                 for code in errors:
                     operation["responses"][str(code)] = {

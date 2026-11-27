@@ -1,17 +1,22 @@
 """Bounded operator views over the same headless services used by tools and jobs."""
 
 import asyncio
+import re
 from collections.abc import AsyncGenerator
+from pathlib import PurePath
 from typing import Any
 
 from pydantic import JsonValue
 
+from solakit.adapters.model import DOCUMENT_EXTENSIONS, ModelError
 from solakit.api.auth import AuthService, Login, RequestError
 from solakit.config import EffectiveProfile
 from solakit.engine.prompts import PromptInput, assemble, inspect_prompt
 from solakit.records import (
+    DOCUMENT_TEXT_BYTES,
     Artifact,
     CompactionBoundary,
+    ErrorCode,
     Message,
     ModelRequest,
     Origin,
@@ -46,6 +51,8 @@ def record_view(sequence: int, record: Record) -> dict[str, Any]:
         }
         if isinstance(record, Message):
             body.update(role=record.role, tool_call_id=record.tool_call_id)
+            if record.documents:
+                body["documents"] = [doc.model_dump(mode="json") for doc in record.documents]
         if isinstance(record, CompactionBoundary):
             body["summary_message_id"] = record.summary_message_id
         if isinstance(record, ToolCall):
@@ -116,6 +123,7 @@ class ClientService:
         wait: float,
         image: tuple[str, str] | None = None,
         upload_id: str | None = None,
+        document_ids: tuple[str, ...] = (),
     ) -> Run:
         name = self.context.profile.name if name is None else name
         if not content.strip() or len(content.encode()) > 32768:
@@ -143,6 +151,15 @@ class ClientService:
             _, reference = self.artifact(source_run, identity, 0, 1)
             if reference.media_type != "image/png" or reference.length > MAX_IMAGE_BYTES:
                 raise RequestError(422, "invalid_image", "Attach a bounded PNG image")
+        if len(set(document_ids)) != len(document_ids):
+            raise RequestError(422, "invalid_document", "Select each document only once")
+        documents = (
+            tuple(self.read_document(session_id, identity) for identity in document_ids)
+            if existing is None
+            else ()
+        )
+        if sum(len(raw) for _, raw in documents) > DOCUMENT_TEXT_BYTES:
+            raise RequestError(422, "invalid_document", "Document text exceeds 24 KiB per message")
         run = self.runs.submit(
             session_id,
             profile=profile,
@@ -154,6 +171,8 @@ class ClientService:
             upload=self.read_upload(session_id, upload_id)
             if upload_id is not None and existing is None
             else None,
+            document_ids=document_ids,
+            documents=documents,
         )
         if wait:
             try:
@@ -184,6 +203,57 @@ class ClientService:
             raise RequestError(
                 404, "image_upload_missing", "Image upload expired or unavailable"
             ) from None
+
+    async def upload_document(self, session_id: str, raw: bytes, filename: str) -> tuple[str, int]:
+        topic = self.store.session(session_id)
+        if topic.archived or topic.parent_session_id is not None:
+            raise RequestError(409, "conflict", "This topic cannot accept documents")
+        if not filename.strip() or not raw:
+            raise RequestError(422, "invalid_document", "Choose a nonempty file with a name")
+        if PurePath(filename).suffix.lower() in DOCUMENT_EXTENSIONS:
+            try:
+                content = await self.model.convert_document(filename, raw)
+            except ModelError as error:
+                code = error.code
+                status = (
+                    415
+                    if code == ErrorCode.CONFIGURATION
+                    else 503
+                    if code == ErrorCode.MODEL_UNAVAILABLE
+                    else 422
+                )
+                raise RequestError(status, "invalid_document", str(error)) from None
+            if self.store.session(session_id).archived:
+                raise RequestError(409, "conflict", "Archived topics cannot accept documents")
+        else:
+            try:
+                content = raw.decode("utf-8-sig")
+            except UnicodeDecodeError:
+                raise RequestError(
+                    422, "invalid_document", "Choose a UTF-8 text file or a supported document"
+                ) from None
+        if not content.strip() or re.search(r"[\x00-\x08\x0b\x0e-\x1f\x7f-\x9f]", content):
+            raise RequestError(422, "invalid_document", "The document has no readable text")
+        data = content.encode()
+        if len(data) > DOCUMENT_TEXT_BYTES:
+            raise RequestError(422, "invalid_document", "Document text exceeds 24 KiB")
+        try:
+            identity = self.runs.document_uploads.stage(
+                session_id, filename.encode() + b"\n" + data
+            )
+        except OverflowError as error:
+            raise RequestError(429, "upload_storage_full", str(error)) from None
+        return identity, len(data)
+
+    def read_document(self, session_id: str, identity: str) -> tuple[str, bytes]:
+        try:
+            raw = self.runs.document_uploads.read(session_id, identity)
+        except KeyError:
+            raise RequestError(
+                404, "document_upload_missing", "Document upload expired or unavailable"
+            ) from None
+        name, _, text = raw.partition(b"\n")
+        return name.decode(), text
 
     def job_page(
         self, after: tuple[str, str] | None, limit: int, job_id: str | None = None
@@ -308,19 +378,22 @@ class ClientService:
             "SELECT kind,id FROM entities WHERE run_id=? AND ("
             "json_extract(body,'$.body.path')=? OR json_extract(body,'$.manifest.path')=? OR "
             "json_extract(body,'$.response.path')=? OR json_extract(body,'$.artifact.path')=? OR "
-            "json_extract(body,'$.image.path')=?) "
+            "json_extract(body,'$.image.path')=? OR EXISTS ("
+            "SELECT 1 FROM json_each(body,'$.documents') WHERE json_extract(value,'$.path')=?)) "
             "LIMIT 1",
-            (run_id, *([f"artifacts/{identity}"] * 5)),
+            (run_id, *([f"artifacts/{identity}"] * 6)),
         ).fetchone()
         if row is None:
             raise KeyError(identity)
         record = self.store._load(row[0], row[1], RECORDS[row[0]])
-        artifact = next(
+        artifacts = [
             value
             for name in type(record).model_fields
             if isinstance(value := getattr(record, name), Artifact)
-            and value.path == f"artifacts/{identity}"
-        )
+        ]
+        if isinstance(record, Message):
+            artifacts.extend(record.documents)
+        artifact = next(value for value in artifacts if value.path == f"artifacts/{identity}")
         if preview:
             if artifact.media_type != "image/png" or artifact.length > MAX_IMAGE_BYTES:
                 raise RequestError(422, "invalid_image", "Preview requires a bounded PNG image")

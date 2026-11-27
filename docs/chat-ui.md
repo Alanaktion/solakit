@@ -35,16 +35,26 @@ profile and selected navigation in browser session storage, across reloads in
 that tab. Closing the tab clears these drafts. No credentials enter browser
 storage; sign-in uses the existing HttpOnly session cookie and CSRF protocol.
 
-When an image route is configured, **Attach image** accepts one static PNG, JPEG,
-or WebP.
-The draft shows the thumbnail and **Remove image** alongside the question.
+Use **Attach files** or drop files anywhere in the conversation. The draft shows
+each attachment so you can remove it before sending. Attach up to four UTF-8
+documents, such as Markdown, text, CSV, or JSON, with up to 24 KiB of combined
+text. Sent messages link to the text Sola received.
+
+PDF, DOCX, and PPTX are available when the configured oMLX API advertises
+**MarkItDown**. In oMLX Integration Settings, turn on **Enable MarkItDown** and
+**Show as model**, then reload Sola. oMLX converts those files to Markdown, which
+Solakit keeps with the conversation. Scanned PDFs depend on the PDF processing
+engine configured in oMLX.
+
+When an image route is configured, you can also attach one static PNG, JPEG, or
+WebP. The draft shows a thumbnail and **Remove image**.
 **Use image in next message** adds an image already in the topic. On the separate
 vision route the run shows **Analyzing image…** while the vision model works.
 Later questions can use the saved observation. Attach the image again when Sola
 needs to look at the pixels. See [image workflows](image-workflows.md).
 
 A lost submission receipt stays in the outbox. **Retry same submission** reuses
-its original content, topic, profile, attachment and admission key. A new draft gets a new
+its original content, topic, profile, attachments and admission key. A new draft gets a new
 key. Reconnect can also discover the original admission and remove the outbox
 entry. A disconnection does not cancel accepted work. Avoid creating a fresh
 copy of an uncertain submission if it could repeat a consequential action.

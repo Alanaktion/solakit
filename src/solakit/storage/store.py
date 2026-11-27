@@ -14,6 +14,7 @@ from solakit.records import (
     Delegation,
     Delivery,
     DeliveryState,
+    Document,
     DurableEvent,
     ErrorCode,
     Failure,
@@ -870,6 +871,8 @@ class Store:
         image_source: tuple[str, str] | None = None,
         upload_id: str | None = None,
         upload: bytes | None = None,
+        document_ids: tuple[str, ...] = (),
+        documents: tuple[tuple[str, bytes], ...] = (),
         parent_tool_call_id: str | None = None,
     ) -> Run:
         from solakit.engine.lineage import current_run, deny_autonomous_successor
@@ -925,6 +928,8 @@ class Store:
         ).fetchone()
         if upload_id is not None:
             details["upload_id"] = upload_id
+        if document_ids:
+            details["document_ids"] = document_ids
         if image is not None:
             details["image"] = image.model_dump(mode="json")
         if image_source is not None and (
@@ -988,6 +993,10 @@ class Store:
             image = Artifact.model_validate(
                 self.artifact(upload_id, upload) | {"media_type": "image/png"}
             )
+        references = tuple(
+            Document.model_validate(self.artifact(identity, raw) | {"name": name})
+            for identity, (name, raw) in zip(document_ids, documents, strict=True)
+        )
         message = Message(
             origin=origin,
             session_id=session_id,
@@ -996,6 +1005,7 @@ class Store:
             content=content,
             image=image,
             image_route="vision" if image and admission and admission.get("vision") else None,
+            documents=references,
         )
 
         def prepare() -> None:

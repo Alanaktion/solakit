@@ -1,6 +1,7 @@
 """Pinned oMLX boundary. SDK transport, inert tool calls, no implicit retries."""
 
 import asyncio
+import base64
 import logging
 import os
 from collections.abc import AsyncIterator, Callable
@@ -14,6 +15,7 @@ from solakit.config import EffectiveProfile
 from solakit.engine.events import Previews
 from solakit.engine.prompts import PreparedPrompt, inspect_prompt
 from solakit.records import (
+    DOCUMENT_TEXT_BYTES,
     Artifact,
     ErrorCode,
     Failure,
@@ -31,6 +33,8 @@ from solakit.storage.evidence import canonical, checked_json
 from solakit.storage.store import Store
 
 MAX_RESPONSE_BYTES = 4 * 1024 * 1024
+DOCUMENT_CONVERTER = "MarkItDown"
+DOCUMENT_EXTENSIONS = (".pdf", ".docx", ".pptx")
 VISION_RESPONSE_BYTES = 64 * 1024
 VISION_OBSERVATION_BYTES = 4096
 
@@ -363,6 +367,81 @@ class ModelAdapter:
             "models": models,
             "verified": "API model ID only; weight identity unverified",
         }
+
+    async def document_inputs(self) -> bool:
+        """The advertised virtual endpoint explicitly opts in to oMLX conversion."""
+        try:
+            models = (await self.verify())["models"]["data"]
+        except APIError, TimeoutError, ModelError:
+            return False
+        return any(
+            isinstance(model, dict)
+            and model.get("id") == DOCUMENT_CONVERTER
+            and model.get("owned_by") == "omlx"
+            for model in models
+        )
+
+    async def convert_document(self, filename: str, raw: bytes) -> str:
+        client = self.client
+        if client is None or not await self.document_inputs():
+            raise ModelError(
+                "Document conversion is disabled on the model API", ErrorCode.CONFIGURATION
+            )
+        request = {
+            "model": DOCUMENT_CONVERTER,
+            "stream": False,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "file",
+                            "file": {
+                                "filename": filename,
+                                "file_data": base64.b64encode(raw).decode(),
+                            },
+                        }
+                    ],
+                }
+            ],
+        }
+        body = bytearray()
+        response = None
+        try:
+            async with (
+                asyncio.timeout(self.profile.model_generation_timeout_seconds),
+                self.inference,
+            ):
+                response = await client.post(
+                    "chat/completions", body=request, cast_to=httpx2.Response, stream=True
+                )
+                async for chunk in response.aiter_bytes():
+                    if len(body) + len(chunk) > DOCUMENT_TEXT_BYTES * 6 + 4096:
+                        raise ModelError("Converted document exceeds the attachment limit")
+                    body.extend(chunk)
+        except APIStatusError as error:
+            if error.status_code in (400, 413, 415, 422):
+                raise ModelError("The model API could not read this document") from None
+            raise ModelError(
+                "Document conversion is unavailable", ErrorCode.MODEL_UNAVAILABLE
+            ) from None
+        except APIError, TimeoutError:
+            raise ModelError(
+                "Document conversion is unavailable", ErrorCode.MODEL_UNAVAILABLE
+            ) from None
+        finally:
+            if response is not None:
+                await response.aclose()
+        try:
+            data = checked_json(bytes(body))
+            if not isinstance(data, dict) or data.get("model") != DOCUMENT_CONVERTER:
+                raise ValueError("Unexpected converter response")
+            result = normalize(data, DOCUMENT_CONVERTER)
+            if result["calls"]:
+                raise ValueError("Unexpected converter tool calls")
+            return str(result["content"])
+        except ValueError:
+            raise ModelError("The model API did not return readable document text") from None
 
     async def complete(self, prompt: PreparedPrompt, run: Run, index: int) -> ModelResult:
         inspected = inspect_prompt(prompt)

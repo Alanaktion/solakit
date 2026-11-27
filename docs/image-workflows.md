@@ -101,7 +101,8 @@ hash-verified artifact chunks and assembles at most 16 MiB into a PNG blob; Down
 image saves the complete PNG. Raw model Markdown cannot load remote images or HTML.
 Only these authorized PNG blobs are added to the existing image CSP.
 
-Attach image adds one static PNG, JPEG, or WebP from your device. Use image in next
+**Attach files** or dropping an image into the conversation adds one static PNG,
+JPEG, or WebP from your device. Use image in next
 message attaches a PNG already in the topic, including a generated image. Both
 show a thumbnail and Remove image next to the question. The browser retains
 draft references and retries admission with the same key.
