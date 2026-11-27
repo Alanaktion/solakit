@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Literal, cast
 
 from pydantic import JsonValue, ValidationError
 
-from solakit.config import ConfigError, EffectiveProfile, restrict_to_admission
+from solakit.config import ConfigError, EffectiveProfile, WebFetchSettings, restrict_to_admission
 from solakit.records import (
     Artifact,
     ErrorCode,
@@ -31,6 +31,7 @@ from solakit.storage.store import Store
 from solakit.tools.files import GuardedFiles
 from solakit.tools.mcp import McpCall, McpClient, McpList
 from solakit.tools.registry import Registry
+from solakit.tools.web_fetch import CloudflareMarkdown, WebFetch
 from solakit.tools.web_search import BraveSearch, WebSearch
 
 if TYPE_CHECKING:
@@ -48,6 +49,7 @@ WORKER_TOOLS = frozenset(
         "files.list",
         "files.search",
         "web.search",
+        "web.fetch",
         "git.status",
         "git.diff",
         "blog.list",
@@ -91,6 +93,7 @@ class Dispatcher:
         self.store, self.registry, self.current = store, registry, current
         self.redactor = redactor or Redactor()
         self.web_search = BraveSearch(self.redactor)
+        self.web_fetch = CloudflareMarkdown(self.redactor)
         self.mcp = McpClient()
         self.memory: MemoryService | None = None
         self.jobs: JobService | None = None
@@ -484,6 +487,17 @@ class Invocation:
     async def search_web(self, args: WebSearch) -> ToolResult:
         return ToolResult(
             data=await self.dispatcher.web_search.search(args, self._authorize_web_search)
+        )
+
+    def _authorize_web_fetch(self) -> WebFetchSettings:
+        profile = self.authority()
+        if self.call.name != "web.fetch" or profile.web_fetch is None:
+            raise ToolError("Web fetching requires its named tool", ErrorCode.TOOL_DENIED)
+        return profile.web_fetch
+
+    async def fetch_web(self, args: WebFetch) -> ToolResult:
+        return ToolResult(
+            data=await self.dispatcher.web_fetch.fetch(args, self._authorize_web_fetch)
         )
 
     async def mcp(self, args: McpList | McpCall) -> ToolResult:

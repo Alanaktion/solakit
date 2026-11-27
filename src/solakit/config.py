@@ -214,6 +214,11 @@ class WebSearchSettings(Value):
     )
 
 
+class WebFetchSettings(Value):
+    account_id: Annotated[str, Field(pattern=r"^[0-9a-fA-F]{32}$")]
+    api_token_env: Annotated[str, Field(pattern=r"^[A-Za-z_][A-Za-z0-9_]*$")] = Field(repr=False)
+
+
 class McpServer(Value):
     url: str
     # Literal headers suit non-secrets; headers_env names variables holding whole header values.
@@ -357,6 +362,7 @@ class OperatorConfig(Value):
     git: GitSettings = Field(default_factory=GitSettings)
     letters: LettersSettings = Field(default_factory=LettersSettings)
     web_search: WebSearchSettings = Field(default_factory=WebSearchSettings)
+    web_fetch: WebFetchSettings | None = None
     mcp_servers: dict[Name, McpServer] = Field(default_factory=dict)
     shell: ShellSettings = Field(default_factory=ShellSettings)
     delegation_worker: Name | None = None
@@ -403,6 +409,7 @@ class EffectiveProfile(Value):
     git_reserved: frozenset[Path] = Field(default_factory=frozenset)
     letters: LettersCheckout | None = None
     web_search: WebSearchSettings = Field(default_factory=WebSearchSettings)
+    web_fetch: WebFetchSettings | None = None
     mcp_servers: dict[Name, McpServer] = Field(default_factory=dict)
     shell: ShellSettings = Field(default_factory=ShellSettings)
     shell_granted: bool = False
@@ -431,6 +438,8 @@ class EffectiveProfile(Value):
             values["vision"]["api_key_env"] = "<redacted>"
         values["memory"]["api_key_env"] = "<redacted>" if self.memory.api_key_env else None
         values["web_search"]["api_key_env"] = "<redacted>" if self.web_search.api_key_env else None
+        if self.web_fetch:
+            values["web_fetch"]["api_token_env"] = "<redacted>"
         for server in values["mcp_servers"].values():
             for key in ("headers", "headers_env"):
                 server[key] = dict.fromkeys(server[key], "<redacted>")
@@ -599,6 +608,7 @@ def resolve_profile(
         ("git_reserved", "letters"),
         ("letters", "letters"),
         ("web_search", "web_search"),
+        ("web_fetch", "web_fetch"),
         ("mcp_servers", "mcp_servers"),
         ("shell", "shell"),
         ("delegation_worker", "delegation_worker"),
@@ -658,6 +668,8 @@ def resolve_profile(
     tools -= (GIT_READ | GIT_WRITE) - _git_tools(repositories, reserved, origin)
     if not config.web_search.api_key_env:
         tools -= {"web.search"}
+    if config.web_fetch is None:
+        tools -= {"web.fetch"}
     if not config.mcp_servers:
         tools -= MCP_TOOLS
     if not (config.shell.enabled and shell_granted and origin == Origin.INTERACTIVE):
@@ -693,6 +705,7 @@ def resolve_profile(
         git_reserved=reserved,
         letters=letters,
         web_search=config.web_search,
+        web_fetch=config.web_fetch,
         mcp_servers=config.mcp_servers,
         shell=config.shell,
         shell_granted=shell_granted,
@@ -752,6 +765,8 @@ def restrict_to_admission(
         tools -= CONTENT_WRITE
     if not admitted.web_search.api_key_env or current.web_search != admitted.web_search:
         tools -= {"web.search"}
+    if admitted.web_fetch is None or current.web_fetch != admitted.web_fetch:
+        tools -= {"web.fetch"}
     if not admitted.mcp_servers or current.mcp_servers != admitted.mcp_servers:
         tools -= MCP_TOOLS
     if not admitted.delegation_worker or current.delegation_worker != admitted.delegation_worker:

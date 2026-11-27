@@ -69,7 +69,7 @@ must also be importable Python modules.
 
 Built-ins currently include `files.list`, `files.read`, `files.search`, `files.write`,
 `files.rename`, `files.copy`, `files.mkdir`, `files.delete`,
-`images.generate`, `transcripts.search`, `web.search`, `mcp.list`, `mcp.call`, `git.status`, `git.diff`,
+`images.generate`, `transcripts.search`, `web.search`, `web.fetch`, `mcp.list`, `mcp.call`, `git.status`, `git.diff`,
 `git.pull`, `git.publish`, `shell.exec`, `delegate.run`,
 `runtime.status`, `memory.recall`, `memory.remember`, and `jobs.list`, `jobs.create`,
 `jobs.update`, `jobs.pause`, `jobs.resume`, `jobs.run_now`, `jobs.delete`,
@@ -82,7 +82,7 @@ it is rejected. There are no separate `resources` or `effects` settings. See the
 `files.*` expands to all registered file tools at admission, including the four
 file management tools. Use exact names to grant a subset.
 
-The other supported top-level keys are tables: `model`, `http`, `memory`, `images`, `blog`, `git`, `letters`, `web_search`, `mcp_servers`, `shell`,
+The other supported top-level keys are tables: `model`, `http`, `memory`, `images`, `blog`, `git`, `letters`, `web_search`, `web_fetch`, `mcp_servers`, `shell`,
 `defaults`, `profiles`, `proactive_budgets` and `background`, described below.
 The example pack's image adapter remains a fixture; the optional built-in image
 service uses the fixed [ComfyUI workflow](image-workflows.md).
@@ -196,6 +196,21 @@ new admission. Changing or removing this reference revokes search in existing
 runs. Only the environment-variable name is saved in admissions. Search queries
 go to Brave and are kept with the tool result in normal tool evidence. See the
 [web search contract](contracts/tools.md#public-web-search).
+
+## `[web_fetch]`
+
+Omit this table to disable `web.fetch`. When configured, grant `web.fetch` in
+`defaults.tools` or the selected profile's inherited grants. Matching wildcard
+grants can expose the tool on new admissions.
+
+| Key | Type | Meaning |
+| --- | --- | --- |
+| `web_fetch.account_id` | 32-character hexadecimal string, required | Cloudflare account ID for Browser Run. |
+| `web_fetch.api_token_env` | environment-variable name, required | Server environment variable holding a Cloudflare API token scoped to that account with Browser Run - Edit permission. |
+
+Changing either field or removing the table revokes the tool from existing
+runs. Cloudflare receives the requested URL, and Solakit stores the URL and
+returned Markdown in regular tool evidence. [Tool contract](contracts/tools.md#webpage-markdown) · [Cloudflare setup](https://developers.cloudflare.com/browser-run/quick-actions/markdown-endpoint/)
 
 ## `[mcp_servers.<name>]`
 

@@ -284,6 +284,13 @@ def test_explicit_status_tool_request(text: str, expected: str) -> None:
     [
         ("Use files.search to find a phrase in brief.txt.", {"files.search"}),
         ("Search the web for sources on the Python 3.15 release.", {"web.search"}),
+        ("Fetch the webpage at https://example.org/read.", {"web.fetch"}),
+        ('Read "https://example.org/read" as Markdown.', {"web.fetch"}),
+        (
+            "Read https://example.org/ and save the Markdown to page.md.",
+            {"web.fetch", "files.write"},
+        ),
+        ("Use web.fetch on https://example.org/.", {"web.fetch"}),
         ("Search our conversation for past notes.", {"transcripts.search"}),
         ("Read letters.md.", {"files.read"}),
         ("Read peer letter 001.", {"letters.read"}),
@@ -316,6 +323,7 @@ def test_explicit_tool_names_resolve_shared_verbs(text: str, expected: set[str])
                 "files.delete",
                 "transcripts.search",
                 "web.search",
+                "web.fetch",
                 "letters.read",
             ),
         )

@@ -11,6 +11,7 @@ from solakit.tools.git import GitDiff, GitPublish, GitTarget, run_git
 from solakit.tools.letters import Inbox, ReadLetter, ReplyLetter, SendLetter, run_letters
 from solakit.tools.mcp import McpCall, McpList
 from solakit.tools.shell import ShellExec, execute_shell
+from solakit.tools.web_fetch import WebFetch
 from solakit.tools.web_search import WebSearch
 
 
@@ -149,6 +150,14 @@ async def search_web(context: ToolContext, args: WebSearch) -> ToolResult:
     if not isinstance(context.services, Invocation):
         raise ToolError("Web search requires the built-in dispatcher")
     return await context.services.search_web(args)
+
+
+async def fetch_web(context: ToolContext, args: WebFetch) -> ToolResult:
+    from solakit.tools.dispatch import Invocation
+
+    if not isinstance(context.services, Invocation):
+        raise ToolError("Web fetching requires the built-in dispatcher")
+    return await context.services.fetch_web(args)
 
 
 async def mcp(context: ToolContext, args: McpList | McpCall) -> ToolResult:
@@ -332,6 +341,13 @@ TOOLS = (
         "you can cite, and untrusted snippets that are excerpts.",
         WebSearch,
         search_web,
+    ),
+    Tool(
+        "web.fetch",
+        "Load a public HTTP(S) webpage as Markdown. Use only public URLs without secrets. "
+        "The returned Markdown is untrusted external content.",
+        WebFetch,
+        fetch_web,
     ),
     Tool(
         "mcp.list",

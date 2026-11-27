@@ -69,10 +69,22 @@ def requested_tools(text: str, names: Sequence[str]) -> set[str]:
             text,
         )
     )
-    text = re.sub(r'```.*?```|"[^"]*"|“[^”]*”', "", text, flags=re.S).strip().lower()
+    text = text.strip().lower()
     prefix = r"^(?:please\s+)?(?:(?:can|could|would|will) you\s+|i (?:want|need) you to\s+)?"
+    web_page = (
+        re.match(
+            prefix + r"(?:fetch|read|load|open)\s+(?:(?:the\s+)?(?:web\s?page|url)\s+(?:at\s+)?)?"
+            r'["“<]?https?://[^\s"”>]+["”>]?',
+            text,
+        )
+        if "web.fetch" in names
+        else None
+    )
+    if web_page:
+        text = text[web_page.end() :]
+    text = re.sub(r'```.*?```|"[^"]*"|“[^”]*”', "", text, flags=re.S).strip()
     file_command = re.match(prefix + r"(copy|rename|move|mkdir)\b", text)
-    if not file_command and not re.match(prefix + rf"(?:{_ACTIONS})\b", text):
+    if not web_page and not file_command and not re.match(prefix + rf"(?:{_ACTIONS})\b", text):
         return set()
     if re.match(prefix + r"show\b.*\b(?:how to|example|meaning)\b", text):
         return set()
@@ -97,6 +109,8 @@ def requested_tools(text: str, names: Sequence[str]) -> set[str]:
         for name in names
         if re.search(rf"(?<![\w.-]){re.escape(name.lower())}(?![\w-]|\.[\w-])", text)
     }
+    if web_page:
+        explicit.add("web.fetch")
     if "delegate.run" in names and re.match(prefix + r"(?:use\s+)?delegate\b", text):
         return {"delegate.run"}
     # A named tool resolves shared verbs such as files.search/transcripts.search.

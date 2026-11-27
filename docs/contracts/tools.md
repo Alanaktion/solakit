@@ -220,6 +220,7 @@ opened directory trees or concurrently redefining Git metadata.
 | `files.write`, `files.rename`, `files.copy`, `files.mkdir`, `files.delete` | Tool grant + roots + guards | Same | Same | Same with explicit job workspace roots |
 | `transcripts.search` | Messages in shared sessions only | Own session only | Own run only | Bound session; own run if ephemeral |
 | `web.search` | Tool grant + stable enabled Brave credential reference | Same | Same | Same admitted narrower profile |
+| `web.fetch` | Tool grant + stable configured Cloudflare account and token reference | Same | Same | Same admitted narrower profile |
 | `mcp.list`, `mcp.call` | Tool grant + stable configured `mcp_servers` | Same | Same | Same admitted narrower profile |
 | `git.status`, `git.diff` | Tool grant + stable checkout alias inside effective workspace roots | Same | Same | Same admitted narrower profile |
 | `git.pull`, `git.publish` | Same checkout authority + interactive origin + checkout outside letters reservation | Same | Same | Denied, including manual job runs |
@@ -364,6 +365,25 @@ Admissions without a `[web_search]` reference, including older admissions, keep
 search ineligible. Changing the reference or removing the grant revokes search
 from an existing run. Matching wildcard grants can confer search in new runs.
 
+## Webpage Markdown
+
+`web.fetch(url)` loads one public HTTP(S) URL of up to 2,048 characters and
+returns the webpage's Markdown as a string. URLs with embedded credentials,
+local hostnames, and non-public IP literals are rejected. Use URLs without
+private query parameters or other secrets. Returned Markdown is untrusted
+external content. The requested URL and the result enter normal tool evidence.
+
+Solakit sends one authenticated HTTPS POST to the Cloudflare Browser Run
+Markdown endpoint. Cloudflare resolves the URL, renders the page and handles
+page redirects. Solakit allows 30 seconds and at most 1 MiB of provider response
+before parsing. The usual tool result limit and artifact handling apply.
+Rate limits, timeouts, malformed responses and provider errors fail the tool
+call. [Cloudflare Markdown endpoint](https://developers.cloudflare.com/browser-run/quick-actions/markdown-endpoint/)
+
+The tool requires both a grant and the same `[web_fetch]` settings at admission
+and execution. Older admissions without these settings keep it ineligible.
+[Configuration](../config.md#web_fetch) · [Validation](../validation/web-fetch.md)
+
 ## Remote MCP tools
 
 `mcp.list(server, cursor=None)` returns the server's raw `tools/list` result:
@@ -434,9 +454,9 @@ roots continue to apply while the child runs.
 Worker prompts use their configured profile fragments, the brief and their local
 transcript. OpenViking, global SOUL, curated memory and the parent transcript
 stay outside those prompts. The worker can use granted built-in file, Git,
-blog, dream and letter reads, public web search, local transcript search and
-runtime status. The brief's source references constrain the task. The dispatcher
-enforces access through tool grants and workspace roots.
+blog, dream and letter reads, public web search and fetching, local transcript
+search and runtime status. The brief's source references constrain the task. The
+dispatcher enforces access through tool grants and workspace roots.
 
 A child admission records a link in the parent run using the parent call ID as
 its admission key. The result carries `session_id`, `run_id`, `status` and
