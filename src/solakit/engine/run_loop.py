@@ -16,6 +16,7 @@ from solakit.engine.compaction import Compactor, select
 from solakit.engine.lineage import current_run, deny_autonomous_successor
 from solakit.engine.prompts import ContextLimit, PromptInput, PromptTurn, assemble
 from solakit.records import (
+    DELEGATION_TOOLS,
     DOCUMENT_TEXT_BYTES,
     RUN_TRANSITIONS,
     Artifact,
@@ -114,8 +115,11 @@ def requested_tools(text: str, names: Sequence[str]) -> set[str]:
     }
     if web_page:
         explicit.add("web.fetch")
-    if "delegate.run" in names and re.match(prefix + r"(?:use\s+)?delegate\b", text):
-        return {"delegate.run"}
+    if re.match(prefix + r"(?:use\s+)?delegate\b", text):
+        if delegated := explicit & DELEGATION_TOOLS:
+            return delegated
+        if "delegate.run" in names:
+            return {"delegate.run"}
     # A named tool resolves shared verbs such as files.search/transcripts.search.
     actions -= {part for name in explicit for part in re.split(r"[_.-]", name)}
     web_target = bool(
@@ -530,7 +534,12 @@ class RunLoop:
         return run
 
     async def delegate(
-        self, call: ToolCall, parent: EffectiveProfile, brief: str, remaining: float
+        self,
+        call: ToolCall,
+        parent: EffectiveProfile,
+        brief: str,
+        remaining: float,
+        session_id: str | None = None,
     ) -> JsonValue:
         deny_autonomous_successor()
         caller = current_run.get()
@@ -550,6 +559,21 @@ class RunLoop:
             return self.store.delegation_result(link)
         if caller.id in self.delegating or not self.accepting or self.failure is not None:
             return {"status": "busy"}
+        previous = None
+        if session_id is not None:
+            try:
+                previous = self.store.continuation_target(session_id, caller.session_id)
+            except KeyError, ValueError:
+                raise ToolError(
+                    "Continuation requires an unarchived child of this topic",
+                    ErrorCode.TOOL_DENIED,
+                ) from None
+            if previous.state in RUN_TRANSITIONS or session_id in self.sessions:
+                return {"status": "busy"}
+            if previous.profile != parent.delegation_worker:
+                raise ToolError(
+                    "Original delegation worker is no longer granted", ErrorCode.TOOL_DENIED
+                )
         self._start_ready()
         if len(self.active) >= self.max_active:
             return {"status": "busy"}
@@ -566,8 +590,13 @@ class RunLoop:
         )
         if model_calls <= 0 or remaining <= 0 or parent.budgets.tool_result_bytes < 512:
             raise ToolError("Insufficient budget for a child and report", ErrorCode.BUDGET_EXCEEDED)
+        original = None
+        if previous is not None:
+            first = self.store.runs(previous.session_id, limit=1)[0][1]
+            original = self.store.admitted_profile(first.id)
         worker = self.dispatcher.current(
-            parent.model_copy(
+            original
+            or parent.model_copy(
                 update={
                     "name": parent.delegation_worker,
                     "mode": SessionMode.ISOLATED,
@@ -581,8 +610,12 @@ class RunLoop:
             SessionMode.ISOLATED,
         ):
             raise ConfigError("Delegation resolver returned a different worker")
+        if original is not None:
+            worker = restrict_to_admission(worker, original)
         worker = restrict_to_admission(parent, worker)
         tools = worker.tools & WORKER_TOOLS
+        if original is not None and original.tools and not tools:
+            raise ToolError("Original delegation worker has lost its grants", ErrorCode.TOOL_DENIED)
         worker = worker.model_copy(
             update={
                 "tools": tools,
@@ -600,13 +633,14 @@ class RunLoop:
         self.delegating.add(caller.id)
         try:
             child = self.store.admit(
-                None,
+                session_id,
                 request_id=call.id,
                 content=brief,
                 profile=worker.name,
                 admission=worker.model_dump(mode="json"),
                 origin=Origin.DELEGATED,
                 parent_tool_call_id=call.id,
+                continued_from_run_id=previous.id if previous else None,
             )
             task = self._start_run(child)
             try:
@@ -1008,7 +1042,7 @@ class RunLoop:
                         receipt = await tools.dispatch(call)
                     else:
                         receipt = self._skip(call, prior)
-                    delegated |= call.name == "delegate.run"
+                    delegated |= call.name in DELEGATION_TOOLS
                     attempted.add(call.name)
                     self.store.append(
                         Message(

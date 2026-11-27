@@ -276,6 +276,17 @@ class ClientService:
         for row in rows:
             record = self.store._load(kind, row[0], Occurrence if job_id else Job)
             body = record.model_dump(mode="json")
+            if (
+                isinstance(record, Occurrence)
+                and record.run_id
+                and record.definition.get("follow_up")
+            ):
+                delivery = self.store.db.execute(
+                    "SELECT json_extract(body,'$.state') FROM entities "
+                    "WHERE kind='delivery' AND run_id=?",
+                    (record.run_id,),
+                ).fetchone()
+                body["delivery_state"] = delivery[0] if delivery else None
             length = len(canonical(body))
             if items and size + length > PAGE_BYTES:
                 break

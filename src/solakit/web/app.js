@@ -28,6 +28,8 @@ export class SolaApp extends SolaElement {
       login,
       saveTopic,
       exportTopic,
+      openFollowUp,
+      saveFollowUp,
       openImport,
       chooseImport,
       importTopic,
@@ -184,6 +186,9 @@ export class SolaApp extends SolaElement {
           ><label><input type="checkbox" id="archived" /> Archive topic</label>
           <div class="actions">
             <button type="button" id="export-topic" @click=${exportTopic} hidden>Export topic</button>
+            <button type="button" id="schedule-follow-up" @click=${openFollowUp} hidden>
+              Schedule follow-up
+            </button>
             <button
               type="button"
               data-close="topic-dialog"
@@ -191,6 +196,37 @@ export class SolaApp extends SolaElement {
             >
               Cancel</button
             ><button class="primary">Save topic</button>
+          </div>
+        </form>
+      </dialog>
+      <dialog id="follow-up-dialog" aria-labelledby="follow-up-title"
+        @cancel=${(event) => { if ($('follow-up-submit').disabled) event.preventDefault(); }}>
+        <form @submit=${saveFollowUp} id="follow-up-form">
+          <h2 id="follow-up-title">Schedule follow-up</h2>
+          <p class="meta" id="follow-up-topic"></p>
+          <div id="follow-up-fields">
+            <label for="follow-up-task">Task</label>
+            <textarea id="follow-up-task" rows="3" maxlength="32768" required autofocus></textarea>
+            <label for="follow-up-at">Date and time</label>
+            <input id="follow-up-at" type="datetime-local" step="1" required
+              aria-describedby="follow-up-timezone" />
+            <p class="meta" id="follow-up-timezone"></p>
+            <label for="follow-up-offset">UTC offset (optional)</label>
+            <input id="follow-up-offset" type="text" pattern="(?:[+]|-)[0-9]{2}:[0-9]{2}"
+              maxlength="6" placeholder="-07:00" aria-describedby="follow-up-offset-hint" />
+            <p class="meta" id="follow-up-offset-hint">Use an offset to specify a time in a repeated hour or another time zone.</p>
+          </div>
+          <p id="follow-up-error" role="alert"></p>
+          <p id="follow-up-status" role="status"></p>
+          <div class="actions">
+            <button id="follow-up-close" type="button" @click=${() => $('follow-up-dialog').close()}>
+              Cancel
+            </button>
+            <button class="primary" id="follow-up-submit">Schedule</button>
+            <button type="button" id="follow-up-schedules" hidden @click=${action(async () => {
+              $('follow-up-dialog').close();
+              await openSettings();
+            })}>View schedules</button>
           </div>
         </form>
       </dialog>

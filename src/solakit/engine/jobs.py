@@ -1,6 +1,7 @@
 """SQLite-owned schedules, bounded autonomous admission and local delivery."""
 
 import asyncio
+import re
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -18,12 +19,14 @@ from solakit.config import (
     letters_tools,
     restrict_to_admission,
 )
-from solakit.engine.lineage import deny_autonomous_successor
+from solakit.engine.lineage import current_run, deny_autonomous_successor
 from solakit.records import (
     Delivery,
     DeliveryState,
     ErrorCode,
     Failure,
+    FollowUpAdmission,
+    FollowUpReceipt,
     Job,
     Message,
     Occurrence,
@@ -51,6 +54,42 @@ WAKE_INSTRUCTIONS = (
     "message, or return exactly NO_ACTION when nothing warrants action or notification. "
     "Do not create descendants or create, rearm, enable or reschedule wake-ups."
 )
+FOLLOW_UP_INSTRUCTIONS = (
+    "\n\nThe operator scheduled this follow-up in the current topic. Use the conversation "
+    "for context and leave one concise reminder or follow-up message."
+)
+
+
+class FollowUpError(ValueError):
+    pass
+
+
+def follow_up_instant(at: str, zone: ZoneInfo) -> datetime:
+    if not re.fullmatch(
+        r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}"
+        r"(?::[0-9]{2}(?:\.[0-9]{1,6})?)?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])?",
+        at,
+    ):
+        raise FollowUpError("Enter an ISO date and time, with an offset if needed")
+    try:
+        local = datetime.fromisoformat(at)
+        if local.tzinfo is not None:
+            return local.astimezone(UTC)
+        candidates = {local.replace(tzinfo=zone, fold=fold).astimezone(UTC) for fold in (0, 1)}
+        instants = {
+            instant
+            for instant in candidates
+            if instant.astimezone(zone).replace(tzinfo=None) == local
+        }
+    except ValueError, OverflowError:
+        raise FollowUpError("Enter a valid date, time and UTC offset") from None
+    if not instants:
+        raise FollowUpError(
+            "That local time does not exist. Choose another time or enter an offset"
+        )
+    if len(instants) != 1:
+        raise FollowUpError("That local time occurs twice. Enter an explicit UTC offset")
+    return instants.pop()
 
 
 def one_shot(job: Job) -> datetime | None:
@@ -148,6 +187,13 @@ class JobService:
         deny_autonomous_successor()
         if run.origin != Origin.INTERACTIVE:
             raise ValueError("job management requires interactive origin")
+        if action == "follow_up":
+            return self.follow_up(
+                run.session_id,
+                cast(str, arguments["task"]),
+                cast(str, arguments["at"]),
+                source=run,
+            ).model_dump(mode="json")
         if action == "pause_all":
             return self.global_pause(cast(bool, arguments["paused"])).model_dump(mode="json")
         if action == "create":
@@ -207,6 +253,92 @@ class JobService:
         else:
             raise ValueError("unsupported job operation")
         return result.model_dump(mode="json")
+
+    def follow_up(
+        self,
+        session_id: str,
+        task: str,
+        at: str,
+        *,
+        source: Run | None = None,
+        request_id: str | None = None,
+    ) -> FollowUpReceipt:
+        deny_autonomous_successor()
+        source = current_run.get() or source
+        if source is not None and (
+            source.origin != Origin.INTERACTIVE or source.session_id != session_id
+        ):
+            raise FollowUpError("Follow-ups require the invoking interactive topic")
+        task, at = task.strip(), at.strip()
+        if not task or len(task.encode()) > 32768:
+            raise FollowUpError("Follow-up task must contain 1–32768 UTF-8 bytes")
+        normalized = " ".join(task.split())
+        timezone = self.policy().background.timezone
+        zone = ZoneInfo(timezone)
+        instant = None
+        if request_id is not None:
+            identity = digest(canonical(["operator-follow-up", valid_id(request_id)]))[:32]
+            fingerprint = digest(canonical([session_id, normalized, at]))
+        else:
+            if source is None:
+                raise FollowUpError("Follow-ups require a source run or an idempotency key")
+            source = self.store.retry_chain(source.id)[0]
+            instant = follow_up_instant(at, zone)
+            fingerprint = digest(canonical([source.id, normalized, instant.isoformat()]))
+            identity = digest(canonical(["run-follow-up", fingerprint]))[:32]
+        try:
+            existing = self.store.job(identity)
+        except KeyError:
+            pass
+        else:
+            if existing.follow_up is None or existing.follow_up.fingerprint != fingerprint:
+                raise FollowUpError("Idempotency key already belongs to a different follow-up")
+            return FollowUpReceipt(job_id=identity, due_at=existing.follow_up.due_at)
+        topic = self.store.session(session_id)
+        if (
+            topic.mode == SessionMode.EPHEMERAL
+            or topic.archived
+            or topic.parent_session_id is not None
+            or topic.origin == Origin.DELEGATED
+        ):
+            raise FollowUpError("Choose an active shared or isolated topic")
+        instant = instant or follow_up_instant(at, zone)
+        if instant <= self.clock():
+            raise FollowUpError("Choose a future date and time")
+        try:
+            due_at = instant.astimezone(zone).isoformat()
+        except OverflowError:
+            raise FollowUpError("That date is outside the supported range") from None
+        if source is None:
+            row = self.store.db.execute(
+                "SELECT id FROM entities WHERE kind='run' AND session_id=? "
+                "AND json_extract(body,'$.origin')='interactive' ORDER BY sequence DESC LIMIT 1",
+                (topic.id,),
+            ).fetchone()
+            source = self.store.run(row[0]) if row else None
+        self.create(
+            Job(
+                id=identity,
+                origin=Origin.SCHEDULED,
+                profile=source.profile
+                if source is not None and request_id is None
+                else self.profile().name,
+                task=task,
+                schedule=f"once:{due_at}",
+                timezone=timezone,
+                session_id=topic.id,
+                mode=topic.mode,
+                enabled=True,
+                tools=(),
+                workspace_roots=(),
+                follow_up=FollowUpAdmission(
+                    due_at=due_at,
+                    fingerprint=fingerprint,
+                    source_run_id=source.id if source else None,
+                ),
+            )
+        )
+        return FollowUpReceipt(job_id=identity, due_at=due_at)
 
     def _profile(self, job: Job) -> EffectiveProfile:
         template = self.profile().model_copy(
@@ -456,7 +588,7 @@ class JobService:
         run = self.store.admit(
             session_id,
             request_id=occurrence.id,
-            content=job.task + WAKE_INSTRUCTIONS,
+            content=job.task + (FOLLOW_UP_INSTRUCTIONS if job.follow_up else WAKE_INSTRUCTIONS),
             profile=profile.name,
             admission=profile.model_dump(mode="json"),
             origin=job.origin,

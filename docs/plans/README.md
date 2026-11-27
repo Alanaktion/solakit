@@ -29,6 +29,5 @@ configuration example and tool contract when a plan ships.
 
 | Plan | First usable workflow |
 | --- | --- |
-| [Agent follow-ups](NEXT-AGENT-FOLLOW-UPS.md) | Continue an existing child or schedule a one-time follow-up in the current topic. |
 | [Operator diagnostics](NEXT-OPERATOR-DIAGNOSTICS.md) | Check deployment health in Settings and compare effective authority with a recorded run. |
 | [Operator probes and evaluations](NEXT-OPERATOR-EVALUATIONS.md) | Run fixed synthetic checks and compare results in Settings and the authenticated API. |

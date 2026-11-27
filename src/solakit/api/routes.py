@@ -28,11 +28,13 @@ from solakit.config import (
     load_config,
     resolve_profile,
 )
+from solakit.engine.jobs import FollowUpError
 from solakit.engine.run_loop import QueueFull
 from solakit.records import (
     MAX_DOCUMENTS,
     RUN_TRANSITIONS,
     DocumentName,
+    FollowUpReceipt,
     Job,
     MemoryCommit,
     Occurrence,
@@ -320,6 +322,12 @@ class JobInput(Input):
     delivery: Literal["session", "none"] = "session"
 
 
+class FollowUpInput(Input):
+    session_id: RecordID
+    task: str = Field(min_length=1, max_length=32768)
+    at: str = Field(min_length=1, max_length=64)
+
+
 class PauseInput(Input):
     paused: StrictBool
 
@@ -480,6 +488,7 @@ def create_app(
             "accepting": runs.accepting,
             "memory": memory.status(),
             "scheduler_failed": jobs.failure is not None,
+            "background_timezone": jobs.policy().background.timezone,
             "image_inputs": bool(context.profile.model_image_inputs or context.profile.vision),
             "document_conversion": await service.model.document_inputs(),
         }
@@ -813,7 +822,14 @@ def create_app(
         return service.job_page(time_cursor(after), limit)
 
     @app.post("/api/v1/jobs", status_code=201)
-    async def create_job(body: JobInput) -> Job:
+    async def create_job(body: JobInput | FollowUpInput, request: Request) -> Job | FollowUpReceipt:
+        if isinstance(body, FollowUpInput):
+            try:
+                return jobs.follow_up(
+                    body.session_id, body.task, body.at, request_id=idempotency(request)
+                )
+            except FollowUpError as error:
+                raise RequestError(409, "follow_up_conflict", str(error)) from None
         definition = body.model_dump(mode="json") | {
             "profile": body.profile if body.profile is not None else context.profile.name
         }
@@ -943,12 +959,22 @@ def create_app(
                             "application/json": {"schema": {"$ref": "#/components/schemas/Error"}}
                         },
                     }
-        for path in ("/api/v1/runs", "/api/v1/jobs/{job_id}/run", SESSION_IMPORT_PATH):
+        for path in (
+            "/api/v1/runs",
+            "/api/v1/jobs",
+            "/api/v1/jobs/{job_id}/run",
+            SESSION_IMPORT_PATH,
+        ):
             schema["paths"][path]["post"].setdefault("parameters", []).append(
                 {
                     "in": "header",
                     "name": "Idempotency-Key",
-                    "required": True,
+                    "required": path != "/api/v1/jobs",
+                    **(
+                        {"description": "Required for the follow-up request shape."}
+                        if path == "/api/v1/jobs"
+                        else {}
+                    ),
                     "schema": {"type": "string", "pattern": "^[0-9a-f]{32}$"},
                 }
             )

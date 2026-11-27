@@ -18,9 +18,11 @@ uncertain outcomes. [Design decisions](decisions.md)
   attachments, and optional integrations such as web search, Git, letters, and
   blog publishing. Trusted packs can extend tools through the SDK. Interactive
   profiles may opt into literal command execution or one isolated delegated
-  worker. [Tools and authority](contracts/tools.md), [file and image workflows](image-workflows.md)
+  worker that can continue earlier work. [Tools and authority](contracts/tools.md),
+  [file and image workflows](image-workflows.md)
 - Durable schedules and proactive wake-ups that use the same run loop, grants,
-  budgets, and evidence as interactive work. [Job contract](contracts/jobs.md)
+  budgets, and evidence as interactive work. An explicit request can schedule a
+  one-time follow-up in its originating topic. [Job contract](contracts/jobs.md)
 
 ## Proactive work
 

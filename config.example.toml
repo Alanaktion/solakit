@@ -11,15 +11,15 @@ tool_modules = []
 # files.write, files.append, files.edit,
 # files.rename, files.copy, files.mkdir, files.delete, images.generate,
 # transcripts.search, web.search, web.fetch, mcp.list, mcp.call, git.status/diff/pull/publish,
-# shell.exec, delegate.run, runtime.status,
-# memory.recall, memory.remember; jobs.list/create/update/pause/resume/run_now/delete/pause_all.
+# shell.exec, delegate.run, delegate.continue, runtime.status,
+# memory.recall, memory.remember; jobs.follow_up/list/create/update/pause/resume/run_now/delete/pause_all.
 # blog.list/read/create/publish; dreams.list/read/create (always publishes).
 # Separate deadlines for the HTTP connection drain and runtime cleanup.
 shutdown_timeout_seconds = 5
 # Operator-owned UTF-8 files, read verbatim; optional and never created by Sola.
 # soul_file = "SOUL.md"
 # curated_memory_file = "MEMORY.md"
-# Optional worker profile. Add "delegate.run" to the calling profile's tools.
+# Optional worker profile. Grant "delegate.run" to delegate and "delegate.continue" to follow up.
 # delegation_worker = "research"
 
 [model]

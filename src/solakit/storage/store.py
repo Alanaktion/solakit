@@ -9,6 +9,8 @@ from typing import TYPE_CHECKING, cast
 from pydantic import JsonValue, TypeAdapter
 
 from solakit.records import (
+    DELEGATION_TOOLS,
+    RUN_TRANSITIONS,
     Artifact,
     CompactionBoundary,
     Delegation,
@@ -649,6 +651,22 @@ class Store:
         except KeyError:
             return None
 
+    def delegation_call(self, call_id: str) -> ToolCall:
+        return self._load("tool", call_id, ToolCall)
+
+    def continuation_target(self, session_id: str, parent_session_id: str) -> Run:
+        topic = self.session(session_id)
+        if (
+            topic.parent_session_id != parent_session_id
+            or topic.origin != Origin.DELEGATED
+            or topic.archived
+            or not (latest := self.runs(session_id, before=0, limit=1))
+        ):
+            raise ValueError("Continuation requires an unarchived child of this topic")
+        previous = latest[0][1]
+        self.require_local_run(previous.id)
+        return previous
+
     def child_attempts(self, run_id: str, kind: str) -> int:
         return int(
             self.db.execute(
@@ -671,6 +689,8 @@ class Store:
         evidence: list[JsonValue] = [child.id]
         if row:
             evidence.append(row["id"])
+        if link.continued_from_run_id is not None:
+            evidence.append(link.continued_from_run_id)
         result: dict[str, JsonValue] = {
             "session_id": child.session_id,
             "run_id": child.id,
@@ -874,6 +894,7 @@ class Store:
         document_ids: tuple[str, ...] = (),
         documents: tuple[tuple[str, bytes], ...] = (),
         parent_tool_call_id: str | None = None,
+        continued_from_run_id: str | None = None,
     ) -> Run:
         from solakit.engine.lineage import current_run, deny_autonomous_successor
 
@@ -885,9 +906,10 @@ class Store:
             parent = self.run(parent_call.run_id)
             caller = current_run.get()
             if (
-                session_id is not None
-                or origin != Origin.DELEGATED
-                or parent_call.name != "delegate.run"
+                origin != Origin.DELEGATED
+                or parent_call.name not in DELEGATION_TOOLS
+                or (parent_call.name == "delegate.continue") != (session_id is not None)
+                or (session_id is not None) != (continued_from_run_id is not None)
                 or parent.origin != Origin.INTERACTIVE
                 or parent.parent_tool_call_id is not None
                 or parent.state != RunState.RUNNING
@@ -897,16 +919,25 @@ class Store:
                 or request_id != parent_call.id
             ):
                 raise ValueError("delegation requires its running interactive parent call")
-            session = Session(
-                id=digest(canonical(["delegate-topic", request_id]))[:32],
-                origin=Origin.DELEGATED,
-                mode=SessionMode.ISOLATED,
-                title="Delegated research",
-                parent_session_id=parent.session_id,
-            )
-            session_id = session.id
+            if session_id is None:
+                session = Session(
+                    id=digest(canonical(["delegate-topic", request_id]))[:32],
+                    origin=Origin.DELEGATED,
+                    mode=SessionMode.ISOLATED,
+                    title="Delegated research",
+                    parent_session_id=parent.session_id,
+                )
+                session_id = session.id
+            else:
+                if session_id != parent_call.arguments.get("session_id"):
+                    raise ValueError("Continuation differs from its parent call")
+                session = self.session(session_id)
         else:
-            if session_id is None or origin == Origin.DELEGATED:
+            if (
+                session_id is None
+                or origin == Origin.DELEGATED
+                or continued_from_run_id is not None
+            ):
                 raise ValueError("admission requires a session")
             session = self.session(session_id)
             if session.parent_session_id is not None or session.origin == Origin.DELEGATED:
@@ -923,6 +954,8 @@ class Store:
         }
         if parent_call is not None:
             details["parent_tool_call_id"] = parent_call.id
+        if continued_from_run_id is not None:
+            details["continued_from_run_id"] = continued_from_run_id
         existing = self.db.execute(
             "SELECT * FROM admissions WHERE request_id=?", (request_id,)
         ).fetchone()
@@ -941,6 +974,14 @@ class Store:
             if existing["fingerprint"] != fingerprint:
                 raise ValueError("idempotency key reused with different admission")
             return self.run(existing["run_id"])
+        if parent_call is not None and continued_from_run_id is not None:
+            previous = self.continuation_target(session_id, parent_call.session_id)
+            if (
+                previous.id != continued_from_run_id
+                or previous.profile != profile
+                or previous.state in RUN_TRANSITIONS
+            ):
+                raise ValueError("Continuation requires the last idle child run")
         if origin in (Origin.SCHEDULED, Origin.PROACTIVE):
             if claim is None:
                 raise ValueError("scheduled admission requires an occurrence claim")
@@ -986,6 +1027,7 @@ class Store:
             occurrence_id=occurrence_id,
             retry_of=retry_of,
             parent_tool_call_id=parent_tool_call_id,
+            continued_from_run_id=continued_from_run_id,
         )
         if upload_id is not None:
             if upload is None or image is not None:
@@ -1009,7 +1051,7 @@ class Store:
         )
 
         def prepare() -> None:
-            if parent_call is not None:
+            if parent_call is not None and continued_from_run_id is None:
                 self.db.execute("INSERT INTO sessions VALUES (?,0)", (session.id,))
             self.db.execute(
                 "INSERT INTO admissions VALUES (?,?,?)", (request_id, fingerprint, run.id)
@@ -1024,7 +1066,7 @@ class Store:
             claimed = (occurrence, advanced)
         if parent_call is not None:
             claimed = (
-                session,
+                *((session,) if continued_from_run_id is None else ()),
                 Delegation(
                     id=parent_call.id,
                     origin=parent_call.origin,
@@ -1032,6 +1074,7 @@ class Store:
                     run_id=parent_call.run_id,
                     child_session_id=session.id,
                     child_run_id=run.id,
+                    continued_from_run_id=continued_from_run_id,
                 ),
             )
         # A retry answers the original message, so it records none of its own.
@@ -1352,7 +1395,7 @@ class Store:
             "AND json_extract(receipt.body,'$.tool_call_id')=tool.id)"
         ).fetchall():
             call = ToolCall.model_validate_json(row[0])
-            if call.name == "delegate.run":
+            if call.name in DELEGATION_TOOLS:
                 link = self.delegation(call.id)
                 result = self.delegation_result(link, include_report=False) if link else None
                 raw = canonical(result) if result else b""

@@ -69,6 +69,18 @@ Tool operations are scoped to the invoking topic; mutations require interactive
 origin and the exact operation grant. `jobs.run_now` requires a stable 32-hex
 request ID. HTTP/CLI job controls and the Settings UI retain Phases 10–11 gates.
 
+`jobs.follow_up(task, at)` has its own grant and accepts explicit one-time
+reminders or revisits in a shared or isolated interactive topic. It enables a
+bound `once:` job with empty tool and workspace root ceilings, a source run
+reference, and delivery to the same topic. Use a future ISO date and time with
+an offset. Offsetless input uses the configured background timezone. Repeated
+wall times require an explicit offset, and nonexistent wall times require
+another time or an explicit offset. The tool returns `job_id` and `due_at`
+in the background timezone with its accepted offset. Matching tasks and
+instants from the same source run replay the original receipt. The topic's
+**Schedule follow-up** action uses the same service through the authenticated
+[jobs endpoint](api.md#scheduling-a-follow-up).
+
 ## Time, backlog and admission
 
 Cron uses APScheduler's UTC trigger to enumerate *civil wall labels*, then resolves

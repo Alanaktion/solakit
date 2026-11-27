@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import Field, ValidationError, field_validator, model_validator
 
-from solakit.records import Origin, SchemaVersion, SessionMode, Value
+from solakit.records import DELEGATION_TOOLS, Origin, SchemaVersion, SessionMode, Value
 from solakit.tools.registry import RegistryError, load_registry
 
 Count = Annotated[int, Field(ge=1, le=256)]
@@ -675,7 +675,7 @@ def resolve_profile(
     if not (config.shell.enabled and shell_granted and origin == Origin.INTERACTIVE):
         tools -= {"shell.exec"}
     if not config.delegation_worker or origin != Origin.INTERACTIVE:
-        tools -= {"delegate.run"}
+        tools -= DELEGATION_TOOLS
     return EffectiveProfile(
         name=name,
         agent_name=config.agent_name,
@@ -770,7 +770,7 @@ def restrict_to_admission(
     if not admitted.mcp_servers or current.mcp_servers != admitted.mcp_servers:
         tools -= MCP_TOOLS
     if not admitted.delegation_worker or current.delegation_worker != admitted.delegation_worker:
-        tools -= {"delegate.run"}
+        tools -= DELEGATION_TOOLS
     shell_granted = current.shell_granted and admitted.shell_granted
     if not (
         shell_granted

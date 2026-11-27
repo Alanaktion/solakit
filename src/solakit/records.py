@@ -194,11 +194,16 @@ class Run(Record):
     occurrence_id: RecordID | None = None
     retry_of: RecordID | None = None
     parent_tool_call_id: RecordID | None = None
+    continued_from_run_id: RecordID | None = None
 
     @model_validator(mode="after")
     def lifecycle(self) -> Self:
         if (self.origin == Origin.DELEGATED) != (self.parent_tool_call_id is not None):
             raise ValueError("delegated runs require parent tool lineage")
+        if self.continued_from_run_id is not None and (
+            self.origin != Origin.DELEGATED or self.continued_from_run_id == self.id
+        ):
+            raise ValueError("continuations require a previous delegated run")
         scheduled = self.origin in (Origin.SCHEDULED, Origin.PROACTIVE)
         if scheduled != (self.job_id is not None and self.occurrence_id is not None):
             raise ValueError("scheduled/proactive runs require both job and occurrence lineage")
@@ -360,6 +365,21 @@ class Delegation(Record):
     run_id: RecordID
     child_session_id: RecordID
     child_run_id: RecordID
+    continued_from_run_id: RecordID | None = None
+
+
+DELEGATION_TOOLS = frozenset({"delegate.run", "delegate.continue"})
+
+
+class FollowUpReceipt(Value):
+    job_id: RecordID
+    due_at: str
+
+
+class FollowUpAdmission(Value):
+    due_at: str
+    fingerprint: str
+    source_run_id: RecordID | None = None
 
 
 class Job(Record):
@@ -383,6 +403,7 @@ class Job(Record):
     workspace_roots: tuple[str, ...] | None = None
     budgets: dict[str, int] = Field(default_factory=dict)
     delivery: Literal["session", "none"] = "session"
+    follow_up: FollowUpAdmission | None = None
 
     @model_validator(mode="after")
     def target(self) -> Self:

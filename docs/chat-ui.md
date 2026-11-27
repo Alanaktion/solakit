@@ -124,6 +124,12 @@ archived results and clear **Archive topic** in Topic details.
 Use **Export** on any result in **Manage topics** to download its conversation,
 run evidence, artifacts, and delegated topics as a Solakit ZIP. You can also
 export from Topic details. Queued and running turns must finish before export.
+
+In an active shared or isolated topic, open **Topic details → Schedule follow-up**
+to set a one-time task and date. The picker uses the background time zone.
+Enter a UTC offset to disambiguate a repeated hour or use another zone.
+The confirmation shows the accepted local date and offset. **View schedules**
+opens Settings, where the job's occurrence shows its outcome and delivery state.
 Choose **Import topics** in **Manage topics** to upload one or more ZIPs. Files
 are submitted in the order provided by the file picker. Each copy keeps its original
 memory mode and archive status. **Retry import** retries unfinished files using

@@ -13,6 +13,7 @@ from pydantic import Field, model_validator
 
 from solakit.engine.compaction import Manifest, source_hash
 from solakit.records import (
+    DELEGATION_TOOLS,
     RUN_TRANSITIONS,
     Artifact,
     CompactionBoundary,
@@ -468,7 +469,9 @@ def _validate_graph(
                 or run.parent_tool_call_id != record.id
                 or not isinstance(tool, ToolCall)
                 or tool.run_id != record.run_id
-                or tool.name != "delegate.run"
+                or tool.name not in DELEGATION_TOOLS
+                or (tool.name == "delegate.continue") != (record.continued_from_run_id is not None)
+                or run.continued_from_run_id != record.continued_from_run_id
             ):
                 raise ValueError("delegation lineage mismatch")
             children[record.session_id].add(child.id)
@@ -500,6 +503,17 @@ def _validate_links(record: Record, records: dict[tuple[str, str], Record]) -> N
         previous = records.get(("run", record.retry_of))
         if not isinstance(previous, Run) or previous.session_id != record.session_id:
             raise ValueError("retry link crosses its topic")
+    if isinstance(record, Run) and record.continued_from_run_id:
+        previous = records.get(("run", record.continued_from_run_id))
+        if (
+            not isinstance(previous, Run)
+            or previous.origin != Origin.DELEGATED
+            or previous.session_id != record.session_id
+            or previous.profile != record.profile
+            or previous.ended_at is None
+            or previous.ended_at > record.created_at
+        ):
+            raise ValueError("continuation link crosses its topic or active work")
     if isinstance(record, ModelStep) and record.request_id:
         same_run("request", record.request_id)
         request = records["request", record.request_id]
@@ -704,13 +718,20 @@ def _validate_summary(
 
 LINK_FIELDS = {
     "session": ("parent_session_id",),
-    "run": ("request_id", "job_id", "occurrence_id", "retry_of", "parent_tool_call_id"),
+    "run": (
+        "request_id",
+        "job_id",
+        "occurrence_id",
+        "retry_of",
+        "parent_tool_call_id",
+        "continued_from_run_id",
+    ),
     "message": ("tool_call_id",),
     "model": ("request_id",),
     "tool": ("model_step_id",),
     "receipt": ("tool_call_id",),
     "delivery": ("message_id",),
-    "delegation": ("child_session_id", "child_run_id"),
+    "delegation": ("child_session_id", "child_run_id", "continued_from_run_id"),
     "recovery": ("model_step_id",),
     "memory_note": ("tool_call_id",),
     "image": ("tool_call_id",),

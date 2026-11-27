@@ -41,7 +41,8 @@
     "job_id": "00000000000000000000000000000008",
     "occurrence_id": "00000000000000000000000000000009",
     "retry_of": null,
-    "parent_tool_call_id": null
+    "parent_tool_call_id": null,
+    "continued_from_run_id": null
   },
   "ModelStep": {
     "schema_version": 1,
@@ -118,7 +119,8 @@
     "tools": null,
     "workspace_roots": null,
     "budgets": {},
-    "delivery": "session"
+    "delivery": "session",
+    "follow_up": null
   },
   "Occurrence": {
     "schema_version": 1,

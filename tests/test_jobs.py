@@ -1,4 +1,5 @@
 import asyncio
+import json
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -7,7 +8,7 @@ import pytest
 from test_run_loop import call, harness, reply, wire
 
 from solakit.config import BackgroundSettings, EffectiveProfile
-from solakit.engine.jobs import next_due, quiet_until
+from solakit.engine.jobs import FollowUpError, next_due, quiet_until
 from solakit.engine.lineage import current_run
 from solakit.engine.run_loop import records
 from solakit.records import (
@@ -102,6 +103,145 @@ def test_apscheduler_wall_slots_skip_gaps_and_second_fold(
 )
 def test_quiet_hour_boundaries(profile: EffectiveProfile, at: str, expected: str) -> None:
     assert quiet_until(profile, datetime.fromisoformat(at)) == datetime.fromisoformat(expected)
+
+
+def test_follow_up_tool_deduplicates_and_delivers_once_after_restart(
+    profile: EffectiveProfile,
+) -> None:
+    async def scenario() -> None:
+        clock = Clock(datetime(2026, 11, 16, 23, tzinfo=UTC))
+        tool = next(tool for tool in TOOLS if tool.name == "jobs.follow_up")
+        schedule = reply(
+            "",
+            calls=[
+                call(tool.name, json.dumps({"task": task, "at": at}))
+                for task, at in (
+                    ("Revisit the survey.", "2026-11-16T23:30"),
+                    (" Revisit  the survey. ", "2026-11-17T06:30:00Z"),
+                )
+            ],
+        )
+        app, requests = harness(profile, [schedule, reply("Scheduled.")], (tool,))
+        assert app.jobs and app.store and app.runs
+        app.jobs.clock = clock
+        await app.start()
+        try:
+            topic = app.store.create_session(mode=SessionMode.ISOLATED)
+            parent = app.runs.submit(
+                topic.id,
+                profile=app.profile.model_copy(update={"mode": topic.mode, "memory_mode": "off"}),
+                content="Revisit the survey tonight at eleven thirty.",
+                request_id=new_id(),
+            )
+            assert (await app.runs.wait(parent.id, timeout=3)).state == RunState.COMPLETED
+            receipts = [r for r in records(app.store, parent.id) if isinstance(r, ToolReceipt)]
+            (saved,) = app.jobs.list()
+            expected = {"job_id": saved.id, "due_at": "2026-11-16T23:30:00-07:00"}
+            assert len(receipts) == 2
+            for receipt in receipts:
+                assert isinstance(receipt.result, str) and json.loads(receipt.result) == expected
+            assert all(receipt.effect == "confirmed" for receipt in receipts)
+            assert saved.enabled and saved.mode == topic.mode and saved.session_id == topic.id
+            assert saved.tools == saved.workspace_roots == ()
+            assert saved.follow_up and saved.follow_up.source_run_id == parent.id
+            assert "background_timezone" in json.dumps(requests[0]["messages"])
+            assert not occurrences(app)
+        finally:
+            await app.stop()
+
+        replacement, requests = harness(profile, [reply("Here is the survey reminder.")])
+        assert replacement.jobs and replacement.store and replacement.runs
+        replacement.jobs.clock = clock
+        await replacement.start()
+        try:
+            assert not occurrences(replacement)
+            clock.now = datetime(2026, 11, 17, 6, 30, tzinfo=UTC)
+            await replacement.jobs.tick()
+            (occurrence,) = occurrences(replacement)
+            assert occurrence.run_id
+            assert (await replacement.runs.wait(occurrence.run_id, timeout=3)).state == (
+                RunState.COMPLETED
+            )
+            assert not requests[0].get("tools")
+            assert "Revisit the survey tonight" in json.dumps(requests[0]["messages"])
+            (delivery,) = [
+                r for r in records(replacement.store, occurrence.run_id) if isinstance(r, Delivery)
+            ]
+            assert delivery.state == DeliveryState.PENDING
+            assert not any(
+                m.run_id == occurrence.run_id for _, m in replacement.store.messages(topic.id)
+            )
+            clock.now = datetime(2026, 11, 17, 15, tzinfo=UTC)
+            await replacement.jobs.tick()
+            await replacement.jobs.tick()
+            (message,) = [
+                m for _, m in replacement.store.messages(topic.id) if m.run_id == occurrence.run_id
+            ]
+            assert message.content == "Here is the survey reminder."
+            assert occurrences(replacement)[0].id == occurrence.id and len(requests) == 1
+        finally:
+            await replacement.stop()
+
+    asyncio.run(scenario())
+
+
+def test_follow_up_create_receipt_survives_restart_and_archiving(profile: EffectiveProfile) -> None:
+    async def scenario() -> None:
+        clock = Clock(datetime(2026, 1, 1, tzinfo=UTC))
+        app, _ = harness(profile, [])
+        assert app.jobs and app.store
+        app.jobs.clock = clock
+        await app.start()
+        try:
+            topic = app.store.create_session()
+            key = new_id()
+            task, at = "Revisit the discussion.", "2026-11-01T01:30:00-07:00"
+            for invalid, reason in (
+                ("2026-11-01T01:30", "occurs twice"),
+                ("2026-03-08T02:30", "does not exist"),
+                ("2026-01-01T00:00Z", "future"),
+            ):
+                with pytest.raises(FollowUpError, match=reason):
+                    app.jobs.follow_up(topic.id, task, invalid, request_id=key)
+
+            def cut(stage: str) -> None:
+                if stage == "acknowledge":
+                    raise OSError("Lost follow-up receipt after commit")
+
+            app.store.fault = cut
+            with pytest.raises(OSError, match="Lost follow-up receipt"):
+                app.jobs.follow_up(topic.id, task, at, request_id=key)
+        finally:
+            await app.stop()
+
+        replacement, requests = harness(profile, [])
+        assert replacement.jobs and replacement.store
+        replacement.jobs.clock = clock
+        await replacement.start()
+        try:
+            (saved,) = replacement.jobs.list()
+            earlier = replacement.jobs.follow_up(
+                topic.id, task, "2026-11-01T01:30:00-06:00", request_id=new_id()
+            )
+            assert earlier.due_at == "2026-11-01T01:30:00-06:00"
+            replacement.store.update_session(topic.id, archived=True)
+            clock.now = datetime(2026, 11, 1, 9, tzinfo=UTC)
+            await replacement.jobs.tick()
+            assert replacement.jobs.follow_up(topic.id, task, at, request_id=key).model_dump() == {
+                "job_id": saved.id,
+                "due_at": at,
+            }
+            assert replacement.store.job(saved.id).consumed
+            assert all(o.state == "failed" for o in occurrences(replacement))
+            assert not requests
+            with pytest.raises(FollowUpError, match="different follow-up"):
+                replacement.jobs.follow_up(topic.id, "Another task", at, request_id=key)
+            with pytest.raises(FollowUpError, match="active shared or isolated"):
+                replacement.jobs.follow_up(topic.id, task, at, request_id=new_id())
+        finally:
+            await replacement.stop()
+
+    asyncio.run(scenario())
 
 
 def test_one_shot_claim_edit_manual_tombstone_restart_and_search(profile: EffectiveProfile) -> None:
@@ -434,6 +574,9 @@ def test_no_successors_even_with_interactive_relabel_and_delayed_context(
                     )
                 ),
                 lambda: app.jobs.resume(saved.id),
+                lambda: app.jobs.follow_up(
+                    context.session_id, "child", "2027-01-01T09:00Z", request_id=new_id()
+                ),
                 lambda: app.jobs.manual(saved.id, request_id=new_id()),
                 lambda: app.runs.submit(
                     context.session_id,
@@ -466,7 +609,7 @@ def test_no_successors_even_with_interactive_relabel_and_delayed_context(
             occurrence = occurrences(app)[0]
             assert occurrence.run_id
             assert (await app.runs.wait(occurrence.run_id, timeout=3)).state == RunState.COMPLETED
-            assert len(attempts) == 5 and len(app.jobs.list()) == 1
+            assert len(attempts) == 6 and len(app.jobs.list()) == 1
         finally:
             await app.stop()
 

@@ -83,12 +83,18 @@ class Delegate(ToolArguments):
     ]
 
 
+class ContinueDelegation(Delegate):
+    session_id: RecordID
+
+
 async def delegate(context: ToolContext, args: Delegate) -> ToolResult:
     from solakit.tools.dispatch import Invocation
 
     if not isinstance(context.services, Invocation):
         raise ToolError("Delegation requires the built-in dispatcher")
-    return await context.services.delegate(args.task)
+    return await context.services.delegate(
+        args.task, args.session_id if isinstance(args, ContinueDelegation) else None
+    )
 
 
 class ContentPage(ToolArguments):
@@ -129,6 +135,11 @@ class JobCreate(ToolArguments):
 
 class JobTarget(ToolArguments):
     job_id: RecordID
+
+
+class JobFollowUp(ToolArguments):
+    task: Annotated[str, Field(min_length=1, max_length=32768)]
+    at: Annotated[str, Field(min_length=1, max_length=64)]
 
 
 class JobUpdate(JobTarget):
@@ -292,6 +303,15 @@ TOOLS = (
         "the worker needs. Summarize a completed report as the worker's findings and describe "
         "any other status as an incomplete attempt.",
         Delegate,
+        delegate,
+        origins=frozenset({Origin.INTERACTIVE}),
+    ),
+    Tool(
+        "delegate.continue",
+        "When the user explicitly asks to continue earlier delegated work, ask the same worker "
+        "a follow-up question using its local transcript. Copy the session_id from the earlier "
+        "delegation result in this topic. Ask which worker if the reference is unclear.",
+        ContinueDelegation,
         delegate,
         origins=frozenset({Origin.INTERACTIVE}),
     ),
@@ -509,6 +529,16 @@ TOOLS = (
     ),
     Tool("memory.recall", "Recall scoped semantic memory, when available.", Query, memory),
     job_tool("list", "List this topic's jobs.", ToolArguments),
+    job_tool(
+        "follow_up",
+        "Schedule a one-time reminder or conversation revisit in this topic only when the "
+        "user explicitly asks. Resolve relative dates using the current local time in the "
+        "prompt. Send an ISO date and time with its UTC offset when known, or a local ISO "
+        "date and time for the configured background timezone. Ask the user if the time, "
+        "including which offset during a repeated hour, is unresolved. Confirm the accepted "
+        "due_at and job_id from the receipt.",
+        JobFollowUp,
+    ),
     job_tool(
         "create",
         "Create a bound job; disabled unless explicitly enabled.",

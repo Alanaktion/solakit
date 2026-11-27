@@ -16,6 +16,7 @@ from solakit.engine.run_loop import records
 from solakit.records import Delegation, Job, Origin, Run, RunState, SessionMode, ToolReceipt, new_id
 from solakit.runtime import ApplicationContext
 from solakit.storage.evidence import StorageError
+from solakit.storage.session_transfer import export_session, import_session
 from solakit.storage.store import Store
 
 BRIEF = "From survey.txt, report the species and count."
@@ -31,7 +32,16 @@ def setup(
     context, prompts = harness(selected, responses)
     assert context.tools and context.store and context.runs
     context.runs.max_active = 2
-    grants = frozenset({"delegate.run", "files.read", "files.list", "files.write", "jobs.create"})
+    grants = frozenset(
+        {
+            "delegate.run",
+            "delegate.continue",
+            "files.read",
+            "files.list",
+            "files.write",
+            "jobs.create",
+        }
+    )
     context.profile = context.profile.model_copy(update={"tools": grants, "granted_tools": grants})
     parent = context.profile
     worker = parent.model_copy(
@@ -68,6 +78,93 @@ def get_receipts(store: Store, run_id: str) -> list[ToolReceipt]:
 
 def get_link(store: Store, run_id: str) -> Delegation:
     return next(record for record in records(store, run_id) if isinstance(record, Delegation))
+
+
+@pytest.mark.parametrize("case", ["continued", "foreign", "busy", "archived", "revoked"])
+def test_continue_existing_worker_after_restart(profile: EffectiveProfile, case: str) -> None:
+    async def scenario() -> None:
+        first, _ = setup(
+            profile,
+            [DELEGATE, reply("The survey found waxwings."), reply("Worker report received.")],
+        )
+        assert first.store and first.runs
+        await first.start()
+        try:
+            parent = start_parent(first)
+            assert (await first.runs.wait(parent.id, timeout=3)).state == RunState.COMPLETED
+            original = get_link(first.store, parent.id)
+        finally:
+            await first.stop()
+
+        question = "Which bird did you identify earlier?"
+        arguments = json.dumps({"session_id": original.child_session_id, "task": question})
+        replies = [reply("Acknowledged."), reply("", calls=[call("delegate.continue", arguments)])]
+        if case == "continued":
+            replies.append(reply("Waxwings."))
+        replies.append(reply("Follow-up attempt settled."))
+        app, prompts = setup(profile, replies)
+        assert app.store and app.runs and app.tools
+        store, runs, dispatcher = app.store, app.runs, app.tools
+        resolve = dispatcher.current
+
+        def current(admitted: EffectiveProfile) -> EffectiveProfile:
+            selected = resolve(admitted)
+            if admitted.name != "research":
+                return selected
+            updated = selected.tools - {"files.read"} if case == "revoked" else selected.tools
+            return selected.model_copy(update={"tools": updated | {"files.list"}})
+
+        dispatcher.current = current
+        await app.start()
+        try:
+
+            def submit(topic: str, content: str) -> Run:
+                return runs.submit(topic, profile=app.profile, content=content, request_id=new_id())
+
+            other_turn = submit(parent.session_id, "An unrelated parent-only detail.")
+            assert (await runs.wait(other_turn.id, timeout=3)).state == RunState.COMPLETED
+            if case == "archived":
+                store.update_session(original.child_session_id, archived=True)
+            if case == "busy":
+                runs.sessions.add(original.child_session_id)
+            topic = store.create_session().id if case == "foreign" else parent.session_id
+            turn = submit(topic, "Ask that researcher a narrower question.")
+            state = (await runs.wait(turn.id, timeout=3)).state
+            (receipt,) = get_receipts(store, turn.id)
+            if case != "continued":
+                assert state == RunState.FAILED
+                assert receipt.status == ("failed" if case == "busy" else "denied")
+                if case == "busy":
+                    assert receipt.result == {"status": "busy"}
+                assert len(store.runs(original.child_session_id)) == 1
+                return
+            assert state == RunState.COMPLETED
+            link = get_link(store, turn.id)
+            assert link.child_session_id == original.child_session_id
+            assert link.continued_from_run_id == original.child_run_id
+            child = store.run(link.child_run_id)
+            assert child.continued_from_run_id == original.child_run_id
+            assert child.profile == "research"
+            assert isinstance(receipt.result, dict)
+            evidence = receipt.result["evidence_ids"]
+            assert isinstance(evidence, list) and original.child_run_id in evidence
+            assert receipt.result["report"] == "Waxwings."
+            assert original.child_session_id in json.dumps(prompts[1]["messages"])
+            assert "The survey found waxwings." in json.dumps(prompts[2]["messages"])
+            assert "parent-only detail" not in json.dumps(prompts[2]["messages"])
+            assert {tool["function"]["name"] for tool in prompts[2]["tools"]} == {"files.read"}
+            copied = import_session(store, export_session(store, topic), new_id())
+            copied_turn = store.runs(copied, before=0, limit=1)[0][1]
+            copied_link = get_link(store, copied_turn.id)
+            assert copied_link.continued_from_run_id not in (None, original.child_run_id)
+            assert store.run(copied_link.child_run_id).continued_from_run_id == (
+                copied_link.continued_from_run_id
+            )
+        finally:
+            runs.sessions.discard(original.child_session_id)
+            await app.stop()
+
+    asyncio.run(scenario())
 
 
 def test_isolated_child_report_and_shared_budget(profile: EffectiveProfile, tmp_path: Path) -> None:

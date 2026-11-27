@@ -4,6 +4,7 @@ import base64
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TypedDict
+from zoneinfo import ZoneInfo
 
 from pydantic import Field, JsonValue
 
@@ -12,6 +13,7 @@ from solakit.records import (
     Artifact,
     Document,
     Message,
+    Origin,
     RecordID,
     SessionMode,
     Timestamp,
@@ -216,18 +218,22 @@ def assemble(profile: EffectiveProfile, frozen: PromptInput) -> PreparedPrompt:
     if frozen.recall is not None:
         add("recorded_recall", "user", frozen.recall)
         messages[-1]["name"] = "recorded_recall"
-    add(
-        "metadata",
-        "system",
-        canonical(
-            {
-                "at": frozen.at.isoformat(),
-                "origin": profile.origin,
-                "mode": profile.mode,
-                "profile": profile.name,
-            }
-        ).decode(),
-    )
+    metadata = {
+        "at": frozen.at.isoformat(),
+        "origin": profile.origin,
+        "mode": profile.mode,
+        "profile": profile.name,
+    }
+    if (
+        "jobs.follow_up" in profile.tools
+        and profile.origin == Origin.INTERACTIVE
+        and profile.mode != SessionMode.EPHEMERAL
+    ):
+        zone = profile.background.timezone
+        metadata.update(
+            background_timezone=zone, local_at=frozen.at.astimezone(ZoneInfo(zone)).isoformat()
+        )
+    add("metadata", "system", canonical(metadata).decode())
     if frozen.tool_catalog:
         add(
             "tool_catalog",

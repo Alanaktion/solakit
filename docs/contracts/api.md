@@ -146,10 +146,10 @@ means unavailable service/state.
 | `/runs/{id}/prompts` | GET exact recorded model-request references for conversation, compaction and vision |
 | `/runs/{id}/artifacts/{id}` | GET bounded verified bytes of a directly linked document, request, manifest, response or tool artifact |
 | `/sessions/{id}/events` | GET [SSE protocol](events.md) |
-| `/jobs` | GET stable creation pages; POST creates a disabled definition unless explicitly enabled |
+| `/jobs` | GET stable creation pages; POST creates a definition or [one-time follow-up](#scheduling-a-follow-up) |
 | `/jobs/{id}` | GET/PATCH/DELETE through existing validation, narrowing and tombstones. PATCH `{"enabled":true/false}` toggles automatic scheduling |
 | `/jobs/{id}/run` | POST explicit manual occurrence, including for disabled jobs. Requires Idempotency-Key and returns the occurrence with its durable run reference |
-| `/jobs/{id}/occurrences` | GET occurrence pages including decisions and run references |
+| `/jobs/{id}/occurrences` | GET occurrence pages including decisions and run references. Follow-up occurrences include `delivery_state` when a run was admitted |
 | `/jobs/control` | GET or PUT `{"paused":true/false}` for global scheduler pause |
 | `/memory` | GET observer state and commit counts |
 | `/memory/{id}/reconcile` | POST provider_task_id; verify ambiguous/failed work's provider ownership, never resubmit content |
@@ -237,7 +237,20 @@ Delegated topics carry `parent_session_id` and are available through authenticat
 session and run reads. The parent run's `delegation` evidence row links the
 parent tool call to `child_session_id` and `child_run_id` in sequence. The child
 run carries `parent_tool_call_id` and uses the ordinary cancellation endpoint.
+On a follow-up, both records also carry `continued_from_run_id`.
 Direct run submissions and job definitions targeting the child return 409.
+
+### Scheduling a follow-up
+
+Authenticate and send `POST /api/v1/jobs` with `session_id`, `task` and `at`.
+This shape requires a 32-character lowercase hex `Idempotency-Key`. The
+response is 201 with `job_id` and the accepted `due_at` in the background
+timezone with its UTC offset. Reusing the key for the same request returns
+the original receipt. Reusing it for a different request returns 409.
+The topic must be active, shared or isolated. The server interprets local
+timestamps in the background timezone and requires an explicit offset for
+ambiguous times. The ordinary definition request still accepts `schedule`
+and defaults to disabled.
 
 ## Pagination and bounded inspection
 

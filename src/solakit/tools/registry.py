@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import JsonValue
 
+from solakit.records import SessionMode
 from solakit.sdk import SDK_VERSION, Origin, Tool, ToolArguments
 from solakit.tools.builtins import TOOLS
 
@@ -96,6 +97,7 @@ class Registry:
             if (tool := self.tools.get(name)) is not None
             and profile.origin in tool.origins
             and (profile.memory_mode != "off" or not name.startswith("memory."))
+            and (name != "jobs.follow_up" or profile.mode != SessionMode.EPHEMERAL)
         )
 
     def visible(

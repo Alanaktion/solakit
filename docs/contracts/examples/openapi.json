@@ -88,6 +88,86 @@
         "title": "Failure",
         "type": "object"
       },
+      "FollowUpAdmission": {
+        "additionalProperties": false,
+        "properties": {
+          "due_at": {
+            "title": "Due At",
+            "type": "string"
+          },
+          "fingerprint": {
+            "title": "Fingerprint",
+            "type": "string"
+          },
+          "source_run_id": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Run Id"
+          }
+        },
+        "required": [
+          "due_at",
+          "fingerprint"
+        ],
+        "title": "FollowUpAdmission",
+        "type": "object"
+      },
+      "FollowUpInput": {
+        "additionalProperties": false,
+        "properties": {
+          "at": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "At",
+            "type": "string"
+          },
+          "session_id": {
+            "pattern": "^[0-9a-f]{32}$",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "task": {
+            "maxLength": 32768,
+            "minLength": 1,
+            "title": "Task",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "task",
+          "at"
+        ],
+        "title": "FollowUpInput",
+        "type": "object"
+      },
+      "FollowUpReceipt": {
+        "additionalProperties": false,
+        "properties": {
+          "due_at": {
+            "title": "Due At",
+            "type": "string"
+          },
+          "job_id": {
+            "pattern": "^[0-9a-f]{32}$",
+            "title": "Job Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id",
+          "due_at"
+        ],
+        "title": "FollowUpReceipt",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -160,6 +240,16 @@
             "default": false,
             "title": "Enabled",
             "type": "boolean"
+          },
+          "follow_up": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FollowUpAdmission"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "generation": {
             "default": 1,
@@ -897,6 +987,18 @@
       "Run": {
         "additionalProperties": false,
         "properties": {
+          "continued_from_run_id": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Continued From Run Id"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -2328,13 +2430,31 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "description": "Required for the follow-up request shape.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "pattern": "^[0-9a-f]{32}$",
+              "type": "string"
+            }
           }
         ],
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/JobInput"
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/JobInput"
+                  },
+                  {
+                    "$ref": "#/components/schemas/FollowUpInput"
+                  }
+                ],
+                "title": "Body"
               }
             }
           },
@@ -2345,7 +2465,15 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Job"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/Job"
+                    },
+                    {
+                      "$ref": "#/components/schemas/FollowUpReceipt"
+                    }
+                  ],
+                  "title": "Response Create Job Api V1 Jobs Post"
                 }
               }
             },

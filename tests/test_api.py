@@ -602,6 +602,36 @@ def test_jobs_shared_controls_and_occurrences(client: TestClient) -> None:
     assert client.get("/api/v1/jobs").json()["items"] == []
 
 
+def test_follow_up_http_create_is_bound_and_idempotent(client: TestClient) -> None:
+    body = {"task": "Revisit this topic", "at": "2099-11-13T09:00"}
+    path = "/api/v1/jobs"
+    assert client.post(path, json=body).status_code == 401
+    login(client)
+    topic = client.post("/api/v1/sessions", json={"mode": "isolated"}).json()
+    body["session_id"] = topic["id"]
+    assert client.post(path, json=body).status_code == 422
+    headers = {"Idempotency-Key": new_id()}
+    response = client.post(path, json=body, headers=headers)
+    assert response.status_code == 201, response.text
+    receipt = response.json()
+    assert receipt["due_at"] == "2099-11-13T09:00:00-07:00"
+    job_url = f"{path}/{receipt['job_id']}"
+    definition = client.get(job_url).json()
+    assert definition["session_id"] == topic["id"] and definition["mode"] == "isolated"
+    assert definition["enabled"] and definition["tools"] == definition["workspace_roots"] == []
+    assert client.delete(job_url).json()["deleted"]
+    assert client.post(path, json=body, headers=headers).json() == receipt
+    assert client.post(path, json=body | {"task": "Other"}, headers=headers).status_code == 409
+    assert client.get(path).json()["items"] == []
+    ephemeral = client.post("/api/v1/sessions", json={"mode": "ephemeral"}).json()
+    assert (
+        client.post(
+            path, json=body | {"session_id": ephemeral["id"]}, headers={"Idempotency-Key": new_id()}
+        ).status_code
+        == 409
+    )
+
+
 def test_sse_replay_preview_loss_gap_revocation_and_cleanup(
     profile: EffectiveProfile, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -11,6 +11,7 @@ from pydantic import JsonValue, ValidationError
 
 from solakit.config import ConfigError, EffectiveProfile, WebFetchSettings, restrict_to_admission
 from solakit.records import (
+    DELEGATION_TOOLS,
     Artifact,
     ErrorCode,
     Failure,
@@ -156,7 +157,12 @@ class Dispatcher:
             raise ConfigError("Delegated run requires an active interactive parent")
         parent_admitted = self.store.admitted_profile(parent.id)
         ceiling = restrict_to_admission(self.current(parent_admitted), parent_admitted)
-        if "delegate.run" not in ceiling.tools or ceiling.delegation_worker != profile.name:
+        name = self.store.delegation_call(link.id).name
+        if (
+            name not in DELEGATION_TOOLS
+            or name not in ceiling.tools
+            or (ceiling.delegation_worker != profile.name)
+        ):
             raise ConfigError("Parent delegation grant has changed")
         profile = restrict_to_admission(ceiling, profile)
         tools = frozenset(
@@ -164,6 +170,8 @@ class Dispatcher:
             for name in profile.tools & WORKER_TOOLS
             if (tool := self.registry.tools.get(name)) is not None and not tool.consequential
         )
+        if run.continued_from_run_id is not None and admitted.tools and not tools:
+            raise ConfigError("Original delegation worker has lost its grants")
         budgets = profile.budgets.model_copy(
             update={
                 "model_calls": min(
@@ -263,7 +271,7 @@ class ToolSession:
                 raise ToolError(
                     "Tool returned without confirming its effect", ErrorCode.EFFECT_UNCERTAIN
                 )
-            if call.name == "delegate.run":
+            if call.name in DELEGATION_TOOLS:
                 result = outcome.data
                 assert isinstance(result, dict)
                 if result["status"] != "completed":
@@ -353,7 +361,7 @@ class ToolSession:
             )
         finally:
             invocation.closed = True
-        if call.name == "delegate.run" and result is None and (link := store.delegation(call.id)):
+        if call.name in DELEGATION_TOOLS and result is None and (link := store.delegation(call.id)):
             result = store.delegation_result(link, include_report=False)
             encoded = canonical(result)
             result_bytes, result_sha256 = len(encoded), digest(encoded)
@@ -463,16 +471,18 @@ class Invocation:
             raise ToolError("Outbound effect deferred by quiet hours", ErrorCode.TOOL_DENIED)
         return profile
 
-    async def delegate(self, task: str) -> ToolResult:
+    async def delegate(self, task: str, session_id: str | None) -> ToolResult:
         profile = self.authority()
-        if self.call.name != "delegate.run" or self.dispatcher.runs is None:
+        if self.call.name not in DELEGATION_TOOLS or self.dispatcher.runs is None:
             raise ToolError("Delegation is outside current authority", ErrorCode.TOOL_DENIED)
         remaining = min(
             profile.budgets.active_seconds - (time.monotonic() - self.started),
             profile.budgets.tool_timeout_seconds - (time.monotonic() - self.call_started),
         )
         return ToolResult(
-            data=await self.dispatcher.runs.delegate(self.call, profile, task, remaining)
+            data=await self.dispatcher.runs.delegate(
+                self.call, profile, task, remaining, session_id
+            )
         )
 
     def begin_effect(self, credentials: tuple[str, ...] = ()) -> None:
@@ -708,12 +718,19 @@ class Invocation:
                 self.dispatcher.store.run(self.run_id),
                 profile,
             )
-        except ValueError, KeyError:
+        except (ValueError, KeyError) as error:
             # Validation precedes mutations; a failed store still retains uncertainty.
             if self.dispatcher.store.failed:
                 raise StorageError("Job mutation failed; recover before retry") from None
             self.effect = "none"
-            raise ToolError("Invalid job operation or target", ErrorCode.INVALID_INPUT) from None
+            from solakit.engine.jobs import FollowUpError
+
+            message = (
+                str(error)
+                if isinstance(error, FollowUpError)
+                else "Invalid job operation or target"
+            )
+            raise ToolError(message, ErrorCode.INVALID_INPUT) from None
         if action != "list":
             self.confirm_effect()
         return result

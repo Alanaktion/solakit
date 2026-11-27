@@ -71,10 +71,14 @@ defaults. Git history retains the original decisions and rollout details.
   autonomous run remains bound to its origin, topic and budgets and cannot create
   successors. Use durable occurrence claims, rate caps, quiet hours and coalesced
   local delivery. The job's `enabled` switch controls automatic scheduling.
-  Manual runs retain global pause and overlap controls. [Job contract](contracts/jobs.md)
+  Manual runs retain global pause and overlap controls. A timed follow-up creates
+  an enabled one-shot with empty tool and workspace root ceilings in the
+  current shared or isolated topic. [Job contract](contracts/jobs.md)
 - Allow opt-in delegation from interactive runs to one configured isolated worker
   profile. Intersect worker and parent authority, reserve an existing run slot,
   share the inference permit and charge the parent's budgets.
+  An explicit continuation reuses the same child topic and original worker
+  ceiling.
   [Delegation](contracts/tools.md#bounded-delegation)
 
 ## Integrations

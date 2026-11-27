@@ -480,3 +480,12 @@ has only `status` because there is no child. The parent receives the outcome as
 tool data and can describe an incomplete attempt using the recorded status.
 The full child reply is available through authenticated evidence. See the
 [run contract](run-loop.md#bounded-concurrency-and-waits) for budgets and recovery.
+
+`delegate.continue(session_id, task)` requires its own grant. On an explicit
+follow-up request, copy the child `session_id` from a result in the current
+parent topic. The child must belong directly to that topic, be unarchived,
+and have no active run. The original worker and its first admission ceiling
+apply alongside the current worker settings and the new parent's grants.
+Continuations share the same slot, budget, cancellation and result rules.
+The parent evidence links the previous and new worker runs. A fresh interactive
+turn can ask again after an interruption or restart.

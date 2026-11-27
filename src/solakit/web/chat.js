@@ -30,6 +30,8 @@ let messagesDone = false,
   following = true,
   refreshTimer = null;
 let editingTopic = false;
+let followUpTopic = null;
+let backgroundTimezone = '';
 let importBatch = [];
 let draftImage = null;
 let draftDocuments = [];
@@ -839,6 +841,7 @@ async function boot() {
   await Promise.all([loadTopics(), loadProfiles(), api('/health').then((health) => {
     imageInputs = health.image_inputs;
     documentConversion = health.document_conversion;
+    backgroundTimezone = health.background_timezone;
     updateComposer();
   })]);
   const linked = new URLSearchParams(window.location.search).get('session');
@@ -914,6 +917,7 @@ function newTopic() {
   $('mode').disabled = false;
   $('pinned').disabled = $('archived').disabled = true;
   $('export-topic').hidden = true;
+  $('schedule-follow-up').hidden = true;
   $('topic-dialog').showModal();
 }
 
@@ -929,7 +933,62 @@ function editTopic() {
   $('pinned').checked = topic.pinned;
   $('archived').checked = topic.archived;
   $('export-topic').hidden = false;
+  $('schedule-follow-up').hidden = topic.archived || topic.parent_session_id ||
+    topic.mode === 'ephemeral';
   $('topic-dialog').showModal();
+}
+
+function openFollowUp() {
+  const topic = topics.get(selected);
+  if (!topic || topic.archived || topic.parent_session_id || topic.mode === 'ephemeral') return;
+  followUpTopic = topic.id;
+  const pending = read(`sola.follow-up.${topic.id}`, null);
+  $('follow-up-form').reset();
+  $('follow-up-task').value = pending?.body.task || '';
+  $('follow-up-at').value = pending?.localAt || '';
+  $('follow-up-offset').value = pending?.offset || '';
+  $('follow-up-fields').hidden = $('follow-up-submit').hidden = false;
+  $('follow-up-schedules').hidden = true;
+  text($('follow-up-topic'), topic.title || 'Untitled topic');
+  text($('follow-up-timezone'), backgroundTimezone || 'Configured background time zone');
+  text($('follow-up-close'), 'Cancel');
+  text($('follow-up-status'), '');
+  text($('follow-up-error'), '');
+  $('topic-dialog').close();
+  $('follow-up-dialog').showModal();
+}
+
+async function saveFollowUp(event) {
+  event.preventDefault();
+  const submit = $('follow-up-submit');
+  if (submit.disabled || submit.hidden) return;
+  const close = $('follow-up-close');
+  submit.disabled = close.disabled = true;
+  text($('follow-up-error'), '');
+  const storageKey = `sola.follow-up.${followUpTopic}`;
+  const localAt = $('follow-up-at').value;
+  const offset = $('follow-up-offset').value;
+  const body = { session_id: followUpTopic, task: $('follow-up-task').value.trim(), at: localAt + offset };
+  const pending = read(storageKey, null);
+  const key = JSON.stringify(pending?.body) === JSON.stringify(body) ? pending.key : uid();
+  write(storageKey, { body, key, localAt, offset });
+  try {
+    const receipt = await api('/jobs', {
+      method: 'POST',
+      headers: { 'Idempotency-Key': key },
+      body
+    });
+    write(storageKey, null);
+    text($('follow-up-status'), `Scheduled for ${receipt.due_at.replace('T', ' ')}.`);
+    $('follow-up-fields').hidden = submit.hidden = true;
+    $('follow-up-schedules').hidden = false;
+    text(close, 'Done');
+  } catch (error) {
+    text($('follow-up-error'), error.message);
+  } finally {
+    submit.disabled = close.disabled = false;
+    if (submit.hidden) close.focus();
+  }
 }
 
 async function exportTopic() {
@@ -1115,6 +1174,8 @@ document.querySelector('sola-app').actions = {
   login,
   saveTopic,
   exportTopic,
+  openFollowUp,
+  saveFollowUp,
   openImport,
   chooseImport,
   importTopic,

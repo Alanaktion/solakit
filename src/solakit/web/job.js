@@ -62,10 +62,12 @@ class SolaJob extends SolaElement {
       <article data-job-id=${job.id}>
         <h3>${job.task.slice(0, 128)}</h3>
         <p class="meta">
-          ${`${job.enabled ? 'Enabled' : 'Disabled'}${job.consumed ? ' · Finished' : ''} · ${job.schedule} · ${job.timezone}`}
+          ${job.follow_up
+            ? `${job.consumed ? 'See occurrence' : job.enabled && !this.schedulerPaused ? 'Due' : 'Paused'} · ${job.schedule.startsWith('once:') ? job.schedule.slice(5).replace('T', ' ') : job.schedule} · ${job.timezone}`
+            : `${job.enabled ? 'Enabled' : 'Disabled'}${job.consumed ? ' · Finished' : ''} · ${job.schedule} · ${job.timezone}`}
         </p>
         <p class="meta">
-          ${job.origin === 'proactive' ? 'Proactive wake-up' : 'Scheduled task'} ·
+          ${job.follow_up ? 'Follow-up' : job.origin === 'proactive' ? 'Proactive wake-up' : 'Scheduled task'} ·
           ${job.profile} ·
           ${job.mode === 'ephemeral' ? 'New one-run topic' : 'Bound topic'}${job.delivery === 'none' ? ' · Evidence only' : ''}${job.enabled && !this.schedulerPaused && job.next_due ? ` · Next: ${new Date(job.next_due).toLocaleString()}` : ''}
         </p>
@@ -121,7 +123,7 @@ class SolaJob extends SolaElement {
                     (occurrence) => html`
                       <details>
                         <summary>
-                          ${`${occurrence.state} · ${occurrence.decision === 'no_action' ? 'No action needed' : occurrence.decision} · ${occurrence.due_at}`}
+                          ${`${occurrence.state} · ${occurrence.decision === 'no_action' ? 'No action needed' : occurrence.decision}${occurrence.delivery_state ? ` · Delivery ${occurrence.delivery_state}` : ''} · ${occurrence.local_slot || occurrence.due_at}`}
                         </summary>
                         <pre tabindex="0">${JSON.stringify(occurrence, null, 2)}</pre>
                         ${
