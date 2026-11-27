@@ -1,10 +1,8 @@
 # Model requests and prompt evidence
 
-Phase 4, implemented and locally/live verified on 2026-11-16. See
-[verification](../validation/phase-04.md). Prompt assembly lives in
-[`prompts.py`](../../src/solakit/engine/prompts.py); the oMLX/SDK boundary is
-[`model.py`](../../src/solakit/adapters/model.py). The model adapter returns owned values,
-never provider response objects. There is no tool execution or conversation loop.
+[`prompts.py`](../../src/solakit/engine/prompts.py) assembles requests.
+[`model.py`](../../src/solakit/adapters/model.py) wraps oMLX and returns runtime
+records. The [run loop](run-loop.md) owns tool execution and conversation turns.
 
 ## Ownership and identity
 
@@ -53,8 +51,8 @@ Selected message IDs cover summary, history and input in that order. Selections
 must be distinct and belong to one session. The assembler never performs retrieval,
 reads a clock, silently trims context, or searches another session. Isolated and
 ephemeral prompts reject supplied recall; ephemeral prompts also reject continuing
-history/summary. Current history accepts text user/assistant messages; provider
-tool IDs and complete tool conversation projection arrive in Phase 6.
+history and summaries. The run loop projects prior assistant calls and their
+matching tool results.
 
 For user messages with document attachments, the content is a JSON object
 containing the original `message` and an ordered list of
@@ -90,7 +88,7 @@ reason, provider response ID and usage, and points to a private response artifac
 HTTP error bodies are retained up to the response bound. Failed/partial streams
 retain received bytes. A process exit can leave request intent without a terminal
 step; normal store recovery interrupts its run, without fabricating a model reply.
-Older Phase 2/3 ModelSteps remain readable with optional request/response/usage
+Older ModelSteps remain readable with optional request/response/usage
 fields absent. Run admission request IDs and model request record IDs are distinct.
 
 With separate recognition enabled, the first request and response for an image
@@ -108,7 +106,7 @@ on bytes before decoding, so split UTF-8 and JSON argument fragments survive.
 Tool calls assemble by index with a stable provider ID and must have contiguous
 indices, unique IDs, function names and finite JSON-object arguments. They remain
 inert until the full response passes validation. Permission/schema enforcement at
-dispatch is Phase 5/6, independent of model output. Responses are bounded to 4 MiB;
+dispatch is independent of model output. Responses are bounded to 4 MiB;
 HTTP error content is capped when recorded (the SDK reads error bodies itself).
 
 Streams require both a finish reason and a complete `[DONE]` event. Token limits,
@@ -124,11 +122,9 @@ assistant delta and no finish reason) is ignored before identity validation. Any
 extra output or different shape retains normal identity/shape checks. Reasoning
 comes exclusively from `reasoning_content`, with `reasoning` as a fallback. Literal
 `<think>` examples and code in content are preserved. A server that emits inline
-reasoning requires a separately verified adapter change; the harness does not guess
-which user-visible tags are reasoning. See the upstream
-[oMLX fields](https://github.com/jundot/omlx/blob/main/omlx/api/openai_models.py) and
-[SDK retry controls](https://github.com/openai/openai-python#retries); local locked
-SDK behavior and the actual service were exercised for this phase.
+reasoning requires a separately verified adapter change.
+[oMLX response fields](https://github.com/jundot/omlx/blob/main/omlx/api/openai_models.py),
+[SDK retry controls](https://github.com/openai/openai-python#retries)
 
 ## Private fidelity and operational output
 
@@ -136,7 +132,7 @@ Body, manifest and response files use the store's mode-0600 immutable publicatio
 artifact directories use mode 0700. They contain private inputs and outputs
 unmasked. No transport headers or credentials are included. A credential typed by
 the operator into a conversation remains part of that private conversation.
-Back up these artifacts with state/evidence, using the Phase 3 checkpoint protocol.
+Back up these artifacts with state and evidence. [Backup and restore](../backup-restore.md)
 
 Operational failures use fixed safe descriptions and HTTP status codes, never SDK
 exception strings or response bodies. The adapter suppresses SDK/transport debug
@@ -146,10 +142,9 @@ Redirecting its output is an intentional export of private prompt data.
 
 ## Accounting and offline inspection
 
-No tokenizer has been verified locally. Phase 8 supersedes the initial bytes/4
-estimate with serialized UTF-8 bytes plus 32 per message, the admitted output
-reserve, 10% window safety margin, and expected tool-result headroom capped at
-window/8 when tools are offered. Actual continuations are rechecked. Requests
+Context accounting estimates usage from serialized UTF-8 bytes plus 32 per
+message, the admitted output reserve, a 10% safety margin, and tool-result
+headroom capped at window/8 when tools are offered. Actual continuations are rechecked. Requests
 exceeding `model.context_tokens` fail with an explicit context-limit outcome.
 These remain labelled estimates. The run service can select a durable summary
 and whole-turn tail before inference; the assembler never trims supplied context.
@@ -173,14 +168,12 @@ so later fragment/config edits cannot change the earlier inspected request.
 
 The developer probe covers text, tools and reasoning in both transport modes, plus
 a separate synthetic image capability experiment. Image requests retain exact
-multimodal bytes and explicitly label image accounting unverified. Production
-attachment admission was deferred to Phase 12. [Phase 12](../image-workflows.md)
-now admits same-topic generated PNG references for explicitly enabled verified
-pins, with private exact data-URL evidence and an unverified 16,384-token reserve
-per unique image. Unsupported inputs fail explicitly without model substitution.
+multimodal bytes and explicitly label image accounting unverified. The runtime
+supports image inputs through the enabled pinned model route. Native requests
+reserve an estimated 16,384 tokens per unique image. Unsupported inputs fail
+explicitly. [Image workflows](../image-workflows.md)
 
-
-Phase 6 extends `PromptInput` with validated prior/continuation turns. Complete
+`PromptInput` accepts validated prior and continuation turns. Complete
 assistant calls and matching provider-ID tool results are projected from durable
 records, with source IDs in the manifest. The original `sola-prompt-v1` ordering and
 golden request remain unchanged for an input without projected turns. Malformed

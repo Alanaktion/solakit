@@ -45,8 +45,7 @@ Use pytest with `test_*.py` files and `test_*` functions. Run focused checks wit
 `uv run --locked pytest tests/test_tools.py`. Cover changed behavior, failure
 paths, and permission boundaries using disposable data. No numerical coverage
 minimum is configured. Mocked checks do not establish live Qwen, oMLX, or
-OpenViking verification. Record material validation and limitations under
-`docs/validation/`.
+OpenViking verification. Keep detailed validation reports and artifacts local.
 
 ## Commit & Pull Request Guidelines
 

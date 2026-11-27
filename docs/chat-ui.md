@@ -37,8 +37,9 @@ storage; sign-in uses the existing HttpOnly session cookie and CSRF protocol.
 
 Use **Attach files** or drop files anywhere in the conversation. The draft shows
 each attachment so you can remove it before sending. Attach up to four UTF-8
-documents, such as Markdown, text, CSV, or JSON, with up to 24 KiB of combined
-text. Sent messages link to the text Sola received.
+text files with up to 24 KiB of combined text. This includes source files such as
+SVG, HTML, JavaScript, and extensionless files such as a Makefile. Sent messages
+link to the text Sola received.
 
 PDF, DOCX, and PPTX are available when the configured oMLX API advertises
 **MarkItDown**. In oMLX Integration Settings, turn on **Enable MarkItDown** and
@@ -211,7 +212,7 @@ controller. Imports flow toward helpers and components; components do not import
 `chat.js`. Every module is packaged in the wheel and explicitly allowlisted by the
 HTTP boundary. No bundler or external module source is required.
 
-## Reproducible browser acceptance
+## Browser regression checks
 
 The fixture starts a real loopback HTTP server with the real runtime/services,
 a synthetic streaming model and a four-second synthetic tool. It creates 500
@@ -232,7 +233,7 @@ npm install --prefix /tmp/sola-chat-browser --no-audit --no-fund playwright @axe
 /tmp/sola-chat-browser/node_modules/.bin/playwright install chromium
 SOLA_PLAYWRIGHT_PATH=/tmp/sola-chat-browser/node_modules/playwright \
   node scripts/check_chat.mjs --fixture /tmp/sola-chat-fixture/fixture.json \
-  --output docs/validation/phase-11/browser
+  --output /tmp/sola-chat-browser-results
 ```
 
 `SOLA_BROWSER` can select an already-installed Chromium executable. The script
@@ -247,11 +248,3 @@ and short-window checks. The report retains axe rules needing manual review;
 passing automated checks is not a claim of full WCAG conformance.
 Stop the fixture with Ctrl+C when finished. Browser tooling is not a runtime or
 Python dependency.
-
-Automated acceptance is separate from operator acceptance. The operator still
-needs to complete the conversation, permitted tool task, scheduled message and
-recovery journeys against the intended deployment. Safari/touch devices, a real
-screen reader and remote TLS are not established by a headless Chromium check.
-Configured-server Qwen conversation, cancellation, recovery, Settings and manual
-scheduled delivery have also been browser-verified; see the
-[Phase 11 follow-up evidence](validation/phase-11.md#appearance-and-ux-follow-up).

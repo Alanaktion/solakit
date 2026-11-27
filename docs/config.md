@@ -184,7 +184,7 @@ A correspondence profile needs only `letters.inbox`, `letters.read`,
 `letters.send` and `letters.reply`. For a scheduled job, use a profile with
 `letters.inbox` and `letters.read`, and set the job's own `workspace_roots`
 explicitly for inbox updates. Existing wildcard grants may match newly enabled
-letters tools at admission. [Tool behavior and v1 cutover](contracts/tools.md#git-backed-letters)
+letters tools at admission. [Tool behavior and legacy reply records](contracts/tools.md#git-backed-letters)
 
 ## `[web_search]`
 

@@ -1,10 +1,8 @@
 # Background jobs and proactive work
 
-Phase 9 uses the ordinary run loop, one process/event loop, and the shared model
-permit. `context.jobs` owns application operations. APScheduler 3.11.3 supplies a
-one-second in-memory interval wake; startup evaluates SQLite definitions before
-starting that timer. It never stores jobs in an APScheduler database. See
-[verification](../validation/phase-09.md).
+Jobs share the run loop, event loop and model permit. `context.jobs` owns
+application operations. APScheduler supplies a one-second in-memory wake. Startup
+evaluates SQLite job definitions before starting that timer.
 
 ## Definitions and operations
 
@@ -170,5 +168,4 @@ readable with defaults; an older binary will reject the new evidence kinds.
 
 `runtime.status` exposes durable global pause and scheduler failure type. Inspect
 occurrence snapshots, run records, delivery states and tool receipts before an
-explicit new attempt at interrupted/uncertain work. Operator acceptance, production
-job migration and unattended soak remain separate from Phase 9's live test gate.
+explicit new attempt at interrupted or uncertain work.

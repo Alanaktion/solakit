@@ -1,6 +1,6 @@
 # Session, retention, and routing contract
 
-Phase 0 direction confirmed by the operator; precise internal behavior below is selected for implementation. This contract is independent of HTTP shapes and OpenViking SDK types.
+Session mode controls continuing context and memory access across the runtime.
 
 | Mode | Continuing context | Local evidence | OpenViking | Cross-session access |
 | --- | --- | --- | --- | --- |
@@ -12,7 +12,7 @@ All modes receive operator-owned identity and permitted profile fragments. Isola
 
 ## Admission and lifetime
 
-Shared is the default interactive mode. A session's mode is fixed at creation (Phase 3 decision V2-23); changing mode requires a new session, avoiding retroactive reinterpretation of memory history. Profile permissions may narrow mode access but cannot turn an isolated run into shared memory implicitly.
+Shared is the default interactive mode. A session's mode is fixed at creation; changing mode requires a new session, avoiding retroactive reinterpretation of memory history. Profile permissions may narrow mode access but cannot turn an isolated run into shared memory implicitly.
 
 A shared/isolated topic admits queued turns in FIFO order, with one active context mutation. Ephemeral admission receives a distinct run/session identity and may use tools under its profile. Release in-memory queues/locks/tasks when the ephemeral run and observers finish; retained evidence does not require permanent workers. A later fresh run can reference its artifacts only through a separately authorized explicit input.
 

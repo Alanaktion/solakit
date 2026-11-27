@@ -1,43 +1,13 @@
-# Phase 0 migration inventory
+# Legacy format reference
 
-Scope: format inventory from copied reference source/tests/docs, not an export of live Sola data. Reference HEAD: `fd2086bea12e247297cf0acef47544fb535e2324`. The reference working tree has untracked agent directories and skills metadata; inspected source copies are individually hashed in [reference-manifest.json](reference-manifest.json). Legacy code supplies format evidence only.
+The [direct import guide](cutover.md) describes what to do with a remaining
+legacy data tree. Legacy history includes active and numbered archived
+transcripts, run snapshots and journals, prompt and tool artifacts, job rows
+and journals, and pack-operation receipts. Legacy transcript rotation and v2
+topic archiving are separate operations.
 
-## Inventory and migration mapping
-
-The operator supplied `/Users/alan/.config/solakit/`, has existing backups and
-accepts manual cleanup. The [direct importer](cutover.md) preserves historical
-files and maps sessions/runs/jobs without requiring inventories or rehearsal
-reports. The format inventory below is reference material.
-
-| Category / observed legacy location | Authority and format | V2 treatment / verification | Owner and backup |
-| --- | --- | --- | --- |
-| `sessions/*.meta.json` | Session ID/title/mode/profile/binding/archive/pin metadata | Explicit state.db mapping; retain raw JSON and unknown fields; compare IDs/ordering/dates | Runtime; state + source snapshot |
-| `sessions/*.jsonl`, `*.jsonl.N` | Active and archived conversation, tool calls/results | Preserve source bytes, normalized JSONL references; archive segment ordering and call/result pairing | Evidence; all segments |
-| Session compaction/archive manifests and notes | Context boundaries, recovery stage, operator notes | Preserve raw manifests; verify selected source ranges; separate v2 archival/compaction semantics | Evidence/state; both |
-| `runs/*.events.jsonl`, `*.json` | Run journal plus latest snapshot | Keep journal and raw snapshot; map old statuses/reasons; unfinished work becomes interrupted, never completed by inference | Evidence/state; both |
-| Run prompt/turn/fragment/catalog/schema files | Exact request inputs and hashes | Preserve bytes and hashes, including CRLF; missing historic snapshots explicitly unavailable | Evidence; all referenced artifacts |
-| Run tool/diagnostic/plan JSONL and artifacts | Execution detail, outputs, effect references | Preserve raw evidence; normalized references; bound presentation, not source history | Evidence; receipts + artifacts |
-| Run notes/memory JSONL and commit fields | Staged notes, commit intent/provider state | Preserve exact text and ambiguous submissions; no automatic resend | Runtime/OpenViking; state + local evidence |
-| `app.db.job_definitions` | Authoritative `(id, payload, deleted)` records | Extract independently of FTS; preserve tombstones/unknown fields; disabled until reviewed after migration | Scheduler; consistent SQLite backup |
-| `jobs/*.jsonl` | Pause/consumed/last-run/cursor evidence | Reconcile with definitions; consumed/uncertain attempts do not rearm | Scheduler; state + journals |
-| `pack-operations/` JSONL, pack-owned files/repos | Effect intent/result, request fingerprints, domain content | Retain even for deferred packs; image reconciliation remains needed; do not replay intents | Pack/operator; receipts + resource data |
-| Operator config, SOUL and prompt fragments | Identity, grants, roots, model pin | Preserve source; generate effective-authority diff; exclude deferred tool grants; no personality rewrite | Operator; private config/identity backup |
-| Credential references and login-state file | Secret resolution references; durable legacy browser sessions | Do not put values in Git/reports; revoke old browser sessions at cutover, issue v2 login | Operator/auth; private backup only |
-| OpenViking canonical roots | Remote semantic memory and extraction state | Verify installed API/scope; retain existing roots; test writes use separate root | OpenViking/operator; separate service backup |
-| Legacy channel bindings/post evidence | Historical provenance, potentially outstanding deliveries | Preserve history; do not activate Discord/Android/channels absent release scope | Operator/runtime; raw provenance |
-| Legacy derived indexes/calibration caches | Search/offset/token-estimate acceleration | Do not copy as authority; rebuild search.db solely from JSONL; validate/relearn caches | Disposable; no required backup |
-
-Legacy archival can rotate the active transcript into numbered segments while maintaining the topic binding. V2 archival instead hides/freezes a topic, independently of context compaction. Import must preserve the historical boundary without adopting the old UI operation's semantics.
-
-## Copied and synthetic examples
-
-[reference-manifest.json](reference-manifest.json) records byte count/SHA-256 of fourteen source/test/doc files copied to a temporary directory and compared byte-for-byte. No legacy Store or server was instantiated; no live config, .env, data directory, credentials, or remote service was loaded.
-
-[fixtures/legacy-format/manifest.json](fixtures/legacy-format/manifest.json) inventories eleven deliberately synthetic examples: session metadata with an unknown field; active and archived JSONL; a tool-call/result group; run events; CRLF prompt bytes; tool schemas/receipt; a torn trailing record; authoritative job-row export with a tombstone; a consumed job journal; and an uncertain pack-operation intent. They are minimal format examples, not a full legacy-schema acceptance corpus or real SQLite backup. Phase 3 expands/validates them against full import requirements.
-
-## Production import
-
-Use the [direct import guide](cutover.md). Stop the old runtime and choose a new
-v2 data directory. Raw historical data is retained, jobs start disabled and search
-is rebuilt from JSONL. Configuration, identity and external memory/resources stay
-operator-owned; no new backup or audit workflow is required.
+The [fixture manifest](fixtures/legacy-format/manifest.json) describes synthetic
+examples of these formats, including unknown fields, CRLF prompt bytes, a torn
+trailing record, a consumed job, and an uncertain pack operation. The
+[copied-source manifest](reference-manifest.json) records the source revision and
+checksums used to establish the formats.

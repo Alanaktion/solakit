@@ -7,8 +7,8 @@ schedule evidence.
 
 ## Continue delegated work
 
-- Add `delegate.continue(session_id, task)` after
-  [delegation](NEXT-AGENT-DELEGATION.md). The model copies `session_id` from a
+- Add `delegate.continue(session_id, task)` using the existing
+  [delegation service](../contracts/tools.md#bounded-delegation). The model copies `session_id` from a
   delegated result in the same parent topic. Use the same result shape as
   `delegate.run`. Reuse the child's local transcript and original worker
   profile, so the follow-up can refer to its earlier work.

@@ -1,7 +1,6 @@
 # Evidence, operational state, and search
 
-Phase 3 protocol, selected before implementing storage callers. Local filesystem,
-one cooperating writer under the existing data-directory ownership lock. Store
+One cooperating writer owns the data directory under a local filesystem lock. Store
 methods are synchronous, bounded local operations called on the owning event
 loop; there is no extra worker or independent SQLite writer.
 
@@ -39,8 +38,7 @@ may dispatch from a committed-but-undelivered row. Admission acceptance is the
 return from `admit`, not the SQLite commit. An unacknowledged request is discoverable
 by its request ID after recovery. The admission key covers session, profile,
 origin, lineage, input and frozen admission details, excluding generated IDs/time.
-Phase 3 admits interactive/system work only. Scheduled/proactive admissions are
-rejected until Phase 9 can verify authoritative job/occurrence claiming.
+Scheduled and proactive admissions require an atomic occurrence claim. [Job contract](jobs.md)
 
 On restart validate active evidence, reconcile stable IDs and exact payloads, then drain
 the outbox before allowing new mutations. Append-before-delivered reuses the
@@ -49,7 +47,7 @@ ID with different content, invalid complete line, sequence gap, stale offset, or
 state/evidence mismatch is corruption and blocks the store. Missing operational
 state is never silently reconstructed from evidence. A running run becomes
 interrupted; sending delivery becomes uncertain; running memory work becomes
-failed. Queued runs remain queued for the Phase 6 policy. Unreceipted tool intents
+failed. Queued runs remain eligible for revalidation. Unreceipted tool intents
 remain visible and must not be automatically retried.
 
 Segments mix sessions. For delivered execution and legacy entries belonging to
@@ -85,10 +83,9 @@ transaction. Evidence references contain segment, byte offset, length, SHA-256
 and entry ID; reads verify bytes and identity rather than trusting cached offsets.
 These operator services do not grant model-callable cross-session access.
 
-Phase 10 upgrades schema 1 transactionally by adding hashed login sessions,
+Opening schema 1 upgrades it transactionally by adding hashed login sessions,
 expiry/revocation and the persistent login throttle. These are operational state,
-outside JSONL/search. Existing evidence and admission keys are unchanged. Coherent
-backup/restore supports schemas 1 and 2; opening restored schema 1 upgrades it.
+outside JSONL/search. Existing evidence and admission keys are unchanged. The backup and restore tools support schemas 1 and 2.
 
 Search schema/projection version 1 uses FTS5 with bound, literal phrase queries,
 source hashes, byte offsets, record IDs, entry IDs, checkpoints and snippets.
@@ -101,12 +98,10 @@ but do not fabricate valid v2 tool receipts or successful runs.
 
 ## Boundary
 
-State is backed up, never rebuilt from search. Future jobs, tombstones, logins and
-occurrences in state.db are included by the SQLite backup API without needing
-Phase 3 scheduler schemas. Restoring requires both state and evidence, into a new
-empty directory. Backups do not contain operator configuration or external
-credentials; back those up separately. Raw fixture import is a rehearsal, not a
-production migration or proof of the actual legacy export format (Phase 13).
+The SQLite backup includes jobs, tombstones, logins and occurrences in state.db.
+Restoring requires state and evidence and a fresh destination. Back up operator
+configuration and external credentials separately. The
+[direct legacy importer](../migration/cutover.md) handles actual legacy sessions and jobs.
 Normalized legacy envelopes preserve source canonical path, hash, line number and
 all original fields; raw bytes are content-addressed separately. They do not
 fabricate v2 operational sessions/jobs or successful historical outcomes.

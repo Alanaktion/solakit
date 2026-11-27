@@ -59,7 +59,7 @@ If no task can be identified, leave the ambiguous record visible; no safe automa
 replay is claimed.
 Failed/cancelled run notes require operator inspection and a new intentional request.
 
-## Live gate
+## Live probe
 
 Use an explicitly isolated **test account**. The probe refuses the default account,
 uses user `default`, records the live schema, and retains all disposable local evidence:
@@ -82,8 +82,8 @@ For the separate manual conversation-history backfill after session migration,
 see [the OpenViking history import](migration/cutover.md#one-time-openviking-history-import).
 
 The importer understands legacy `path:`, `repo:` and `collection:` workspace
-scopes and checks collection containment. See the [Phase 13 runbook](migration/cutover.md)
-for consistent source snapshots, history/jobs migration and cutover checks.
+scopes and checks collection containment. The [direct importer](migration/cutover.md)
+handles legacy sessions, runs, and jobs separately.
 
 Work from a copied source tree so relative legacy paths still resolve correctly:
 
@@ -103,5 +103,4 @@ new output folder with `--candidate /private/candidate.toml`. Inspect unresolved
 authority changes, then rerun with only the intended named resolutions, for example
 `--resolve tools --resolve write_roots`. Resolution choices appear in the report.
 Memory enabling/scope needs `--resolve memory`. Keep the generated draft private,
-review the unsupported settings, and select it explicitly when starting v2. This
-phase does not import history, migrate production memory, or perform cutover.
+review the unsupported settings, and select it explicitly when starting Sola.

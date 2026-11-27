@@ -1,6 +1,6 @@
-# Semantic memory contract (Phase 7)
+# Semantic memory contract
 
-Phase 8 context summaries are excluded from automatic extraction, including
+Context summaries are excluded from automatic extraction, including
 prepared and superseded summaries. Only original conversation and staged exact
 notes enter the memory payload; see [context compaction](context-compaction.md).
 
@@ -104,7 +104,7 @@ A proposed v2 `--candidate` produces an effective diff for roots, tools, fragmen
 budgets, and memory scope. Broader authority blocks config emission until the
 operator records named `--resolve` choices. Nothing is installed or overwrites an
 existing output directory. Review the report and unsupported settings before using
-the draft; migration is a rehearsal, not production cutover.
+the draft.
 
 The [runbook](../memory.md) covers setup, outage inspection, reconciliation and probes.
 
@@ -116,7 +116,7 @@ live under `imports/openviking-history/`; uncertain batches require manual provi
 inspection. Automatic extraction rules above remain unchanged.
 
 The upstream contract was checked against [OpenViking v0.5.5 source](https://github.com/volcengine/OpenViking/tree/v0.5.5/openviking/server/routers)
-and the running service's OpenAPI schema. See [Phase 7 evidence](../validation/phase-07.md).
+and the running service's OpenAPI schema.
 
 The version range replaces the original exact pin after review of the
 [v0.5.4.1 to v0.5.5 changes](https://github.com/volcengine/OpenViking/compare/v0.5.4.1...v0.5.5):

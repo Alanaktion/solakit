@@ -29,7 +29,7 @@ The biggest gaps are **Git-backed letters, general-purpose journals, Discord, an
 | --- | --- |
 | **Integrations and utility tools** | Email, calendar reads, thermal printing, web search and page reading, feed checks, GitHub and wiki lookups, date/time and math tools, generic Git operations, and shell execution. [V1 tool catalog](../solakit/docs/tools.md) · [V2 built-ins](src/solakit/tools/builtins.py:211) |
 | **Discord and external delivery** | Discord conversations and thread routing, inbound image attachments, agent-initiated channel posts, and scheduled delivery of replies or files to a channel. V2 scheduled delivery stays in local topics. [V1 channels](../solakit/docs/operations.md:463) · [V2 delivery](docs/contracts/jobs.md:137) |
-| **Agent workflow tools** | Sub-agent delegation and follow-ups, reusable playbooks, run plans, persistent topic-local key/value notes, and opt-in tool discovery with deferred schemas and pinned tools. V2 ships eager schemas. [V1 delegation](../solakit/docs/operations/delegation.md) · [V1 tool catalog](../solakit/docs/tools.md) · [V2 disclosure decision](docs/decisions.md:32) |
+| **Agent workflow tools** | Sub-agent delegation and follow-ups, reusable playbooks, run plans, persistent topic-local key/value notes, and opt-in tool discovery with deferred schemas and pinned tools. V2 ships eager schemas. [V1 delegation](../solakit/docs/operations/delegation.md) · [V1 tool catalog](../solakit/docs/tools.md) · [V2 disclosure decision](docs/decisions.md#execution-and-authority) |
 
 ### Workflows with partial parity
 

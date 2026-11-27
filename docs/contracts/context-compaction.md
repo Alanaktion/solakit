@@ -1,6 +1,6 @@
 # Context selection and compaction
 
-Phase 8 keeps immutable conversation and execution evidence while selecting a
+Compaction keeps immutable conversation and execution evidence while selecting a
 bounded context for future requests. The run loop owns the session throughout
 selection, summary generation and activation. There is no second worker or model
 client. Archive/pin metadata remains independent.
@@ -9,9 +9,7 @@ client. Archive/pin metadata remains independent.
 
 `model.context_tokens` is the operator's window ceiling (32768 by default).
 The live pinned `Qwen3.6-35B-A3B-mxfp4` advertises `max_model_len=262144` through
-oMLX `/models`; the default ceiling is deliberately smaller. The live quality probe
-uses an even smaller 18000 ceiling to exercise repeated compaction economically.
-These observations verify the advertised window, not weights or a tokenizer.
+oMLX `/models`; the default ceiling is deliberately smaller. The advertised window does not verify weights or a tokenizer.
 
 Until a tokenizer is verified, count serialized UTF-8 bytes plus 32 per message.
 Reserve the admitted output tokens, 10% of the configured window as safety margin,
@@ -19,8 +17,7 @@ and expected tool-result headroom of `min(tool_result_bytes, window/8)` when too
 are offered. The headroom is an expectation, not permission to silently trim a
 large result. Every actual continuation is checked again. Manifests break down
 identity/fragments, summary, history, recall, metadata, input, continuation and
-schemas, and record all reserves and their total. This supersedes Phase 4's
-bytes/4 accounting; bodies without compaction retain the original placement.
+schemas, and record all reserves and their total.
 
 Before its first conversational model step, a run tries compaction when total
 reserved context exceeds 80% of the ceiling. The hard refusal is 100%. First check
@@ -109,5 +106,4 @@ to trace summarized facts to original JSONL references. Offline inspection never
 regenerates a summary or contacts Qwen/OpenViking. Fresh `--frozen` inspection can
 also carry a recorded compaction selection.
 
-See [validation](../validation/phase-08.md) and the
-[model request contract](model-prompts.md).
+See the [model request contract](model-prompts.md).

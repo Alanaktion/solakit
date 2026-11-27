@@ -3,8 +3,8 @@
 Let the operator run small, reproducible tests and compare the outcomes in
 Settings or through the authenticated API. Reuse the repo's
 [corpus and scorers](../../evals/README.md),
-[memory probe](../memory.md#live-gate), and
-[vision fixture design](NEXT-VISION-MODEL.md#acceptance). Availability and
+[memory probe](../memory.md#live-probe), and
+[vision model workflow](../image-workflows.md#separate-recognition). Availability and
 effective configuration belong in [Diagnostics](NEXT-OPERATOR-DIAGNOSTICS.md).
 
 ## Operator actions

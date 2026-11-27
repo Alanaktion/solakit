@@ -1,13 +1,10 @@
 # Tool SDK, dispatch, and workspace access
 
-Phase 5 SDK/dispatch implementation, extended by [Phase 12 file/image workflows](../image-workflows.md).
-See [validation](../validation/phase-05.md) and the
-[external example pack](../../examples/phase5_pack/src/sola_example/__init__.py).
-The supported extension surface is `solakit.sdk`. It imports neither FastAPI nor
-provider SDKs. No general shell, process, or delegation service is provided.
-Built-in job management retains its interactive-origin restriction. The optional
-[blog service](../blog.md) runs fixed build/Git commands behind named tool grants;
-it exposes no command or argument execution tool.
+Trusted packs extend tools through `solakit.sdk`, independent of FastAPI and
+provider SDKs. See the [example pack](../../examples/phase5_pack/src/sola_example/__init__.py)
+and [built-in file and image workflows](../image-workflows.md). Built-in job
+management requires interactive origin. The optional [blog service](../blog.md)
+runs fixed build and Git commands behind named tool grants.
 
 ## Pack authoring
 
@@ -79,9 +76,8 @@ Executable authority is registered tools intersected with profile grants,
 admitted run/job restrictions, current revocations, and the declaration's allowed
 origins. There are no separate resource/effect grant lists. Session mode, memory
 disabling, budgets, protected paths, and run state remain service checks. A
-narrower job profile uses the same evaluator; scheduled/proactive admission and
-wake-management rules retain Phase 9's occurrence/service gate. No wake-management
-tool is present for the model to invoke here.
+narrower job profile uses the same evaluator. The [job service](jobs.md) enforces
+occurrence claims and interactive wake management independently of tool grants.
 
 The obsolete top-level `loaded_tools` key is rejected; remove it from existing
 TOML configuration. Existing immutable admissions containing that field remain
@@ -91,9 +87,9 @@ Tools have three useful states: hidden schemas, visible schemas, and executable
 authority. `ToolSession.schemas()` eagerly lists eligible tools in sorted order.
 Its optional deferred set hides schemas without changing permission.
 `Registry.disclose(names, executable)` returns only schemas within that ceiling;
-it cannot grant anything. Deferred behavior is an internal contract test, not an
-enabled runtime mode before Phase 6's paired evaluation. Guessed hidden/excluded
-names still undergo dispatch checks.
+It cannot grant anything. Deferred disclosure is available for evaluation.
+Production supplies eligible schemas eagerly. Guessed names still undergo
+dispatch checks.
 
 ## Application entry point and evidence
 
@@ -108,8 +104,8 @@ credential redactor. It starts no worker. The caller must:
    `await session.dispatch(call)`. Use `session.schemas()` for prompt input.
 
 The dispatcher reads the ceiling from verified evidence, checks run/session/mode/
-origin lineage, and serializes calls within that bound session. Production callers
-must own one session per run; the Phase 6 worker owns that lifetime. The store
+origin lineage, and serializes calls within the bound tool session. The worker
+owns one tool session per run. The store
 rejects reuse of internal call IDs or provider IDs within the same model step.
 Fresh attempts, including denials, count durably against the run's tool budget;
 rebinding cannot reset it. No automatic retries occur.
@@ -161,8 +157,8 @@ for blocked OS I/O, large workspace scans, or trusted Python ignoring cancellati
 Successful model-facing `receipt.result` is text: strings pass through, other JSON
 values use canonical JSON. Its UTF-8 content respects `tool_result_bytes` and ends
 with `[truncated]` on truncation (`!` for budgets below 11 bytes). Receipt metadata
-is separate from that content budget. Errors use structured failure fields;
-Phase 6 must bound any combined model-facing rendering too.
+is separate from that content budget. Errors use structured failure fields.
+The run loop applies the same limit to the combined model-facing rendering.
 
 Oversized results retain at most 1 MiB of redacted UTF-8 in an immutable artifact,
 with an explicit `[artifact truncated]` suffix if necessary. `result_bytes` and
@@ -258,14 +254,14 @@ Built-in tools call these application services directly, never HTTP routes.
 filters to messages before applying the result limit, and exposes reference/hash
 provenance. An unavailable/corrupt projection produces an inspectable failure.
 The fake adapter in the external example writes SVG via the same guard; it does
-not exercise a real image endpoint. Phase 12 supplies one optional built-in ComfyUI
+not exercise a real image endpoint. The runtime supplies one optional built-in ComfyUI
 service, bounded file listing/search and immutable write artifacts; see the
 [workflow and recovery contract](../image-workflows.md). Image artifacts use the
 same authenticated run linkage, with a separate 16 MiB PNG limit. SDK file writes
 retain at most the existing 1 MiB text bound. Installing/selecting the example pack
 does not load or grant it.
 
-Phase 7 memory lifecycle, limits and recovery are defined in the [memory contract](memory.md).
+Memory lifecycle, limits and recovery are defined in the [memory contract](memory.md).
 
 ## Configured Git checkouts
 
@@ -353,8 +349,8 @@ the single added file, and reachability from the freshly fetched branch.
 The script performs verification and records evidence. Git publication and
 worktree repair are separate operator actions.
 
-For v1 cutover, create or use the v2 data directory with publication grants
-withheld. Stop the runtime and run `scripts.letters_work --seed-v1` using the
+To seed legacy reply records, withhold publication grants, stop the runtime,
+and run `scripts.letters_work --seed-v1` using the
 production configuration. The script verifies replies in the configured
 remote branch's history, then checks imported receipts under
 `imports/legacy/pack-operations`. Use `--legacy-operations` to consult the
@@ -362,7 +358,7 @@ original receipt directory, `--legacy-checkout` for the original checkout path
 when rehearsing on a copy, and `--profile` if the checkout is admitted through a
 named profile. Review the seeded records before granting publication. A verified
 reply with insufficient request evidence still reserves its target, as does an
-unresolved v1 receipt. [Configuration](../config.md#letters) · [Validation](../validation/letters-tools.md)
+unresolved v1 receipt. [Configuration](../config.md#letters)
 
 ## Public web search
 
@@ -400,7 +396,7 @@ call. [Cloudflare Markdown endpoint](https://developers.cloudflare.com/browser-r
 
 The tool requires both a grant and the same `[web_fetch]` settings at admission
 and execution. Older admissions without these settings keep it ineligible.
-[Configuration](../config.md#web_fetch) · [Validation](../validation/web-fetch.md)
+[Configuration](../config.md#web_fetch)
 
 ## Remote MCP tools
 

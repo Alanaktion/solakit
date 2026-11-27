@@ -17,4 +17,4 @@ wheels/
 config.toml
 
 # Keep validation docs local-only
-docs/validation/*
+/docs/validation

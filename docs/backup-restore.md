@@ -49,7 +49,7 @@ checkpoint. Recovery never truncates bytes or fabricates a successful outcome.
 State.db contains irreplaceable operational data; evidence/search cannot recover
 lost schedules, tombstones or logins on their own.
 
-For the Phase 3 import rehearsal, copy synthetic legacy fixtures first:
+To test preservation of synthetic legacy fixtures, copy the fixtures first:
 
 ```sh
 uv run --locked python scripts/storage.py import-fixture --data-dir /absolute/disposable-data /absolute/copied-fixture.jsonl
@@ -64,14 +64,7 @@ basenames/content) remain separate provenance, while identical raw bytes share a
 content-addressed copy. Invalid/torn JSON is rejected with its raw copy retained;
 no partial import is acknowledged. No legacy operation is replayed, no job enabled,
 and no incomplete historical receipt is converted into a successful v2 receipt.
-These searchable envelopes rehearse preservation, not semantic production migration
-of legacy sessions/jobs/logins; that mapping remains Phase 13 work.
 
-See [the storage protocol](contracts/storage.md) and
-[Phase 3 verification](validation/phase-03.md) for tested boundaries.
-
-Real legacy trees use the [Phase 13 migration runbook](migration/cutover.md).
-It imports directly into a new data directory, extracts jobs separately from the
-combined database and leaves scheduling paused. Existing backups and manual
-cleanup replace migration-specific checkpoints and rollback reports.
-`import-fixture` remains a synthetic preservation probe.
+Use the [direct legacy importer](migration/cutover.md) to migrate actual legacy
+sessions and jobs. See the [storage contract](contracts/storage.md) for evidence
+and restore guarantees.

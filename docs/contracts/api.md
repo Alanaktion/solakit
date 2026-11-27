@@ -1,6 +1,6 @@
 # HTTP API v1
 
-Phase 10 implementation contract. The authenticated `/openapi.json` and
+The authenticated `/openapi.json` and
 [static OpenAPI fixture](examples/openapi.json) describe request shapes. HTTP
 calls the existing store, run loop, scheduler and memory services. One lifespan
 owns all clients, tasks, the data-directory lock and inference permit. A second

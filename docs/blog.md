@@ -98,5 +98,4 @@ still require normal coordination.
 
 Listings scan at most 2,000 directory entries and 16 MiB of Markdown, with the
 existing 1 MiB per-file bound. Model-facing results retain dispatcher truncation
-and artifact behavior. Validation and limitations are recorded in
-[blog tool validation](validation/blog-tools.md).
+and artifact behavior.

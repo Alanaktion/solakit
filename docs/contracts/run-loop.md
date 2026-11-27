@@ -1,8 +1,7 @@
 # Headless run contract
 
-Phase 6 connects the evidence store, prompt assembler, pinned model adapter and
-permission dispatcher. See [validation](../validation/phase-06.md) for deterministic
-results and the separate live reliability gate.
+The run service connects the evidence store, prompt assembler, pinned model adapter
+and permission dispatcher.
 
 `compose(profile)` constructs one `ApplicationContext`; `await context.start()`
 starts its resources and `await context.stop()` joins owned work before closing
@@ -54,9 +53,7 @@ cannot be persisted, the stored run stays nonterminal until restart recovery.
 There is no fabricated successful receipt to cover missing evidence.
 
 Run requests disable thinking to reserve the output budget for actionable calls and
-visible answers; the pinned adapter still supports explicit thinking probes. This
-reversible policy was selected after the thinking-enabled collection exhausted
-its fixed output budget in 17/42 trials, before the next candidate measurement.
+visible answers. The pinned adapter supports explicit thinking probes.
 Each model request retains exact bytes/manifest before network access. Every reply
 retains raw transport bytes and a normalized ModelStep. New steps also retain
 provider tool IDs, function names and original argument strings. Old steps without
@@ -73,7 +70,7 @@ not executed; they are never represented as successful calls. Projected record I
 are recorded in the manifest. Future queued user inputs never enter an active
 turn's context. Previous started turns in the same topic are projected in order;
 queued-cancelled turns are excluded. Ephemeral runs see only their own exchanges.
-Phase 8 selects one active summary plus the later whole-turn tail, with two recent
+Compaction selects one active summary plus the later whole-turn tail, with two recent
 turns preserved. Compaction happens under the same session owner before the first
 conversation step. Context that cannot fit still fails visibly without silent
 truncation; see the [context contract](context-compaction.md).
@@ -95,7 +92,7 @@ run rejoins behind already waiting calls on its next model step. Tools and waits
 hold the session slot but release the inference permit. Tests measure one concurrent
 inference and a maximum eight-position interval between turns under mixed-origin
 load. Compaction uses this same permit, run deadline and model-call budget.
-Phase 9 additionally limits automatic scheduled/proactive work to one active run
+The scheduler limits automatic scheduled/proactive work to one active run
 and eight pending by default, with durable topic/hour/day admission caps. Interactive
 work remains eligible in the other slots; the same FIFO inference permit is shared.
 
@@ -108,8 +105,7 @@ and tool deadlines include the child's runtime. A cancelled or timed-out parent
 call settles its child before writing the receipt. Restart interrupts both running
 children and children that were durably admitted but did not start.
 
-`wait` observes state and does not own execution. Its timeout, cancellation, or a
-future HTTP disconnection leaves admitted work running. A wait from within a tool
+A wait timeout, wait cancellation, or HTTP disconnection leaves admitted work running. A wait from within a tool
 for work in the current session returns its current admission immediately; waiting
 for that session's queued successor would otherwise deadlock. There are no event
 subscriptions or per-waiter background workers to retain after disconnect.
@@ -157,9 +153,9 @@ An uncertain effect immediately fails the run and stops further model/tool work.
 Other tool failures/denials and refusals leaving requested work unexecuted remain
 a failed run even if the model produces a final answer. A schema/argument repair may resolve invalid input; optional memory
 unavailability may yield a completed degraded conversation with its failure receipt.
-Phase 7 supplies recorded recall once at run start and asynchronous completed-run
-extraction. Profiles requiring memory fail before inference when recall is unavailable;
-required recall is never silently omitted. See the [memory contract](memory.md). No model transport retry or uncertain
+The memory service supplies recorded recall once at run start and extracts memory
+asynchronously after completion. Profiles requiring memory fail before inference
+when recall is unavailable. See the [memory contract](memory.md). No model transport retry or uncertain
 non-idempotent retry is added. A model's deliberate repeated valid effect requests
 are still observable effects, not an exactly-once guarantee; the evaluator rejects
 duplicates and incorrect intermediate writes even if the final artifact is correct.

@@ -1,10 +1,9 @@
 # Basic file and image workflows
 
-Phase 12 supplies built-in file tools and one optional ComfyUI service. It adds no
-domain pack dependency. Trusted external packs still use the public SDK and explicit
-loading/grants. The core wheel contains no external pack; the existing SDK example
-is independently installable or selected with `uv sync --frozen --all-packages`.
-Installation and image-service enablement grant no tool authority.
+The built-in file tools and optional ComfyUI service use the same profile grants
+and workspace rules as other tools. See the
+[tool access matrix](contracts/tools.md#workspace-behavior-and-access-matrix)
+for the full file tool set.
 
 ## Configure and use
 
@@ -141,7 +140,7 @@ references to the same hash use one image per request. Native image requests
 reserve 16,384 estimated tokens per unique image, separately from base64 bytes.
 A small context ceiling or several images can produce a context-limit failure.
 
-## Deferred data and later work
+## Preserve a legacy tree
 
 `scripts/storage.py retain-tree --data-dir DATA COPIED_TREE` retains an explicitly
 copied legacy tree under private `imports/`, with byte counts/hashes and a completion
@@ -150,14 +149,5 @@ runtime-data recursion are rejected; changed copies fail rather than overwrite.
 Unknown JSON/TOML fields, binary/Unicode files, credential *references*, legacy
 receipts and uncertain effects remain uninterpreted bytes. No pack code, config,
 credentials or job definitions are activated, and their Python packages are not
-needed. Existing backup/restore includes the retained tree. Production preservation
-still requires the Phase 13 consistent source inventory; synthetic rehearsal is
-not evidence of production completeness.
-
-Letters, blog, mail, journal, calendar and printer remain a later backlog: inventory
-their resources and receipt formats, define narrower SDK tools, review authority,
-then validate each integration independently. General shell and delegation require
-a separate product decision after the basic reliability gates. They are not release
-dependencies.
-
-Reproduction and measured gates: [Phase 12 validation](validation/phase-12.md).
+needed. Existing backup and restore includes the retained tree. See the
+[legacy import guide](migration/cutover.md) for sessions, runs, and jobs.

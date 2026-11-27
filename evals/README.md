@@ -39,8 +39,9 @@ request objects, request/prompt/schema hashes, SDK response dumps (including unk
 reasoning fields), errors, receipt call IDs, final disposable artifacts, effects, timing,
 and usage when supplied. `report.json` provides per-case and aggregate denominators.
 These are private evidence files; credentials and authorization headers are excluded.
-Canonical request hashes are not a claim about exact HTTP serialization bytes, which
-is a Phase 4 gate. Replay uses the embedded case snapshot and never calls a service.
+Canonical request hashes cover the request objects. See the
+[model request contract](../docs/contracts/model-prompts.md) for exact HTTP evidence.
+Replay uses the embedded case snapshot and never calls a service.
 
 The interrupted-generation case is explicitly fixture-only even in a live collection.
 It validates scoring of preserved partial output; it does not prove live streaming

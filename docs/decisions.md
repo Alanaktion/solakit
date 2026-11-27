@@ -1,107 +1,99 @@
-# Sola v2 decision register
+# Sola v2 decisions
 
-Statuses distinguish operator-confirmed requirements, implementer-selected reversible defaults, and deferred work. Starting a phase does not approve every proposal in its plan. Evidence: final decisions in [OUTLINE](plans/OUTLINE.md), Phase 0 conversation, and [local probes](validation/phase-00.md).
+`main-v2` is the production runtime. The v1 cutover is complete. This register
+records durable design intent. The linked contracts define current behavior and
+defaults. Git history retains the original decisions and rollout details.
 
-| ID | Status / owner | Decision and rationale | Consuming phase / boundary |
-| --- | --- | --- | --- |
-| V2-01 | Confirmed / operator | Pinned local Qwen via oMLX; OpenViking for semantic memory | 4/7: verify exact installed model/service contracts before live acceptance |
-| V2-02 | Confirmed / operator | Immutable JSONL evidence; operational state.db; separate disposable search.db | 2/3: define reconciliation and backup, never rebuild jobs from search |
-| V2-03 | Confirmed / operator | Web/API; Android compatibility excluded | 10/11: clean v2 API |
-| V2-04 | Confirmed / operator | Persistent identity/memory, background and proactive work; no deeper control integrations | All: operator-owned fragments remain authoritative |
-| V2-05 | Confirmed direction / operator | Shared; isolated without OpenViking; ephemeral without continuing context but retained evidence | 2/3/7: [session contract](contracts/session-modes.md) details selected below |
-| V2-06 | Deferred / operator | No delegation in v1 | Bounded delegation added as a follow-up in V2-51 |
-| V2-07 | Selected / implementer | Eager tools first; deferred disclosure requires paired evaluation | 1/6: freeze thresholds before candidate measurements |
-| V2-08 | Confirmed / operator | Operator-enabled wakes may act/leave messages; autonomous work cannot create further wakes | 5/9: enforce by origin and dispatch, not prompt instructions |
-| V2-09 | Confirmed direction / operator | This Mac, localhost/tailnet; local filesystem, one process/worker/permit | 1/2/10: Python 3.15 selected after smoke probes; full compatibility still gated |
-| V2-10 | Confirmed / operator | Basic files and image generation first; domain packs deferred | 5/12: minimal tool set and one configured image workflow; preserve deferred pack data |
-| V2-11 | Selected / implementer | Phase 1 freezes >=90% applicable task completion and first-tool accuracy; zero silent unattempted tasks, false continuations, incorrect/duplicate effects. Deferred disclosure additionally requires no lost paired successes, median extra steps <=1, >=20% tool-heavy schema-byte reduction. Soak duration selected before Phase 13 | [Threshold snapshot](../evals/thresholds.json), selected before live measurement; these are future candidate gates, not baseline claims |
-| V2-12 | Confirmed / operator | America/Denver; quiet 22:00–08:00 for proactive notifications/outbound effects; local preparation allowed; one notification/topic/hour; wakes initially disabled | 9: apply at dispatch/publication and retain counters across restart |
-| V2-13 | Deferred / operator | Shell until file/image reliability gates pass | 5 excludes process execution; later scope decision defines shell grants/host privilege boundary |
-| V2-14 | Confirmed direction / operator | Image attachments accepted in v1 scope | 4 verifies actual model image support; no silent fallback model |
-| V2-15 | Selected / implementer | Retain full admitted inputs, model/tool records and receipt references for all session modes; hide ephemeral topics by default | 3/6: ephemeral is context lifetime, not automatic evidence deletion |
-| V2-16 | Selected / implementer | Isolated/ephemeral runs cannot automatically search/read other sessions; no OpenViking calls | 5/7: memory mode cannot be bypassed through search/memory tools |
-| V2-17 | Selected / implementer | No curated-memory write tool initially; operator edits curated files; scoped remember staging remains in scope | 5/7: avoid writing managed semantic-memory internals |
-| V2-18 | Selected / implementer | Initial wake bounds: 1 active, 1/topic/hour, 4 globally/hour, 8 model calls, 12 tools, 10 active minutes; no autonomous descendants | 2/9: configurable, measurable, durable counters |
-| V2-19 | Selected / implementer | Archive hides/freezes a topic until restore; pinned only affects navigation; compaction never archives | 2/3/8/11: no silent job rerouting to a fresh topic |
-| V2-20 | Selected / implementer | Revoke legacy browser logins at cutover, preserve backup evidence; v2 logins persist normally across restart | 10/13: no old-cookie compatibility requirement |
-| V2-21 | Selected / implementer, 2026-11-16 | Strict TOML with default/child profiles; child authority and budgets only narrow. Per-session event sequence/cursor; immutable terminal run outcomes. One explicit resource owner with bounded reverse cleanup; retain ownership after failed cleanup. Interactive budgets 16 model / 32 tool attempts / 900 active seconds; proactive ceilings remain 8/12/600. Reversible internal defaults, no new product scope | 2 onward: [runtime contract](contracts/runtime.md), [local verification](validation/phase-02.md); durable event/admission enforcement remains Phase 3/6 |
-| V2-22 | Confirmed / operator, 2026-11-16 | Simplify access configuration to workspace roots and tool grants; remove separate resource/effect permissions. Loading still grants nothing; profiles and admitted runs cannot widen access. Session isolation, proactive-origin restrictions, budgets, and protected paths remain service invariants | 2/5/7/11/12: supersedes earlier resource/effect grant proposals; [runtime contract](contracts/runtime.md) |
-| V2-23 | Selected / implementer, 2026-11-16 | Phase 3 uses a transactional SQLite outbox with stable JSONL entry/event IDs, verified offsets, sealed torn tails, and FTS5 projection version 1. Session mode freezes at creation; all reads are operator services until tool grants arrive. Standalone SQLite backup plus checksummed evidence checkpoint restores into a new directory. Legacy fixture envelopes preserve bytes/unknown fields without fabricating v2 execution outcomes. Scheduled admission waits for Phase 9 occurrence claims | 3 onward: [storage protocol](contracts/storage.md), [runbook](backup-restore.md), [verification](validation/phase-03.md) |
-| V2-24 | Selected / implementer, 2026-11-16 | Freeze `sola-prompt-v1` placement and `eager-v1` disclosure; use optional operator-owned SOUL/curated paths plus existing ordered fragments. Persist exact bytes before network access, disable SDK retries, separate reasoning only through server fields, reject incomplete responses. Reserve explicitly estimated context/output/tool-result headroom. One lifetime client and shared inference permit; no dispatch or continuation | 4/6/8: [request contract](contracts/model-prompts.md), [local/live verification](validation/phase-04.md) |
-| V2-25 | Selected / implementer, 2026-11-16 | SDK major 1 with explicit configured modules and exact loaded names; wildcard grants expand only loaded names. Durable effective admission ceilings intersect current per-profile grants at dispatch and guarded access. Reject symlink/hardlink aliases, protect managed files and Git indirection, atomic private file writes with explicit overwrite. Bound results/artifacts with provenance; unresolved intents recover uncertain. Trusted Python is not an OS sandbox | 5/6/7/9/12: [SDK/access contract](contracts/tools.md), [local verification](validation/phase-05.md); no worker, live memory/image, or scheduled admission added |
-| V2-26 | Selected / implementer, 2026-11-16 | Phase 6 owns one bounded run service: 64 pending admissions, 8 active session owners; oldest eligible admission and FIFO shared inference, no origin priority. Same-key retries keep original frozen authority. Queued work resumes after revalidation; active work interrupts without replay. One recovery each for arguments, disclosure and narration; unresolved/uncertain work fails. After 17/42 thinking-enabled eager trials exhausted the fixed 1024-token corpus budget, select thinking-disabled run requests before the next paired measurement; retain explicit thinking support in the adapter/probes and leave thresholds unchanged. Before the final candidate, separate receipt metadata/result with JSON and align the denial fixture with the baseline by revoking at intent after schema advertisement; label this runtime policy in measurement metadata. Deferred schemas are evaluation-only and remain disabled in production | 6 onward: [execution contract](contracts/run-loop.md), [verification and live gate](validation/phase-06.md) |
-| V2-27 | Selected / implementer, 2026-11-16; 0.5.5 pin and test account confirmed by operator | Phase 7 uses the HTTP session commit/task API of OpenViking 0.5.5. One explicitly selected account/user and complete managed user memory root; self profile/preferences/entities/events extraction, no peer, working-memory or skill/evolution writes. Recall once per run, last 1,000 eligible conversation/input characters, eight hits / 32 KiB retained content. Exact notes capped at 2,000 characters. Completed shared runs only; one durable commit/run, 128 unfinished/ambiguous default backlog cap, and 100 messages / 64 KiB per batch. Persisted status checks with 2–300 second backoff and failure after 12 consecutive unavailable checks. Reachable active tasks remain accepted. Interrupted/lost submission becomes ambiguous without replay. Operator reconciliation attaches a verified task. Copied-config drafts keep memory off and require named resolutions for broader authority. `sola-test` account with `default` user is the approved live-test namespace | 7 onward: [contract](contracts/memory.md), [runbook](memory.md), [verification](validation/phase-07.md); production cutover remains Phase 13 |
-| V2-28 | Confirmed direction / operator; range selected / implementer, 2026-11-16 | Relax the Phase 7 exact OpenViking pin to stable >=0.5.5,<0.6.0, including four-part hotfixes. Reject older versions, prereleases, local labels and new minor versions pending review. Session/search/task/health route files are unchanged between 0.5.4.1 and 0.5.5, but upstream does make breaking changes within 0.x; keep the tested baseline as the minimum and retain all scope/response checks. Probes report the actual service version. Only 0.5.5 has live path verification; run the isolated probe after upgrades. Supersedes V2-27's exact version pin only | 7 onward: [memory contract](contracts/memory.md), [verification](validation/phase-07-version-policy.md) |
+## Runtime and deployment
 
-| V2-29 | Selected / implementer, 2026-11-16 | Phase 8 uses conservative UTF-8-byte accounting plus framing, 10% window safety reserve and expected tool-result headroom capped at window/8. Compact above 80% of the configured ceiling before the first conversational step; preserve two recent started turns, stop before unresolved effects, and bound summaries to min(4096, output_tokens/2) UTF-8 bytes. Use the pinned adapter/permit and existing run budgets. Prepared manifest → summary evidence → atomic committed boundary uses the existing outbox; verified preparations recover without inference, invalid preparations stay inactive. Keep summaries out of semantic extraction. Default 32768 ceiling remains below the live pin's advertised 262144 window; tokenizer/weights remain unverified. Supersedes V2-24's initial accounting only | 8 onward: [context/manifest contract](contracts/context-compaction.md), [quality and recovery evidence](validation/phase-08.md) |
+- Run one process, event loop, worker, and shared inference semaphore per
+  configured instance. Keep application services in plain async Python, with
+  FastAPI at the HTTP boundary and adapters for external services. APScheduler
+  wakes the in-process scheduler and SQLite owns schedules and occurrence claims.
+  [Runtime contract](contracts/runtime.md), [jobs](contracts/jobs.md)
+- Target Python 3.15 on macOS with local storage. The operator uses the web UI and
+  authenticated API. Bind localhost by default, allow direct HTTP for exact
+  configured private LAN and Tailnet IPs, and require HTTPS and Secure cookies
+  for public IPs and hostnames. Preserve exact Host and Origin checks and CSRF
+  protection. The macOS LaunchAgent manages one instance per canonical config
+  path. [Deployment](contracts/api.md#deployment-and-login), [service CLI](cli.md#run-sola-at-login)
+- Pin local Qwen through oMLX. Keep model substitution explicit and preserve
+  exact request and response evidence. The operator owns SOUL, curated memory,
+  and prompt fragments. [Model and prompt contract](contracts/model-prompts.md)
+- Use packaged Lit components and the authenticated API, with a restrictive CSP.
+  Keep configuration and credentials operator-owned. Allow a configured display
+  name and local CSS. Preserve settled messages, drafts, and submission keys
+  across transport recovery. [Chat and Settings guide](chat-ui.md)
 
-| V2-30 | Selected / implementer, 2026-11-16 | Phase 9 keeps definitions, generations, consumption, tombstones, occurrence snapshots and global pause in the existing entity/outbox ledger. APScheduler 3.11.3 is an in-memory one-second wake only. Cron civil labels resolve through zoneinfo: skip gaps, first fold once; one-hour grace coalesces/skips backlog without overlap. Atomic claim/admission/next-instant consumption precedes dispatch. Both automatic origins share 1 active / 8 pending / 1 per topic per hour / 4 per rolling hour / 24 per rolling day and 8/12/600 default run budgets. No autonomous descendants or schedule mutation, including relabelled callbacks. Explicit manual occurrences have distinct idempotency keys and bypass automatic rate/quiet limits. Private no-action decisions create no message; stable local delivery defers during quiet hours, coalesces per topic, deduplicates exact text for a day and expires after 24 hours. Interrupted effects are never replayed. Scheduled input/tool messages remain private execution evidence. The real scheduled Qwen → topic → sola-test extraction gate passed; authenticated controls/UI and production cutover remain later phases | 9 onward: [contract](contracts/jobs.md), [verification](validation/phase-09.md); extends V2-08/12/18/26 |
+## Evidence, sessions, and memory
 
-| V2-31 | Selected / implementer, 2026-11-16 | Phase 10 keeps operator login credentials in an explicit environment variable and only random token/CSRF hashes, expiry, revocation and a global five-failures/60-second throttle in state.db schema 2. Logins last one day by default and survive restart. Exact configured Host/origin checks, cookie CSRF headers, rejected mixed cookie/bearer auth, no proxy-header trust/access logging, and HTTPS/Secure cookies for remote origins define the HTTP boundary. Versioned routes reuse shared services; 30-second waits never own execution. Per-session SSE starts with newest-50 reference snapshots, replays at most 1000 sequences in batches of 100 and resets gaps; eight 8-KiB replaceable interactive previews, 16 connections, 15-second heartbeats and 30-second blocked-send cleanup bound transport. Artifact reads verify run-linked evidence/hash and return <=256 KiB; pages/draft inspection are bounded. Four public CLI commands remain; check --live performs only availability/API-identity checks without state or background tasks. The live pinned-Qwen authenticated HTTP gate passed with disposable data and memory/tools disabled | 10/11/13: [API](contracts/api.md), [events](contracts/events.md), [CLI](cli.md), [verification](validation/phase-10.md); remote TLS/browser deployment and operator acceptance remain separate |
+- Keep immutable JSONL as evidence, `state.db` as operational authority, and
+  `search.db` as a rebuildable projection. Acknowledge work after durable evidence
+  publication. Backup and restore evidence with state. Archives remain readable
+  and searchable, and archived payloads are verified on read and full restore.
+  [Storage contract](contracts/storage.md), [backup and restore](backup-restore.md)
+- Freeze session mode at creation. Shared topics can use OpenViking. Isolated and
+  ephemeral topics keep evidence but have neither semantic recall nor automatic
+  cross-topic transcript access. Ephemeral topics have no continuing context.
+  Archiving freezes a topic until restored, and pinning affects navigation.
+  [Session modes](contracts/session-modes.md)
+- Use stable OpenViking >=0.5.5,<0.6.0 with an explicit account, user and managed
+  memory root. Keep staged notes and extraction state inspectable. Reconcile
+  uncertain submissions by attaching a verified provider task. Keep curated
+  memory edits with the operator. [Memory contract](contracts/memory.md), [recovery guide](memory.md)
+- Compact into a bounded summary and whole recent turns while retaining original
+  evidence. Keep summaries out of memory extraction. Transfer topic evidence
+  and delegated descendants as independent copies with fresh local identities
+  and local authority. [Compaction](contracts/context-compaction.md), [session transfer](contracts/storage.md#session-transfer)
+- Use the direct importer for any remaining legacy data. Preserve raw history,
+  import jobs disabled and omit legacy login sessions. Keep config conversion and
+  the optional shared-history OpenViking backfill explicit. Historical effects
+  and uncertain submissions must never replay automatically. [Legacy import](migration/cutover.md)
 
-| V2-32 | Selected / implementer, 2026-11-17 | Phase 11 serves a packaged HTML shell with vanilla JavaScript and no frontend/runtime dependencies. System light/dark appearance follows prefers-color-scheme, including native controls; no separate theme preference. Runtime data stays behind the public authenticated API. Backward sequence pages (`before=0` for newest) bound initial history and recent execution activity without changing forward clients. Maps keyed by server IDs preserve settled message nodes; SSE snapshots clear previews and reconcile authoritative state, with the same merge path for polling. Session storage retains per-topic drafts and frozen uncertain admissions in the current tab; retries reuse their original keys and new drafts get new keys. DOM-only Markdown supports a limited safe subset, no raw HTML or remote image loading, with restrictive CSP. Configuration/credential editing stays operator-owned; explicit UI job controls use existing grants and disabled creation defaults. Chromium fixture verification and operator acceptance are separate gates | 11/12/13: [UI guide](chat-ui.md), [verification](validation/phase-11.md) |
+## Execution and authority
 
-| V2-33 | Confirmed / operator, 2026-11-17 | Allow direct LAN HTTP through exact private IP origins (IPv4 RFC 1918 and IPv6 ULA) with insecure cookies. Preserve exact Host/scheme/port matching, authentication and CSRF; public IPs and hostnames retain HTTPS/Secure-cookie requirements. Origins identify server URLs, not client subnets; no CIDR/wildcard matching. Use browser getRandomValues for admission keys on LAN HTTP. Supersedes V2-31's HTTPS requirement for private LAN IP origins only | 10/11: [deployment](contracts/api.md), config/API regression tests and browser fixture; real LAN deployment remains unverified |
+- Freeze effective grants, workspace roots, budgets and integration identity at
+  admission. Recheck current authority at dispatch and guarded operations.
+  Revocation applies to existing runs and additional grants require new admission.
+  Built-ins register automatically, and trusted packs register explicitly through
+  the public SDK. Registration grants no execution authority. [Tool contract](contracts/tools.md)
+- Use eager tool schemas in production. Compare deferred disclosure using paired
+  measurements and the versioned reliability thresholds. Stop on unresolved
+  execution or uncertain effects. Record intent before consequential I/O and
+  distinguish tool success, failure, and uncertainty in receipts.
+  [Run contract](contracts/run-loop.md), [evaluation thresholds](../evals/thresholds.json)
+- Resume eligible queued work after restart and interrupt previously active work.
+  An explicit retry of the latest failed interactive reply links a new run to
+  the original input and admission under current authority. Reuse settled
+  exchanges and skip exact repeats of confirmed or successful calls.
+  [Reply retry](contracts/api.md#retrying-a-failed-reply)
+- Reserve wake creation and changes for authorized interactive operators. An
+  autonomous run remains bound to its origin, topic and budgets and cannot create
+  successors. Use durable occurrence claims, rate caps, quiet hours and coalesced
+  local delivery. The job's `enabled` switch controls automatic scheduling.
+  Manual runs retain global pause and overlap controls. [Job contract](contracts/jobs.md)
+- Allow opt-in delegation from interactive runs to one configured isolated worker
+  profile. Intersect worker and parent authority, reserve an existing run slot,
+  share the inference permit and charge the parent's budgets.
+  [Delegation](contracts/tools.md#bounded-delegation)
 
-| V2-34 | Confirmed / operator, 2026-11-17 | Rework the web UI as Lit components using the local `lit-core.min.js` module. Package and serve it with the existing explicit static assets; keep the authenticated API, restrictive CSP and no frontend build/CDN. Light DOM preserves the shared stylesheet, labels and fragment links. Keep ID-keyed settled nodes, drafts, retries and SSE/polling recovery. Supersedes V2-32's vanilla-JavaScript/no-framework choice only | 11 onward: [UI guide](chat-ui.md), [Lit verification](validation/phase-11-lit.md) |
+## Integrations
 
-| V2-35 | Confirmed / operator, 2026-11-17 | Cover reasonable API functionality in the web UI and reorganize Settings. Selected implementation: six tabs (Schedules, Memory, Profiles & tools, Search, Diagnostics, Security), separate job editor with all editable definition fields, independent job profile, optional narrowing controls, ephemeral targets/delivery, draft prompt and recorded-request inspection, readable search/status and revoke-all logins. Configuration/credential editing stays operator-owned; bearer-token issuance remains an API-client concern. Existing backend authority, idempotency and data contracts remain in force | 11 onward: [UI guide](chat-ui.md), [coverage and checks](validation/phase-11-settings.md) |
-
-| V2-36 | Selected / implementer, 2026-11-17 | Implement the fixed image workflow as one optional built-in adapter/service, keeping provider configuration and recovery out of the run loop and external packs out of the core wheel. Use explicit load/grant plus enablement; one unfinished generation, durable resolved seed/request before POST, persisted observations without resubmission, 16 MiB checked PNG artifacts. Named tools resolve shared verbs in narration matching. Same-topic generated-image references are opt-in for a verified model pin; reserve 16,384 estimated tokens/image without claiming calibration. The existing SDK example is selectable in the frozen uv workspace; installing it grants nothing. Retain copied deferred trees byte-for-byte without importing their packages or activating configuration/jobs | 12 onward: [workflow and recovery](image-workflows.md), [local/live checks](validation/phase-12.md); operator browser acceptance and production cutover remain separate |
-
-| V2-37 | Superseded by V2-38 | The initial migration implementation used snapshots, manifests, resumable checkpoints, a verifier and rollback reports. Removed at the operator's request | 13 |
-
-| V2-38 | Confirmed / operator, 2026-11-17 | Use a simple direct import from the stopped legacy directory into new v2 data. Existing backups and manual cleanup replace migration-specific snapshot, audit, checkpoint, verifier and rollback machinery. Preserve raw history, keep imported jobs paused and never replay historical effects or memory submissions. Source data stays untouched | 13: [direct import](migration/cutover.md), [checks](validation/phase-13-simple.md) |
-
-| V2-39 | Confirmed direction / operator; implementation selected, 2026-11-17 | Restrict startup history validation to non-archived sessions and add bulk archiving. Shared JSONL segments remain immutable: reuse delivered archived references/sequences from the existing SQLite outbox, retain session/global/pending-work checks, verify archived payloads on reads and full restore/rebuild. Batch up to 100 IDs in one state/outbox transaction. Reuse startup segment hashes during search projection checks and only load unfinished work for recovery; no new database/cache authority | 3/10: [storage contract](contracts/storage.md), [startup validation](validation/session-startup.md) |
-
-| V2-40 | Confirmed direction / operator; implementation selected, 2026-11-17 | Provide a separate one-time manual OpenViking history importer after session migration. Explicit invocation extracts all original shared-session conversation text, including archives and unsuccessful runs; isolated/ephemeral sessions remain excluded. Reuse the existing adapter, bounded batches, private durable submission/acceptance receipts and refusal to replay uncertain batches. No runtime hook or automatic replay of legacy submissions | 13: [manual history import](migration/cutover.md#one-time-openviking-history-import), [checks](validation/memory-history-import.md) |
-
-| V2-41 | Confirmed / operator, 2026-11-20 | Remove top-level `loaded_tools`: built-ins register automatically, configured trusted `tool_modules` register their declarations, and profile grants control execution. Expand wildcard grants against registered names, preserving child narrowing, current revocations and frozen admission ceilings. Configuration resolution validates modules without starting services. Reject the obsolete TOML key; read historical admissions through an excluded compatibility field without rewriting evidence or widening saved `tools`. Supersedes V2-25's loaded-name requirement and V2-36's explicit built-in loading requirement | 2/5 onward: [configuration](config.md), [tool contract](contracts/tools.md), [checks](validation/tool-registration.md) |
-
-| V2-42 | Confirmed / operator, 2026-11-20 | Add an optional built-in blog/dream service for one configured checkout, behind existing tool grants and roots. Blogs support read/list/create/publish, draft-by-default creation, optional existing PNG covers and optional auto-publication. Dreams support read/list/create, date-only frontmatter, no overwrite, and always build/commit/push with creation; failed dream publication has manual recovery. Every publication commits pending blog/dream Markdown and blog images, preserves other draft flags and unrelated staged edits, and pushes all existing pending commits without content restrictions. No general shell, automatic Git reconciliation, force-push, replay or new wakes. Background tools retain explicit roots and quiet hours. Supersedes V2-10's blog deferral only | [Tools and setup](blog.md), [validation](validation/blog-tools.md) |
-
-| V2-43 | Confirmed / operator, 2026-11-22 | Make the web UI agent name configurable through top-level `agent_name`, defaulting to `Sola`, and load optional `<data_dir>/user.css` after packaged CSS. Apply the display name to login, conversation authors, Settings, page titles and accessibility labels without rewriting operator identity or evidence. Serve the escaped name and regular non-linked CSS before login through the existing Host/origin/CSP boundary. Restart for name changes; CSS changes apply on reload | [Configuration](config.md), [UI guide](chat-ui.md), [validation](validation/ui-customization.md) |
-
-| V2-44 | Confirmed direction / operator; implementation selected, 2026-11-23 | Allow direct Tailnet HTTP for exact server IP origins in `100.64.0.0/10`. Bind the server's concrete Tailscale IP through the existing `http.host` setting. Keep exact Host and Origin validation, operator login and CSRF. Public IPs and hostnames still require HTTPS and Secure cookies. Extends V2-33 | [Deployment](contracts/api.md#deployment-and-login), [validation](validation/tailnet-http.md) |
-
-| V2-45 | Confirmed / operator, 2026-11-23 | Use one per-job scheduling switch, `enabled`. Existing paused jobs read as disabled. Manual runs work with the switch off and retain global pause and overlap controls. Existing job tool grants use the same switch | [Job contract](contracts/jobs.md), [validation](validation/job-enabled.md) |
-
-| V2-46 | Selected / implementer, 2026-11-23 | Add `web.search` for public keyword or natural-language queries through Brave, the v1 provider. An operator credential reference and regular profile grants gate tool disclosure and dispatch. Existing admissions gain no search authority from configuration changes. One bounded read returns ordered titles, source URLs and excerpts through standard tool receipts | [Tool contract](contracts/tools.md#public-web-search), [validation](validation/web-search.md) |
-
-| V2-47 | Selected / implementer, 2026-11-23 | Add opt-in interactive `shell.exec` with an inherited literal grant. Recheck enablement, grants and cwd at launch. Pass literal argv with a minimal environment and bound output under the existing tool budgets. Commands have the server account's filesystem and network privileges. Record exit or uncertainty in standard receipts and terminate the owned process group. Supersedes V2-13 for this tool | [Tool contract](contracts/tools.md#literal-command-execution), [validation](validation/shell.md) |
-
-| V2-48 | Selected / implementer, 2026-11-23 | Add optional named Git checkouts for status, diff, fast-forward pull and selected-file publication. Freeze checkout identity with admission and recheck grants and workspace roots on use. Keep mutations interactive, serialize them with blog work on the same checkout, and reserve configured correspondence checkouts for letters writes. Require a freshly verified matching upstream before committing selected files, then use a normal push. Retain failed local commits for operator inspection and report the last verified phase in receipts | [Tool contract](contracts/tools.md#configured-git-checkouts), [validation](validation/git-tools.md) |
-| V2-49 | Selected / implementer, 2026-11-23 | Add an optional pinned vision model that shares the run budget and inference semaphore. Admit a staged PNG/JPEG or same-topic PNG reference, retain the image and vision evidence, and pass observations to the conversation model as untrusted text. Enable one image route per deployment. | [Image workflows](image-workflows.md), [validation](validation/vision-model.md) |
-
-| V2-50 | Selected / implementer, 2026-11-23 | Add four named letters tools for one reserved Git checkout. Permit read and inbox in scheduled profiles, with explicit job roots for inbox. Keep publication interactive, preserve the v1 body-plus-LF format and commit subjects, and record durable publication identities and phases. The operator verifies interrupted and v1 work before enabling or retrying publication. | [Letters contract](contracts/tools.md#git-backed-letters), [validation](validation/letters-tools.md) |
-
-| V2-51 | Selected / implementer, 2026-11-23 | Add opt-in `delegate.run` from interactive parents to one configured isolated worker profile. Intersect frozen and current grants and roots. Reserve an existing active slot after serving eligible queued runs. Use the same inference permit, charge the parent's budgets, and commit both the child admission and the parent evidence link atomically. | [Tool contract](contracts/tools.md#bounded-delegation), [validation](validation/delegation.md) |
-| V2-52 | Operator request, 2026-11-23 | Extend the public CLI with explicit synthetic model diagnostics and offline effective grant comparison. Keep inference opt-in and use disposable evidence. Supersedes the four-command limit in V2-31. | [CLI](cli.md), [validation](validation/cli-diagnostics.md) |
-| V2-53 | Selected / implementer, 2026-11-24 | Add separately grantable `files.rename`, `files.copy`, `files.mkdir`, and `files.delete`. Use guarded workspace paths and standard mutation receipts. File transfers require a vacant destination, and background mutations require explicit job roots. | [Tool contract](contracts/tools.md#workspace-behavior-and-access-matrix), [validation](validation/file-tools.md) |
-| V2-54 | Confirmed / operator, 2026-11-25 | Add `sola service` for one per-user macOS LaunchAgent per canonical config path, defaulting to `~/.config/sola/config.toml`. Create installs the agent disabled, start enables launch at login and crash recovery, restart replaces the selected runtime process, and stop disables and unloads it. `uv run --env-file` loads an optional private dotenv file at startup. | [CLI](cli.md#run-sola-at-login), [validation](validation/service.md) |
-
-| V2-55 | Confirmed direction / operator, 2026-11-25 | Transfer full session evidence in Solakit ZIP archives, including delegated descendants. Import independent topic copies with fresh local identities, retain source evidence, and resume from the last committed compaction summary under local authority. | [API](contracts/api.md#session-transfer), [storage](contracts/storage.md#session-transfer), [verification](validation/session-transfer.md) |
-| V2-56 | Confirmed / operator, 2026-11-25 | Retry the latest failed local interactive reply in place. A new run linked by `retry_of` reuses the original message, attachment and frozen admission under current permissions with fresh budgets, projects settled tool exchanges across the chain, and skips exact repeats of successful or confirmed calls. Chains stay together in compaction, extraction and transfer. Uses the existing record schema and tables | [API](contracts/api.md#retrying-a-failed-reply), [validation](validation/reply-retry.md) |
-| V2-57 | Selected / implementer, 2026-11-27 | Add opt-in `web.fetch` for public URL-to-Markdown extraction through Cloudflare Browser Run. Use a separate grant, freeze the account ID and token reference at admission, and record bounded Markdown in standard read-only tool receipts. | [Tool contract](contracts/tools.md#webpage-markdown), [validation](validation/web-fetch.md) |
-| V2-58 | Selected / operator request, 2026-11-27 | Accept document attachments through the chat picker or conversation drop. UTF-8 works with the conversation model. PDF, DOCX, and PPTX use the configured oMLX API when it advertises MarkItDown. Keep the exact text with message evidence for retries, history, and topic transfer. | [Chat guide](chat-ui.md), [API contract](contracts/api.md#run-admission-and-delegation), [validation](validation/document-attachments.md) |
-| V2-59 | Selected / implementer, 2026-11-27 | Add separately grantable `files.append`, `files.edit`, `files.glob`, and `files.grep`. Use atomic UTF-8 updates and require exactly one literal match for edits. Bound recursive discovery and regex searches with context. | [Tool contract](contracts/tools.md#workspace-behavior-and-access-matrix), [validation](validation/file-tools.md) |
-
-## Unavailable references and remaining verification
-
-The outline refers to D1–D6 and companion source specifications that are not present in this checkout. Similarly named legacy refactor IDs are unrelated. Their absence is recorded; these v2 contracts replace the ambiguity for this release. Newly supplied requirements should become explicit decision changes, not retroactive assumptions.
-
-No architecture-changing product question remains unanswered for Phase 0. Remaining work has explicit boundaries:
-
-| Item | Status | Owner / last responsible phase |
-| --- | --- | --- |
-| Exact Qwen pin and image-input capability | API pin `Qwen3.6-35B-A3B-mxfp4`, text/tools/reasoning and synthetic images passed live in both transport modes; weights/tokenizer unverified | Implementer, Phase 4; production attachments Phase 12 |
-| OpenViking version, roots, write/idempotency contract | 0.5.5 source/live schema verified; extraction and fresh-session retrieval passed in isolated test account. No submission idempotency guarantee; uncertain work is not replayed | Implementer, Phase 7; production scope remains Phase 13 |
-| Reproducible dependency lock and full toolchain | Passed locally | Implementer, Phase 1; locked checks and clean wheel install; hosted CI execution remains pending |
-| Production data paths, volumes, SQLite and memory-root inventory | Private checksummed legacy snapshot and local semantic inventory collected; external service/resource backups and completeness pending | Phase 13 [runbook](migration/cutover.md); no production cutover implied |
-| Exact image workflow/resource and credentials | Fixed examples/image-workflow.json passed live at operator-selected http://127.0.0.1:8188/ (ComfyUI 0.42.0), with retrievable default/explicit outputs and recovery tests | Implementer, Phase 12; operator browser acceptance remains pending |
-| Numerical task-completion and disclosure thresholds | Selected before live baseline | Implementer, Phase 1; [versioned thresholds](../evals/thresholds.json), revise only before future candidate measurement |
-| Quiet-hour/backlog behavior and cron DST details | Deterministic checks and APScheduler integration passed; real scheduled Qwen/topic/extraction trace passed in test account | Implementer, Phase 9; production soak Phase 13 |
-| Deferred domain integrations | Out of release scope | Operator may initiate a separate scope change |
-
-Record changes here with date, reason, affected phases, and verification. Do not widen an existing run's admission ceiling when configuration gains authority.
+- Keep file access inside guarded roots with separate read, discovery, and mutation
+  grants. File edits require exactly one literal match. Keep image generation to
+  one configured ComfyUI workflow with durable submission and recovery. Use one
+  image input route per deployment, through the pinned conversation or vision model.
+  Retain extracted document text in evidence for history, retries and transfer.
+  [Workspace rules](contracts/tools.md#workspace-behavior-and-access-matrix),
+  [image workflows](image-workflows.md), [chat guide](chat-ui.md)
+- Keep publication behind explicit named tools. Blog creation defaults to drafts
+  and dream creation publishes through the configured build and Git workflow.
+  Named Git mutations and letters publication are interactive. Letters writes own
+  their reserved checkout and preserve the legacy message format. Retain local
+  commits and receipts for recovery when publication fails.
+  [Blog and dreams](blog.md), [Git and letters](contracts/tools.md#configured-git-checkouts)
+- Make public web search, webpage text extraction, and configured MCP calls
+  opt-in under tool grants and admission-time integration settings. Allow
+  literal-argument shell execution only for interactive profiles with the
+  explicit grant. Commands run with the server account's privileges.
+  [Tool contract](contracts/tools.md#public-web-search)

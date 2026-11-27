@@ -26,7 +26,7 @@ other wiki installations and Wikidata queries outside the first slice.
   missing article.
 - Use the short description “Read the opening summary of a Wikipedia article by
   title.” An uncertain exact title can be refined using the article candidates
-  or [`web.search`](NEXT-TOOLS-WEB-SEARCH.md) when granted. The wiki service makes
+  or [`web.search`](../contracts/tools.md#public-web-search) when granted. The wiki service makes
   no web search calls itself.
 
 ## Acceptance
