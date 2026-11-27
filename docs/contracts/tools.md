@@ -193,6 +193,10 @@ are limited to 1 MiB per file.
 
 | Tool | Arguments | Behavior |
 | --- | --- | --- |
+| `files.append` | `path`, `content` | Append nonempty UTF-8 text exactly as supplied. Creates the file if absent. |
+| `files.edit` | `path`, `old_text`, `new_text` | Replace one exact, case-sensitive occurrence in an existing UTF-8 file. Supply an empty `new_text` to remove the match. Include surrounding text to disambiguate repeated matches. |
+| `files.glob` | `pattern`, `path` (default `.`), `limit` (default 100) | Return matching regular file paths and a truncation flag. Patterns are relative to the scan directory. |
+| `files.grep` | `pattern`, `path` (default `.`), `glob` (default `**/*`), `context` (default 2), `limit` (default 20) | Search one file or a directory tree for a line regex. Return each hit's path, 1-based line number, text, and up to `context` lines before and after. |
 | `files.rename` | `source`, `destination` | Atomically rename or move one regular file on the same filesystem. The destination must be vacant. |
 | `files.copy` | `source`, `destination` | Copy up to 1 MiB of bytes (including binary) to a vacant destination as a private file. The receipt returns the byte count and SHA-256. |
 | `files.mkdir` | `path` | Create one private directory under an existing parent. |
@@ -202,6 +206,20 @@ Each operation uses its own tool grant and the usual mutation receipts. Transfer
 tools check both paths, with Git metadata protection on both sides. Rename, copy,
 and delete operate on single files. Scheduled and proactive mutations require
 explicit job workspace roots and follow the same quiet-hours treatment as `files.write`.
+
+Append and edit preserve existing line endings and use the same atomic replacement
+as write. Both the original and resulting file must fit within 1 MiB. The receipt
+contains the path, total byte count, and SHA-256. A file change detected before
+replacement aborts the update. External writers can still race the final check
+and rename.
+
+Glob supports `*`, `?`, bracket classes, and recursive `**`, including hidden
+files. For grep on a single file, the glob matches its basename. Grep uses Rust
+regular expressions, with a context range of 0–10 lines on each side. Context
+appears in `before` and `after` arrays when requested. Grep skips NUL-containing
+and invalid UTF-8 files. Both tools cap results at 100 and visits at 2,000 directory
+entries. Grep scans up to 16 MiB total and returns up to 1,000 characters per
+match or context line. `files.search` still provides literal line search.
 
 Writes deny every case variant of a `.git` component, symlink aliases, and
 metadata directories referenced by worktree `.git` files or `commondir`, including
@@ -216,8 +234,8 @@ opened directory trees or concurrently redefining Git metadata.
 
 | Access | Shared interactive | Isolated | Ephemeral | Scheduled/proactive |
 | --- | --- | --- | --- | --- |
-| `files.list`, `files.read`, `files.search` | Tool grant + roots + guards | Same | Same | Same admitted narrower profile |
-| `files.write`, `files.rename`, `files.copy`, `files.mkdir`, `files.delete` | Tool grant + roots + guards | Same | Same | Same with explicit job workspace roots |
+| `files.list`, `files.read`, `files.search`, `files.glob`, `files.grep` | Tool grant + roots + guards | Same | Same | Same admitted narrower profile |
+| `files.write`, `files.append`, `files.edit`, `files.rename`, `files.copy`, `files.mkdir`, `files.delete` | Tool grant + roots + guards | Same | Same | Same with explicit job workspace roots |
 | `transcripts.search` | Messages in shared sessions only | Own session only | Own run only | Bound session; own run if ephemeral |
 | `web.search` | Tool grant + stable enabled Brave credential reference | Same | Same | Same admitted narrower profile |
 | `web.fetch` | Tool grant + stable configured Cloudflare account and token reference | Same | Same | Same admitted narrower profile |

@@ -46,11 +46,27 @@ class Files(Protocol):
 
     def search_text(self, path: str, query: str, *, limit: int = 20) -> JsonValue: ...
 
+    def glob_files(self, path: str, pattern: str, *, limit: int = 100) -> JsonValue: ...
+
+    def grep_text(
+        self,
+        path: str,
+        pattern: str,
+        *,
+        glob: str = "**/*",
+        context: int = 2,
+        limit: int = 20,
+    ) -> JsonValue: ...
+
     def read_text(self, path: str) -> str: ...
 
     def write_text(
         self, path: str, content: str, *, overwrite: bool = False
     ) -> dict[str, JsonValue]: ...
+
+    def append_text(self, path: str, content: str) -> dict[str, JsonValue]: ...
+
+    def edit_text(self, path: str, old_text: str, new_text: str) -> dict[str, JsonValue]: ...
 
     def copy_file(self, source: str, destination: str) -> dict[str, JsonValue]: ...
 

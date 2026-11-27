@@ -48,6 +48,8 @@ WORKER_TOOLS = frozenset(
         "files.read",
         "files.list",
         "files.search",
+        "files.glob",
+        "files.grep",
         "web.search",
         "web.fetch",
         "git.status",

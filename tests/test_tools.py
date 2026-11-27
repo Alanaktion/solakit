@@ -882,3 +882,133 @@ def test_file_scans_are_bounded_and_skip_protected_aliases(tmp_path: Path) -> No
         assert found["truncated"] and len(found["matches"]) == 2
         assert h.dispatch("files.list", path="../").status == "denied"
         assert h.dispatch("files.search", path="secret-link", query="needle").status == "denied"
+
+
+def test_append_and_edit_preserve_exact_text_with_named_grants(tmp_path: Path) -> None:
+    with opened(tmp_path, grants=["files.append", "files.edit"]) as h:
+        target = h.root / "notes.txt"
+        for content in ("first\r\n", "café\r\nlast"):
+            appended = h.dispatch("files.append", path=target.name, content=content)
+            assert (appended.status, appended.effect) == ("succeeded", "confirmed")
+        assert target.read_bytes() == "first\r\ncafé\r\nlast".encode()
+        edited = h.dispatch(
+            "files.edit", path=target.name, old_text="café\r\nlast", new_text="猫\r\n"
+        )
+        assert (edited.status, edited.effect) == ("succeeded", "confirmed")
+        raw = target.read_bytes()
+        assert raw == "first\r\n猫\r\n".encode()
+        assert json.loads(str(edited.result)) == {
+            "path": target.name,
+            "bytes": len(raw),
+            "sha256": digest(raw),
+        }
+        assert edited.artifact is None and appended.artifact is None
+        assert h.dispatch("files.read", path=target.name).status == "denied"
+
+
+@pytest.mark.parametrize(
+    ("name", "arguments"),
+    [
+        ("files.append", {"content": "x"}),
+        ("files.edit", {"old_text": "a", "new_text": ""}),
+    ],
+)
+def test_text_mutations_obey_guards_and_bounds(
+    tmp_path: Path, name: str, arguments: dict[str, str]
+) -> None:
+    with opened(tmp_path, grants=[name], identity=True) as h:
+        (h.root / ".git").mkdir()
+        (h.root / ".git/config").write_text("a")
+        (h.root / "link").symlink_to(h.root / "SOUL.md")
+        (h.root / "large").write_bytes(b"a" * (MAX_FILE_BYTES + (name == "files.edit")))
+        (h.root / "binary").write_bytes(b"\xff")
+        for path in ("SOUL.md", ".git/config", "link", "../escape"):
+            receipt = h.dispatch(name, path=path, **arguments)
+            assert (receipt.status, receipt.effect) == ("denied", "none")
+        receipt = h.dispatch(name, path="large", **arguments)
+        assert receipt.effect == "none"
+        assert receipt.failure and receipt.failure.code == ErrorCode.BUDGET_EXCEEDED
+        receipt = h.dispatch(name, path="binary", **arguments)
+        assert receipt.effect == "none"
+        assert receipt.failure and receipt.failure.code == ErrorCode.INVALID_INPUT
+        assert (h.root / "binary").read_bytes() == b"\xff"
+
+
+def test_edit_rejects_missing_or_ambiguous_text(tmp_path: Path) -> None:
+    with opened(tmp_path) as h:
+        (h.root / "repeat").write_text("aaa")
+        for path, old_text in (("missing", "aa"), ("repeat", "bb"), ("repeat", "aa")):
+            receipt = h.dispatch("files.edit", path=path, old_text=old_text, new_text="x")
+            assert (receipt.status, receipt.effect) == ("failed", "none")
+            assert receipt.failure and receipt.failure.code == ErrorCode.INVALID_INPUT
+        assert (h.root / "repeat").read_text() == "aaa"
+        assert not (h.root / "missing").exists()
+
+
+def test_append_preserves_a_concurrent_replacement(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with opened(tmp_path) as h:
+        target = h.root / "target"
+        target.write_text("original")
+        begin = Invocation.begin_effect
+
+        def update(invocation: Invocation, credentials: tuple[str, ...]) -> None:
+            begin(invocation, credentials)
+            replacement = h.root / "replacement"
+            replacement.write_text("concurrent")
+            replacement.replace(target)
+
+        monkeypatch.setattr(Invocation, "begin_effect", update)
+        receipt = h.dispatch("files.append", path=target.name, content=" new")
+        assert receipt.status == "uncertain"
+        assert target.read_text() == "concurrent"
+        assert not list(h.root.glob(".sola-*.tmp"))
+
+
+def test_glob_and_regex_grep_with_context(tmp_path: Path) -> None:
+    with opened(tmp_path, grants=["files.glob", "files.grep"], identity=True) as h:
+        nested = h.root / "nested"
+        nested.mkdir()
+        (nested / "café.md").write_text("before\nTODO 42\nafter\n")
+        (h.root / "top.md").write_text("done\n")
+        (h.root / "skip.txt").write_text("TODO 99")
+        (h.root / "binary.md").write_bytes(b"TODO 33\x00")
+        (nested / "alias.md").symlink_to(h.root / "SOUL.md")
+        os.link(h.root / "SOUL.md", nested / "hardlink.md")
+        (h.root / "alias-dir").symlink_to(nested, target_is_directory=True)
+
+        receipt = h.dispatch("files.glob", pattern="**/*.md")
+        assert receipt.status == "succeeded" and receipt.effect == "none"
+        result = json.loads(str(receipt.result))
+        assert set(result["matches"]) == {"binary.md", "nested/café.md", "top.md"}
+        assert not result["truncated"]
+        flat = json.loads(str(h.dispatch("files.glob", pattern="*.md", limit=1).result))
+        assert flat["truncated"] and len(flat["matches"]) == 1
+        assert flat["matches"][0] in {"binary.md", "top.md"}
+
+        pattern = r"^TODO \d+$"
+        receipt = h.dispatch("files.grep", pattern=pattern, glob="**/*.md", context=1)
+        assert receipt.status == "succeeded" and receipt.effect == "none"
+        assert json.loads(str(receipt.result))["matches"] == [
+            {
+                "path": "nested/café.md",
+                "line": 2,
+                "text": "TODO 42",
+                "before": ["before"],
+                "after": ["after"],
+            }
+        ]
+        receipt = h.dispatch("files.grep", path="nested/café.md", pattern=pattern, context=0)
+        assert json.loads(str(receipt.result))["matches"] == [
+            {"path": "nested/café.md", "line": 2, "text": "TODO 42"}
+        ]
+        for name, arguments in (
+            ("files.glob", {"pattern": "../*"}),
+            ("files.grep", {"pattern": "("}),
+            ("files.grep", {"pattern": "TODO", "context": 11}),
+        ):
+            receipt = h.dispatch(name, **arguments)
+            assert receipt.failure and receipt.failure.code == ErrorCode.INVALID_INPUT
+        assert h.dispatch("files.grep", path="SOUL.md", pattern=".").status == "denied"
+        assert h.dispatch("files.glob", path="alias-dir", pattern="*").status == "denied"

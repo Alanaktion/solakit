@@ -525,8 +525,36 @@ def test_narrow_job_tools_and_permissions(profile: EffectiveProfile) -> None:
 
 
 @pytest.mark.parametrize("explicit_roots", [False, True])
-def test_background_file_rename_requires_explicit_roots(
-    profile: EffectiveProfile, explicit_roots: bool
+@pytest.mark.parametrize(
+    ("name", "arguments", "output", "expected"),
+    [
+        (
+            "files.rename",
+            '{"source":"source.txt","destination":"renamed.txt"}',
+            "renamed.txt",
+            "local file",
+        ),
+        (
+            "files.append",
+            '{"path":"source.txt","content":" appended"}',
+            "source.txt",
+            "local file appended",
+        ),
+        (
+            "files.edit",
+            '{"path":"source.txt","old_text":"local","new_text":"edited"}',
+            "source.txt",
+            "edited file",
+        ),
+    ],
+)
+def test_background_file_mutation_requires_explicit_roots(
+    profile: EffectiveProfile,
+    explicit_roots: bool,
+    name: str,
+    arguments: str,
+    output: str,
+    expected: str,
 ) -> None:
     async def scenario() -> None:
         clock = Clock(datetime(2026, 11, 17, 5, tzinfo=UTC))
@@ -534,15 +562,7 @@ def test_background_file_rename_requires_explicit_roots(
         (root / "source.txt").write_text("local file")
         app, requests = harness(
             profile,
-            [
-                reply(
-                    "",
-                    calls=[
-                        call("files.rename", '{"source":"source.txt","destination":"renamed.txt"}')
-                    ],
-                ),
-                reply("Finished."),
-            ],
+            [reply("", calls=[call(name, arguments)]), reply("Finished.")],
         )
         assert app.jobs
         app.jobs.clock = clock
@@ -553,7 +573,7 @@ def test_background_file_rename_requires_explicit_roots(
                 app,
                 clock,
                 enabled=True,
-                tools=("files.rename",),
+                tools=(name,),
                 workspace_roots=(str(root),) if explicit_roots else None,
             )
             await app.jobs.tick()
@@ -568,8 +588,12 @@ def test_background_file_rename_requires_explicit_roots(
             assert (receipt.status, receipt.effect) == (
                 ("succeeded", "confirmed") if explicit_roots else ("denied", "none")
             )
-            assert ("files.rename" in str(requests[0].get("tools", []))) == explicit_roots
-            assert (root / "renamed.txt").exists() == explicit_roots
+            assert (name in str(requests[0].get("tools", []))) == explicit_roots
+            if explicit_roots:
+                assert (root / output).read_text() == expected
+            else:
+                assert (root / "source.txt").read_text() == "local file"
+                assert not (root / "renamed.txt").exists()
         finally:
             await app.stop()
 

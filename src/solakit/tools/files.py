@@ -6,12 +6,14 @@ import ctypes
 import os
 import stat
 import sys
-from collections.abc import Callable, Iterator
-from contextlib import contextmanager
+from collections.abc import Callable, Generator, Iterator
+from contextlib import closing, contextmanager
+from glob import translate
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 from pydantic import JsonValue
+from pydantic_core import SchemaError, SchemaValidator, core_schema
 
 from solakit.records import ErrorCode, new_id
 from solakit.sdk import ToolError
@@ -21,9 +23,19 @@ if TYPE_CHECKING:
     from solakit.config import EffectiveProfile
 
 MAX_FILE_BYTES = 1024 * 1024
+MAX_SCAN_ENTRIES = 2000
+MAX_SCAN_BYTES = 16 * MAX_FILE_BYTES
 DIRECTORY = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
 FILE_MUTATIONS = frozenset(
-    {"files.write", "files.copy", "files.rename", "files.mkdir", "files.delete"}
+    {
+        "files.write",
+        "files.append",
+        "files.edit",
+        "files.copy",
+        "files.rename",
+        "files.mkdir",
+        "files.delete",
+    }
 )
 RENAME_EXCL = 0x00000004  # macOS
 RENAME_NOREPLACE = 1  # Linux
@@ -31,6 +43,38 @@ RENAME_NOREPLACE = 1  # Linux
 
 def _deny() -> ToolError:
     return ToolError("Path is outside permitted file access", ErrorCode.TOOL_DENIED)
+
+
+def _decode(raw: bytes) -> str:
+    try:
+        return raw.decode("utf-8")
+    except UnicodeError:
+        raise ToolError("File is not UTF-8 text", ErrorCode.INVALID_INPUT) from None
+
+
+def _matcher(pattern: str) -> Callable[[str], bool]:
+    # The Rust engine keeps model-supplied patterns from backtracking on the event loop.
+    try:
+        validator = SchemaValidator(
+            core_schema.str_schema(pattern=pattern, regex_engine="rust-regex")
+        )
+    except SchemaError as error:
+        raise ToolError(f"Invalid pattern: {error}", ErrorCode.INVALID_INPUT) from None
+    return validator.isinstance_python
+
+
+def _glob_matcher(pattern: str) -> Callable[[str], bool]:
+    path = Path(pattern)
+    if (
+        not 1 <= len(pattern) <= 4096
+        or path.is_absolute()
+        or ".." in path.parts
+        or "\x00" in pattern
+    ):
+        raise ToolError("Glob must be a relative path pattern", ErrorCode.INVALID_INPUT)
+    return _matcher(
+        r"\A" + translate(path.as_posix(), recursive=True, include_hidden=True, seps="/")
+    )
 
 
 # shortcut: local scans are synchronous; offload if large workspaces stall the event loop.
@@ -177,21 +221,24 @@ class GuardedFiles:
                 os.close(fd)
 
     def read_text(self, path: str) -> str:
-        raw = self.read_bytes(path, limit=MAX_FILE_BYTES)
-        try:
-            return raw.decode("utf-8")
-        except UnicodeError:
-            raise ToolError("File is not UTF-8 text", ErrorCode.INVALID_INPUT) from None
+        return _decode(self.read_bytes(path, limit=MAX_FILE_BYTES))
 
     def read_bytes(self, path: str, *, limit: int, protect_git: bool = False) -> bytes:
         with self._parent(path, write=False, protect_git=protect_git) as (parent, name):
-            fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent)
-            with os.fdopen(fd, "rb") as stream:
-                self._regular(os.fstat(stream.fileno()))
-                raw = stream.read(limit + 1)
+            raw, _ = self._read_at(parent, name, limit)
+        return raw
+
+    def _read_at(self, parent: int, name: str, limit: int) -> tuple[bytes, os.stat_result]:
+        fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent)
+        with os.fdopen(fd, "rb") as stream:
+            info = os.fstat(stream.fileno())
+            self._regular(info)
+            if info.st_size > limit:
+                raise ToolError("File exceeds read limit", ErrorCode.BUDGET_EXCEEDED)
+            raw = stream.read(limit + 1)
         if len(raw) > limit:
             raise ToolError("File exceeds read limit", ErrorCode.BUDGET_EXCEEDED)
-        return raw
+        return raw, info
 
     def copy_file(self, source: str, destination: str) -> dict[str, JsonValue]:
         raw = self.read_bytes(source, limit=MAX_FILE_BYTES, protect_git=True)
@@ -286,59 +333,152 @@ class GuardedFiles:
             JsonValue, {"entries": entries[:limit], "truncated": truncated or len(entries) > limit}
         )
 
-    def search_text(self, path: str, query: str, *, limit: int = 20) -> JsonValue:
-        if not query or len(query) > 4096 or type(limit) is not int or not 1 <= limit <= 100:
-            raise ToolError("Invalid search query or limit", ErrorCode.INVALID_INPUT)
-        matches: list[JsonValue] = []
+    def _scan(
+        self, path: str, *, allow_file: bool = False
+    ) -> Generator[tuple[Path, os.stat_result] | None]:
         pending = [path]
-        scanned = total_bytes = visited = skipped = 0
-        truncated = False
         while pending:
             directory = pending.pop()
             with self._parent(directory, write=False) as (parent, name):
+                if allow_file:
+                    allow_file = False
+                    info = os.stat(name, dir_fd=parent, follow_symlinks=False)
+                    if not stat.S_ISDIR(info.st_mode):
+                        self._regular(info)
+                        yield Path(directory), info
+                        return
                 fd = os.open(name, DIRECTORY, dir_fd=parent)
                 try:
                     with os.scandir(fd) as children:
                         for child in children:
-                            visited += 1
-                            if visited > 2000:
-                                truncated = True
-                                break
-                            target = str(Path(directory) / child.name)
-                            if child.is_symlink():
-                                skipped += 1
-                                continue
+                            target = Path(directory) / child.name
                             try:
-                                with self._parent(target, write=False):
-                                    pass
-                                if child.is_dir(follow_symlinks=False):
-                                    pending.append(target)
-                                    continue
                                 info = child.stat(follow_symlinks=False)
-                                self._regular(info)
-                                if total_bytes + info.st_size > 16 * MAX_FILE_BYTES:
-                                    truncated = True
-                                    break
-                                total_bytes += info.st_size
-                                text = self.read_text(target)
+                                if not stat.S_ISDIR(info.st_mode):
+                                    self._regular(info)
+                                with self._parent(str(target), write=False):
+                                    pass
                             except ToolError, OSError:
-                                skipped += 1
+                                yield None
                                 continue
-                            scanned += 1
-                            for number, line in enumerate(text.splitlines(), 1):
-                                if query in line:
-                                    matches.append(
-                                        {"path": target, "line": number, "text": line[:1000]}
-                                    )
-                                    if len(matches) >= limit:
-                                        truncated = True
-                                        break
-                            if truncated:
-                                break
+                            if stat.S_ISDIR(info.st_mode):
+                                pending.append(str(target))
+                            yield target, info
                 finally:
                     os.close(fd)
-            if truncated:
-                break
+
+    def glob_files(self, path: str, pattern: str, *, limit: int = 100) -> JsonValue:
+        if type(limit) is not int or not 1 <= limit <= 100:
+            raise ToolError("Invalid glob limit", ErrorCode.INVALID_INPUT)
+        matches_pattern = _glob_matcher(pattern)
+        base = Path(path)
+        matches: list[JsonValue] = []
+        truncated = False
+        with closing(self._scan(path)) as entries:
+            for index, entry in enumerate(entries):
+                if index >= MAX_SCAN_ENTRIES:
+                    truncated = True
+                    break
+                if entry is None:
+                    continue
+                target, info = entry
+                if stat.S_ISREG(info.st_mode) and matches_pattern(
+                    target.relative_to(base).as_posix()
+                ):
+                    if len(matches) == limit:
+                        truncated = True
+                        break
+                    matches.append(str(target))
+        return {"matches": matches, "truncated": truncated}
+
+    def search_text(self, path: str, query: str, *, limit: int = 20) -> JsonValue:
+        if not 1 <= len(query) <= 4096:
+            raise ToolError("Invalid search query", ErrorCode.INVALID_INPUT)
+        return self._search(path, lambda line: query in line, limit=limit)
+
+    def grep_text(
+        self,
+        path: str,
+        pattern: str,
+        *,
+        glob: str = "**/*",
+        context: int = 2,
+        limit: int = 20,
+    ) -> JsonValue:
+        if not 1 <= len(pattern) <= 4096 or type(context) is not int or not 0 <= context <= 10:
+            raise ToolError("Invalid grep pattern or context", ErrorCode.INVALID_INPUT)
+        return self._search(
+            path, _matcher(pattern), limit=limit, glob_match=_glob_matcher(glob), context=context
+        )
+
+    def _search(
+        self,
+        path: str,
+        matches_line: Callable[[str], bool],
+        *,
+        limit: int,
+        glob_match: Callable[[str], bool] | None = None,
+        context: int = 0,
+    ) -> JsonValue:
+        if type(limit) is not int or not 1 <= limit <= 100:
+            raise ToolError("Invalid search limit", ErrorCode.INVALID_INPUT)
+        base = Path(path)
+        matches: list[JsonValue] = []
+        scanned = total_bytes = skipped = 0
+        truncated = False
+        with closing(self._scan(path, allow_file=glob_match is not None)) as entries:
+            for index, entry in enumerate(entries):
+                if index >= MAX_SCAN_ENTRIES:
+                    truncated = True
+                    break
+                if entry is None:
+                    skipped += 1
+                    continue
+                target, info = entry
+                if not stat.S_ISREG(info.st_mode):
+                    continue
+                if glob_match and not glob_match(
+                    target.name if target == base else target.relative_to(base).as_posix()
+                ):
+                    continue
+                if total_bytes + info.st_size > MAX_SCAN_BYTES:
+                    truncated = True
+                    break
+                try:
+                    available = min(MAX_FILE_BYTES, MAX_SCAN_BYTES - total_bytes)
+                    raw = self.read_bytes(str(target), limit=available)
+                    total_bytes += len(raw)
+                    if glob_match and b"\x00" in raw:
+                        skipped += 1
+                        continue
+                    lines = _decode(raw).splitlines()
+                except ToolError:
+                    skipped += 1
+                    continue
+                scanned += 1
+                for index_in_file, line in enumerate(lines):
+                    if not matches_line(line):
+                        continue
+                    match: dict[str, JsonValue] = {
+                        "path": str(target),
+                        "line": index_in_file + 1,
+                        "text": line[:1000],
+                    }
+                    if context:
+                        match["before"] = [
+                            text[:1000]
+                            for text in lines[max(0, index_in_file - context) : index_in_file]
+                        ]
+                        match["after"] = [
+                            text[:1000]
+                            for text in lines[index_in_file + 1 : index_in_file + 1 + context]
+                        ]
+                    matches.append(match)
+                    if len(matches) >= limit:
+                        truncated = True
+                        break
+                if truncated:
+                    break
         return {
             "matches": matches,
             "truncated": truncated,
@@ -354,6 +494,39 @@ class GuardedFiles:
         if self.record_artifact is not None:
             self.record_artifact(raw)
         return result
+
+    def append_text(self, path: str, content: str) -> dict[str, JsonValue]:
+        if not content:
+            raise ToolError("Append content must be nonempty", ErrorCode.INVALID_INPUT)
+        return self._update_text(path, lambda text: text + content, create=True)
+
+    def edit_text(self, path: str, old_text: str, new_text: str) -> dict[str, JsonValue]:
+        if not old_text:
+            raise ToolError("Old text must be nonempty", ErrorCode.INVALID_INPUT)
+
+        def replace(text: str) -> str:
+            start = text.find(old_text)
+            if start == -1 or text.find(old_text, start + 1) != -1:
+                raise ToolError("Old text must match exactly once", ErrorCode.INVALID_INPUT)
+            return text[:start] + new_text + text[start + len(old_text) :]
+
+        return self._update_text(path, replace)
+
+    def _update_text(
+        self, path: str, update: Callable[[str], str], *, create: bool = False
+    ) -> dict[str, JsonValue]:
+        with self._parent(path, write=True) as (parent, name):
+            try:
+                raw, original = self._read_at(parent, name, MAX_FILE_BYTES)
+            except FileNotFoundError:
+                if not create:
+                    raise ToolError("File does not exist", ErrorCode.INVALID_INPUT) from None
+                raw, original = b"", None
+            raw = update(_decode(raw)).encode("utf-8")
+            if len(raw) > MAX_FILE_BYTES:
+                raise ToolError("File exceeds write limit", ErrorCode.BUDGET_EXCEEDED)
+            self._write_at(parent, name, raw, overwrite=original is not None, original=original)
+        return {"path": path, "bytes": len(raw), "sha256": digest(raw)}
 
     def write_bytes(
         self, path: str, raw: bytes, *, limit: int, overwrite: bool = False
@@ -371,25 +544,47 @@ class GuardedFiles:
                     raise ToolError(
                         "File exists; overwrite must be explicit", ErrorCode.INVALID_INPUT
                     )
-            temporary = f".sola-{new_id()}.tmp"
-            fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600, dir_fd=parent)
-            try:
-                with os.fdopen(fd, "wb") as stream:
-                    stream.write(raw)
-                    stream.flush()
-                    os.fsync(stream.fileno())
-                self.begin_effect(())
-                if overwrite:
-                    os.replace(temporary, name, src_dir_fd=parent, dst_dir_fd=parent)
-                else:
-                    os.link(
-                        temporary, name, src_dir_fd=parent, dst_dir_fd=parent, follow_symlinks=False
-                    )
-                self.confirm_effect()
-                os.fsync(parent)
-            finally:
-                try:
-                    os.unlink(temporary, dir_fd=parent)
-                except FileNotFoundError:
-                    pass
+            self._write_at(parent, name, raw, overwrite=overwrite)
         return {"path": path, "bytes": len(raw), "sha256": digest(raw)}
+
+    def _write_at(
+        self,
+        parent: int,
+        name: str,
+        raw: bytes,
+        *,
+        overwrite: bool,
+        original: os.stat_result | None = None,
+    ) -> None:
+        temporary = f".sola-{new_id()}.tmp"
+        fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600, dir_fd=parent)
+        try:
+            with os.fdopen(fd, "wb") as stream:
+                stream.write(raw)
+                stream.flush()
+                os.fsync(stream.fileno())
+            self.begin_effect(())
+            if original is not None:
+                current = os.stat(name, dir_fd=parent, follow_symlinks=False)
+                if (
+                    current.st_dev != original.st_dev
+                    or current.st_ino != original.st_ino
+                    or current.st_size != original.st_size
+                    or current.st_nlink != original.st_nlink
+                    or current.st_mtime_ns != original.st_mtime_ns
+                    or current.st_ctime_ns != original.st_ctime_ns
+                ):
+                    raise ToolError("File changed during update", ErrorCode.INVALID_INPUT)
+            if overwrite:
+                os.replace(temporary, name, src_dir_fd=parent, dst_dir_fd=parent)
+            else:
+                os.link(
+                    temporary, name, src_dir_fd=parent, dst_dir_fd=parent, follow_symlinks=False
+                )
+            self.confirm_effect()
+            os.fsync(parent)
+        finally:
+            try:
+                os.unlink(temporary, dir_fd=parent)
+            except FileNotFoundError:
+                pass

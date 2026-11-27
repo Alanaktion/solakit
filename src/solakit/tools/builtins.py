@@ -24,6 +24,15 @@ class Write(Read):
     overwrite: bool = False
 
 
+class Append(Read):
+    content: Annotated[str, Field(min_length=1)]
+
+
+class Edit(Read):
+    old_text: Annotated[str, Field(min_length=1)]
+    new_text: str
+
+
 class Transfer(ToolArguments):
     source: Annotated[str, Field(min_length=1, max_length=4096)]
     destination: Annotated[str, Field(min_length=1, max_length=4096)]
@@ -36,6 +45,16 @@ class ListFiles(ToolArguments):
 
 class SearchFiles(ListFiles):
     query: Annotated[str, Field(min_length=1, max_length=4096)]
+    limit: Annotated[int, Field(ge=1, le=100)] = 20
+
+
+class GlobFiles(ListFiles):
+    pattern: Annotated[str, Field(min_length=1, max_length=4096)]
+
+
+class GrepFiles(GlobFiles):
+    glob: Annotated[str, Field(min_length=1, max_length=4096)] = "**/*"
+    context: Annotated[int, Field(ge=0, le=10)] = 2
     limit: Annotated[int, Field(ge=1, le=100)] = 20
 
 
@@ -144,6 +163,18 @@ async def search_files(context: ToolContext, args: SearchFiles) -> ToolResult:
     return ToolResult(data=context.files.search_text(args.path, args.query, limit=args.limit))
 
 
+async def glob_files(context: ToolContext, args: GlobFiles) -> ToolResult:
+    return ToolResult(data=context.files.glob_files(args.path, args.pattern, limit=args.limit))
+
+
+async def grep_files(context: ToolContext, args: GrepFiles) -> ToolResult:
+    return ToolResult(
+        data=context.files.grep_text(
+            args.path, args.pattern, glob=args.glob, context=args.context, limit=args.limit
+        )
+    )
+
+
 async def search_web(context: ToolContext, args: WebSearch) -> ToolResult:
     from solakit.tools.dispatch import Invocation
 
@@ -187,6 +218,14 @@ async def write(context: ToolContext, args: Write) -> ToolResult:
     return ToolResult(
         data=context.files.write_text(args.path, args.content, overwrite=args.overwrite)
     )
+
+
+async def append(context: ToolContext, args: Append) -> ToolResult:
+    return ToolResult(data=context.files.append_text(args.path, args.content))
+
+
+async def edit(context: ToolContext, args: Edit) -> ToolResult:
+    return ToolResult(data=context.files.edit_text(args.path, args.old_text, args.new_text))
 
 
 async def copy_file(context: ToolContext, args: Transfer) -> ToolResult:
@@ -290,6 +329,18 @@ TOOLS = (
         SearchFiles,
         search_files,
     ),
+    Tool(
+        "files.glob",
+        "Find workspace files by relative glob pattern. Use ** for recursive matching.",
+        GlobFiles,
+        glob_files,
+    ),
+    Tool(
+        "files.grep",
+        "Search a workspace file or directory with a line regex, context, and a file glob.",
+        GrepFiles,
+        grep_files,
+    ),
     Tool("files.read", "Read a UTF-8 file in a granted workspace.", Read, read),
     Tool(
         "files.write",
@@ -297,6 +348,20 @@ TOOLS = (
         Write,
         write,
         True,
+    ),
+    Tool(
+        "files.append",
+        "Append exact UTF-8 text to a file, creating it if absent (no automatic newline).",
+        Append,
+        append,
+        consequential=True,
+    ),
+    Tool(
+        "files.edit",
+        "Replace exactly one occurrence of old_text in an existing UTF-8 file.",
+        Edit,
+        edit,
+        consequential=True,
     ),
     Tool(
         "files.copy",

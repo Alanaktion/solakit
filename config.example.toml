@@ -7,7 +7,8 @@ agent_name = "Sola"
 data_dir = "~/.local/share/sola"
 # Explicit import modules for installed trusted packs; loading grants no access.
 tool_modules = []
-# Built-ins: files.list, files.read, files.search, files.write,
+# Built-ins: files.list, files.read, files.search, files.glob, files.grep,
+# files.write, files.append, files.edit,
 # files.rename, files.copy, files.mkdir, files.delete, images.generate,
 # transcripts.search, web.search, web.fetch, mcp.list, mcp.call, git.status/diff/pull/publish,
 # shell.exec, delegate.run, runtime.status,

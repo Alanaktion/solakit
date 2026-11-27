@@ -137,7 +137,10 @@ def test_compacted_import_continues_and_can_compact_again(
             await source.stop()
 
         target, prompts = harness(
-            compact_profile(profile).model_copy(update={"data_dir": tmp_path / "copy"}), respond
+            compact_profile(profile).model_copy(
+                update={"data_dir": tmp_path / "copy", "model_context_tokens": 21500}
+            ),
+            respond,
         )
         await target.start()
         assert target.store and target.runs

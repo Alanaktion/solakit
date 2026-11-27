@@ -47,7 +47,7 @@ if TYPE_CHECKING:
 
 _ACTIONS = (
     r"read|write|save|create|generate|publish|search|recall|remember|list|show|check|inspect|use"
-    r"|delegate"
+    r"|append|edit|glob|grep|delegate"
 )
 _NAMED_ENTRY = r"(?:(?:a|the|this|that|new)\s+)*(?:files?|directory|folder)\b"
 
@@ -67,8 +67,9 @@ def requested_tools(text: str, names: Sequence[str]) -> set[str]:
     file_target = bool(
         re.search(
             r"\b[\w-]+\.[a-zA-Z0-9]{1,8}\b|(?:/|\\)[\w-]+|"
-            rf"\b(?:read|write|save|create|list|copy|rename|move)\s+{_NAMED_ENTRY}",
+            rf"\b(?:read|write|save|create|list|copy|rename|move|append(?:\s+to)?|edit)\s+{_NAMED_ENTRY}",
             text,
+            flags=re.I,
         )
     )
     text = text.strip().lower()
@@ -99,7 +100,7 @@ def requested_tools(text: str, names: Sequence[str]) -> set[str]:
         actions.add("rename" if verb == "move" else verb)
     if creates_directory:
         actions.add("mkdir")
-    if "mkdir" in actions:
+    if "mkdir" in actions or re.match(prefix + r"(?:glob|grep)\b", text):
         file_target = True
     if "save" in actions or ("create" in actions and not creates_directory):
         actions.add("write")

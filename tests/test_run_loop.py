@@ -298,6 +298,10 @@ def test_explicit_status_tool_request(text: str, expected: str) -> None:
         ("Move draft.txt to archive/draft.txt.", {"files.rename"}),
         ("Create a new folder named archive.", {"files.mkdir"}),
         ("Use files.delete on draft.txt.", {"files.delete"}),
+        ('Append "next" to draft.txt.', {"files.append"}),
+        ("Edit the file named README.", {"files.edit"}),
+        ("Glob **/*.py.", {"files.glob"}),
+        ('Grep for "^TODO" with two context lines.', {"files.grep"}),
         ("Read draft.txt and tell me which files to delete.", {"files.read"}),
         (
             "Read brief.txt, search evidence with transcripts.search, then write result.txt.",
@@ -316,7 +320,11 @@ def test_explicit_tool_names_resolve_shared_verbs(text: str, expected: set[str])
             (
                 "files.read",
                 "files.search",
+                "files.glob",
+                "files.grep",
                 "files.write",
+                "files.append",
+                "files.edit",
                 "files.copy",
                 "files.rename",
                 "files.mkdir",

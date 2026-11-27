@@ -597,7 +597,7 @@ def test_summary_failure_keeps_boundary_and_input(
 
         selected = compact_profile(profile)
         if not overflow:
-            selected = selected.model_copy(update={"model_context_tokens": 24000})
+            selected = selected.model_copy(update={"model_context_tokens": 27000})
         context, requests = harness(selected, respond)
         await context.start()
         assert context.store and context.runs
@@ -614,7 +614,7 @@ def test_summary_failure_keeps_boundary_and_input(
             if overflow:
                 assert outcome.reason and outcome.reason.code == ErrorCode.CONTEXT_LIMIT
             else:
-                assert outcome.state == RunState.COMPLETED
+                assert outcome.state == RunState.COMPLETED, outcome.reason
             assert active_boundary(context.store, session.id) is None
             assert len(requests) == (1 if overflow else 2)
             assert any(
