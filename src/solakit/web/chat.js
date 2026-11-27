@@ -35,8 +35,8 @@ let draftImage = null;
 let draftDocuments = [];
 let imageInputs = false, documentConversion = false, attachmentUpload = null, dragDepth = 0;
 const imageTypes = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp' };
+const imageMediaTypes = Object.values(imageTypes);
 const documentTypes = ['.pdf', '.docx', '.pptx'];
-const textTypes = 'text/*,.md,.markdown,.txt,.csv,.tsv,.json,.jsonl,.yaml,.yml,.toml,.xml,.log';
 let refreshChain = Promise.resolve(),
   cursor = null;
 const pendingRuns = new Set();
@@ -496,11 +496,6 @@ function updateComposer() {
   $('draft').disabled = !topic || delegated;
   const unavailable = !loggedIn || !topic || delegated || topic.archived || used || uploading;
   $('attach-files').disabled = unavailable;
-  $('attachment-files').accept = [
-    textTypes,
-    ...(imageInputs ? [...new Set(Object.values(imageTypes))] : []),
-    ...(documentConversion ? documentTypes : [])
-  ].join(',');
   $('send').disabled = unavailable || !$('draft').value.trim();
   $('compose-hint').classList.toggle('explanation', !!(delegated || topic?.archived || used));
   text(
@@ -560,13 +555,12 @@ async function attachFiles(files) {
   try {
     for (const file of files) {
       if (!current()) return;
-      const extension = file.name.split('.').pop().toLowerCase();
+      const dot = file.name.lastIndexOf('.');
+      const extension = dot > 0 ? file.name.slice(dot + 1).toLowerCase() : '';
       const imageType = Object.hasOwn(imageTypes, extension) ? imageTypes[extension] : file.type;
       try {
-        if (imageType.startsWith('image/')) {
+        if (imageMediaTypes.includes(imageType)) {
           if (!imageInputs) throw new Error('Image inputs are disabled for this model.');
-          if (!Object.values(imageTypes).includes(imageType))
-            throw new Error('Choose a PNG, JPEG, or WebP image.');
           if (attachedImage) throw new Error('Attach one image per message.');
           const result = await api(`${path}/image-uploads`, {
             method: 'POST', body: file.slice(0, file.size, imageType)

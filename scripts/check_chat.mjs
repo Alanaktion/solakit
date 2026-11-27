@@ -1537,51 +1537,59 @@ try {
     assert(await page.locator('#send').isDisabled());
     assert.equal(await page.locator('.message.user').count(), 1);
   });
-  await check('picker and conversation drop stage documents and an image in the same draft', async () => {
+  await check('picker and conversation drop stage source files and a raster image in the same draft', async () => {
     await page.locator('#new-topic').click();
     await page.locator('#topic-name').fill('Attachment verification');
     await page.locator('#mode').selectOption('shared');
     await page.locator('#topic-form button.primary').click();
     await page.locator('#topic-dialog').waitFor({ state: 'hidden' });
     const picker = page.locator('#attachment-files');
-    assert(!(await picker.getAttribute('accept')).includes('.pdf'));
+    assert.equal(await picker.getAttribute('accept'), null);
+    const sourceFiles = [
+      { name: 'index.html', mimeType: 'text/html', content: '<main>Moss green</main>' },
+      { name: 'build.js', mimeType: 'application/javascript', content: 'export const ready = true;' },
+      { name: 'Makefile', mimeType: '', content: 'all:\n\t@echo ready\n' }
+    ];
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg"><title>Moss green</title></svg>';
     await picker.setInputFiles([
-      { name: 'notes.md', mimeType: '', buffer: Buffer.from('# Notes\nMoss green') },
+      ...sourceFiles.map(({ name, mimeType, content }) => ({ name, mimeType, buffer: Buffer.from(content) })),
       { name: 'remove.txt', mimeType: 'text/plain', buffer: Buffer.from('Remove me') }
     ]);
     await page.getByRole('button', { name: 'Remove remove.txt', exact: true }).click();
-    const transfer = await page.evaluateHandle(() => {
+    const transfer = await page.evaluateHandle((svg) => {
       const data = new DataTransfer();
-      data.items.add(new File(['status,ready'], 'records.csv', { type: 'text/csv' }));
+      data.items.add(new File([svg], 'diagram.svg', { type: 'image/svg+xml' }));
       const canvas = document.createElement('canvas');
       canvas.width = canvas.height = 64;
       const png = atob(canvas.toDataURL().split(',')[1]);
       data.items.add(new File([Uint8Array.from(png, (byte) => byte.charCodeAt(0))], 'pixels.png', { type: 'image/png' }));
       return data;
-    });
+    }, svg);
     const history = page.locator('#history');
     await history.dispatchEvent('dragenter', { dataTransfer: transfer });
     await page.locator('#drop-files').waitFor({ state: 'visible' });
     await page.screenshot({ path: path.join(options.output, 'drop-files.png') });
     await history.dispatchEvent('drop', { dataTransfer: transfer });
     await page.locator('#drop-files').waitFor({ state: 'hidden' });
-    await page.getByRole('button', { name: 'Remove records.csv', exact: true }).waitFor();
+    await page.getByRole('button', { name: 'Remove diagram.svg', exact: true }).waitFor();
     await page.locator('#draft-image img').waitFor();
     await page.locator('#draft').fill('Read the attached files.');
     await page.reload();
     await waitFor(() => document.querySelector('#connection').textContent === 'Connected');
     assert.equal(await page.locator('#draft').inputValue(), 'Read the attached files.');
     await page.locator('#draft-image img').waitFor();
-    assert.equal(await page.locator('#draft-documents .document-attachment').count(), 2);
+    assert.equal(await page.locator('#draft-documents .document-attachment').count(), 4);
     await audit('document and image draft');
     await page.screenshot({ path: path.join(options.output, 'attachment-draft.png') });
     await page.locator('#send').click();
     await page.locator('.run-bar').filter({ hasText: 'completed' }).waitFor({ timeout: 30000 });
     await page.locator('.message.user .message-attachment img').waitFor();
-    const downloaded = page.waitForEvent('download');
-    await page.getByRole('link', { name: 'Download text from notes.md', exact: true }).click();
-    const file = await downloaded;
-    assert.equal(await fs.readFile(await file.path(), 'utf8'), '# Notes\nMoss green');
+    for (const { name, content } of [...sourceFiles, { name: 'diagram.svg', content: svg }]) {
+      const downloaded = page.waitForEvent('download');
+      await page.getByRole('link', { name: `Download text from ${name}`, exact: true }).click();
+      const file = await downloaded;
+      assert.equal(await fs.readFile(await file.path(), 'utf8'), content);
+    }
     await page.screenshot({ path: path.join(options.output, 'attachment-sent.png') });
   });
   if (fixture.image_topic) await check('authorized PNG preview, download and image attachment survive reload', async () => {
