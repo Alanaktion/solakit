@@ -87,6 +87,7 @@ export class SolaApp extends SolaElement {
         </header>
         <p id="connection" role="status" aria-live="polite">Connecting…</p>
         <p id="reply-status" class="sr-only" role="status" aria-atomic="true"></p>
+        <p id="copy-status" class="sr-only" role="status"></p>
         <div id="notice" role="alert" hidden>
           <span id="notice-message"></span
           ><button

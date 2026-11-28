@@ -42,6 +42,68 @@ export const action = (callback) => (event) => {
 export const text = (element, value) => {
   if (element.textContent !== value) element.textContent = value;
 };
+
+// Direct HTTP on a private IP has no Async Clipboard API.
+function copyOnHttp(source) {
+  const active = document.activeElement;
+  const selection = document.getSelection();
+  const { anchorNode, anchorOffset, focusNode, focusOffset } = selection;
+  const field = document.createElement('textarea');
+  field.className = 'clipboard-input';
+  field.readOnly = true;
+  field.tabIndex = -1;
+  field.value = ' ';
+  let copied = false;
+  field.addEventListener('copy', (event) => {
+    event.preventDefault();
+    if (event.clipboardData) {
+      event.clipboardData.setData('text/plain', source);
+      copied = true;
+    }
+  });
+  document.body.append(field);
+  try {
+    field.focus({ preventScroll: true });
+    field.select();
+    return document.execCommand('copy') && copied;
+  } finally {
+    field.remove();
+    active?.focus({ preventScroll: true });
+    if (anchorNode && focusNode) {
+      selection.setBaseAndExtent(anchorNode, anchorOffset, focusNode, focusOffset);
+    } else selection.removeAllRanges();
+  }
+}
+
+export function copyButton(source, kind) {
+  const label = kind === 'code' ? 'Copy' : 'Copy message';
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'copy-button';
+  const setLabel = (copied) => {
+    button.textContent = copied ? 'Copied' : label;
+    button.setAttribute('aria-label', `${copied ? 'Copied' : 'Copy'} ${kind}`);
+  };
+  setLabel(false);
+  let reset;
+  button.addEventListener('click', async () => {
+    const status = $('copy-status');
+    status.textContent = '';
+    try {
+      if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(source);
+      else if (!copyOnHttp(source)) throw new Error();
+    } catch {
+      showError(new Error(`Could not copy ${kind} to the clipboard.`));
+      return;
+    }
+    setLabel(true);
+    status.textContent = button.getAttribute('aria-label');
+    clearTimeout(reset);
+    reset = setTimeout(() => setLabel(false), 1500);
+  });
+  return button;
+}
+
 export function showError(error) {
   const target = $('evidence').open
     ? $('evidence-error')

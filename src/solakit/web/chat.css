@@ -15,6 +15,7 @@
   --tint: oklch(0.938 0.013 var(--hue-primary));
   --danger: oklch(0.434 0.131 var(--hue-danger));
   --warn: oklch(0.48 0.1 70);
+  --syntax-string: oklch(0.43 0.087 157);
   --backdrop: oklch(0.223 0.011 var(--hue-primary) / 0.45);
   --radius: 6px;
   --control-height: 36px;
@@ -45,6 +46,7 @@
     --tint: oklch(0.36 0.029 var(--hue-primary));
     --danger: oklch(0.784 0.103 var(--hue-danger));
     --warn: oklch(0.82 0.11 80);
+    --syntax-string: oklch(0.8 0.102 157);
     --backdrop: oklch(0.149 0.005 var(--hue-primary) / 0.7);
   }
 }
@@ -314,10 +316,31 @@ main {
   margin: 12px 0;
   overflow-wrap: anywhere;
 }
+.message-header,
+.code-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.message-header {
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
 .message .author {
   font-size: 0.875rem;
   font-weight: 600;
-  margin-bottom: 4px;
+}
+.copy-button {
+  flex-shrink: 0;
+  color: var(--muted);
+}
+.clipboard-input {
+  position: fixed;
+  inset: 0 auto auto 0;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
 }
 .message.user {
   background: var(--surface);
@@ -333,6 +356,8 @@ main {
 }
 .compaction-summary .author {
   color: var(--accent);
+}
+.compaction-summary .message-header {
   margin-bottom: 8px;
 }
 .message p:last-child {
@@ -364,6 +389,35 @@ pre {
 code {
   font-size: 0.875rem;
   background: var(--surface);
+}
+.code-block {
+  margin: 12px 0;
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.code-toolbar {
+  justify-content: flex-end;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--line);
+}
+.code-toolbar .copy-button {
+  min-inline-size: 5rem;
+}
+.code-block pre {
+  margin: 0;
+}
+.syntax-comment {
+  color: var(--muted);
+}
+.syntax-keyword {
+  color: var(--accent);
+  font-weight: 600;
+}
+.syntax-string {
+  color: var(--syntax-string);
+}
+.syntax-number {
+  color: var(--warn);
 }
 .run-bar {
   display: flex;

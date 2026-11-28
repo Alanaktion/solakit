@@ -3,7 +3,7 @@ import { markdown } from './markdown.js';
 import { childTopicLink, openEvidence } from './evidence.js';
 import { artifactPath, imageThumbnail } from './artifact.js';
 import { openResult, updateResult } from './result.js';
-import { active, action, SolaElement, agentName } from './ui.js';
+import { active, action, copyButton, SolaElement, agentName } from './ui.js';
 
 // Visual tone for a record state; the visible label always carries the state in words.
 const tone = (state) =>
@@ -160,7 +160,10 @@ class SolaTurn extends SolaElement {
       message.setAttribute('aria-labelledby', `author-${m.id}`);
       renderTemplate(
         html`
-          <div class="author" id=${`author-${m.id}`}>${author}</div>
+          <div class="message-header">
+            <span class="author" id=${`author-${m.id}`}>${author}</span>
+            ${m.content?.trim() ? copyButton(m.content, 'message') : nothing}
+          </div>
           <div>
             ${markdown(m.content || (row.truncated ? 'Large message — inspect evidence.' : ''))}
             ${image || m.documents?.length ? html`<div class="message-attachment">
@@ -190,7 +193,7 @@ class SolaTurn extends SolaElement {
     // A boundary can arrive after its message has already been rendered.
     if (this.summaryIds.has(m.id) && !message.classList.contains('compaction-summary')) {
       message.classList.add('compaction-summary');
-      message.firstElementChild.textContent = 'Context summary';
+      message.querySelector('.author').textContent = 'Context summary';
     }
     return message;
   }

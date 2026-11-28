@@ -219,11 +219,14 @@ SSE; both transports use the same record maps and stable IDs. Sign-in expiry
 retains drafts and pending submissions.
 
 Markdown supports paragraphs, headings, emphasis, lists, quotations, code and
-explicit HTTP/HTTPS/mailto links. Raw HTML is text; images do not fetch remote
-resources. Tool output and evidence use text nodes. Artifact inspection checks
-normal API authorization and downloads chunks of at most 64 KiB. Details are
-collapsed and scrollable. The shell has a restrictive Content Security Policy,
-labelled controls, native keyboard dialogs, polite progress announcements,
+explicit HTTP/HTTPS/mailto links. Fenced code blocks have a **Copy** button and
+syntax colors for Python, JavaScript, TypeScript, JSON, and shell. **Copy message**
+copies the original Markdown of a sent or received message with text. Raw HTML
+is text. Images do not fetch remote resources. Tool output and evidence use text
+nodes. Artifact inspection checks normal API authorization and downloads chunks
+of at most 64 KiB. Details are collapsed and scrollable. The shell has a
+restrictive Content Security Policy, labelled controls, native keyboard dialogs,
+polite progress announcements,
 compact 36-pixel desktop controls and 44-pixel targets when a touch pointer is
 available. Conversation text stays at 16 pixels; supporting controls use relative
 font sizes. Form boundaries and focus rings remain visible in both themes,

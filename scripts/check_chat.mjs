@@ -2006,6 +2006,97 @@ try {
     await page.getByRole('button', { name: 'Close Settings', exact: true }).click();
     await page.emulateMedia({ colorScheme: 'light' });
   });
+  await check('chat copies original Markdown and fenced code with optional syntax colors', async () => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: fixture.origin });
+    const readClipboard = () => page.evaluate(() => navigator.clipboard.readText());
+    await page.locator('#new-topic').click();
+    await page.locator('#topic-name').fill('Clipboard browser verification');
+    await page.locator('#mode').selectOption('isolated');
+    await page.locator('#topic-form button.primary').click();
+    await page.getByRole('heading', { name: 'Clipboard browser verification' }).waitFor();
+    const code = '\tif True:\n\t  print("<script>", 42) # sample\n```\n\n';
+    const fence = '````';
+    const source = `**Copy fixture**\n\n${fence}Py title\n${code}${fence}\n\n~~~unknown\n<tag>\n~~~`;
+    const sent = page.getByRole('article', { name: 'You', exact: true });
+    const received = page.getByRole('article', { name: agentName, exact: true });
+    await send(source);
+    await received.locator('pre code').first().waitFor();
+    const copyMessage = (message) => message.getByRole('button', { name: 'Copy message', exact: true });
+    const reply = `Sola heard: ${source}\n\n<img src=x onerror="window.PWNED=true"> [bad](javascript:alert(1)) **Safe bold**`;
+    for (const [message, expected] of [[sent, source], [received, reply]]) {
+      await copyMessage(message).click();
+      await message.getByRole('button', { name: 'Copied message', exact: true }).waitFor();
+      assert.equal(await readClipboard(), expected);
+    }
+
+    const block = received.locator('.code-block').first();
+    assert.equal(await block.locator('pre code').textContent(), code);
+    assert.equal(await block.locator('.syntax-keyword').first().textContent(), 'if');
+    assert.equal(await block.locator('.syntax-string').textContent(), '"<script>"');
+    assert.equal(await block.locator('.syntax-number').textContent(), '42');
+    assert.equal(await block.locator('.syntax-comment').textContent(), '# sample');
+    assert.equal(await received.locator('script, img, tag').count(), 0);
+    const copyCode = block.getByRole('button', { name: 'Copy code', exact: true });
+    await copyCode.press('Enter');
+    await block.getByRole('button', { name: 'Copied code', exact: true }).waitFor();
+    assert.equal(await page.locator('#copy-status').textContent(), 'Copied code');
+    assert.equal(await readClipboard(), code);
+    const plain = received.locator('.code-block').nth(1);
+    assert.equal(await plain.locator('code span').count(), 0);
+    await plain.getByRole('button', { name: 'Copy code', exact: true }).click();
+    await plain.getByRole('button', { name: 'Copied code', exact: true }).waitFor();
+    assert.equal(await readClipboard(), '<tag>\n');
+
+    await page.evaluate(() => {
+      navigator.clipboard.writeText = () => Promise.reject(new DOMException('Blocked', 'NotAllowedError'));
+    });
+    await copyMessage(sent).click();
+    await page.getByText('Could not copy message to the clipboard.', { exact: true }).waitFor();
+    assert.equal(await readClipboard(), '<tag>\n');
+    await page.evaluate(() => { delete navigator.clipboard.writeText; });
+    await page.locator('#notice-dismiss').click();
+
+    await page.setViewportSize({ width: 320, height: 720 });
+    for (const colorScheme of ['light', 'dark']) {
+      await page.emulateMedia({ colorScheme });
+      assert(await block.evaluate((el) => el.getBoundingClientRect().right <= innerWidth));
+      await audit(`code-${colorScheme}`);
+    }
+  });
+  await check('clipboard fallback works on direct HTTP and preserves selection', async () => {
+    const insecure = await context.newPage();
+    const origin = 'http://192.0.2.1';
+    try {
+      await insecure.route(`${origin}/**`, async (route) => {
+        const { pathname } = new URL(route.request().url());
+        if (pathname.startsWith('/assets/')) {
+          await route.fulfill({ response: await context.request.get(fixture.origin + pathname) });
+        } else {
+          await route.fulfill({ contentType: 'text/html', body: '<meta name="agent-name" content="Sola">' +
+            '<link rel="stylesheet" href="/assets/chat.css"><p id="copy-status" role="status"></p>' +
+            '<p id="selection">Selected text</p>' });
+        }
+      });
+      await insecure.goto(origin);
+      await insecure.evaluate(async () => {
+        if (isSecureContext || navigator.clipboard) throw new Error('Expected an insecure origin');
+        const { copyButton } = await import('/assets/ui.js');
+        const button = copyButton('  **Original Markdown**\n\n', 'message');
+        document.body.append(button);
+        button.focus();
+        document.getSelection().selectAllChildren(document.querySelector('#selection'));
+      });
+      await insecure.keyboard.press('Enter');
+      const button = insecure.getByRole('button', { name: 'Copied message', exact: true });
+      assert(await button.evaluate((el) => el === document.activeElement));
+      assert.equal(await insecure.evaluate(() => document.getSelection().toString()), 'Selected text');
+      assert.equal(await insecure.locator('.clipboard-input').count(), 0);
+    } finally {
+      await insecure.close();
+    }
+    await page.bringToFront();
+    assert.equal(await page.evaluate(() => navigator.clipboard.readText()), '  **Original Markdown**\n\n');
+  });
   report.errors = errors;
   assert.deepEqual(errors, []);
 } catch (error) {
