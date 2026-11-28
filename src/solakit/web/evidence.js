@@ -7,15 +7,19 @@ let evidenceRun = null,
   view = 'records';
 let pages = {};
 export function childTopicLink(record) {
-  return html`<a href="/?session=${record.child_session_id}">Open delegated topic</a>
-    ${record.continued_from_run_id ? html`
+  return html`<a href="/?session=${record.child_session_id}">Open delegated topic</a>`;
+}
+export function workerEvidence(record) {
+  return record.continued_from_run_id ? html`
       <button type="button" class="quiet" @click=${action(() => openEvidence(record.continued_from_run_id))}>
         Previous worker run
       </button>
       <button type="button" class="quiet" @click=${action(() => openEvidence(record.child_run_id))}>
         Follow-up worker run
       </button>
-    ` : nothing}`;
+    ` : html`<button type="button" class="quiet" @click=${action(() => openEvidence(record.child_run_id))}>
+      Inspect worker run
+    </button>`;
 }
 export async function openEvidence(id) {
   evidenceRun = id;
@@ -72,7 +76,7 @@ function renderEvidence() {
           <summary>
             ${`${row.sequence} · ${row.kind}${row.truncated ? ' · large record' : ''}`}
           </summary>
-          ${row.kind === 'delegation' ? childTopicLink(row.record) : nothing}
+          ${row.kind === 'delegation' ? html`${childTopicLink(row.record)} ${workerEvidence(row.record)}` : nothing}
           <pre tabindex="0">${JSON.stringify(row.record, null, 2)}</pre>
           ${artifacts.map((reference) => html`<sola-artifact .runId=${id} .reference=${reference}></sola-artifact>`)}
         </details>

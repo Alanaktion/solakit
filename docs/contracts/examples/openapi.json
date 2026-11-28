@@ -6910,6 +6910,16 @@
               "title": "Preview",
               "type": "boolean"
             }
+          },
+          {
+            "in": "query",
+            "name": "thumbnail",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Thumbnail",
+              "type": "boolean"
+            }
           }
         ],
         "responses": {

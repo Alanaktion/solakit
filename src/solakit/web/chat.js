@@ -4,6 +4,8 @@ import { api, downloadTopic, read, write, uid } from './client.js';
 import { openEvidence, moreEvidence, switchEvidence } from './evidence.js';
 import { createSettings } from './settings.js';
 import { SolaApp } from './app.js';
+import { imageThumbnail } from './artifact.js';
+import { closeResult, openResult, setImageReuse } from './result.js';
 import './turn.js';
 
 const outbox = read('sola.outbox', []);
@@ -56,6 +58,7 @@ const { loadProfiles, openSettings } = settings;
 
 function requireLogin() {
   loggedIn = false;
+  closeResult(false);
   attachmentUpload = null;
   resetFileDrop();
   updateComposer();
@@ -143,7 +146,7 @@ function turnFor(id) {
         turn.retrying = false;
       }
     };
-    turn.refreshRun = () => queueRefresh(turn.run?.id ?? id);
+    turn.refreshRun = queueRefresh;
     turns.set(id, turn);
   }
   return turns.get(id);
@@ -188,7 +191,7 @@ function render() {
       turn.run = run;
       if (run && !active(run)) turn.preview = '';
       turn.attempts = linked;
-      turn.setRecords(new Map(linked.flatMap((attempt) => [...(records.get(attempt) || [])])));
+      turn.setRecords(new Map(linked.flatMap((attempt) => [...(records.get(attempt) || [])])), runs);
       // Flush Lit before measuring scroll anchors and following the latest content.
       turn.performUpdate();
     }
@@ -217,16 +220,15 @@ function updateTimers() {
 }
 async function loadRecords(id, token) {
   const items = [];
-  const cached = records.get(id);
+  const lastSequence = [...(records.get(id)?.values() || [])]
+    .reduce((latest, row) => Math.max(latest, row.sequence), 0);
   let before = 0;
   // Catch up across as many pages as arrived while the tab was disconnected.
   while (true) {
     const result = await api(`/runs/${id}/records?before=${before}&limit=50`);
     if (token !== generation) return;
     items.push(...result.items);
-    if (!result.items.length || result.items.some((row) =>
-      row.kind === 'run' || cached?.has(`${row.kind}:${row.record.id}`)
-    )) break;
+    if (!result.items.length || result.next <= lastSequence) break;
     before = result.next;
   }
   if (!records.has(id)) records.set(id, new Map());
@@ -386,7 +388,7 @@ function connect() {
   const snapshot = (event) => {
     if (token !== generation) return;
     const data = JSON.parse(event.data);
-    cursor = data.cursor;
+    cursor = event.lastEventId || data.cursor;
     for (const turn of turns.values()) {
       turn.preview = '';
       turn.performUpdate();
@@ -394,7 +396,7 @@ function connect() {
     topics.set(data.session.id, data.session);
     renderTopics();
     setTopicHeading();
-    queueRefresh(data.runs.filter((run) => runs.has(run.id) || active(run)).map((run) => run.id));
+    queueRefresh([...runs.keys(), ...data.runs.filter(active).map((run) => run.id)]);
   };
   stream.addEventListener('snapshot', snapshot);
   stream.addEventListener('reset', snapshot);
@@ -469,10 +471,16 @@ function saveDraft() {
 }
 function updateComposer() {
   const uploading = attachmentUpload?.generation === generation;
-  const imageUrl = draftImage?.upload_id
-    ? `/api/v1/sessions/${selected}/image-uploads/${draftImage.upload_id}`
-    : draftImage && `/api/v1/runs/${draftImage.run_id}/artifacts/${draftImage.artifact_id}?preview=true`;
-  renderTemplate(imageUrl ? html`<img class="image-thumbnail" src=${imageUrl} alt="Attached image">
+  const staged = draftImage?.upload_id &&
+    `/sessions/${selected}/image-uploads/${draftImage.upload_id}`;
+  const saved = draftImage?.artifact_id &&
+    `/runs/${draftImage.run_id}/artifacts/${draftImage.artifact_id}`;
+  renderTemplate(staged || saved ? html`
+      ${imageThumbnail(`/api/v1${staged || `${saved}?thumbnail=true`}`,
+        'your draft', ({ currentTarget }) => openResult(currentTarget, {
+          title: 'Draft image', imageLabel: 'Image attached to the draft',
+          previewPath: staged || `${saved}?preview=true`
+        }))}
       <button type="button" @click=${() => { draftImage = null; saveDraft(); }}>
         <sola-icon name="X"></sola-icon> Remove image
       </button>` : nothing, $('draft-image'));
@@ -498,6 +506,7 @@ function updateComposer() {
   $('draft').disabled = !topic || delegated;
   const unavailable = !loggedIn || !topic || delegated || topic.archived || used || uploading;
   $('attach-files').disabled = unavailable;
+  setImageReuse(!unavailable && imageInputs);
   $('send').disabled = unavailable || !$('draft').value.trim();
   $('compose-hint').classList.toggle('explanation', !!(delegated || topic?.archived || used));
   text(
@@ -646,6 +655,7 @@ async function selectTopic(id) {
   turns.clear();
   retryable = null;
   $('turns').replaceChildren();
+  if (closeResult(false)) $('history').focus({ preventScroll: true });
   text($('reply-status'), '');
   olderMessages = olderRuns = 0;
   messagesDone = runsDone = false;
@@ -1144,12 +1154,13 @@ async function logout() {
 
 document.addEventListener('sola-auth-required', requireLogin);
 document.addEventListener('sola-image-selected', (event) => {
-  if (!selected || topics.get(selected)?.archived) return;
+  if (!selected || topics.get(selected)?.archived || !imageInputs) return;
   if ($('attach-files').disabled) return;
   draftImage = event.detail;
   saveDraft();
+  closeResult(false);
   if ($('evidence').open) $('evidence').close();
-  $('draft').focus();
+  $('draft').focus({ preventScroll: true });
 });
 customElements.define('sola-app', SolaApp);
 document.querySelector('sola-app').actions = {

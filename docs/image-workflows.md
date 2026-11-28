@@ -95,16 +95,19 @@ unsolicited message.
 
 ## Images in chat
 
-Image records appear beside tool receipts. View generated image fetches authenticated,
-hash-verified artifact chunks and assembles at most 16 MiB into a PNG blob; Download
-image saves the complete PNG. Raw model Markdown cannot load remote images or HTML.
-Only these authorized PNG blobs are added to the existing image CSP.
+Generated images appear as thumbnails on their tool result rows. A late image can
+appear while the tool receipt still shows **uncertain**. Select the thumbnail or
+**View result** to request the full, hash-verified PNG. **Download image** saves the
+original bytes. Saved image thumbnails use the same authenticated origin and fit
+within 160 × 160 pixels. The chat CSP permits same-origin images and the preview
+blobs created from authenticated reads.
 
 **Attach files** or dropping an image into the conversation adds one static PNG,
-JPEG, or WebP from your device. Use image in next
-message attaches a PNG already in the topic, including a generated image. Both
-show a thumbnail and Remove image next to the question. The browser retains
-draft references and retries admission with the same key.
+JPEG, or WebP from your device. Select the draft or sent thumbnail to open an
+image preview. **Use image in next message** in a saved image's preview attaches
+its PNG to an eligible draft in the same topic and focuses the composer. The
+composer shows a thumbnail and **Remove image**. The browser retains draft
+references and retries admission with the same key.
 
 For uploads, the server checks format and dimensions before decoding, rejects
 animated or corrupt input, applies orientation and writes a metadata-free PNG.

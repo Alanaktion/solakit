@@ -407,40 +407,18 @@ summary {
   padding: 4px 0;
   overflow-wrap: anywhere;
 }
-/* Tool and memory work stays quiet in the timeline until opened. */
-.work details {
-  margin: 0;
+/* Keep tool outcomes readable in the timeline while the dialog holds the details. */
+.work-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
   color: var(--muted);
   font-size: 0.875rem;
+  overflow-wrap: anywhere;
 }
-.work summary {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  list-style: none;
-  padding: 2px 8px;
-  margin: 0 -8px;
-  border-radius: var(--radius);
-  min-height: 32px;
-}
-.work summary::-webkit-details-marker {
-  display: none;
-}
-.work .chevron {
-  transition: transform 0.15s;
-}
-.work details[open] > summary > .chevron {
-  transform: rotate(90deg);
-}
-.work summary:hover {
-  background: var(--tint);
-  color: var(--ink);
-}
-.work details[open] {
-  margin-bottom: 8px;
-}
-.work details[open] > :not(summary) {
-  margin-left: 22px;
+.work-row > span {
+  flex: 1 1 12rem;
 }
 .work + .message,
 .message + .work {
@@ -523,23 +501,39 @@ details[data-tone='warn'] > summary,
 #draft-image:not(:empty),
 .message-attachment {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   padding: 4px 8px;
 }
-#draft-image img,
-.message-attachment img {
-  display: block;
+.image-thumbnail {
+  flex: none;
+  display: grid;
+  place-items: center;
   width: 64px;
-  height: 48px;
-  object-fit: contain;
-  border-radius: var(--radius);
+  height: 64px;
+  padding: 0;
+  overflow: hidden;
+  font-size: 0.75rem;
 }
-.message-attachment {
-  flex-wrap: wrap;
+.image-thumbnail img {
+  grid-area: 1 / 1;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.image-thumbnail img[data-failed] {
+  visibility: hidden;
+}
+.image-thumbnail span {
+  grid-area: 1 / 1;
+}
+.image-thumbnail img:not([data-failed]) + span {
+  display: none;
 }
 .document-attachment {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   padding: 4px 8px;
@@ -692,6 +686,34 @@ dialog > details {
 }
 dialog > details > summary {
   font-weight: 600;
+}
+#result-dialog {
+  overflow: hidden;
+}
+#result-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+#result-dialog header {
+  flex: none;
+}
+#result-body {
+  min-height: 0;
+  padding: 4px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+#result-body sola-artifact {
+  display: block;
+}
+#result-body > details {
+  border-top: 1px solid var(--line);
+}
+.result-status {
+  margin-top: 0;
+}
+.artifact-figure {
+  margin: 0;
 }
 .actions {
   display: flex;
@@ -1016,9 +1038,6 @@ sola-topic-manager {
 @media (any-pointer: coarse) {
   :root {
     --control-height: 44px;
-  }
-  .work summary {
-    min-height: var(--control-height);
   }
   input,
   select {

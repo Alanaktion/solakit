@@ -21,8 +21,9 @@ from solakit.adapters.vision import INSTRUCTION
 from solakit.api import create_app
 from solakit.config import EffectiveProfile, OperatorConfig, VisionSettings
 from solakit.engine.compaction import Compactor, select
-from solakit.records import Artifact, Message, Run, new_id
+from solakit.records import Artifact, Message, Run, RunState, new_id
 from solakit.runtime import ApplicationContext
+from solakit.storage.evidence import digest
 from solakit.storage.uploads import UPLOAD_TTL
 from solakit.tools.images import UPLOAD_BYTES, normalize_upload
 
@@ -123,6 +124,86 @@ def submit(
         headers={"Idempotency-Key": key or new_id()},
         json={"session_id": session, "content": question, "image": image},
     )
+
+
+def test_saved_artifact_thumbnail_is_bounded_linked_and_verified(
+    vision: tuple[TestClient, ApplicationContext, dict[str, Any]],
+) -> None:
+    client, context, _ = vision
+    login(client)
+    session = topic(client)
+    store = context.store
+    assert client.portal and store
+    metadata = PngInfo()
+    metadata.add_text("fixture", "original metadata")
+    output = BytesIO()
+    Image.new("RGBA", (400, 200), (30, 90, 120, 128)).save(output, "PNG", pnginfo=metadata)
+    raw = output.getvalue()
+
+    def record(data: bytes, *, media_type: str = "image/png") -> tuple[str, Artifact]:
+        identity = new_id()
+        reference = Artifact.model_validate(
+            store.artifact(identity, data) | {"media_type": media_type}
+        )
+        run = store.admit(
+            session,
+            request_id=new_id(),
+            content="Saved attachment",
+            profile="default",
+            image=reference,
+        )
+        store.transition_run(run.id, RunState.CANCELLED)
+        return run.id, reference
+
+    run, reference = client.portal.call(record, raw)
+    path = f"/api/v1/runs/{run}/{reference.path}"
+    client.cookies.clear()
+    assert client.get(path, params={"thumbnail": "true"}).status_code == 401
+    login(client)
+
+    other_run, _ = client.portal.call(record, raw)
+    assert (
+        client.get(f"/api/v1/runs/{other_run}/{reference.path}?thumbnail=true").status_code == 404
+    )
+    thumb = client.get(path, params={"thumbnail": "true", "offset": 10000, "limit": 1})
+    assert thumb.status_code == 200
+    assert thumb.headers["content-type"] == "image/png"
+    assert thumb.headers["content-disposition"] == "inline"
+    assert thumb.headers["cache-control"] == "no-store"
+    assert thumb.headers["x-content-type-options"] == "nosniff"
+    assert "x-artifact-sha256" not in thumb.headers
+    with Image.open(BytesIO(thumb.content)) as image:
+        assert image.size == (160, 80)
+        assert image.info == {}
+        pixel = image.getpixel((4, 4))
+        assert isinstance(pixel, tuple) and pixel[3] == 128
+
+    full = client.get(path, params={"preview": "true", "offset": 7, "limit": 5})
+    assert full.content == raw and full.headers["content-type"] == "image/png"
+    assert full.headers["x-next-offset"] == str(len(raw))
+    chunk = client.get(path, params={"offset": 7, "limit": 5})
+    assert chunk.content == raw[7:12]
+    assert chunk.headers["content-type"] == "application/octet-stream"
+    assert chunk.headers["content-disposition"] == "attachment"
+    assert chunk.headers["x-artifact-sha256"] == full.headers["x-artifact-sha256"] == digest(raw)
+    assert chunk.headers["x-artifact-length"] == str(len(raw))
+    assert chunk.headers["x-next-offset"] == "12"
+
+    invalid_run, invalid = client.portal.call(record, b"not a PNG")
+    invalid_path = f"/api/v1/runs/{invalid_run}/{invalid.path}?thumbnail=true"
+    assert client.get(invalid_path).json()["error"]["code"] == "invalid_image"
+    binary_run, binary = client.portal.call(
+        lambda: record(raw, media_type="application/octet-stream")
+    )
+    assert client.get(f"/api/v1/runs/{binary_run}/{binary.path}?thumbnail=true").status_code == 422
+    client.portal.call(lambda: store.update_session(session, archived=True))
+    assert client.get(path, params={"thumbnail": "true"}).content == thumb.content
+    assert client.get(path, params={"preview": "true"}).content == raw
+    source = store.root / reference.path
+    source.write_bytes(raw[:-1] + bytes([raw[-1] ^ 1]))
+    assert client.get(path, params={"thumbnail": "true"}).status_code == 503
+    source.unlink()
+    assert client.get(path, params={"thumbnail": "true"}).status_code == 503
 
 
 @pytest.mark.parametrize("media_type", ["image/png", "image/webp"])

@@ -1,6 +1,7 @@
 import { html } from './lit-core.min.js';
 import { $, action, SolaElement, agentName } from './ui.js';
 import { settingsTemplate } from './settings.js';
+import { closeResult } from './result.js';
 import './topics.js';
 
 export class SolaApp extends SolaElement {
@@ -250,6 +251,18 @@ export class SolaApp extends SolaElement {
         .openImport=${openImport}>
       </sola-topic-manager>
       ${settingsTemplate(this.actions)}
+      <dialog id="result-dialog" class="wide" aria-labelledby="result-title"
+        @close=${() => { if (!$('result-dialog').open) closeResult(); }}
+        @cancel=${(event) => { event.preventDefault(); closeResult(); }}>
+        <header>
+          <h2 id="result-title"></h2>
+          <button type="button" id="result-close" class="dialog-close"
+            aria-label="Close preview" autofocus @click=${() => closeResult()}>
+            <sola-icon name="X"></sola-icon>
+          </button>
+        </header>
+        <div id="result-body"></div>
+      </dialog>
       <dialog id="evidence" class="wide" aria-labelledby="evidence-title" closedby="any">
         <header>
           <h2 id="evidence-title">Run evidence</h2>

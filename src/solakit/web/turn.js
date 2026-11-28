@@ -1,7 +1,8 @@
 import { html, nothing, render as renderTemplate } from './lit-core.min.js';
 import { markdown } from './markdown.js';
-import { api } from './client.js';
 import { childTopicLink, openEvidence } from './evidence.js';
+import { artifactPath, imageThumbnail } from './artifact.js';
+import { openResult, updateResult } from './result.js';
 import { active, action, SolaElement, agentName } from './ui.js';
 
 // Visual tone for a record state; the visible label always carries the state in words.
@@ -32,6 +33,88 @@ const toneIcons = {
   pending: 'CircleDashed'
 };
 
+const short = (value, limit = 160) => {
+  if (typeof value !== 'string') return '';
+  const line = value.replace(/[\p{Cc}\p{Cf}\s]+/gu, ' ').trim();
+  return line.length > limit ? `${line.slice(0, limit - 1)}…` : line;
+};
+const artifactLabel = (reference) =>
+  reference?.media_type === 'image/png' ? 'PNG image available'
+    : reference ? 'Artifact available' : '';
+const count = (number, singular, plural = `${singular}s`) =>
+  `${number} ${number === 1 ? singular : plural}`;
+const matchTools = ['files.search', 'files.glob', 'files.grep'];
+const fileListTools = ['files.list', ...matchTools];
+const structuredResults = new Set([
+  ...fileListTools, 'files.write', 'web.search', 'transcripts.search'
+]);
+
+function resultValue(result) {
+  if (typeof result === 'string' && /^\s*[\[{]/.test(result)) {
+    try { return JSON.parse(result); }
+    catch { return result; }
+  }
+  return result;
+}
+
+function toolSummary(name, receipt, value, references) {
+  const failure = short(receipt?.failure?.message) ||
+    short(receipt?.failure?.code?.replaceAll('_', ' '));
+  if (failure) return [failure, artifactLabel(references[0])].filter(Boolean).join(' · ');
+  if (references.some((reference) => reference.media_type === 'image/png'))
+    return 'PNG image available';
+  if (receipt?.status === 'succeeded') {
+    if (matchTools.includes(name) && Array.isArray(value?.matches))
+      return count(value.matches.length, 'match', 'matches');
+    if (name === 'files.list' && Array.isArray(value?.entries))
+      return count(value.entries.length, 'entry', 'entries');
+    if (['web.search', 'transcripts.search'].includes(name) && Array.isArray(value))
+      return count(value.length, 'result');
+    if (name === 'files.write' && typeof value?.path === 'string') {
+      const filename = short(value.path.split('/').pop());
+      if (filename) return `Wrote ${filename}`;
+    }
+  }
+  return artifactLabel(references[0]);
+}
+
+function toolEntry({ call, receipt, image, delegation }, running) {
+  const r = receipt?.record;
+  const generation = image?.record;
+  const first = call || receipt || image || delegation;
+  const name = short(call?.record.name, 256) ||
+    (image ? 'Image generation' : delegation ? 'Delegation' : 'Tool');
+  const state = r?.status ?? (running ? 'working' : 'no receipt');
+  const references = [...new Map(
+    [generation?.artifact ?? generation?.artifacts?.artifact, r?.artifact ?? r?.artifacts?.artifact]
+      .filter(Boolean).map((reference) => [reference.path, reference])
+  ).values()];
+  const value = structuredResults.has(name) ? resultValue(r?.result) : r?.result;
+  const truncated = r?.truncated || receipt?.truncated || call?.truncated || image?.truncated ||
+    (fileListTools.includes(name) && value?.truncated === true);
+  return {
+    id: call?.record.id || r?.tool_call_id || generation?.tool_call_id || delegation.record.id,
+    runId: first.record.run_id,
+    sequence: first.sequence,
+    name,
+    state: state + (r?.effect === 'uncertain' ? ' · effect uncertain' : ''),
+    tone: state === 'no receipt' ? 'warn' : tone(state),
+    working: state === 'working',
+    summary: toolSummary(name, r, value, references) ||
+      (generation?.state ? `Image generation ${generation.state}` : ''),
+    truncated,
+    call: true,
+    arguments: call?.record.arguments,
+    body: r,
+    related: generation,
+    delegation: delegation?.record,
+    references,
+    output: value != null && !(references.length && (r?.truncated || name === 'images.generate'))
+      ? (typeof value === 'string' ? value : JSON.stringify(value, null, 2))
+      : undefined
+  };
+}
+
 class SolaTurn extends SolaElement {
   static properties = {
     run: { attribute: false },
@@ -58,6 +141,7 @@ class SolaTurn extends SolaElement {
   renderMessage(row) {
     const m = row.record;
     if (!this.messageNodes.has(m.id)) {
+      const image = m.image || m.artifacts?.image;
       const author =
         m.role === 'user'
           ? (m.origin === 'delegated' ? 'Delegation brief' : 'You')
@@ -68,6 +152,8 @@ class SolaTurn extends SolaElement {
             : m.origin === 'scheduled'
               ? `${agentName} · scheduled message`
               : agentName;
+      const attachmentOrigin = author === 'You' ? 'your message' : author;
+      const messageExcerpt = short(m.content, 60);
       const message = document.createElement('article');
       message.className = `message ${m.role}`;
       message.dataset.messageId = m.id;
@@ -77,14 +163,23 @@ class SolaTurn extends SolaElement {
           <div class="author" id=${`author-${m.id}`}>${author}</div>
           <div>
             ${markdown(m.content || (row.truncated ? 'Large message — inspect evidence.' : ''))}
-            ${m.image ? html`<sola-artifact .runId=${m.run_id} .reference=${m.image} .thumbnail=${true}></sola-artifact>` : nothing}
-            ${m.documents?.map((file) => html`<div class="document-attachment">
-              <sola-icon name="FileText"></sola-icon>
-              <a href=${`/api/v1/runs/${m.run_id}/${file.path}`}
-                download=${`${file.name}.txt`} aria-label=${`Download text from ${file.name}`}>
-                ${file.name}
-              </a>
-            </div>`)}
+            ${image || m.documents?.length ? html`<div class="message-attachment">
+              ${image ? imageThumbnail(`/api/v1${artifactPath(m.run_id, image)}?thumbnail=true`,
+                messageExcerpt ? `${attachmentOrigin} “${messageExcerpt}”` : attachmentOrigin,
+                ({ currentTarget }) =>
+                  openResult(currentTarget, {
+                    runId: m.run_id, reference: image,
+                    title: 'Attached image', imageLabel: 'Image attached to the message'
+                  })) : nothing}
+              ${m.documents?.map((file) => html`<div class="document-attachment">
+                <sola-icon name="FileText"></sola-icon>
+                <span>${file.name}</span>
+                <button type="button" aria-haspopup="dialog" aria-label=${`View attachment ${file.name}`}
+                  @click=${({ currentTarget }) => openResult(currentTarget, {
+                    runId: m.run_id, reference: file, title: file.name, documentName: file.name
+                  })}>View attachment</button>
+              </div>`)}
+            </div>` : nothing}
           </div>
         `,
         message
@@ -107,10 +202,6 @@ class SolaTurn extends SolaElement {
       this.entryNodes.set(entry.id, node);
     }
     const node = this.entryNodes.get(entry.id);
-    if (entry.delegation) {
-      renderTemplate(childTopicLink(entry.body), node);
-      return node;
-    }
     if (entry.narration) {
       if (node.source !== entry.body.content) {
         node.source = entry.body.content;
@@ -118,43 +209,24 @@ class SolaTurn extends SolaElement {
       }
       return node;
     }
-    // Rendering into a keyed node keeps disclosure state and form input across updates.
+    const open = (event, imagePath) =>
+      openResult(event.currentTarget, { entry, imagePath, refreshRun: this.refreshRun });
+    // Keep the launchers in place as new receipts and image records arrive.
     renderTemplate(
-      html`
-        <details data-tone=${entry.tone}>
-          <summary>
-            <sola-icon class="status-icon" name=${toneIcons[entry.tone]}></sola-icon>${entry.label}<sola-icon
-              class="chevron"
-              name="ChevronRight"
-            ></sola-icon>
-          </summary>
-          <pre tabindex="0">${JSON.stringify(entry.body, null, 2)}</pre>
-          ${entry.body.artifact ? html`<sola-artifact .runId=${entry.body.run_id || this.dataset.runId} .reference=${entry.body.artifact}></sola-artifact>` : nothing}
-          ${
-            entry.reconcile
-              ? html`
-                  <form
-                    @submit=${(event) => {
-                      event.preventDefault();
-                      const providerTask = event.currentTarget.querySelector('input').value;
-                      action(async () => {
-                        await api(`/memory/${entry.id}/reconcile`, {
-                          method: 'POST',
-                          body: { provider_task_id: providerTask }
-                        });
-                        this.refreshRun();
-                      })();
-                    }}
-                  >
-                    <label for=${`reconcile-${entry.id}`}>Verified provider task ID</label>
-                    <input id=${`reconcile-${entry.id}`} required maxlength="256" />
-                    <button>Reconcile extraction</button>
-                  </form>
-                `
-              : nothing
-          }
-        </details>
-      `,
+      html`<div class="work-row" data-tone=${entry.tone}>
+        <sola-icon class="status-icon" name=${toneIcons[entry.tone]}></sola-icon>
+        <span><strong>${entry.name}</strong>${entry.state ? ` · ${entry.state}` : ''}
+          ${entry.summary ? ` · ${entry.summary}` : ''}
+          ${entry.truncated ? ' · truncated' : ''}</span>
+        ${entry.references?.filter((reference) => reference.media_type === 'image/png')
+          .map((reference) => imageThumbnail(
+            `/api/v1${artifactPath(entry.runId, reference)}?thumbnail=true`, entry.name,
+            (event) => open(event, reference.path)
+          ))}
+        <button type="button" aria-haspopup="dialog" aria-label=${`View ${entry.working ? 'details' : 'result'} for ${entry.name}`}
+          @click=${open}>${entry.working ? 'View details' : 'View result'}</button>
+        ${entry.delegation ? childTopicLink(entry.delegation) : nothing}
+      </div>`,
       node
     );
     return node;
@@ -169,7 +241,7 @@ class SolaTurn extends SolaElement {
     const analyzing = run?.state === 'running' &&
       this.messageRows.some(({ record }) => record.image_route === 'vision') &&
       !entries.some(({ body }) =>
-        body.purpose === 'vision' && (body.run_id === run.id || !body.failure));
+        body?.purpose === 'vision' && (body.run_id === run.id || !body.failure));
     // One sequence-ordered timeline: request, tool work, then the reply it produced.
     const timeline = [
       ...this.messageRows.map((row) => [row.sequence, this.renderMessage(row)]),
@@ -221,48 +293,33 @@ class SolaTurn extends SolaElement {
       </div>
     `;
   }
-  setRecords(records) {
+  setRecords(records, runs) {
     const rows = [...(records?.values() || [])].sort((a, b) => a.sequence - b.sequence);
-    const calls = new Map(rows.filter((row) => row.kind === 'tool').map((row) => [row.record.id, row]));
-    const receipts = new Map(
-      rows.filter((row) => row.kind === 'receipt').map((row) => [row.record.tool_call_id, row])
-    );
-    const running = active(this.run || {});
+    const tools = new Map();
     const entries = [];
-    for (const [callId, { sequence, record: call }] of calls) {
-      const receipt = receipts.get(callId)?.record;
-      const state = receipt?.status || (running ? 'working' : 'no receipt — inspect evidence');
-      entries.push({
-        id: callId,
-        sequence,
-        tone: receipt ? tone(receipt.status) : running ? 'working' : 'warn',
-        label: `${call.name} · ${state}${receipt?.effect === 'uncertain' ? ' · effect uncertain' : ''}`,
-        body: { arguments: call.arguments, ...(receipt || {}) }
-      });
-    }
-    for (const [callId, { sequence, record: receipt }] of receipts)
-      if (!calls.has(callId))
-        entries.push({
-          id: callId,
-          sequence,
-          tone: tone(receipt.status),
-          label: `Tool · ${receipt.status}${receipt.effect === 'uncertain' ? ' · effect uncertain' : ''}`,
-          body: receipt
-        });
-    for (const { kind, sequence, record: r } of rows) {
-      const entry = { id: r.id, sequence, body: r };
-      if (kind === 'delegation')
-        entries.push({ ...entry, id: `delegation:${r.id}`, delegation: true });
+    for (const row of rows) {
+      const { kind, sequence, record: r, truncated } = row;
+      if (['tool', 'receipt', 'image', 'delegation'].includes(kind) &&
+          (r.tool_call_id || kind !== 'image')) {
+        const key = `${r.run_id}:${r.tool_call_id || r.id}`;
+        if (!tools.has(key)) tools.set(key, {});
+        tools.get(key)[kind === 'tool' ? 'call' : kind] = row;
+        continue;
+      }
+      const entry = { id: r.id, runId: r.run_id, sequence, body: r, truncated };
       // Text the model wrote alongside tool calls; the final reply arrives as a message.
       if (kind === 'model' && r.purpose !== 'compaction' && r.tool_calls?.length && r.content?.trim())
         entries.push({ ...entry, narration: true });
       if (kind === 'memory_note')
-        entries.push({ ...entry, tone: 'pending', label: 'Memory note staged — awaiting extraction' });
+        entries.push({ ...entry, tone: 'pending', name: 'Memory note staged',
+          state: 'awaiting extraction', output: r.content });
       if (kind === 'memory')
         entries.push({
           ...entry,
           tone: tone(r.state),
-          label: `Memory extraction · ${r.state === 'completed' ? 'completed — saved' : r.state}`,
+          name: 'Memory extraction',
+          state: r.state === 'completed' ? 'completed · saved' : r.state,
+          summary: short(r.failure?.message),
           reconcile: ['ambiguous', 'failed'].includes(r.state)
         });
       if (kind === 'compaction') {
@@ -270,29 +327,37 @@ class SolaTurn extends SolaElement {
         entries.push({
           ...entry,
           tone: 'info',
-          label: 'Earlier context summarized · original turns retained'
+          name: 'Earlier context summarized',
+          state: 'original turns retained'
         });
       }
       if (kind === 'delivery')
-        entries.push({ ...entry, tone: tone(r.state), label: `Scheduled message · ${r.state}` });
-      if (kind === 'recovery') entries.push({ ...entry, tone: 'info', label: 'Recovery note' });
+        entries.push({ ...entry, tone: tone(r.state), name: 'Scheduled message', state: r.state });
+      if (kind === 'recovery')
+        entries.push({ ...entry, tone: 'info', name: 'Recovery note', output: r.content });
       if (kind === 'model' && r.purpose === 'vision')
         entries.push({
           ...entry,
           tone: r.failure ? tone(r.failure.code === 'cancelled' ? 'cancelled' : 'failed') : 'ok',
-          label: r.failure
-            ? (r.failure.code === 'cancelled' ? 'Image analysis cancelled' : 'Image analysis failed')
-            : 'Image analyzed'
+          name: 'Image analysis',
+          state: r.failure ? (r.failure.code === 'cancelled' ? 'cancelled' : 'failed') : 'completed',
+          summary: short(r.failure?.message)
         });
       if (kind === 'image')
         entries.push({
           ...entry,
-          tone: ['intent', 'submitted'].includes(r.state) && running ? 'working' : tone(r.state),
-          label: `Image generation · ${r.state}`
+          tone: tone(r.state),
+          name: 'Image generation',
+          state: r.state,
+          references: [r.artifact ?? r.artifacts?.artifact].filter(Boolean)
         });
     }
-    for (const entry of entries) this.workEntries.set(entry.id, entry);
-    this.requestUpdate();
+    for (const tool of tools.values()) {
+      const { record } = tool.call || tool.receipt || tool.image || tool.delegation;
+      entries.push(toolEntry(tool, active(runs.get(record.run_id)?.record || {})));
+    }
+    this.workEntries = new Map(entries.map((entry) => [entry.id, entry]));
+    for (const entry of entries) updateResult(entry);
   }
 }
 

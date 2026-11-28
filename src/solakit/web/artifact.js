@@ -1,141 +1,169 @@
 import { html, nothing } from './lit-core.min.js';
-import { action, SolaElement } from './ui.js';
+import { api } from './client.js';
+import { SolaElement } from './ui.js';
+
+export const artifactPath = (runId, reference) => `/runs/${runId}/${reference.path}`;
+
+export function imageThumbnail(src, label, open) {
+  return html`<button type="button" class="image-thumbnail" aria-haspopup="dialog"
+    aria-label=${`Open image from ${label}`} @click=${open}>
+    <img src=${src} alt="" loading="lazy"
+      @error=${({ currentTarget }) => currentTarget.setAttribute('data-failed', '')}
+      @load=${({ currentTarget }) => currentTarget.removeAttribute('data-failed')} />
+    <span>Open image</span>
+  </button>`;
+}
 
 class SolaArtifact extends SolaElement {
   static properties = {
     runId: { attribute: false },
     reference: { attribute: false },
-    thumbnail: { attribute: false },
+    previewPath: { attribute: false },
+    automatic: { attribute: false },
+    documentName: { attribute: false },
+    imageLabel: { attribute: false },
+    canReuse: { attribute: false },
     chunk: { state: true },
     imageUrl: { state: true },
-    loading: { state: true }
+    loading: { state: true },
+    error: { state: true }
   };
+
+  get isImage() {
+    return this.previewPath || this.reference?.media_type === 'image/png';
+  }
+
+  reset() {
+    this.request?.abort();
+    this.request = null;
+    if (this.imageUrl) URL.revokeObjectURL(this.imageUrl);
+    this.imageUrl = null;
+    this.chunk = null;
+    this.error = '';
+    this.loading = false;
+    this.offset = 0;
+  }
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    if (this.imageUrl) URL.revokeObjectURL(this.imageUrl);
-    this.imageUrl = null;
-    this.imageLoad = (this.imageLoad || 0) + 1;
-    this.loading = false;
+    this.reset();
   }
 
   updated(changed) {
-    if (changed.has('reference') && changed.get('reference')?.path !== this.reference?.path) {
-      if (this.imageUrl) URL.revokeObjectURL(this.imageUrl);
-      this.imageUrl = null;
-    }
-  }
-
-  async loadImage() {
-    if (this.loading) return;
-    if (this.reference.media_type !== 'image/png' || this.reference.length > 16 * 1024 * 1024)
-      throw new Error('Image exceeds the preview limit.');
-    const reference = this.reference,
-      runId = this.runId;
-    const token = (this.imageLoad = (this.imageLoad || 0) + 1);
-    this.loading = true;
-    try {
-      const parts = [];
-      let offset = 0;
-      while (offset < reference.length) {
-        await this.load(offset);
-        if (
-          !this.isConnected || this.imageLoad !== token ||
-          this.reference.path !== reference.path || this.runId !== runId
-        ) return;
-        if (
-          !this.chunk.bytes.byteLength ||
-          this.chunk.next !== offset + this.chunk.bytes.byteLength ||
-          this.chunk.length !== reference.length || this.chunk.next > reference.length
-        ) throw new Error('Image download has an invalid byte range.');
-        parts.push(this.chunk.bytes);
-        offset = this.chunk.next;
-      }
-      if (this.imageUrl) URL.revokeObjectURL(this.imageUrl);
-      this.imageUrl = URL.createObjectURL(new Blob(parts, { type: 'image/png' }));
-      this.chunk = null;
-    } finally {
-      if (this.imageLoad === token) this.loading = false;
+    const previous = changed.get('reference');
+    if (
+      changed.has('runId') || changed.has('previewPath') ||
+      (changed.has('reference') && (previous?.path !== this.reference?.path ||
+        previous?.sha256 !== this.reference?.sha256))
+    ) {
+      this.reset();
+      if (this.automatic && this.isConnected) this.load();
     }
   }
 
   async load(offset = 0) {
-    const identity = this.reference.path.split('/').pop();
-    const response = await fetch(
-      `/api/v1/runs/${this.runId}/artifacts/${identity}?offset=${offset}&limit=65536`,
-      { credentials: 'same-origin' }
-    );
-    if (response.status === 401) {
-      document.dispatchEvent(new Event('sola-auth-required'));
-      throw new Error('Sign in to inspect artifacts.');
+    if (this.loading) return;
+    const request = new AbortController();
+    this.request = request;
+    this.offset = offset;
+    this.loading = true;
+    this.error = '';
+    const { signal } = request;
+    const path = this.reference && artifactPath(this.runId, this.reference);
+    try {
+      if (this.isImage) {
+        const image = await api(this.previewPath || `${path}?preview=true`, {
+          responseType: 'blob', signal
+        });
+        if (signal.aborted) return;
+        if (image.type !== 'image/png' || !image.size ||
+            (this.reference && image.size !== this.reference.length))
+          throw new Error('The PNG preview did not match the recorded image.');
+        this.imageUrl = URL.createObjectURL(image);
+      } else {
+        const response = await fetch(`/api/v1${path}?offset=${offset}&limit=65536`, {
+          credentials: 'same-origin', signal
+        });
+        if (signal.aborted) return;
+        if (response.status === 401) {
+          document.dispatchEvent(new Event('sola-auth-required'));
+          throw new Error('Sign in to inspect artifacts.');
+        }
+        if (!response.ok) throw new Error('Artifact could not be authorized or verified.');
+        const bytes = await response.arrayBuffer();
+        if (signal.aborted) return;
+        const next = Number(response.headers.get('X-Next-Offset'));
+        const length = Number(response.headers.get('X-Artifact-Length'));
+        if (length !== this.reference.length || next !== offset + bytes.byteLength ||
+            next > length || (next === offset && offset < length) ||
+            (this.documentName && next !== length))
+          throw new Error('The artifact preview has an invalid byte range.');
+        this.chunk = { bytes, offset, next, length };
+      }
+    } catch (error) {
+      if (!signal.aborted) this.error = error.message || 'Preview could not be loaded.';
+    } finally {
+      if (this.request === request) this.loading = false;
     }
-    if (!response.ok) throw new Error('Artifact could not be authorized or verified.');
-    this.chunk = {
-      bytes: await response.arrayBuffer(),
-      offset,
-      next: Number(response.headers.get('X-Next-Offset')),
-      length: Number(response.headers.get('X-Artifact-Length'))
-    };
   }
 
   download() {
     const { bytes, offset } = this.chunk;
-    const url = URL.createObjectURL(new Blob([bytes], { type: 'application/octet-stream' }));
+    const type = this.documentName ? 'text/plain;charset=utf-8' : 'application/octet-stream';
+    const url = URL.createObjectURL(new Blob([bytes], { type }));
     const link = document.createElement('a');
     link.href = url;
-    link.download = `${this.reference.path.split('/').pop()}-${offset}.bin`;
+    link.download = this.documentName
+      ? `${this.documentName}.txt`
+      : `${this.reference.path.split('/').pop()}-${offset}.bin`;
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
   render() {
-    const chunk = this.chunk;
-    const identity = this.reference.path.split('/').pop();
-    const preview = `/api/v1/runs/${this.runId}/artifacts/${identity}?preview=true`;
-    if (this.thumbnail) return html`
-      <div class="message-attachment">
-        <a href=${preview} target="_blank" rel="noopener" aria-label="Open full image">
-          <img class="image-thumbnail" src=${preview} loading="lazy" alt="Attached image" />
-        </a>
-        <a href=${preview} download="sola-image.png">Download image</a>
-        ${this.attachButton()}
-      </div>`;
-    if (this.reference.media_type === 'image/png') return html`
-      ${this.imageUrl ? html`<figure>
-        <img class="artifact-image" src=${this.imageUrl} alt="Generated image" />
-        <figcaption><a href=${this.imageUrl} download="sola-image.png">Download image</a></figcaption>
-      </figure>` : html`<button type="button" ?disabled=${this.loading} @click=${action(() => this.loadImage())}>${this.loading ? 'Loading image…' : `View generated image · ${this.reference.length} bytes`}</button>`}
-      ${this.attachButton()}
+    const { chunk, imageUrl, loading, error } = this;
+    const status = html`
+      ${loading ? html`<p role="status">Loading ${this.isImage ? 'image' : 'text'}…</p>` : nothing}
+      ${error ? html`<p class="preview-error" role="alert">${error}</p>
+        <button type="button" @click=${() => this.load(this.offset)}>Retry preview</button>` : nothing}
+    `;
+    if (this.isImage) return html`
+      ${!this.automatic && !imageUrl && !loading && !error
+        ? html`<button type="button" @click=${() => this.load()}>View generated image · ${this.reference.length} bytes</button>`
+        : nothing}
+      ${imageUrl ? html`<figure class="artifact-figure">
+        <img class="artifact-image" src=${imageUrl} alt=${this.imageLabel || 'Generated image'}
+          @error=${() => {
+            URL.revokeObjectURL(this.imageUrl);
+            this.imageUrl = null;
+            this.error = 'The image preview could not be displayed.';
+          }} />
+        <figcaption class="actions">
+          <a href=${imageUrl} download="sola-image.png">Download image</a>
+          ${this.reference && this.canReuse !== false ? this.attachButton() : nothing}
+        </figcaption>
+      </figure>` : nothing}
+      ${status}
     `;
     return html`
-      <button type="button" @click=${action(() => this.load())}>
-        Inspect artifact · ${this.reference.length} bytes
-      </button>
-      ${
-        chunk
-          ? html`
-              <div>
-                <p>
-                  Artifact bytes ${chunk.offset}–${chunk.offset + chunk.bytes.byteLength} of
-                  ${chunk.length}
-                </p>
-                <pre tabindex="0">${new TextDecoder().decode(chunk.bytes)}</pre>
-                <button type="button" @click=${() => this.download()}>Download this chunk</button>
-                ${
-                  chunk.next < chunk.length
-                    ? html`
-                        <button type="button" @click=${action(() => this.load(chunk.next))}>
-                          Next chunk
-                        </button>
-                      `
-                    : nothing
-                }
-              </div>
-            `
-          : nothing
-      }
+      ${!this.automatic ? html`<button type="button" ?disabled=${loading}
+        @click=${() => this.load()}>Inspect artifact · ${this.reference.length} bytes</button>` : nothing}
+      ${chunk ? html`
+        ${!this.documentName ? html`<p>Artifact bytes ${chunk.offset}–${chunk.next} of ${chunk.length}</p>` : nothing}
+        <pre tabindex="0">${new TextDecoder().decode(chunk.bytes)}</pre>
+        <div class="actions">
+          <button type="button" @click=${() => this.download()}>
+            ${this.documentName ? 'Download text' : 'Download this chunk'}
+          </button>
+          ${chunk.offset > 0 ? html`<button type="button" ?disabled=${loading}
+            @click=${() => this.load(Math.max(0, chunk.offset - 65536))}>Previous chunk</button>` : nothing}
+          ${chunk.next < chunk.length ? html`<button type="button" ?disabled=${loading}
+            @click=${() => this.load(chunk.next)}>Next chunk</button>` : nothing}
+        </div>` : nothing}
+      ${status}
     `;
   }
+
   attachButton() {
     return html`<button type="button" @click=${() => this.dispatchEvent(new CustomEvent('sola-image-selected', {
       bubbles: true, composed: true,

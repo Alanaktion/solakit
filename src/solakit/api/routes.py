@@ -78,6 +78,7 @@ WEB_ASSETS = (
     "turn.js",
     "job.js",
     "artifact.js",
+    "result.js",
     "settings.js",
     "feeds.js",
     "evidence.js",
@@ -817,8 +818,13 @@ def create_app(
         offset: After = 0,
         limit: Annotated[int, Query(ge=1, le=ARTIFACT_BYTES)] = 65536,
         preview: bool = False,
+        thumbnail: bool = False,
     ) -> Response:
-        raw, reference = service.artifact(run_id, artifact_id, offset, limit, preview=preview)
+        raw, reference = service.artifact(
+            run_id, artifact_id, offset, limit, preview=preview, thumbnail=thumbnail
+        )
+        if thumbnail:
+            return Response(raw, media_type="image/png", headers={"Content-Disposition": "inline"})
         return Response(
             raw,
             media_type="image/png" if preview else "application/octet-stream",

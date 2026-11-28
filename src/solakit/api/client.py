@@ -3,9 +3,11 @@
 import asyncio
 import re
 from collections.abc import AsyncGenerator
+from io import BytesIO
 from pathlib import PurePath
 from typing import Any
 
+from PIL import Image
 from pydantic import JsonValue
 
 from solakit.adapters.model import DOCUMENT_EXTENSIONS, ModelError
@@ -17,6 +19,7 @@ from solakit.records import (
     Artifact,
     CompactionBoundary,
     ErrorCode,
+    ImageGeneration,
     Message,
     ModelRequest,
     Origin,
@@ -28,8 +31,9 @@ from solakit.records import (
     new_id,
 )
 from solakit.runtime import ApplicationContext
+from solakit.sdk import ToolError
 from solakit.storage.evidence import RECORDS, canonical, read_artifact
-from solakit.tools.images import MAX_IMAGE_BYTES, normalize_upload
+from solakit.tools.images import MAX_IMAGE_BYTES, normalize_upload, read_png
 
 PAGE_BYTES = 512 * 1024
 RECORD_BYTES = 64 * 1024
@@ -57,9 +61,18 @@ def record_view(sequence: int, record: Record) -> dict[str, Any]:
             body["summary_message_id"] = record.summary_message_id
         if isinstance(record, ToolCall):
             body["name"] = record.name[:256]
+        if isinstance(record, ImageGeneration):
+            body.update(tool_call_id=record.tool_call_id, state=record.state)
         if isinstance(record, ToolReceipt):
             body.update(
-                tool_call_id=record.tool_call_id, status=record.status, effect=record.effect
+                tool_call_id=record.tool_call_id,
+                status=record.status,
+                effect=record.effect,
+                failure=(
+                    {"code": record.failure.code, "message": record.failure.message[:256]}
+                    if record.failure
+                    else None
+                ),
             )
         body["artifacts"] = {
             name: value.model_dump(mode="json")
@@ -376,7 +389,14 @@ class ClientService:
             await asyncio.sleep(0 if len(events) == 100 else 0.1)
 
     def artifact(
-        self, run_id: str, identity: str, offset: int, limit: int, *, preview: bool = False
+        self,
+        run_id: str,
+        identity: str,
+        offset: int,
+        limit: int,
+        *,
+        preview: bool = False,
+        thumbnail: bool = False,
     ) -> tuple[bytes, Artifact]:
         from solakit.storage.store import valid_id
 
@@ -405,6 +425,21 @@ class ClientService:
         if isinstance(record, Message):
             artifacts.extend(record.documents)
         artifact = next(value for value in artifacts if value.path == f"artifacts/{identity}")
+        if thumbnail:
+            try:
+                raw, _, _ = read_png(self.store.root, artifact)
+                with Image.open(BytesIO(raw), formats=["PNG"]) as source:
+                    # The derivative carries only pixels, without original PNG metadata.
+                    image = source.convert("RGBA" if "transparency" in source.info else source.mode)
+                    image.thumbnail((160, 160), Image.Resampling.LANCZOS)
+                    image.info.clear()
+                    output = BytesIO()
+                    image.save(output, format="PNG")
+                return output.getvalue(), artifact
+            except (ToolError, OSError, ValueError) as error:
+                raise RequestError(
+                    422, "invalid_image", "Thumbnail requires a bounded PNG image"
+                ) from error
         if preview:
             if artifact.media_type != "image/png" or artifact.length > MAX_IMAGE_BYTES:
                 raise RequestError(422, "invalid_image", "Preview requires a bounded PNG image")

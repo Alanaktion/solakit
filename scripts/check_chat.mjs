@@ -118,6 +118,7 @@ try {
     }
   );
   await check('password login and recent 500-turn history', async () => {
+    await page.evaluate((id) => sessionStorage.setItem('sola.selected', JSON.stringify(id)), fixture.topic);
     await page.locator('#password').fill('phase11-disposable-fixture');
     await page.locator('#login-form button').click();
     await page.locator('#topic-' + fixture.topic + '[aria-current=page]').waitFor();
@@ -749,16 +750,24 @@ try {
     assert(safe.code.includes('<script>'));
   });
   await check(
-    'local Lit components preserve disclosure inputs and settled nodes during updates',
+    'result dialog keeps focus, reconciliation input and settled messages during updates',
     async () => {
+      const launcher = page.getByRole('button', { name: 'View result for Memory extraction' });
+      const dialog = page.locator('#result-dialog');
+      await launcher.focus();
+      const scrollTop = await page.locator('#history').evaluate((el) => el.scrollTop);
+      await page.keyboard.press('Enter');
+      assert.equal(await page.evaluate(() => document.activeElement.id), 'result-close');
+      await page.keyboard.press('Escape');
+      assert.equal(await launcher.evaluate((el) => el === document.activeElement), true);
+      assert.equal(await page.locator('#history').evaluate((el) => el.scrollTop), scrollTop);
+      await page.keyboard.press('Enter');
       const state = await page.evaluate(async () => {
         const { LitElement } = await import('/assets/lit-core.min.js');
         const app = document.querySelector('sola-app');
-        const turn = [...document.querySelectorAll('sola-turn')].find((el) =>
-          el.querySelector('.work input')
-        );
-        const input = turn.querySelector('.work input');
-        const detail = input.closest('details');
+        const turn = document.querySelector('sola-turn:last-child');
+        const input = document.querySelector('#reconcile-provider-task');
+        const detail = document.querySelector('#result-body details');
         const message = turn.querySelector('[data-message-id]');
         const content = message.textContent;
         detail.open = true;
@@ -796,10 +805,31 @@ try {
         };
         turn.preview = '';
         await turn.updateComplete;
-        detail.open = false;
         return result;
       });
       assert(Object.values(state).every(Boolean), JSON.stringify(state));
+      const input = dialog.getByRole('textbox', { name: 'Verified provider task ID' });
+      const reconcile = dialog.getByRole('button', { name: 'Reconcile extraction' });
+      const requests = [];
+      const recordRequest = (request) => {
+        if (request.url().endsWith(`/memory/${fixture.memory_commit_id}/reconcile`))
+          requests.push(request.postDataJSON());
+      };
+      page.on('request', recordRequest);
+      assert.deepEqual(requests, []);
+      await reconcile.click();
+      await dialog.getByRole('alert').waitFor();
+      assert.equal(await input.inputValue(), 'provider-task-in-progress');
+      await input.fill('fixture-task');
+      await reconcile.click();
+      await dialog.getByRole('status').filter({ hasText: /accepted|completed/ }).waitFor();
+      assert.deepEqual(requests, [
+        { provider_task_id: 'provider-task-in-progress' },
+        { provider_task_id: 'fixture-task' }
+      ]);
+      page.off('request', recordRequest);
+      await dialog.getByRole('button', { name: 'Close preview' }).click();
+      assert.equal(await launcher.evaluate((el) => el === document.activeElement), true);
     }
   );
   await page.locator('#topic-' + fixture.other).click();
@@ -906,6 +936,19 @@ try {
     assert.equal(await page.locator('#reply-status').textContent(), announcement);
   });
   await check('cancellation and explicit model failure', async () => {
+    await send('tool result transition check');
+    const working = page.getByRole('button', { name: 'View details for fixture.pause' });
+    await working.click();
+    const dialog = page.locator('#result-dialog');
+    const details = dialog.locator('summary');
+    await details.focus();
+    assert(await details.evaluate((el) => el.parentElement.open));
+    assert.equal(await dialog.locator('details pre').first().textContent(), '{}');
+    await dialog.locator('.result-status').filter({ hasText: 'succeeded' }).waitFor();
+    assert(await details.evaluate((el) => el.parentElement.open && el === document.activeElement));
+    await page.keyboard.press('Escape');
+    assert(await page.getByRole('button', { name: 'View result for fixture.pause' }).last()
+      .evaluate((el) => el === document.activeElement));
     await send('tool cancellation check');
     await page.getByText('fixture.pause · working', { exact: true }).waitFor();
     await page.getByRole('button', { name: 'Cancel run', exact: true }).last().click();
@@ -1478,6 +1521,18 @@ try {
             .map((el) => el.getBoundingClientRect().height)
         );
       assert(heights.length > 0 && heights.every((height) => height >= 44));
+      await touch.locator('#topic-' + fixture.image_topic).tap();
+      const launcher = touch.getByRole('button', { name: 'Open image from your message' });
+      await launcher.tap();
+      const preview = touch.getByRole('dialog', { name: 'Attached image' });
+      await preview.locator('img').waitFor();
+      assert(await preview.evaluate((el) => {
+        const box = el.getBoundingClientRect();
+        return box.left >= 0 && box.right <= innerWidth &&
+          box.top >= 0 && box.bottom <= innerHeight;
+      }));
+      await preview.getByRole('button', { name: 'Close preview' }).tap();
+      assert(await launcher.evaluate((el) => el === document.activeElement));
     } finally {
       await touchContext.close();
     }
@@ -1573,6 +1628,9 @@ try {
     await page.locator('#drop-files').waitFor({ state: 'hidden' });
     await page.getByRole('button', { name: 'Remove diagram.svg', exact: true }).waitFor();
     await page.locator('#draft-image img').waitFor();
+    await page.getByRole('button', { name: 'Open image from your draft' }).click();
+    await page.getByRole('dialog', { name: 'Draft image' }).locator('.artifact-image').waitFor();
+    await page.keyboard.press('Escape');
     await page.locator('#draft').fill('Read the attached files.');
     await page.reload();
     await waitFor(() => document.querySelector('#connection').textContent === 'Connected');
@@ -1584,26 +1642,64 @@ try {
     await page.locator('#send').click();
     await page.locator('.run-bar').filter({ hasText: 'completed' }).waitFor({ timeout: 30000 });
     await page.locator('.message.user .message-attachment img').waitFor();
+    await page.getByRole('button', { name: 'Open image from your message' }).click();
+    await page.getByRole('dialog', { name: 'Attached image' }).locator('.artifact-image').waitFor();
+    await page.keyboard.press('Escape');
+    const resultDialog = page.locator('#result-dialog');
     for (const { name, content } of [...sourceFiles, { name: 'diagram.svg', content: svg }]) {
+      const preview = page.getByRole('button', { name: `View attachment ${name}`, exact: true });
+      await preview.click();
+      await resultDialog.locator('pre').waitFor();
+      assert.equal(await resultDialog.locator('pre').textContent(), content);
+      assert.equal(await resultDialog.locator('svg:not(sola-icon svg), script, main').count(), 0);
       const downloaded = page.waitForEvent('download');
-      await page.getByRole('link', { name: `Download text from ${name}`, exact: true }).click();
+      await resultDialog.getByRole('button', { name: 'Download text', exact: true }).click();
       const file = await downloaded;
       assert.equal(await fs.readFile(await file.path(), 'utf8'), content);
+      await page.keyboard.press('Escape');
     }
     await page.screenshot({ path: path.join(options.output, 'attachment-sent.png') });
+    await picker.setInputFiles({
+      name: 'brief.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.7\nFixture')
+    });
+    await page.getByRole('button', { name: 'Remove brief.pdf' }).waitFor();
+    await send('Read the converted PDF.');
+    await page.getByRole('button', { name: 'View attachment brief.pdf' }).click();
+    await resultDialog.locator('pre').waitFor();
+    const converted = '# Fixture document\n\nExtracted Markdown.\n';
+    assert.equal(await resultDialog.locator('pre').textContent(), converted);
+    const downloaded = page.waitForEvent('download');
+    await resultDialog.getByRole('button', { name: 'Download text', exact: true }).click();
+    assert.equal(await fs.readFile(await (await downloaded).path(), 'utf8'), converted);
+    await audit('document preview');
+    await page.keyboard.press('Escape');
   });
-  if (fixture.image_topic) await check('authorized PNG preview, download and image attachment survive reload', async () => {
+  await check('authorized PNG preview, download and image attachment survive reload', async () => {
+    const preview = page.locator('.message-attachment .image-thumbnail').first();
+    let failed = false;
+    const imageRequests = '**/api/v1/runs/*/artifacts/*?thumbnail=true';
+    await page.route(imageRequests, (route) => {
+      if (failed) return route.continue();
+      failed = true;
+      return route.abort('failed');
+    });
     await page.locator('#topic-' + fixture.image_topic).click();
     const thumbnail = page.locator('.message-attachment img').first();
-    await page.waitForFunction(() => document.querySelector('.message-attachment img')?.naturalWidth);
-    const dimensions = await thumbnail.evaluate((img) => [img.naturalWidth, img.naturalHeight]);
+    await preview.getByText('Open image', { exact: true }).waitFor();
+    assert(await thumbnail.isHidden());
+    await page.unroute(imageRequests);
+    await preview.click();
+    const dialog = page.getByRole('dialog', { name: 'Attached image' });
+    await dialog.locator('img').waitFor();
+    await page.waitForFunction(() => document.querySelector('#result-dialog img')?.naturalWidth);
+    const dimensions = await dialog.locator('img').evaluate((img) => [img.naturalWidth, img.naturalHeight]);
     assert.deepEqual(dimensions, [fixture.image_width, fixture.image_height]);
-    await thumbnail.scrollIntoViewIfNeeded();
-    await page.screenshot({ path: path.join(options.output, 'image-preview-mobile.png'), fullPage: true });
+    await page.screenshot({ path: path.join(options.output, 'image-preview-mobile.png') });
     const download = page.waitForEvent('download');
-    await page.getByRole('link', { name: 'Download image', exact: true }).first().click();
+    await dialog.getByRole('link', { name: 'Download image', exact: true }).click();
     assert.equal((await download).suggestedFilename(), 'sola-image.png');
-    await page.getByRole('button', { name: 'Use image in next message', exact: true }).first().click();
+    await dialog.getByRole('button', { name: 'Use image in next message', exact: true }).click();
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'draft');
     await page.locator('#draft').fill('Describe this attached image.');
     await page.reload();
     await waitFor(() => document.querySelector('#connection').textContent === 'Connected');
@@ -1613,6 +1709,118 @@ try {
     assert.equal(await page.locator('#draft-image').textContent(), '');
     await page.screenshot({ path: path.join(options.output, 'image-mobile.png'), fullPage: true });
     await audit('image-attachment');
+  });
+  await check('compact outcomes, chunked text and late image remain inspectable through reconnect', async () => {
+    const shell = await page.request.get(fixture.origin);
+    assert.match(shell.headers()['content-security-policy'], /img-src 'self' blob:;/);
+    await page.evaluate(() => {
+      window.previewCspViolations = [];
+      document.addEventListener('securitypolicyviolation', (event) =>
+        window.previewCspViolations.push(event.violatedDirective));
+    });
+    const artifactBase = `/api/v1/runs/${fixture.result_run}/artifacts/`;
+    const requests = [];
+    const recordRequest = (request) => {
+      const url = new URL(request.url());
+      if (url.pathname.startsWith(artifactBase)) requests.push(url.search);
+    };
+    page.on('request', recordRequest);
+    await page.locator('#topic-' + fixture.result_topic).click();
+    const rows = page.locator('.work-row');
+    const dialog = page.locator('#result-dialog');
+    const generated = rows.filter({ hasText: /images.generate.*succeeded/ });
+    const late = rows.filter({ hasText: /images.generate.*uncertain/ });
+    await generated.locator('img').scrollIntoViewIfNeeded();
+    await page.waitForFunction(() => [...document.querySelectorAll('.work-row img')]
+      .some((img) => img.naturalWidth));
+    assert.deepEqual(requests, ['?thumbnail=true']);
+    for (const label of [
+      'files.search · succeeded · 3 matches · truncated',
+      'files.write · succeeded · Wrote notes.md',
+      'fixture.failed · failed · Could not read fixture output',
+      'fixture.denied · denied · Permission denied',
+      'fixture.cancelled · cancelled · Tool execution cancelled',
+      'fixture.missing · no receipt'
+    ]) assert.equal(await rows.getByText(label, { exact: true }).count(), 1, label);
+    assert.equal(await generated.locator('img').count(), 1, 'one preview per durable image');
+    assert.equal(await late.locator('img').count(), 0);
+
+    await page.getByRole('button', { name: 'View result for files.write' }).click();
+    await dialog.getByText('Artifact bytes 0–65536 of 65549').waitFor();
+    assert.match(await dialog.locator('sola-artifact pre').textContent(), /^First chunk/);
+    await dialog.getByRole('button', { name: 'Next chunk' }).click();
+    await dialog.getByText('Second chunk', { exact: true }).waitFor();
+    const chunkDownload = page.waitForEvent('download');
+    await dialog.getByRole('button', { name: 'Download this chunk' }).click();
+    assert.equal(await fs.readFile(await (await chunkDownload).path(), 'utf8'), 'Second chunk\n');
+    await dialog.getByRole('button', { name: 'Previous chunk' }).click();
+    await dialog.getByText('Artifact bytes 0–65536 of 65549').waitFor();
+    await page.keyboard.press('Escape');
+    await page.getByRole('button', { name: 'View result for fixture.failed' }).click();
+    await dialog.getByRole('status').filter({ hasText: 'Could not read fixture output' }).waitFor();
+    await page.keyboard.press('Escape');
+
+    const previewUrl = `**${artifactBase}${fixture.generated_image}?preview=true`;
+    await page.route(previewUrl, (route) => route.abort('failed'), { times: 1 });
+    await generated.getByRole('button', { name: 'Open image from images.generate' }).click();
+    await dialog.getByRole('alert').waitFor();
+    await dialog.getByRole('button', { name: 'Retry preview' }).click();
+    await dialog.locator('img').waitFor();
+    await page.waitForFunction(() => document.querySelector('#result-dialog img')?.naturalWidth);
+    await audit('generated image result');
+    await dialog.getByRole('button', { name: 'Close preview' }).click();
+    assert.deepEqual(await page.evaluate(() => window.previewCspViolations), []);
+
+    const lateLauncher = late.getByRole('button', { name: 'View result for images.generate' });
+    await lateLauncher.click();
+    await dialog.locator('summary').click();
+    const csrf = (await context.cookies()).find((cookie) => cookie.name === 'sola_csrf').value;
+    await context.setOffline(true);
+    await page.getByText(/Offline · drafts|Reconnecting · checking/).waitFor();
+    const completed = await page.request.post(`${fixture.origin}/api/v1/fixture/complete-image`, {
+      headers: { Origin: fixture.origin, 'X-CSRF-Token': csrf }
+    });
+    assert.equal(completed.status(), 200);
+    await context.setOffline(false);
+    await dialog.locator('img').waitFor({ timeout: 20000 });
+    assert.match(await dialog.locator('.result-status').textContent(), /uncertain.*PNG image available/);
+    assert(await dialog.locator('summary').evaluate((el) =>
+      el.parentElement.open && el === document.activeElement
+    ));
+    await waitFor(() => document.querySelector('#connection').textContent === 'Connected');
+    await page.keyboard.press('Escape');
+    assert(await lateLauncher.evaluate((el) => el === document.activeElement));
+    assert.equal(await late.locator('img').count(), 1);
+    await page.reload();
+    await late.locator('img').waitFor();
+    assert.equal(await late.locator('img').count(), 1);
+    await page.screenshot({ path: path.join(options.output, 'tool-results.png') });
+    page.off('request', recordRequest);
+
+    let releasePreview;
+    const pendingPreview = new Promise((resolve) => { releasePreview = resolve; });
+    await page.route(previewUrl, async (route) => {
+      await pendingPreview;
+      await route.continue().catch(() => {});
+    }, { times: 1 });
+    await generated.getByRole('button', { name: 'Open image from images.generate' }).click();
+    await dialog.getByText('Loading image…', { exact: true }).waitFor();
+    await page.locator('#topic-' + fixture.image_topic).evaluate((button) => button.click());
+    await dialog.waitFor({ state: 'hidden' });
+    releasePreview();
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'history');
+    await page.getByRole('button', { name: /Open image from your message.*Saved image/ }).click();
+    await dialog.locator('img').waitFor();
+    const signOut = await page.request.delete(`${fixture.origin}/api/v1/auth/sessions`, {
+      headers: { Origin: fixture.origin, 'X-CSRF-Token': csrf }
+    });
+    assert(signOut.ok());
+    await page.locator('#login-dialog[open]').waitFor({ timeout: 15000 });
+    await dialog.waitFor({ state: 'hidden' });
+    await page.locator('#password').fill('phase11-disposable-fixture');
+    await page.locator('#login-form button').click();
+    await page.locator('#login-dialog').waitFor({ state: 'hidden' });
+    await waitFor(() => document.querySelector('#connection').textContent === 'Connected');
   });
   await check('retry resumes a failed reply in the same turn and keeps the draft', async () => {
     await page.locator('#new-topic').click();
@@ -1637,7 +1845,7 @@ try {
       assert.equal(await turn.count(), 1);
       assert.equal(await turn.locator('.message.assistant').count(), 1);
       assert.equal(await turn.locator('.message.user').count(), 1);
-      assert.equal(await turn.locator('details summary', { hasText: 'fixture.pause' }).count(), 1);
+      assert.equal(await turn.getByRole('button', { name: 'View result for fixture.pause' }).count(), 1);
       assert(await retry.isHidden());
       assert(await turn.getByRole('button', { name: 'Attempt 1 evidence' }).isVisible());
     }
@@ -1656,6 +1864,13 @@ try {
     await turn.getByText('The worker reported a blue fixture.', { exact: true }).waitFor();
     const link = turn.getByRole('link', { name: 'Open delegated topic' });
     const href = await link.getAttribute('href');
+    const result = turn.getByRole('button', { name: 'View result for delegate.run' });
+    await result.click();
+    await page.locator('#result-dialog').getByRole('button', { name: 'Inspect worker run' }).click();
+    await page.locator('#evidence-records summary').filter({ hasText: 'model' }).first().waitFor();
+    await page.keyboard.press('Escape');
+    await page.locator('#result-dialog[open]').waitFor();
+    await page.keyboard.press('Escape');
     await turn.getByRole('button', { name: 'Inspect evidence' }).click();
     const linkRecord = page.locator('#evidence-records details').filter({ hasText: 'delegation' });
     await linkRecord.locator('summary').click();

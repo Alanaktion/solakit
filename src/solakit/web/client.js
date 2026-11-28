@@ -43,6 +43,7 @@ export async function api(path, { responseType, ...options } = {}) {
     headers,
     credentials: 'same-origin'
   });
+  options.signal?.throwIfAborted();
   if (response.status === 401) {
     document.dispatchEvent(new Event('sola-auth-required'));
     throw new Error('Your sign-in expired. Sign in to continue.');

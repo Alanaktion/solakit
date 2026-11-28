@@ -38,8 +38,9 @@ storage; sign-in uses the existing HttpOnly session cookie and CSRF protocol.
 Use **Attach files** or drop files anywhere in the conversation. The draft shows
 each attachment so you can remove it before sending. Attach up to four UTF-8
 text files with up to 24 KiB of combined text. This includes source files such as
-SVG, HTML, JavaScript, and extensionless files such as a Makefile. Sent messages
-link to the text Sola received.
+SVG, HTML, JavaScript, and extensionless files such as a Makefile. On a sent
+message, **View attachment** opens the exact text Sola received. **Download text**
+saves those bytes, including extracted Markdown for converted documents.
 
 PDF, DOCX, and PPTX are available when the configured oMLX API advertises
 **MarkItDown**. In oMLX Integration Settings, turn on **Enable MarkItDown** and
@@ -48,8 +49,9 @@ Solakit keeps with the conversation. Scanned PDFs depend on the PDF processing
 engine configured in oMLX.
 
 When an image route is configured, you can also attach one static PNG, JPEG, or
-WebP. The draft shows a thumbnail and **Remove image**.
-**Use image in next message** adds an image already in the topic. On the separate
+WebP. The draft shows a thumbnail and **Remove image**. Open a draft or sent
+thumbnail to see the full image and download it. From a saved image's preview,
+**Use image in next message** adds it to the composer in an eligible topic. On the separate
 vision route the run shows **Analyzing image…** while the vision model works.
 Later questions can use the saved observation. Attach the image again when Sola
 needs to look at the pixels. See [image workflows](image-workflows.md).
@@ -64,23 +66,30 @@ The initial conversation loads recent messages and runs, rather than walking
 the topic from its beginning. **Load older conversation** prepends bounded pages
 while retaining the visible turn. New tokens update a provisional preview;
 pulsing dots show a run that is working before any text or tool appears.
-Settled messages and open disclosures keep their DOM nodes. While at the bottom,
-the view stays pinned as content, images or opened disclosures grow. Scrolling
+Settled messages and tool launchers stay in place as records arrive. While at
+the bottom, the view stays pinned as content grows. Scrolling
 up stops automatic following; the floating **Jump to latest** button resumes it
 and gains a dot when new content arrives below. Elapsed time comes from the
 server's start/end timestamps and survives reconnect and navigation.
 
 Each turn is one timeline in record order: your message, any text the model
 wrote while working, its tool calls, then the reply. In-between text is muted to
-distinguish it from the final reply. Tool calls, memory work and summary markers
-are compact one-line disclosures; open one to see its arguments, receipt and
-artifact. A status icon marks each disclosure and the run line: spinner for
-working, check for succeeded/completed, cross for failed/denied, `!` for
-uncertain/ambiguous, dashed circle for queued/pending and dash for cancelled.
-The state is always written in words beside the icon.
+distinguish it from the final reply. Each tool row shows the name, status icon,
+status in words, and a short outcome or recorded failure reason when available.
+Open **View details** while the tool is working or **View result** once it stops.
+A generated image adds a thumbnail to its tool row as soon as it is saved, even
+if the recorded receipt remains uncertain.
+
+The result dialog shows readable output first, with **Recorded details** for
+arguments and receipt JSON. Use it to page through or download artifact chunks,
+inspect a delegated run, or reconcile eligible memory extraction. **Open
+delegated topic** remains a navigation link. An open result updates in place
+through streaming and polling recovery. Close it with the X or Escape to return
+focus to its launcher. The dialog also closes when you switch topics or need to
+sign in again.
 
 **Retry** appears beside the latest failed reply when it is safe to resume. It
-continues the same turn: your message stays once, earlier tool disclosures stay
+continues the same turn: your message stays once, earlier tool results stay
 visible, and **Attempt N evidence** opens each earlier attempt. The composer
 draft is untouched. Retry is absent for archived topics, cancelled or
 interrupted runs, saved replies and uncertain or missing tool outcomes.
@@ -92,7 +101,7 @@ evidence dialog pages through all records. Tool
 results are associated with their call IDs. Tool errors, uncertain effects,
 interrupted work, memory extraction state and staged notes have separate labels.
 A staged note is not a claim that memory extraction succeeded. Compaction text
-appears in a tinted **Context summary** card, with a separate disclosure for
+appears in a tinted **Context summary** card, with a result launcher for
 the compaction record. The original turns remain in the conversation. Topic
 details can rename, pin or archive a topic.
 Use **Search topics** above the topic list to find a title/name by a partial,
@@ -227,6 +236,7 @@ and is excluded from the job target picker.
 ## Web source layout
 
 - `app.js`, `turn.js`, `job.js`, `artifact.js`: Lit components and their rendering.
+- `result.js`: the shared tool result and attachment dialog.
 - `settings.js`: Settings/job-dialog templates and their API actions.
 - `feeds.js`: Feed reader, proposals, subscription controls, and isolated discussions.
 - `topics.js`: the filterable topic manager and bulk archive workflow.
@@ -244,8 +254,9 @@ HTTP boundary. No bundler or external module source is required.
 
 The fixture starts a real loopback HTTP server with the real runtime/services,
 a synthetic streaming model and a four-second synthetic tool. It creates 500
-settled turns, uncertain tool evidence, staged/ambiguous memory, a summary marker
-and an interrupted run. It never uses production configuration, model or memory.
+settled turns, uncertain tool evidence, staged/ambiguous memory, a summary marker,
+an interrupted run, and a result topic with saved and late-completing images.
+It uses disposable configuration and synthetic model, converter, and memory responses.
 The output directory must not already exist.
 
 ```sh
@@ -264,9 +275,10 @@ SOLA_PLAYWRIGHT_PATH=/tmp/sola-chat-browser/node_modules/playwright \
   --output /tmp/sola-chat-browser-results
 ```
 
-`SOLA_BROWSER` can select an already-installed Chromium executable. The script
-creates its own conversation through the UI, so it can be rerun against the same
-fixture. It records payload/node measurements, results and desktop/mobile PNGs.
+`SOLA_BROWSER` can select an already-installed Chromium executable. Start a
+fresh fixture for each full run so the late image and unreconciled memory commit
+are available to exercise. The script records payload/node measurements, results
+and desktop/mobile PNGs.
 It checks live appearance switching, text and form-boundary contrast in both
 themes, 320-pixel and 390-pixel portrait layouts, short landscape layouts,
 archive/restore, single-use topics, keyboard submission and composition input.

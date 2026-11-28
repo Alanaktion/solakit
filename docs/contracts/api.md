@@ -304,6 +304,12 @@ Authorization precedes access; a guessed ID must also be directly linked to the
 specified run's verified evidence. Symlinks, hardlinks, wrong lengths and checksum
 mismatches fail closed. The complete artifact is hashed using bounded reads
 before any bytes are returned. `preview=true` returns the complete linked,
-bounded PNG inline and ignores the requested byte range. The API accepts only
-artifact IDs linked to a run. Draft inspection is bounded. Inspect actual
-requests through the run's prompt references.
+bounded PNG inline and ignores the requested byte range. `thumbnail=true`
+selects an inline PNG derived from the verified source at read time. It fits
+within 160 × 160 pixels, preserves aspect ratio, and carries no source metadata.
+It takes precedence over `preview` and ignores the requested byte range. The
+thumbnail response uses the same authentication, run linkage and `Cache-Control:
+no-store` policy as the original. The chunk and full preview responses carry
+the original artifact headers. A malformed PNG is rejected for thumbnailing,
+and missing or corrupt evidence fails verification. Draft inspection is bounded.
+Inspect actual requests through the run's prompt references.
