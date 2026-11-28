@@ -30,6 +30,7 @@ from solakit.records import (
     RecoveryNote,
     Run,
     RunState,
+    Session,
     SessionMode,
     ToolCall,
     ToolReceipt,
@@ -62,14 +63,23 @@ class RunFailure(Exception):
         self.reason = Failure(code=code, message=message)
 
 
+def named_tools(text: str, names: Sequence[str]) -> set[str]:
+    return {
+        name
+        for name in names
+        if re.search(rf"(?<![\w.-]){re.escape(name.lower())}(?![\w-]|\.[\w-])", text, re.I)
+    }
+
+
 def requested_tools(text: str, names: Sequence[str]) -> set[str]:
     # shortcut: English imperative matching is conservative; expand only with evaluated cases.
     text = re.sub(r"\b(?:do not|don't|never)\b[^.;\n]*", "", text, flags=re.I)
+    file_text = re.sub(r"\bfeeds\.(?:list|items|propose|acknowledge)\b", "", text, flags=re.I)
     file_target = bool(
         re.search(
             r"\b[\w-]+\.[a-zA-Z0-9]{1,8}\b|(?:/|\\)[\w-]+|"
             rf"\b(?:read|write|save|create|list|copy|rename|move|append(?:\s+to)?|edit)\s+{_NAMED_ENTRY}",
-            text,
+            file_text,
             flags=re.I,
         )
     )
@@ -108,11 +118,7 @@ def requested_tools(text: str, names: Sequence[str]) -> set[str]:
     image_target = bool(re.search(r"\b(?:images?|photos?|pictures?|illustration)\b", text))
     if "create" in actions and image_target:
         actions.add("generate")
-    explicit = {
-        name
-        for name in names
-        if re.search(rf"(?<![\w.-]){re.escape(name.lower())}(?![\w-]|\.[\w-])", text)
-    }
+    explicit = named_tools(text, names)
     if web_page:
         explicit.add("web.fetch")
     if re.match(prefix + r"(?:use\s+)?delegate\b", text):
@@ -148,6 +154,11 @@ def requested_tools(text: str, names: Sequence[str]) -> set[str]:
             or bool(re.search(r"\b(?:blogs?|posts?)\b", text))
         )
         and (not name.startswith("mcp.") or name in explicit or bool(re.search(r"\bmcp\b", text)))
+        and (
+            not name.startswith("feeds.")
+            or name in explicit
+            or bool(re.search(r"\b(?:feeds?|rss|atom)\b", text))
+        )
         and (
             not name.startswith("dreams.")
             or name in explicit
@@ -387,6 +398,7 @@ class RunLoop:
         upload: bytes | None = None,
         document_ids: tuple[str, ...] = (),
         documents: tuple[tuple[str, bytes], ...] = (),
+        new_topic: Session | None = None,
     ) -> Run:
         deny_autonomous_successor()
         if not self.accepting or self.failure is not None:
@@ -399,7 +411,7 @@ class RunLoop:
                 raise QueueFull("pending admission limit reached")
             if (
                 profile.data_dir != self.store.root
-                or profile.mode != self.store.session(session_id).mode
+                or profile.mode != (new_topic or self.store.session(session_id)).mode
                 or (profile.model_pin, profile.model_base_url)
                 != (self.model.profile.model_pin, self.model.profile.model_base_url)
             ):
@@ -424,6 +436,7 @@ class RunLoop:
                 upload=upload,
                 document_ids=document_ids,
                 documents=documents,
+                new_topic=new_topic,
             )
         except BaseException as error:
             if self.store.failed:
@@ -902,11 +915,21 @@ class RunLoop:
             raise RunFailure(ErrorCode.MEMORY_UNAVAILABLE, "Required memory service is unavailable")
         hidden = self.deferred
         attempted = set(done)
-        requested = requested_tools(user.content, tuple(self.dispatcher.registry.tools))
-        if not requested:
-            requested = requested_tools(
-                user.content, ("files.read", "files.write", "images.generate", "publish_note")
-            )
+        tool_names = tuple(self.dispatcher.registry.tools)
+        digest_job = (
+            "feeds.acknowledge" in admitted.tools
+            and bool(named_tools(user.content, ("feeds.items", "feeds.acknowledge")))
+            and self.dispatcher.feed_digest_allowed(run)
+        )
+        if digest_job:
+            # A digest task can use "publish" to request the job's own topic delivery.
+            requested = named_tools(user.content, tool_names)
+        else:
+            requested = requested_tools(user.content, tool_names)
+            if not requested:
+                requested = requested_tools(
+                    user.content, ("files.read", "files.write", "images.generate", "publish_note")
+                )
         counts = {"argument_repair": 0, "schema_disclosure": 0, "narration": 0}
         sticky: Failure | None = None
         unrepaired: set[str] = set()
@@ -1079,6 +1102,8 @@ class RunLoop:
                     )
             else:
                 pending = requested - attempted
+                if digest_job and step.content.strip() == "NO_ACTION":
+                    pending.discard("feeds.acknowledge")
                 refusal = bool(
                     re.search(r"\b(?:cannot|can't|unable|unavailable|denied)\b", step.content, re.I)
                 )

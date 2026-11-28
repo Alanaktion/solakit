@@ -136,7 +136,7 @@ memory mode and archive status. **Retry import** retries unfinished files using
 the same request keys, so a lost response does not create a duplicate. The last
 selected copy opens when the batch finishes.
 
-Settings uses six keyboard-accessible tabs, with a separate dialog for job
+Settings uses seven keyboard-accessible tabs, with a separate dialog for job
 creation and editing. Use the X or Escape to close Settings. Arrow keys move
 between tabs. Home and End select the first or last tab. Navigation stays visible
 while section content scrolls. On small screens, the tabs form a compact grid.
@@ -171,8 +171,29 @@ while section content scrolls. On small screens, the tabs form a compact grid.
   prompt inspection, including optional hashes. Draft inspection assembles a
   request without model inference, topic history or semantic recall; it can
   include private operator prompt content.
+- **Feeds:** review proposals, manage RSS and Atom subscriptions, and read
+  cached items. [Reading feeds](#reading-feeds)
 - **Security:** this login’s expiry and an explicit, confirmed action to revoke
   every browser/API login, including the current one.
+
+### Reading feeds
+
+Open **Settings → Feeds → Subscriptions** to add a public RSS or Atom URL.
+Optional include and exclude keywords match the title and summary. Agent proposals
+show the discovery reason and source. Approve a proposal to activate it or reject
+it to remove it. Active feeds can poll on demand when polling is enabled. A
+paused feed shows **Resume**, and a failed poll shows its latest failure reason.
+
+The **Reader** defaults to unread items, newest first. Select a feed to filter the
+list and enable **Mark all read** for that feed. Open a title to mark that item
+read and see its plain-text excerpt. **Open article** opens the publisher's link
+in a separate browser tab. **Ask Sola about this** sends your question to a new
+isolated topic and attaches the labeled external excerpt with item, feed, title,
+summary, and link provenance. The attachment is available in execution evidence.
+Article extraction is available separately through an authorized interactive
+`web.fetch` call. [Feed configuration](config.md#feeds) · [Scheduled digests](contracts/jobs.md#feed-digests)
+
+### Inspecting run evidence
 
 The run-evidence dialog has **All records** and **Model requests** tabs, each with
 independent pagination and authorized artifact inspection. Close it with the X,
@@ -207,6 +228,7 @@ and is excluded from the job target picker.
 
 - `app.js`, `turn.js`, `job.js`, `artifact.js`: Lit components and their rendering.
 - `settings.js`: Settings/job-dialog templates and their API actions.
+- `feeds.js`: Feed reader, proposals, subscription controls, and isolated discussions.
 - `topics.js`: the filterable topic manager and bulk archive workflow.
 - `evidence.js`: independently paged run records/model requests and artifact panels.
 - `client.js`, `ui.js`: authenticated requests, tab storage, shared DOM/error helpers and the light-DOM base.

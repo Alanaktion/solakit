@@ -3,6 +3,7 @@ import { api } from './client.js';
 import { $, text, action, showError, agentName } from './ui.js';
 import { openEvidence } from './evidence.js';
 import './job.js';
+import './feeds.js';
 
 const tabs = [
   ['jobs', 'Schedules'],
@@ -10,6 +11,7 @@ const tabs = [
   ['access', 'Profiles & tools'],
   ['search', 'Search'],
   ['diagnostics', 'Diagnostics'],
+  ['feeds', 'Feeds'],
   ['security', 'Security']
 ];
 const budgets = [
@@ -25,6 +27,7 @@ const json = (value) => html`<pre tabindex="0">${JSON.stringify(value, null, 2)}
 export function settingsTemplate(actions) {
   const {
     switchSettingsTab,
+    openFeedDiscussion,
     settingsKeydown,
     loadJobs,
     toggleScheduler,
@@ -237,6 +240,15 @@ export function settingsTemplate(actions) {
             </details>
           </section>
           <section
+            id="settings-panel-feeds"
+            role="tabpanel"
+            aria-labelledby="settings-tab-feeds"
+            tabindex="0"
+            hidden
+          >
+            <sola-feeds id="feed-settings" @feed-discussion=${action(openFeedDiscussion)}></sola-feeds>
+          </section>
+          <section
             id="settings-panel-security"
             role="tabpanel"
             aria-labelledby="settings-tab-security"
@@ -288,7 +300,7 @@ export function settingsTemplate(actions) {
         <label for="job-zone">Time zone</label
         ><input id="job-zone" value="America/Denver" required maxlength="128" />
         <label for="job-topic">Topic</label
-        ><select id="job-topic" required></select>
+        ><select id="job-topic" required @change=${changeJobProfile}></select>
         <p class="meta">
           One-run topics are archived after each run. Execution evidence is retained.
         </p>
@@ -302,7 +314,7 @@ export function settingsTemplate(actions) {
           <label>Profile<select id="job-profile" @change=${changeJobProfile}></select></label>
         </div>
         <label for="job-delivery">Results</label
-        ><select id="job-delivery">
+        ><select id="job-delivery" @change=${changeJobProfile}>
           <option value="session">Publish to the target topic</option>
           <option value="none">Keep in execution evidence only</option>
         </select>
@@ -499,7 +511,12 @@ export function createSettings({ topics, selected, refreshRuns, selectTopic }) {
   function renderJobTools(checked) {
     const name = $('job-profile').value || (editingJob ? null : profiles[0]?.name);
     const profile = profiles.find((profile) => profile.name === name);
-    const names = profile?.values.tools ?? [];
+    const mode = topics.get($('job-topic').value)?.mode || 'ephemeral';
+    const names = (profile?.values.tools ?? []).filter((tool) => {
+      if (tool === 'feeds.items') return mode !== 'shared' || profile.values.memory_mode === 'off';
+      if (tool === 'feeds.acknowledge') return mode === 'isolated' && $('job-delivery').value === 'session';
+      return true;
+    });
     const options = $('job-tool-options');
     renderTemplate(
       names.length
@@ -580,6 +597,7 @@ export function createSettings({ topics, selected, refreshRuns, selectTopic }) {
       memory: refreshMemory,
       access: loadTools,
       diagnostics: refreshHealth,
+      feeds: () => $('feed-settings').load(),
       security: refreshLogin
     };
     if (loaders[id]) await loaders[id]();
@@ -786,6 +804,10 @@ export function createSettings({ topics, selected, refreshRuns, selectTopic }) {
     await api('/jobs/control', { method: 'PUT', body: { paused: !schedulerPaused } });
     await loadJobs();
   }
+  async function openFeedDiscussion(event) {
+    $('settings').close();
+    await selectTopic(event.detail);
+  }
   return {
     loadTools,
     loadProfiles,
@@ -798,6 +820,7 @@ export function createSettings({ topics, selected, refreshRuns, selectTopic }) {
     search,
     toggleScheduler,
     switchSettingsTab,
+    openFeedDiscussion,
     settingsKeydown,
     inspectPrompt,
     reconcileMemory,

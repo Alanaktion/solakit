@@ -25,6 +25,10 @@ uncertain effects for operator reconciliation. Validate changes with disposable
 fixtures and record live checks separately from deterministic tests. Update the
 configuration example and tool contract when a plan ships.
 
+The [RSS feed-lite plan](NEXT-TOOLS-FEED.md) shipped with
+[operator-managed subscriptions and a local reader](../chat-ui.md#reading-feeds)
+and [isolated digest jobs](../contracts/jobs.md#feed-digests).
+
 ## Agent and operator follow-up plans
 
 | Plan | First usable workflow |

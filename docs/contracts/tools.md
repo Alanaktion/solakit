@@ -398,6 +398,27 @@ The tool requires both a grant and the same `[web_fetch]` settings at admission
 and execution. Older admissions without these settings keep it ineligible.
 [Configuration](../config.md#web_fetch)
 
+## RSS and Atom feeds
+
+Enable `[feeds]` and grant `feeds.list`, `feeds.propose`, `feeds.items`, and
+`feeds.acknowledge` individually where needed. The registry expands wildcard
+grants at new admission. Disabling feeds revokes these tools on existing admissions.
+
+| Tool | Behavior |
+| --- | --- |
+| `feeds.list` | Lists subscriptions newest first, with status, last fetch, counts, and failures. Accepts a status filter and limit. |
+| `feeds.propose` | Records a pending public URL, reason, optional discovery source, and run lineage. URL validation is local. The operator approves or rejects the proposal. |
+| `feeds.items` | Reads whole cached items within the result budget, with feed, unread, and undigested filters and a `has_more` flag. Undigested reads are oldest first. |
+| `feeds.acknowledge` | Stages up to 20 distinct IDs returned to the authorized isolated job run. A successful receipt records these IDs for delivery. |
+
+Reading cached items with `feeds.items` requires memory off. Feed titles, excerpts, and links are untrusted
+external data. Proposal creation and acknowledgment are consequential local
+operations. Only authenticated operator routes change subscription status or
+trigger polling. The model-free poller resolves and checks every destination,
+pins the socket to a public IP, preserves the HTTP and TLS hostname, and limits
+redirects, time, response bytes, and parsed items.
+[Configuration](../config.md#feeds) · [Digest jobs](jobs.md#feed-digests)
+
 ## Remote MCP tools
 
 `mcp.list(server, cursor=None)` returns the server's raw `tools/list` result:

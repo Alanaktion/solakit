@@ -15,7 +15,7 @@ from fastapi import FastAPI, Path, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response, StreamingResponse
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, StringConstraints
 from starlette.exceptions import HTTPException
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
@@ -34,10 +34,13 @@ from solakit.records import (
     MAX_DOCUMENTS,
     RUN_TRANSITIONS,
     DocumentName,
+    FeedItem,
+    FeedSubscription,
     FollowUpReceipt,
     Job,
     MemoryCommit,
     Occurrence,
+    Origin,
     RecordID,
     Run,
     SchedulerControl,
@@ -46,7 +49,7 @@ from solakit.records import (
     Timestamp,
 )
 from solakit.runtime import ApplicationContext, compose
-from solakit.storage.evidence import StorageError, canonical
+from solakit.storage.evidence import StorageError, canonical, digest
 from solakit.storage.search import search
 from solakit.storage.session_transfer import (
     TRANSFER_BYTES,
@@ -76,6 +79,7 @@ WEB_ASSETS = (
     "job.js",
     "artifact.js",
     "settings.js",
+    "feeds.js",
     "evidence.js",
     "topics.js",
     "client.js",
@@ -328,6 +332,24 @@ class FollowUpInput(Input):
     at: str = Field(min_length=1, max_length=64)
 
 
+Keyword = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
+
+
+class FeedFields(Input):
+    title: str = Field(default="", max_length=200)
+    keywords: list[Keyword] = Field(default_factory=list, max_length=32)
+    exclude_keywords: list[Keyword] = Field(default_factory=list, max_length=32)
+
+
+class FeedInput(FeedFields):
+    url: str = Field(max_length=2048)
+
+
+class FeedQuestion(Input):
+    content: str = Field(min_length=1, max_length=32768)
+    profile: str | None = None
+
+
 class PauseInput(Input):
     paused: StrictBool
 
@@ -400,6 +422,8 @@ def create_app(
         profile_names = tuple(config.profiles)
     assert context.store and context.runs and context.tools and context.memory and context.jobs
     store, runs, memory, jobs = context.store, context.runs, context.memory, context.jobs
+    feeds = context.feeds
+    assert feeds is not None
     service = ClientService(context, profile_names)
     auth = AuthService(store, context.profile.http)
 
@@ -817,6 +841,148 @@ def create_app(
             service.events(session_id, after, auth, request.state.login),
         )
 
+    @app.get("/api/v1/feeds")
+    async def list_feeds() -> dict[str, Any]:
+        counts = store.feed_counts()
+        return {
+            "enabled": feeds.settings().enabled,
+            "feeds": [
+                feed.model_dump(mode="json")
+                | {
+                    "item_count": counts.get(feed.id, (0, 0))[0],
+                    "unread_count": counts.get(feed.id, (0, 0))[1],
+                }
+                for feed in sorted(store.feeds(), key=lambda feed: feed.status != "pending")
+            ],
+        }
+
+    @app.post("/api/v1/feeds", status_code=201)
+    async def add_feed(body: FeedInput) -> FeedSubscription:
+        return feeds.add(
+            body.url,
+            title=body.title.strip(),
+            keywords=tuple(body.keywords),
+            exclude_keywords=tuple(body.exclude_keywords),
+        )
+
+    @app.patch("/api/v1/feeds/{feed_id}")
+    async def edit_feed(feed_id: ID, body: FeedFields) -> FeedSubscription:
+        changes = body.model_dump(exclude_unset=True)
+        for key in changes.keys() & {"keywords", "exclude_keywords"}:
+            changes[key] = tuple(changes[key])
+        return feeds.edit(feed_id, **changes)
+
+    @app.delete("/api/v1/feeds/{feed_id}")
+    async def remove_feed(feed_id: ID) -> FeedSubscription:
+        return feeds.remove(feed_id)
+
+    @app.post("/api/v1/feeds/{feed_id}/approve")
+    async def approve_feed(feed_id: ID) -> FeedSubscription:
+        if feeds.visible_feed(feed_id).status != "pending":
+            raise ValueError("Only pending feeds can be approved")
+        return feeds.change_status(feed_id, "active")
+
+    @app.post("/api/v1/feeds/{feed_id}/pause")
+    async def pause_feed(feed_id: ID) -> FeedSubscription:
+        if feeds.visible_feed(feed_id).status != "active":
+            raise ValueError("Only active feeds can be paused")
+        return feeds.change_status(feed_id, "paused")
+
+    @app.post("/api/v1/feeds/{feed_id}/resume")
+    async def resume_feed(feed_id: ID) -> FeedSubscription:
+        if feeds.visible_feed(feed_id).status != "paused":
+            raise ValueError("Only paused feeds can be resumed")
+        return feeds.change_status(feed_id, "active")
+
+    @app.post("/api/v1/feeds/{feed_id}/poll")
+    async def poll_feed(feed_id: ID) -> FeedSubscription:
+        return await feeds.poll(feed_id)
+
+    @app.get("/api/v1/feed-items")
+    async def feed_items(
+        feed_id: RecordID | None = None,
+        unread_only: bool = True,
+        limit: Limit = 30,
+        offset: After = 0,
+    ) -> dict[str, Any]:
+        if feed_id is not None:
+            feeds.visible_feed(feed_id)
+        items = store.feed_items(
+            feed_ids=(feed_id,) if feed_id else (),
+            unread_only=unread_only,
+            limit=limit + 1,
+            offset=offset,
+        )
+        return {
+            "items": [
+                item.model_dump(
+                    mode="json",
+                    include={
+                        "id",
+                        "feed_id",
+                        "title",
+                        "published_at",
+                        "fetched_at",
+                        "read",
+                    },
+                )
+                for item in items[:limit]
+            ],
+            "next": offset + limit if len(items) > limit else None,
+        }
+
+    @app.post("/api/v1/feed-items/{item_id}/read")
+    async def read_feed_item(item_id: ID) -> FeedItem:
+        item = feeds.visible_item(item_id)
+        feeds.mark_read([item])
+        return store.feed_item(item.id)
+
+    @app.post("/api/v1/feeds/{feed_id}/read")
+    async def read_feed(feed_id: ID) -> dict[str, int]:
+        feeds.visible_feed(feed_id)
+        return {"marked": feeds.mark_read(store.feed_items(feed_ids=(feed_id,), unread_only=True))}
+
+    @app.post("/api/v1/feed-items/{item_id}/ask", status_code=202)
+    async def ask_about_feed_item(item_id: ID, body: FeedQuestion, request: Request) -> Run:
+        key = idempotency(request)
+        if not body.content.strip() or len(body.content.encode()) > 32768:
+            raise RequestError(422, "invalid_input", "Content must contain 1–32768 UTF-8 bytes")
+        profile = service.profile(body.profile, SessionMode.ISOLATED)
+        topic_id = digest(canonical(["feed-discussion", key]))[:32]
+        document_id = digest(canonical(["feed-excerpt", key, item_id]))[:32]
+        topic = None
+        documents: tuple[tuple[str, bytes], ...] = ()
+        if store.request(key) is None:
+            item = feeds.visible_item(item_id)
+            feed = feeds.visible_feed(item.feed_id)
+            excerpt = {
+                "untrusted_external_feed_excerpt": {
+                    "item_id": item.id,
+                    "feed_id": feed.id,
+                    "feed": feed.title or feed.url,
+                    "feed_url": feed.url,
+                    "title": item.title,
+                    "summary": item.summary,
+                    "link": item.link or None,
+                },
+            }
+            documents = (("External feed excerpt.txt", canonical(excerpt)),)
+            topic = Session(
+                id=topic_id,
+                origin=Origin.INTERACTIVE,
+                mode=SessionMode.ISOLATED,
+                title=item.title or "Feed discussion",
+            )
+        return runs.submit(
+            topic_id,
+            profile=profile,
+            content=body.content,
+            request_id=key,
+            document_ids=(document_id,),
+            documents=documents,
+            new_topic=topic,
+        )
+
     @app.get("/api/v1/jobs")
     async def list_jobs(after: str | None = None, limit: Limit = 50) -> dict[str, Any]:
         return service.job_page(time_cursor(after), limit)
@@ -963,6 +1129,7 @@ def create_app(
             "/api/v1/runs",
             "/api/v1/jobs",
             "/api/v1/jobs/{job_id}/run",
+            "/api/v1/feed-items/{item_id}/ask",
             SESSION_IMPORT_PATH,
         ):
             schema["paths"][path]["post"].setdefault("parameters", []).append(

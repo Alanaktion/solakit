@@ -415,6 +415,39 @@ class Job(Record):
         return self
 
 
+class FeedSubscription(Record):
+    url: str
+    title: str = ""
+    source: Literal["operator", "agent"]
+    status: Literal["active", "pending", "paused"]
+    keywords: tuple[str, ...] = ()
+    exclude_keywords: tuple[str, ...] = ()
+    discovery_reason: str | None = None
+    discovered_from: str | None = None
+    discovered_run_id: RecordID | None = None
+    discovered_session_id: RecordID | None = None
+    version: int = 1
+    deleted: bool = False
+    last_fetched_at: Timestamp | None = None
+    last_item_at: Timestamp | None = None
+    consecutive_failures: int = 0
+    last_failure_reason: str | None = None
+
+
+class FeedItem(Record):
+    feed_id: RecordID
+    guid_hash: str
+    title: str = ""
+    link: str = ""
+    summary: str = ""
+    published_at: Timestamp | None = None
+    fetched_at: Timestamp
+    read: bool = False
+    digested: bool = False
+    version: int = 1
+    deleted: bool = False
+
+
 class Occurrence(Record):
     job_id: RecordID
     due_at: Timestamp
@@ -463,6 +496,9 @@ class Delivery(Record):
     not_before: Timestamp | None = None
     expires_at: Timestamp | None = None
     publish_to_archive: bool = False
+    feed_item_ids: tuple[RecordID, ...] = Field(
+        default=(), max_length=20, exclude_if=lambda value: not value
+    )
 
     def transition(self, state: DeliveryState, *, reason: Failure | None = None) -> Self:
         allowed = {

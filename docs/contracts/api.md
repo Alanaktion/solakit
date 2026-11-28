@@ -146,6 +146,12 @@ means unavailable service/state.
 | `/runs/{id}/prompts` | GET exact recorded model-request references for conversation, compaction and vision |
 | `/runs/{id}/artifacts/{id}` | GET bounded verified bytes of a directly linked document, request, manifest, response or tool artifact |
 | `/sessions/{id}/events` | GET [SSE protocol](events.md) |
+| `/feeds` | GET subscriptions, counts, and the polling switch. POST adds an operator subscription |
+| `/feeds/{id}` | PATCH title and keywords. DELETE tombstones the subscription and prunes its reader items |
+| `/feeds/{id}/{approve,pause,resume,poll,read}` | POST operator actions. DELETE the subscription to reject a pending proposal |
+| `/feed-items` | GET cached items, newest first. Supports `feed_id`, `unread_only`, `limit`, and `offset` |
+| `/feed-items/{id}/read` | POST marks the item read and returns its excerpt |
+| `/feed-items/{id}/ask` | POST with `content`, optional `profile`, and Idempotency-Key. Atomically admits a run in a new isolated topic with an external excerpt attachment |
 | `/jobs` | GET stable creation pages; POST creates a definition or [one-time follow-up](#scheduling-a-follow-up) |
 | `/jobs/{id}` | GET/PATCH/DELETE through existing validation, narrowing and tombstones. PATCH `{"enabled":true/false}` toggles automatic scheduling |
 | `/jobs/{id}/run` | POST explicit manual occurrence, including for disabled jobs. Requires Idempotency-Key and returns the occurrence with its durable run reference |

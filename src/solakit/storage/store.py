@@ -20,6 +20,8 @@ from solakit.records import (
     DurableEvent,
     ErrorCode,
     Failure,
+    FeedItem,
+    FeedSubscription,
     ImageGeneration,
     Job,
     LetterPublication,
@@ -54,6 +56,7 @@ from solakit.storage.evidence import (
     Reference,
     StorageError,
     canonical,
+    checked_json,
     digest,
     ensure_directory,
     event_type,
@@ -81,6 +84,8 @@ type StoredRecord = (
     | CompactionBoundary
     | RecoveryNote
     | Job
+    | FeedSubscription
+    | FeedItem
     | Occurrence
     | SchedulerControl
     | ImageGeneration
@@ -120,6 +125,14 @@ CREATE TABLE login_sessions (
 CREATE TABLE login_throttle (id INTEGER PRIMARY KEY CHECK(id=1),
  failures INTEGER NOT NULL, window_start REAL NOT NULL);
 PRAGMA user_version=2;
+"""
+
+FEED_SCHEMA = """
+CREATE UNIQUE INDEX IF NOT EXISTS feed_item_keys ON entities(
+ json_extract(body,'$.feed_id'),json_extract(body,'$.guid_hash')) WHERE kind='feed_item';
+CREATE INDEX IF NOT EXISTS feed_item_times ON entities(json_extract(body,'$.feed_id'),created_at,id)
+ WHERE kind='feed_item' AND NOT json_extract(body,'$.deleted');
+PRAGMA user_version=3;
 """
 
 ARCHIVED_SESSIONS = (
@@ -199,10 +212,12 @@ class Store:
                     raise CorruptionError("unversioned operational database")
                 self.db.executescript("BEGIN IMMEDIATE;\n" + SCHEMA + "\nCOMMIT;")
                 sync_directory(self.root)
-            elif version not in (1, 2):
+            elif version not in (1, 2, 3):
                 raise CorruptionError("unsupported state schema version")
             if version in (0, 1):
                 self.db.executescript("BEGIN IMMEDIATE;\n" + AUTH_SCHEMA + "\nCOMMIT;")
+            if version < 3:
+                self.db.executescript("BEGIN IMMEDIATE;\n" + FEED_SCHEMA + "\nCOMMIT;")
             if self.db.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
                 raise CorruptionError("state integrity check failed")
             # shortcut: check archived payloads on reads/restore; rebuild offline for eager checks.
@@ -378,7 +393,18 @@ class Store:
         event = None
         sequence = 0
         entry_id = new_id()
-        if not isinstance(record, (Session, Job, Occurrence, SchedulerControl, LetterPublication)):
+        if not isinstance(
+            record,
+            (
+                Session,
+                Job,
+                Occurrence,
+                SchedulerControl,
+                LetterPublication,
+                FeedSubscription,
+                FeedItem,
+            ),
+        ):
             sequence = self.db.execute(
                 "SELECT sequence FROM sessions WHERE id=?", (session_id,)
             ).fetchone()[0]
@@ -597,6 +623,103 @@ class Store:
                 (include_deleted,),
             ).fetchall()
         ]
+
+    def feed(self, identity: str) -> FeedSubscription:
+        return self._load("feed", identity, FeedSubscription)
+
+    def feeds(self, *, include_deleted: bool = False) -> list[FeedSubscription]:
+        return [
+            self._read_row(row, FeedSubscription)
+            for row in self.db.execute(
+                "SELECT * FROM entities WHERE kind='feed' "
+                "AND (? OR NOT json_extract(body,'$.deleted')) ORDER BY created_at DESC,id DESC",
+                (include_deleted,),
+            )
+        ]
+
+    def feed_item(self, identity: str) -> FeedItem:
+        return self._load("feed_item", identity, FeedItem)
+
+    def feed_items(
+        self,
+        *,
+        feed_ids: Iterable[str] = (),
+        unread_only: bool = False,
+        undigested_only: bool = False,
+        oldest_first: bool = False,
+        limit: int = -1,
+        offset: int = 0,
+        fetched_before: datetime | None = None,
+    ) -> list[FeedItem]:
+        conditions = ["kind='feed_item'", "NOT json_extract(body,'$.deleted')"]
+        args: list[object] = []
+        if ids := tuple(feed_ids):
+            conditions.append("json_extract(body,'$.feed_id') IN (SELECT value FROM json_each(?))")
+            args.append(canonical(ids).decode())
+        if unread_only:
+            conditions.append("NOT json_extract(body,'$.read')")
+        if undigested_only:
+            conditions.append("NOT json_extract(body,'$.digested')")
+        fetched = "replace(json_extract(body,'$.fetched_at'),'Z','+00:00')"
+        if fetched_before is not None:
+            conditions.append(fetched + "<=?")
+            args.append(fetched_before.isoformat())
+        direction = "ASC" if oldest_first else "DESC"
+        return [
+            self._read_row(row, FeedItem)
+            for row in self.db.execute(
+                "SELECT * FROM entities WHERE "
+                + " AND ".join(conditions)
+                + f" ORDER BY {fetched} {direction},"
+                f"id {direction} LIMIT ? OFFSET ?",
+                (*args, limit, offset),
+            )
+        ]
+
+    def feed_counts(self) -> dict[str, tuple[int, int]]:
+        return {
+            row[0]: (row[1], row[2])
+            for row in self.db.execute(
+                "SELECT json_extract(body,'$.feed_id'),count(*),"
+                "sum(NOT json_extract(body,'$.read'))"
+                " FROM entities WHERE kind='feed_item' AND NOT json_extract(body,'$.deleted') "
+                "GROUP BY json_extract(body,'$.feed_id')"
+            )
+        }
+
+    def feed_seen(self, feed_id: str, guid_hash: str) -> bool:
+        return (
+            self.db.execute(
+                "SELECT 1 FROM entities WHERE kind='feed_item' "
+                "AND json_extract(body,'$.feed_id')=? AND json_extract(body,'$.guid_hash')=?",
+                (feed_id, guid_hash),
+            ).fetchone()
+            is not None
+        )
+
+    def feed_tool_results(self, run_id: str, name: str) -> Iterable[object]:
+        rows = self.db.execute(
+            "SELECT r.* FROM entities r JOIN entities t "
+            "ON t.kind='tool' AND t.id=json_extract(r.body,'$.tool_call_id') "
+            "AND t.run_id=r.run_id "
+            "WHERE r.kind='receipt' AND r.run_id=? AND json_extract(t.body,'$.name')=? "
+            "AND json_extract(r.body,'$.status')='succeeded' ORDER BY r.sequence",
+            (run_id, name),
+        )
+        for row in rows:
+            receipt = self._read_row(row, ToolReceipt)
+            if isinstance(receipt.result, str) and not receipt.truncated:
+                yield checked_json(receipt.result.encode())
+
+    def staged_feed_items(self, run_id: str) -> tuple[str, ...]:
+        return tuple(
+            dict.fromkeys(
+                identity
+                for result in self.feed_tool_results(run_id, "feeds.acknowledge")
+                if isinstance(result, dict)
+                for identity in result["staged_ids"]
+            )
+        )
 
     def admission_details(self, run_id: str) -> dict[str, object]:
         self.run(run_id)
@@ -895,6 +1018,7 @@ class Store:
         documents: tuple[tuple[str, bytes], ...] = (),
         parent_tool_call_id: str | None = None,
         continued_from_run_id: str | None = None,
+        new_topic: Session | None = None,
     ) -> Run:
         from solakit.engine.lineage import current_run, deny_autonomous_successor
 
@@ -902,6 +1026,8 @@ class Store:
         valid_id(request_id)
         parent_call = None
         if parent_tool_call_id is not None:
+            if new_topic is not None:
+                raise ValueError("Delegation owns its child topic admission")
             parent_call = self._load("tool", parent_tool_call_id, ToolCall)
             parent = self.run(parent_call.run_id)
             caller = current_run.get()
@@ -939,7 +1065,17 @@ class Store:
                 or continued_from_run_id is not None
             ):
                 raise ValueError("admission requires a session")
-            session = self.session(session_id)
+            if new_topic is not None:
+                if (
+                    new_topic.id != session_id
+                    or new_topic.mode != SessionMode.ISOLATED
+                    or new_topic.origin != Origin.INTERACTIVE
+                    or origin != Origin.INTERACTIVE
+                ):
+                    raise ValueError("New topics require interactive isolated admission")
+                session = new_topic
+            else:
+                session = self.session(session_id)
             if session.parent_session_id is not None or session.origin == Origin.DELEGATED:
                 raise ValueError("delegated topics require delegation")
         details: dict[str, object] = {
@@ -1051,7 +1187,7 @@ class Store:
         )
 
         def prepare() -> None:
-            if parent_call is not None and continued_from_run_id is None:
+            if new_topic is not None or (parent_call is not None and continued_from_run_id is None):
                 self.db.execute("INSERT INTO sessions VALUES (?,0)", (session.id,))
             self.db.execute(
                 "INSERT INTO admissions VALUES (?,?,?)", (request_id, fingerprint, run.id)
@@ -1079,7 +1215,11 @@ class Store:
             )
         # A retry answers the original message, so it records none of its own.
         records = (run,) if retry_of is not None else (run, message)
-        self._commit((*claimed, *records), details=details, prepare=prepare)
+        self._commit(
+            (*((new_topic,) if new_topic is not None else ()), *claimed, *records),
+            details=details,
+            prepare=prepare,
+        )
         return run
 
     def job_topic_archive(self, run: Run) -> tuple[Session, ...]:

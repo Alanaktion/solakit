@@ -97,6 +97,15 @@ class Registry:
             if (tool := self.tools.get(name)) is not None
             and profile.origin in tool.origins
             and (profile.memory_mode != "off" or not name.startswith("memory."))
+            and (profile.feeds.enabled or not name.startswith("feeds."))
+            and (name not in {"feeds.items", "feeds.acknowledge"} or profile.memory_mode == "off")
+            and (
+                name != "feeds.acknowledge"
+                or (
+                    profile.mode == SessionMode.ISOLATED
+                    and profile.origin in (Origin.SCHEDULED, Origin.PROACTIVE)
+                )
+            )
             and (name != "jobs.follow_up" or profile.mode != SessionMode.EPHEMERAL)
         )
 

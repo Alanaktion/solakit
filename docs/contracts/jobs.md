@@ -161,6 +161,25 @@ A result queued as part of a one-run topic's automatic archival can publish to
 that archive after quiet hours or a global pause. Expiry and job deletion still
 apply. Archive reads retain both the published result and its execution evidence.
 
+### Feed digests
+
+Create a cron job bound to an active isolated topic and choose session delivery.
+Grant that job `feeds.items` and `feeds.acknowledge`. A task can request
+`feeds.items` with selected `feed_ids`, `undigested_only=true`, and optionally
+`unread_only=true`. Ask for up to 20 items in the returned oldest-first order,
+an article link where available, an acknowledgment for each summarized item, and
+`NO_ACTION` when the batch is empty. Feed excerpts are external data and the
+isolated topic keeps OpenViking recall and extraction off.
+
+A successful acknowledgment receipt stages coverage for the current occurrence.
+Successful output freezes the staged IDs on its pending delivery. The same SQLite
+and outbox transaction publishes the topic message, completes delivery, and marks
+those items digested if they are still in the reader. Quiet hours and cooldown
+can defer publication while the items remain eligible. Failure, interruption,
+`NO_ACTION`, expiry, and coalescing leave those items eligible. Coverage is shared
+across jobs and independent of the operator's read state.
+[Feed tools](tools.md#rss-and-atom-feeds)
+
 ## Recovery and inspection
 
 Store recovery flushes pending outbox entries, resumes untouched queued work after

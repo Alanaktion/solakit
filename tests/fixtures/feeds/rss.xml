@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<rss version="2.0">
+  <channel>
+    <title>Fixture Gazette</title>
+    <item>
+      <guid isPermaLink="false">first</guid>
+      <title>A first story</title>
+      <link>https://example.org/articles/first</link>
+      <description><![CDATA[<p>First <strong>external</strong> excerpt.</p>]]></description>
+      <pubDate>Fri, 27 Nov 2026 10:30:00 -0600</pubDate>
+    </item>
+    <item>
+      <guid isPermaLink="false">second</guid>
+      <title>&lt;img src=x onerror="window.PWNED=true"&gt;</title>
+      <description>Second excerpt.</description>
+    </item>
+  </channel>
+</rss>

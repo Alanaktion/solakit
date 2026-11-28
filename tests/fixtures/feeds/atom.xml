@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xml:base="../news/">
+  <title>Fixture Journal</title>
+  <entry xml:base="section/">
+    <id>Case</id><title>Relative link</title><summary>Atom excerpt.</summary>
+    <link rel="self" href="self.xml"/>
+    <link rel="alternate" href="http://127.0.0.1/"/>
+    <link href="first" xml:base="../pages/"/>
+    <link href="later" rel="alternate"/>
+    <updated>2026-11-27T16:30:00+01:00</updated>
+  </entry>
+  <entry>
+    <id>case</id><title>Identifier only</title>
+    <link href="javascript:alert(1)"/>
+    <updated>not a date</updated>
+  </entry>
+  <entry><title>Link only</title><link href="story"/></entry>
+  <entry><title>Duplicate link</title><link href="./story"/></entry>
+  <entry><title>Missing both</title><link rel="self" href="self"/></entry>
+</feed>

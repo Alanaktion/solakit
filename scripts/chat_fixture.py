@@ -41,6 +41,12 @@ PASSWORD = "phase11-disposable-fixture"
 HOSTILE = '<img src=x onerror="window.PWNED=true"> [bad](javascript:alert(1)) **Safe bold**'
 
 
+class FeedBody(httpx2.AsyncByteStream):
+    async def __aiter__(self) -> AsyncIterator[bytes]:
+        path = Path(__file__).resolve().parents[1] / "tests/fixtures/feeds/rss.xml"
+        yield path.read_bytes()
+
+
 class Stream(httpx2.AsyncByteStream):
     def __init__(self, deltas: list[dict[str, Any]], finish: str) -> None:
         self.deltas, self.finish = deltas, finish
@@ -83,6 +89,7 @@ def main() -> None:
                 "data_dir": str(args.output / "data"),
                 "agent_name": args.agent_name,
                 "delegation_worker": "default",
+                "feeds": {"enabled": True},
                 "model": {
                     "pin": "fixture-qwen",
                     "generation_timeout_seconds": 30,
@@ -100,14 +107,14 @@ def main() -> None:
         )
     )
     context = compose(profile)
-    assert context.model and context.tools and context.store
+    assert context.model and context.tools and context.store and context.feeds
     context.tools.registry = Registry(
         (
             Tool("fixture.pause", "Wait four seconds.", ToolArguments, pause),
-            next(tool for tool in TOOLS if tool.name == "delegate.run"),
+            *(tool for tool in TOOLS if tool.name in ("delegate.run", "feeds.propose")),
         )
     )
-    grants = frozenset({"fixture.pause", "delegate.run"})
+    grants = frozenset(context.tools.registry.tools)
     context.profile = profile.model_copy(update={"granted_tools": grants, "tools": grants})
     default_profile = context.tools.current
 
@@ -120,6 +127,17 @@ def main() -> None:
 
     context.tools.current = current_profile
     flaked: set[str] = set()
+
+    async def fixture_resolver(host: str, port: int) -> list[str]:
+        return ["93.184.215.14"]
+
+    def feed_response(request: httpx2.Request) -> httpx2.Response:
+        if request.headers["Host"] == "fixture-feed.example":
+            return httpx2.Response(200, stream=FeedBody())
+        return httpx2.Response(503)
+
+    context.feeds.resolver = fixture_resolver
+    context.feeds.transport = httpx2.MockTransport(feed_response)
 
     async def respond(request: httpx2.Request) -> httpx2.Response:
         if request.url.path.endswith("/models"):
@@ -135,7 +153,10 @@ def main() -> None:
             flaked.add(latest)
             return httpx2.Response(503)
         delegation = latest == "Delegate the browser fixture."
-        tool = (latest.startswith("tool") or delegation) and body["messages"][-1]["role"] != "tool"
+        proposal = latest.startswith("Suggest the fixture feed ")
+        tool = (latest.startswith("tool") or delegation or proposal) and body["messages"][-1][
+            "role"
+        ] != "tool"
         deltas: list[dict[str, Any]]
         if tool:
             function = (
@@ -143,6 +164,17 @@ def main() -> None:
                 if delegation
                 else {"name": "fixture.pause", "arguments": "{}"}
             )
+            if proposal:
+                function = {
+                    "name": "feeds.propose",
+                    "arguments": json.dumps(
+                        {
+                            "url": "https://fixture-feed.example/rss/" + latest.rsplit(" ", 1)[-1],
+                            "reason": "Fixture subscription proposal",
+                            "discovered_from": "Fixture discovery topic",
+                        }
+                    ),
+                }
             deltas = [
                 {
                     "content": "Delegating the fixture."
@@ -160,6 +192,14 @@ def main() -> None:
                     ]
                 },
             ]
+        elif proposal:
+            deltas = [{"content": "Fixture feed proposed."}]
+        elif latest.startswith('{"message":"What is in the fixture excerpt?'):
+            excerpt = json.loads(latest)["untrusted_document_attachments"][0]["text"]
+            assert (
+                json.loads(excerpt)["untrusted_external_feed_excerpt"]["title"] == "A first story"
+            )
+            deltas = [{"content": "I read the external feed excerpt."}]
         elif delegation:
             deltas = [{"content": "The worker reported a blue fixture."}]
         elif latest == "Report the fixture label.":

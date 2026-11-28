@@ -15,6 +15,7 @@ from solakit.storage.store import Store
 if TYPE_CHECKING:
     from solakit.adapters.memory import MemoryService
     from solakit.adapters.model import ModelAdapter
+    from solakit.engine.feeds import FeedService
     from solakit.engine.jobs import JobService
     from solakit.engine.run_loop import RunLoop
     from solakit.tools.blog import BlogService
@@ -78,6 +79,7 @@ class ApplicationContext:
     runs: RunLoop | None = None
     memory: MemoryService | None = None
     jobs: JobService | None = None
+    feeds: FeedService | None = None
     images: ImageService | None = None
     blog: BlogService | None = None
     inference: asyncio.Semaphore = field(default_factory=lambda: asyncio.Semaphore(1), init=False)
@@ -162,6 +164,7 @@ def compose(
     from solakit.adapters.memory import MemoryService, OpenViking
     from solakit.adapters.model import ModelAdapter
     from solakit.adapters.vision import VisionAdapter
+    from solakit.engine.feeds import FeedService
     from solakit.engine.jobs import JobService
     from solakit.engine.run_loop import RunLoop
     from solakit.redaction import Redactor
@@ -219,6 +222,9 @@ def compose(
     context.jobs = JobService(store, context.runs, lambda: context.profile)
     context.tools.jobs = context.jobs
     context.runs.jobs = context.jobs
+    tools = context.tools
+    context.feeds = FeedService(store, lambda: tools.current(context.profile).feeds)
+    tools.feed_service = context.feeds
     context.resources = (
         store,
         context.model,
@@ -228,5 +234,6 @@ def compose(
         *resources,
         context.runs,
         context.jobs,
+        context.feeds,
     )
     return context

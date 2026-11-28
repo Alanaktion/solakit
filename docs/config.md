@@ -213,6 +213,30 @@ Changing either field or removing the table revokes the tool from existing
 runs. Cloudflare receives the requested URL, and Solakit stores the URL and
 returned Markdown in regular tool evidence. [Tool contract](contracts/tools.md#webpage-markdown) · [Cloudflare setup](https://developers.cloudflare.com/browser-run/quick-actions/markdown-endpoint/)
 
+## `[feeds]`
+
+RSS 2.0 and Atom subscriptions are managed in **Settings → Feeds** and stored in
+`state.db`. Set `enabled = true` to allow polling and separately grant any model
+tools by name. Existing subscriptions and cached items are readable with polling
+disabled. The interval trigger uses the configured cadence at service startup.
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `enabled` | `false` | Allow polling and granted feed tools. |
+| `max_feeds` | `32` | Total active, pending, and paused subscriptions. |
+| `max_agent_feeds` | `10` | Total agent-sourced subscriptions in those states. |
+| `max_agent_additions_per_day` | `2` | Proposals in the last 24 hours, including rejected and removed proposals. |
+| `poll_interval_minutes` | `60` | Global interval, with a minimum of 15 minutes. |
+| `item_retention_days` | `30` | Days to keep reader items from their first fetch. |
+| `max_items_per_feed` | `500` | Visible items per feed after a successful poll. |
+| `max_consecutive_failures` | `5` | Failed polls before automatically pausing the feed. |
+
+Lower subscription caps apply to new additions. Existing runs keep the narrower
+of their admitted and current proposal caps. Reader retention removes display
+content from the SQLite projection and retains dedupe keys. Immutable evidence
+and backups retain the original item content.
+[Feed tools](contracts/tools.md#rss-and-atom-feeds) · [Reader guide](chat-ui.md#reading-feeds)
+
 ## `[mcp_servers.<name>]`
 
 | Key | Type / built-in default | Meaning and constraints |

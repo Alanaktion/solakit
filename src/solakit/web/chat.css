@@ -1090,6 +1090,7 @@ sola-topic-manager {
   text-align: left;
 }
 .settings-nav [aria-selected='true'],
+sola-feeds [aria-pressed='true'],
 .evidence-tabs [aria-selected='true'] {
   background: var(--tint);
   color: var(--ink);
@@ -1139,6 +1140,54 @@ sola-topic-manager {
   border-top: 1px solid var(--line);
   padding-top: 16px;
   margin-top: 16px;
+}
+sola-feeds {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.feed-items {
+  list-style: none;
+  padding: 0;
+  margin: 16px 0;
+}
+.feed-items li,
+.feed-subscription {
+  border-top: 1px solid var(--line);
+  padding: 12px 0;
+}
+.feed-items li {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.feed-items li > button {
+  flex-shrink: 0;
+}
+.feed-item-title {
+  border-color: transparent;
+  text-align: left;
+  font-weight: 600;
+}
+.feed-items p,
+.feed-subscription .meta {
+  margin: 4px 0;
+}
+.feed-subscription h4,
+.feed-excerpt h4 {
+  margin: 0 0 8px;
+}
+.feed-excerpt {
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.feed-excerpt > p {
+  max-width: 65ch;
+}
+#feed-form {
+  margin-bottom: 16px;
 }
 .catalog-item {
   margin-top: 8px;

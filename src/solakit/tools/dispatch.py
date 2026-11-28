@@ -25,10 +25,11 @@ from solakit.records import (
     utc_now,
 )
 from solakit.redaction import Redactor
-from solakit.sdk import ToolContext, ToolError, ToolResult
+from solakit.sdk import ToolArguments, ToolContext, ToolError, ToolResult
 from solakit.storage.evidence import CorruptionError, StorageError, canonical, digest, read_artifact
 from solakit.storage.search import search
 from solakit.storage.store import Store
+from solakit.tools.feeds import AcknowledgeFeedItems, ListFeedItems, ListFeeds, ProposeFeed
 from solakit.tools.files import GuardedFiles
 from solakit.tools.mcp import McpCall, McpClient, McpList
 from solakit.tools.registry import Registry
@@ -37,6 +38,7 @@ from solakit.tools.web_search import BraveSearch, WebSearch
 
 if TYPE_CHECKING:
     from solakit.adapters.memory import MemoryService
+    from solakit.engine.feeds import FeedService
     from solakit.engine.jobs import JobService
     from solakit.engine.run_loop import RunLoop
     from solakit.tools.blog import BlogService
@@ -100,6 +102,7 @@ class Dispatcher:
         self.mcp = McpClient()
         self.memory: MemoryService | None = None
         self.jobs: JobService | None = None
+        self.feed_service: FeedService | None = None
         self.runs: RunLoop | None = None
         self.images: ImageService | None = None
         self.blog: BlogService | None = None
@@ -117,6 +120,21 @@ class Dispatcher:
         if key not in self._checkout_locks:
             self._checkout_locks[key] = asyncio.Lock()
         return self._checkout_locks[key]
+
+    def feed_digest_allowed(self, run: Run) -> bool:
+        if (
+            run.occurrence_id is None
+            or self.store.session(run.session_id).mode != SessionMode.ISOLATED
+        ):
+            return False
+        occurrence = self.store.occurrence(run.occurrence_id)
+        return (
+            occurrence.run_id == run.id
+            and occurrence.state == "claimed"
+            and occurrence.definition.get("session_id") == run.session_id
+            and occurrence.definition.get("delivery") == "session"
+            and not self.store.session(run.session_id).archived
+        )
 
     def letters_inbox_allowed(self, run: Run) -> bool:
         return run.origin == Origin.INTERACTIVE or (
@@ -218,6 +236,8 @@ class ToolSession:
             return frozenset()
         if "letters.inbox" in tools and not self.dispatcher.letters_inbox_allowed(run):
             tools -= {"letters.inbox"}
+        if "feeds.acknowledge" in tools and not self.dispatcher.feed_digest_allowed(run):
+            tools -= {"feeds.acknowledge"}
         return tools
 
     async def dispatch(self, call: ToolCall) -> ToolReceipt:
@@ -449,6 +469,10 @@ class Invocation:
                 raise ToolError("Delegated work is read-only", ErrorCode.TOOL_DENIED)
             if not tool.consequential:
                 raise ToolError("Tool did not declare writes", ErrorCode.TOOL_DENIED)
+        if tool.name == "feeds.acknowledge" and not self.dispatcher.feed_digest_allowed(run):
+            raise ToolError(
+                "Coverage requires an isolated job with topic delivery", ErrorCode.TOOL_DENIED
+            )
         if tool.name == "letters.inbox" and not self.dispatcher.letters_inbox_allowed(run):
             raise ToolError(
                 "Letters inbox requires explicit job workspace roots", ErrorCode.TOOL_DENIED
@@ -702,6 +726,119 @@ class Invocation:
         note = self.dispatcher.memory.stage(self.run_id, self.call.id, content)
         self.confirm_effect()
         return {"status": "staged", "note_id": note.id, "run_id": note.run_id}
+
+    def feeds(self, args: ToolArguments) -> ToolResult:
+        profile = self.authority()
+        store = self.dispatcher.store
+        service = self.dispatcher.feed_service
+        if service is None or not service.settings().enabled:
+            raise ToolError("Feed tools are disabled", ErrorCode.TOOL_DENIED)
+        if isinstance(args, ListFeeds):
+            counts = store.feed_counts()
+            feeds: list[JsonValue] = []
+            for feed in store.feeds():
+                if args.status and feed.status != args.status:
+                    continue
+                count, unread = counts.get(feed.id, (0, 0))
+                feeds.append(
+                    feed.model_dump(
+                        mode="json",
+                        include={
+                            "id",
+                            "url",
+                            "title",
+                            "source",
+                            "status",
+                            "last_fetched_at",
+                            "consecutive_failures",
+                        },
+                    )
+                    | {"item_count": count, "unread_count": unread}
+                )
+                if len(feeds) == args.limit:
+                    break
+            return ToolResult(data={"feeds": feeds})
+        if isinstance(args, ProposeFeed):
+            self.begin_effect()
+            try:
+                feed = service.add(
+                    args.url,
+                    reason=args.reason,
+                    discovered_from=args.discovered_from,
+                    run=store.run(self.run_id),
+                    ceiling=profile.feeds,
+                )
+            except ValueError as error:
+                if not store.failed:
+                    self.effect = "none"
+                raise ToolError(str(error), ErrorCode.INVALID_INPUT) from None
+            self.confirm_effect()
+            return ToolResult(data=feed.model_dump(mode="json"))
+        if isinstance(args, ListFeedItems):
+            items = store.feed_items(
+                feed_ids=args.feed_ids,
+                unread_only=args.unread_only,
+                undigested_only=args.undigested_only,
+                oldest_first=args.undigested_only,
+                limit=args.limit + 1,
+            )
+            shown: list[JsonValue] = []
+            result: dict[str, JsonValue] = {
+                "source": "untrusted external feed data",
+                "items": shown,
+                "has_more": bool(items),
+            }
+            for index, item in enumerate(items[: args.limit]):
+                redact = self.dispatcher.redactor.redact
+                shown.append(
+                    {
+                        "id": item.id,
+                        "feed_id": item.feed_id,
+                        "title": redact(item.title),
+                        "link": redact(item.link),
+                        "summary": redact(item.summary),
+                        "published_at": item.published_at.isoformat()
+                        if item.published_at
+                        else None,
+                        "read": item.read,
+                        "digested": item.digested,
+                    }
+                )
+                result["has_more"] = index + 1 < len(items)
+                if self._feed_result_size(result) > profile.budgets.tool_result_bytes:
+                    shown.pop()
+                    result["has_more"] = True
+                    break
+            return self._feed_result(result, profile)
+        if isinstance(args, AcknowledgeFeedItems):
+            ids = list(dict.fromkeys(args.ids))
+            if len(set(ids) | set(store.staged_feed_items(self.run_id))) > 20:
+                raise ToolError(
+                    "A digest may stage at most 20 distinct items", ErrorCode.INVALID_INPUT
+                )
+            returned = {
+                item["id"]
+                for result in store.feed_tool_results(self.run_id, "feeds.items")
+                if isinstance(result, dict)
+                for item in result["items"]
+            }
+            if not returned.issuperset(ids):
+                raise ToolError(
+                    "Only items returned in this run can be staged", ErrorCode.INVALID_INPUT
+                )
+            # The successful receipt is the staging record. Publication owns the only item mutation.
+            return self._feed_result({"staged_ids": list[JsonValue](ids)}, profile)
+        raise ToolError("Unknown feed operation", ErrorCode.TOOL_DENIED)
+
+    @staticmethod
+    def _feed_result_size(result: JsonValue) -> int:
+        return len(receipt_content("succeeded", "none", canonical(result).decode(), None))
+
+    def _feed_result(self, result: JsonValue, profile: EffectiveProfile) -> ToolResult:
+        if self._feed_result_size(result) > profile.budgets.tool_result_bytes:
+            raise ToolError("Feed result budget is too small", ErrorCode.BUDGET_EXCEEDED)
+        self.redacted_result = True
+        return ToolResult(data=result)
 
     def jobs(self, action: str, arguments: dict[str, JsonValue]) -> JsonValue:
         profile = self.authority()

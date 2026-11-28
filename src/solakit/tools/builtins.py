@@ -7,6 +7,7 @@ from pydantic import Field
 
 from solakit.records import RecordID
 from solakit.sdk import Origin, Tool, ToolArguments, ToolContext, ToolError, ToolResult
+from solakit.tools.feeds import FEED_TOOLS
 from solakit.tools.git import GitDiff, GitPublish, GitTarget, run_git
 from solakit.tools.letters import Inbox, ReadLetter, ReplyLetter, SendLetter, run_letters
 from solakit.tools.mcp import McpCall, McpList
@@ -296,6 +297,7 @@ def job_tool[A: ToolArguments](action: str, description: str, arguments: type[A]
 
 
 TOOLS = (
+    *FEED_TOOLS,
     Tool(
         "delegate.run",
         "Ask one isolated worker for a short research or analysis report. Give a self-contained "

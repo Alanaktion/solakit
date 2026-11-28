@@ -347,6 +347,17 @@ class HTTPSettings(Value):
         return self
 
 
+class FeedSettings(Value):
+    enabled: bool = False
+    max_feeds: Annotated[int, Field(ge=1)] = 32
+    max_agent_feeds: Annotated[int, Field(ge=0)] = 10
+    max_agent_additions_per_day: Annotated[int, Field(ge=0)] = 2
+    poll_interval_minutes: Annotated[int, Field(ge=15)] = 60
+    item_retention_days: Annotated[int, Field(ge=1)] = 30
+    max_items_per_feed: Annotated[int, Field(ge=1)] = 500
+    max_consecutive_failures: Annotated[int, Field(ge=1)] = 5
+
+
 class OperatorConfig(Value):
     schema_version: SchemaVersion = 1
     agent_name: AgentName = "Sola"
@@ -363,6 +374,7 @@ class OperatorConfig(Value):
     letters: LettersSettings = Field(default_factory=LettersSettings)
     web_search: WebSearchSettings = Field(default_factory=WebSearchSettings)
     web_fetch: WebFetchSettings | None = None
+    feeds: FeedSettings = Field(default_factory=FeedSettings)
     mcp_servers: dict[Name, McpServer] = Field(default_factory=dict)
     shell: ShellSettings = Field(default_factory=ShellSettings)
     delegation_worker: Name | None = None
@@ -410,6 +422,7 @@ class EffectiveProfile(Value):
     letters: LettersCheckout | None = None
     web_search: WebSearchSettings = Field(default_factory=WebSearchSettings)
     web_fetch: WebFetchSettings | None = None
+    feeds: FeedSettings = Field(default_factory=FeedSettings)
     mcp_servers: dict[Name, McpServer] = Field(default_factory=dict)
     shell: ShellSettings = Field(default_factory=ShellSettings)
     shell_granted: bool = False
@@ -609,6 +622,7 @@ def resolve_profile(
         ("letters", "letters"),
         ("web_search", "web_search"),
         ("web_fetch", "web_fetch"),
+        ("feeds", "feeds"),
         ("mcp_servers", "mcp_servers"),
         ("shell", "shell"),
         ("delegation_worker", "delegation_worker"),
@@ -670,6 +684,8 @@ def resolve_profile(
         tools -= {"web.search"}
     if config.web_fetch is None:
         tools -= {"web.fetch"}
+    if not config.feeds.enabled:
+        tools = frozenset(name for name in tools if not name.startswith("feeds."))
     if not config.mcp_servers:
         tools -= MCP_TOOLS
     if not (config.shell.enabled and shell_granted and origin == Origin.INTERACTIVE):
@@ -706,6 +722,7 @@ def resolve_profile(
         letters=letters,
         web_search=config.web_search,
         web_fetch=config.web_fetch,
+        feeds=config.feeds,
         mcp_servers=config.mcp_servers,
         shell=config.shell,
         shell_granted=shell_granted,
@@ -767,6 +784,10 @@ def restrict_to_admission(
         tools -= {"web.search"}
     if admitted.web_fetch is None or current.web_fetch != admitted.web_fetch:
         tools -= {"web.fetch"}
+    if not (admitted.feeds.enabled and current.feeds.enabled):
+        tools = frozenset(name for name in tools if not name.startswith("feeds."))
+    if admitted.memory_mode != "off":
+        tools -= {"feeds.items", "feeds.acknowledge"}
     if not admitted.mcp_servers or current.mcp_servers != admitted.mcp_servers:
         tools -= MCP_TOOLS
     if not admitted.delegation_worker or current.delegation_worker != admitted.delegation_worker:
@@ -781,6 +802,15 @@ def restrict_to_admission(
     ):
         tools -= {"shell.exec"}
     changes = {
+        "feeds": admitted.feeds.model_copy(
+            update={
+                "enabled": admitted.feeds.enabled and current.feeds.enabled,
+                **{
+                    key: min(getattr(admitted.feeds, key), getattr(current.feeds, key))
+                    for key in ("max_feeds", "max_agent_feeds", "max_agent_additions_per_day")
+                },
+            }
+        ),
         "model_image_inputs": current.model_image_inputs and admitted.model_image_inputs,
         "workspace_roots": roots,
         "git_repositories": repositories,

@@ -66,9 +66,12 @@ def _document(entry: Entry) -> tuple[str, str, str, str, str]:
     return identity, session, run, entry.kind, text
 
 
-def _insert(db: sqlite3.Connection, ref: Reference, entry: Entry) -> None:
+def _insert(db: sqlite3.Connection, ref: Reference, entry: Entry) -> bool:
+    if entry.kind in ("feed", "feed_item"):
+        return False
     db.execute("INSERT INTO refs VALUES (?,?)", (entry.id, ref.model_dump_json()))
     db.execute("INSERT INTO documents VALUES (?,?,?,?,?,?)", (entry.id, *_document(entry)))
+    return True
 
 
 def _fingerprint(path: Path, size: int | None = None) -> str:
@@ -154,8 +157,7 @@ def rebuild(root: Path) -> int:
         db.executescript(SCHEMA)
         with db:
             for ref, entry in log.scan():
-                _insert(db, ref, entry)
-                count += 1
+                count += _insert(db, ref, entry)
             for path in log.paths():
                 db.execute(
                     "INSERT INTO sources VALUES (?,?,?)",

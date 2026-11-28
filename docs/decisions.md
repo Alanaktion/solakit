@@ -101,3 +101,8 @@ defaults. Git history retains the original decisions and rollout details.
   literal-argument shell execution only for interactive profiles with the
   explicit grant. Commands run with the server account's privileges.
   [Tool contract](contracts/tools.md#public-web-search)
+- V2-50. Keep RSS and Atom subscriptions and dedupe tombstones in evidence-backed
+  state. Agents propose pending subscriptions and operators control activation.
+  A destination-checked, model-free service polls active feeds. Isolated digest
+  jobs stage coverage and commit it atomically with local topic delivery.
+  [Feed tools](contracts/tools.md#rss-and-atom-feeds), [reader](chat-ui.md#reading-feeds)

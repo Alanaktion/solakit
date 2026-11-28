@@ -94,6 +94,17 @@ max_checks = 300
 [shell]
 enabled = false
 
+# Subscriptions and cached items live in state.db. Grant the individual feeds.* tool names.
+[feeds]
+enabled = false
+max_feeds = 32
+max_agent_feeds = 10
+max_agent_additions_per_day = 2
+poll_interval_minutes = 60
+item_retention_days = 30
+max_items_per_feed = 500
+max_consecutive_failures = 5
+
 [http]
 host = "127.0.0.1"
 port = 8765

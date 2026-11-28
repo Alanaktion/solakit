@@ -47,7 +47,7 @@ if TYPE_CHECKING:
 
 CONTROL_ID = "0" * 32
 AUTONOMOUS = (Origin.SCHEDULED, Origin.PROACTIVE)
-LOCAL_EFFECTS = FILE_MUTATIONS | {"memory.remember"}
+LOCAL_EFFECTS = FILE_MUTATIONS | {"memory.remember", "feeds.propose", "feeds.acknowledge"}
 WAKE_INSTRUCTIONS = (
     "\n\nThis is an operator-enabled background occurrence. Inspect only the bound topic, "
     "scoped recall and granted resources. Perform useful permitted work, leave one concise "
@@ -355,6 +355,10 @@ class JobService:
         eligible = selected.tools - (
             LETTERS_TOOLS - letters_tools(selected.letters, selected.workspace_roots, job.origin)
         )
+        if job.mode != SessionMode.ISOLATED or job.delivery != "session":
+            eligible -= {"feeds.acknowledge"}
+        if selected.memory_mode != "off" and job.mode == SessionMode.SHARED:
+            eligible -= {"feeds.items"}
         tools = eligible if job.tools is None else frozenset(job.tools)
         if not tools <= eligible:
             raise ValueError("job tools exceed current profile grants")
@@ -697,6 +701,7 @@ class JobService:
                     expires_at=now
                     + timedelta(seconds=self.policy().background.notification_ttl_seconds),
                     publish_to_archive=bool(archive),
+                    feed_item_ids=self.store.staged_feed_items(run.id),
                 ),
             )
         self.store._commit((terminal, occurrence, *delivery, *archive))
@@ -774,7 +779,12 @@ class JobService:
                 content=cast(str, delivery.content),
             )
             # Local acceptance/publication/completion share one transaction and stable ID.
-            self.store._commit((sending, message, completed))
+            covered = tuple(
+                item.model_copy(update={"digested": True, "version": item.version + 1})
+                for identity in delivery.feed_item_ids
+                if not (item := self.store.feed_item(identity)).deleted and not item.digested
+            )
+            self.store._commit((sending, message, completed, *covered))
 
     def _skip(
         self, job: Job, due: datetime, next_instant: datetime | None, *, failure: bool = False

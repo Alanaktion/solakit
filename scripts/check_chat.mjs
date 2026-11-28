@@ -1719,6 +1719,67 @@ try {
     await job.getByText(/completed · message · Delivery delivered/).waitFor();
     await page.getByRole('button', { name: 'Close Settings', exact: true }).click();
   });
+  await check('Feeds proposal review, keyboard reader and isolated discussion', async () => {
+    await send(`Suggest the fixture feed ${Date.now()}`);
+    await page.locator('.message.assistant').getByText('Fixture feed proposed.').waitFor();
+    await page.locator('#settings-open').click();
+    await page.getByRole('tab', { name: 'Security', exact: true }).focus();
+    await page.keyboard.press('ArrowLeft');
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'settings-tab-feeds');
+    const feeds = page.locator('sola-feeds');
+    await feeds.getByRole('button', { name: 'Subscriptions · pending' }).click();
+    const pending = feeds.locator('.feed-subscription').filter({ hasText: 'Fixture subscription proposal' });
+    await pending.getByText(/Agent · pending/).waitFor();
+    await pending.getByText(/Found via Fixture discovery topic/).waitFor();
+    assert.equal(await pending.getByRole('button', { name: 'Poll now' }).count(), 0);
+    const url = await pending.locator('h4').textContent();
+    await pending.getByRole('button', { name: 'Approve' }).click();
+    const approved = feeds.locator('.feed-subscription').filter({ hasText: url.trim() });
+    await approved.getByText(/Agent · active/).waitFor();
+    await approved.getByRole('button', { name: 'Poll now' }).click();
+    await approved.getByText(/2 unread of 2 items/).waitFor();
+    await feeds.getByText('Add a feed', { exact: true }).click();
+    await feeds.getByLabel('Feed URL').fill(`https://broken-feed.example/rss/${Date.now()}`);
+    await feeds.getByLabel('Title (optional)').fill('Unreachable feed');
+    await feeds.getByRole('button', { name: 'Add subscription' }).click();
+    const broken = feeds.locator('.feed-subscription').filter({ hasText: 'Unreachable feed' });
+    await broken.getByRole('button', { name: 'Poll now' }).click();
+    await broken.getByText('Feed returned HTTP 503').waitFor();
+    await broken.getByRole('button', { name: 'Pause', exact: true }).click();
+    await broken.getByRole('button', { name: 'Resume', exact: true }).waitFor();
+    page.once('dialog', (dialog) => dialog.accept());
+    await broken.getByRole('button', { name: 'Remove', exact: true }).click();
+    await broken.waitFor({ state: 'detached' });
+    await feeds.getByRole('button', { name: 'Reader', exact: true }).click();
+    assert.equal(await feeds.locator('img').count(), 0);
+    const story = feeds.getByRole('button', { name: 'A first story', exact: true });
+    await story.focus();
+    await page.keyboard.press('Enter');
+    await feeds.getByText('First external excerpt.', { exact: true }).waitFor();
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'feed-item-heading');
+    assert.equal(await story.count(), 0);
+    assert.equal(await feeds.getByRole('link', { name: 'Open article' }).getAttribute('href'),
+      'https://example.org/articles/first');
+    for (const colorScheme of ['light', 'dark']) {
+      await page.emulateMedia({ colorScheme });
+      await audit(`feeds-${colorScheme}`);
+      await page.screenshot({ path: path.join(options.output, `feeds-${colorScheme}.png`) });
+    }
+    await feeds.getByRole('button', { name: `Ask ${agentName} about this` }).click();
+    await feeds.getByLabel('Your question').fill('What is in the fixture excerpt?');
+    await feeds.getByRole('button', { name: 'Send to a new isolated topic' }).click();
+    await page.getByRole('heading', { name: 'A first story', exact: true }).waitFor();
+    await page.locator('.message.user').getByText('What is in the fixture excerpt?').waitFor();
+    await page.locator('.message.assistant').getByText('I read the external feed excerpt.').waitFor();
+    await page.locator('#settings-open').click();
+    await page.getByRole('tab', { name: 'Feeds', exact: true }).click();
+    await feeds.getByRole('button', { name: 'Subscriptions', exact: true }).click();
+    page.once('dialog', (dialog) => dialog.accept());
+    await approved.getByRole('button', { name: 'Remove', exact: true }).click();
+    await approved.waitFor({ state: 'detached' });
+    await page.getByRole('button', { name: 'Close Settings', exact: true }).click();
+    await page.emulateMedia({ colorScheme: 'light' });
+  });
   report.errors = errors;
   assert.deepEqual(errors, []);
 } catch (error) {
