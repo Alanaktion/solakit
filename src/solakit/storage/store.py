@@ -847,7 +847,54 @@ class Store:
         row = self.db.execute(
             "SELECT run_id FROM admissions WHERE request_id=?", (request_id,)
         ).fetchone()
-        return self.run(row[0]) if row else None
+        if row:
+            return self.run(row[0])
+        message = self.steering_message(request_id)
+        return self.run(message.run_id) if message else None
+
+    def steering_message(self, request_id: str) -> Message | None:
+        valid_id(request_id)
+        try:
+            message = self._load("message", digest(canonical(["steer", request_id]))[:32], Message)
+        except KeyError:
+            return None
+        return message if message.steering_request_id == request_id else None
+
+    def latest_steering(self, run_id: str) -> Message | None:
+        row = self.db.execute(
+            "SELECT * FROM entities WHERE kind='message' AND run_id=? "
+            "AND json_extract(body,'$.steering_request_id') IS NOT NULL "
+            "ORDER BY sequence DESC LIMIT 1",
+            (run_id,),
+        ).fetchone()
+        return self._read_row(row, Message) if row else None
+
+    def steer(self, run: Run, request_id: str, content: str) -> None:
+        from solakit.engine.lineage import current_run
+
+        topic = self.session(run.session_id)
+        if (
+            current_run.get() is not None
+            or self.run(run.id) != run
+            or run.state != RunState.RUNNING
+            or run.origin != Origin.INTERACTIVE
+            or run.parent_tool_call_id is not None
+            or topic.archived
+            or topic.mode == SessionMode.EPHEMERAL
+            or self.request(request_id) is not None
+        ):
+            raise ValueError("steering requires a running interactive reply and a fresh key")
+        self.append(
+            Message(
+                id=digest(canonical(["steer", request_id]))[:32],
+                origin=run.origin,
+                session_id=run.session_id,
+                run_id=run.id,
+                role="user",
+                content=content,
+                steering_request_id=request_id,
+            )
+        )
 
     def create_session(
         self,
@@ -1110,6 +1157,8 @@ class Store:
             if existing["fingerprint"] != fingerprint:
                 raise ValueError("idempotency key reused with different admission")
             return self.run(existing["run_id"])
+        if self.steering_message(request_id) is not None:
+            raise ValueError("idempotency key belongs to a steering message")
         if parent_call is not None and continued_from_run_id is not None:
             previous = self.continuation_target(session_id, parent_call.session_id)
             if (

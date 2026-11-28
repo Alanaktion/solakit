@@ -92,8 +92,9 @@ function merge(kind, rows) {
   for (const row of rows) {
     const old = map.get(row.record.id);
     if (JSON.stringify(old) !== JSON.stringify(row)) map.set(row.record.id, row);
-    if (kind === 'run') {
-      const index = outbox.findIndex((item) => item.key === row.record.request_id);
+    const key = kind === 'run' ? row.record.request_id : row.record.steering_request_id;
+    if (key) {
+      const index = outbox.findIndex((item) => item.key === key);
       if (index !== -1) {
         outbox.splice(index, 1);
         write('sola.outbox', outbox);
@@ -808,11 +809,12 @@ async function deliver(item) {
     write('sola.outbox', outbox);
     $('notice').hidden = true;
     if (item.session_id === selected) {
-      merge('run', [{ record: result.run, sequence: Number.MAX_SAFE_INTEGER }]);
+      if (!runs.has(result.run.id))
+        merge('run', [{ record: result.run, sequence: Number.MAX_SAFE_INTEGER }]);
       queueRefresh(result.run.id);
     }
   } catch (error) {
-    showError(error);
+    if (outbox.some((value) => value.key === item.key)) showError(error);
   } finally {
     item.sending = false;
     write('sola.outbox', outbox);

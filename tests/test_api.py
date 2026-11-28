@@ -6,6 +6,7 @@ import os
 from collections.abc import AsyncIterator, Iterator
 from datetime import datetime, timedelta
 from pathlib import Path
+from threading import Event
 from typing import Any
 
 import httpx2
@@ -396,6 +397,69 @@ def test_api_runs_tools_idempotency_artifacts_and_search(
             client.post("/api/v1/runs", json=body, headers=headers).json()["run"]["id"] == run["id"]
         )
     assert context.state == "stopped"
+
+
+def test_steering_submission_receipt_and_archive(
+    profile: EffectiveProfile, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("SOLA_OPERATOR_PASSWORD", PASSWORD)
+    entered, release = Event(), asyncio.Event()
+    attempts = 0
+
+    async def respond(body: dict[str, Any]) -> bytes:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            entered.set()
+            await release.wait()
+        return wire(reply("Finished."))
+
+    context, _ = harness(profile, respond)
+    with TestClient(create_app(context), base_url=BASE) as client:
+        login(client)
+        session = client.post("/api/v1/sessions", json={"mode": "isolated"}).json()["id"]
+        other = client.post("/api/v1/sessions", json={}).json()["id"]
+        body = {"session_id": session, "content": "Please start"}
+        original = client.post("/api/v1/runs", headers={"Idempotency-Key": new_id()}, json=body)
+        assert original.status_code == 202 and entered.wait(3)
+        location = original.headers["Location"]
+        key = new_id()
+        headers = {"Idempotency-Key": key}
+        body["content"] = "Please change course"
+        response = client.post("/api/v1/runs", headers=headers, json=body)
+        assert response.status_code == 202 and response.headers["Location"] == location
+        assert response.json()["run"]["id"] == original.json()["run"]["id"]
+        for change in (
+            {"session_id": other},
+            {"session_id": new_id()},
+            {"content": "Different request"},
+            {"profile": "different"},
+            {"image": {"upload_id": new_id()}},
+            {"document_upload_ids": [new_id()]},
+        ):
+            conflict = client.post("/api/v1/runs", headers=headers, json=body | change)
+            assert conflict.status_code == 409, conflict.text
+        assert client.portal
+        client.portal.call(release.set)
+        replay = client.post("/api/v1/runs?wait=5", headers=headers, json=body)
+        assert replay.status_code == 200 and replay.json()["run"]["state"] == "completed"
+        assert replay.headers["Location"] == location and attempts == 2
+        for path in (f"/api/v1/sessions/{session}/messages", location + "/records"):
+            rows = client.get(path).json()["items"]
+            steered = [r["record"] for r in rows if r["record"].get("steering_request_id") == key]
+            assert len(steered) == 1 and steered[0]["content"] == body["content"]
+        export = client.get(f"/api/v1/sessions/{session}/export")
+        assert export.status_code == 200, export.text
+        imported = client.post(
+            "/api/v1/sessions/import",
+            headers={"Content-Type": "application/zip", "Idempotency-Key": new_id()},
+            content=export.content,
+        )
+        assert imported.status_code == 201, imported.text
+        copied = imported.json()["session_id"]
+        rows = client.get(f"/api/v1/sessions/{copied}/messages").json()["items"]
+        result = next(r["record"] for r in rows if r["record"]["content"] == body["content"])
+        assert result["steering_request_id"] != key
 
 
 def test_bulk_archive_endpoint(client: TestClient) -> None:

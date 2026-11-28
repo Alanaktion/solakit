@@ -29,8 +29,14 @@ before sign-in, so keep its contents free of private data. The existing Content
 Security Policy still applies.
 
 Create a topic, choose its memory mode, and send a message. Enter sends;
-Shift+Enter inserts a newline. The composer remains editable while Sola works,
-and additional submissions appear as queued runs. Each topic keeps its draft,
+Shift+Enter inserts a newline. In a shared or isolated topic, a text message
+under the same profile can steer the running reply. Sola waits for the current
+tool to finish, then includes the new messages and the tool result in its next
+model request. Calls from the earlier batch that are still waiting can be
+reconsidered. Messages with attachments or a different profile, and messages
+sent when an earlier turn is queued or the running reply has used its model
+budget, queue as new turns. Messages sent during scheduled or proactive work
+also queue. Each topic keeps its draft,
 profile and selected navigation in browser session storage, across reloads in
 that tab. Closing the tab clears these drafts. No credentials enter browser
 storage; sign-in uses the existing HttpOnly session cookie and CSRF protocol.

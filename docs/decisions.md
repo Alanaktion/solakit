@@ -63,6 +63,8 @@ defaults. Git history retains the original decisions and rollout details.
   distinguish tool success, failure, and uncertainty in receipts.
   [Run contract](contracts/run-loop.md), [evaluation thresholds](../evals/thresholds.json)
 - Resume eligible queued work after restart and interrupt previously active work.
+  Accept same-profile text steering in active shared and isolated chat replies
+  at model and tool boundaries while preserving FIFO order for queued turns.
   An explicit retry of the latest failed interactive reply links a new run to
   the original input and admission under current authority. Reuse settled
   exchanges and skip exact repeats of confirmed or successful calls.

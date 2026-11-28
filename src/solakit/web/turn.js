@@ -295,6 +295,16 @@ class SolaTurn extends SolaElement {
   }
   setRecords(records, runs) {
     const rows = [...(records?.values() || [])].sort((a, b) => a.sequence - b.sequence);
+    const latestRequests = new Map();
+    const steeredRequests = new Set();
+    const dispatchedSteps = new Set();
+    for (const { kind, record } of rows) {
+      if (kind === 'request' && record.purpose === 'conversation')
+        latestRequests.set(record.run_id, record.id);
+      if (kind === 'message' && record.steering_request_id && latestRequests.has(record.run_id))
+        steeredRequests.add(latestRequests.get(record.run_id));
+      if (kind === 'tool') dispatchedSteps.add(record.model_step_id);
+    }
     const tools = new Map();
     const entries = [];
     for (const row of rows) {
@@ -308,7 +318,8 @@ class SolaTurn extends SolaElement {
       }
       const entry = { id: r.id, runId: r.run_id, sequence, body: r, truncated };
       // Text the model wrote alongside tool calls; the final reply arrives as a message.
-      if (kind === 'model' && r.purpose !== 'compaction' && r.tool_calls?.length && r.content?.trim())
+      if (kind === 'model' && r.purpose !== 'compaction' && r.tool_calls?.length && r.content?.trim() &&
+          (!steeredRequests.has(r.request_id) || dispatchedSteps.has(r.id)))
         entries.push({ ...entry, narration: true });
       if (kind === 'memory_note')
         entries.push({ ...entry, tone: 'pending', name: 'Memory note staged',

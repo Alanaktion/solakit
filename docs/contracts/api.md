@@ -210,6 +210,13 @@ draft is removed or expires. For a new admission, missing, expired or off-topic
 upload IDs return 404. Queue checks, archival, ephemeral lifetime, current
 revocations and cancellation remain shared services. See [image inputs](../image-workflows.md).
 
+Text-only submissions can steer a running interactive reply in a shared or
+isolated topic when the profile matches, no earlier turn is queued, and the run
+can still make a model request. The response, Location and optional wait refer
+to the owning run. A steering message carries its own `steering_request_id` in
+message history and run records. The same key and payload return that run, even
+after it becomes terminal or the service restarts.
+
 Document uploads accept UTF-8 text and convert PDF, DOCX, and PPTX only when the
 configured oMLX API advertises `MarkItDown` in `/models`. Authenticated
 `/health` reports that capability as `document_conversion`. Document uploads

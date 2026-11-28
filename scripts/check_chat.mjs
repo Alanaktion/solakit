@@ -874,10 +874,21 @@ try {
     await page.locator('#draft').fill('');
     assert(await page.locator('#send').isDisabled());
   });
-  await check('two drafts during a tool run, focus and settled text survive previews', async () => {
+  await check('steering during a tool run survives a lost response and preserves focus', async () => {
     await send('tool first submission');
     await page.getByText('fixture.pause · working', { exact: true }).waitFor();
-    await send('second queued draft');
+    const active = page.locator('.turn').filter({ hasText: 'tool first submission' });
+    const activeId = await active.getAttribute('data-run-id');
+    let accepted;
+    await page.route('**/api/v1/runs', async (route) => {
+      const response = await route.fetch();
+      accepted = (await response.json()).run.id;
+      await route.abort('failed');
+    }, { times: 1 });
+    await send('second steering draft');
+    await active.locator('.message.user').filter({ hasText: 'second steering draft' }).waitFor();
+    await page.locator('#outbox .pending').waitFor({ state: 'hidden' });
+    assert.equal(accepted, activeId);
     await page.locator('#draft').fill('still editing the next thought');
     await page.locator('#draft').focus();
     await page
@@ -923,13 +934,13 @@ try {
       .filter({ hasText: 'tool first submission' })
       .locator('.timeline > *')
       .evaluateAll((nodes) => nodes.map((el) => el.className));
-    assert.deepEqual(timeline, ['message user', 'narration', 'work', 'message assistant']);
+    assert.deepEqual(timeline, ['message user', 'narration', 'work', 'message user', 'message assistant']);
     assert.equal(
-      await page.locator('#turns .message.user').filter({ hasText: 'second queued draft' }).count(),
+      await page.locator('#turns .message.user').filter({ hasText: 'second steering draft' }).count(),
       1
     );
     await waitFor(() =>
-      document.querySelector('#reply-status').textContent.includes('second queued draft')
+      document.querySelector('#reply-status').textContent.includes('second steering draft')
     );
     const announcement = await page.locator('#reply-status').textContent();
     await page.waitForTimeout(1100);

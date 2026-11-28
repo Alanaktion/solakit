@@ -222,7 +222,10 @@ def test_multiple_compactions_preserve_evidence_tail_search_and_memory(
     asyncio.run(scenario())
 
 
-def test_concurrent_arrivals_do_not_enter_compaction(profile: EffectiveProfile) -> None:
+@pytest.mark.parametrize("steer", [False, True])
+def test_concurrent_arrivals_do_not_enter_compaction(
+    profile: EffectiveProfile, steer: bool
+) -> None:
     async def scenario() -> None:
         entered, release = asyncio.Event(), asyncio.Event()
 
@@ -253,14 +256,19 @@ def test_concurrent_arrivals_do_not_enter_compaction(profile: EffectiveProfile) 
                 profile=context.profile,
                 content="Future private input.",
                 request_id=new_id(),
+                document_ids=() if steer else (new_id(),),
+                documents=() if steer else (("queued.txt", b"fixture"),),
             )
-            assert context.store.run(second.id).state == RunState.QUEUED
+            if steer:
+                assert second.id == first.id
+            else:
+                assert context.store.run(second.id).state == RunState.QUEUED
             assert "Future private input" not in canonical(requests).decode()
             release.set()
             assert (await context.runs.wait(first.id, timeout=5)).state == RunState.COMPLETED
             assert (await context.runs.wait(second.id, timeout=5)).state == RunState.COMPLETED
             assert "Future private input" not in canonical(requests[:-1]).decode()
-            assert requests[-1]["messages"][-1]["content"] == "Future private input."
+            assert "Future private input." in requests[-1]["messages"][-1]["content"]
             assert not context.inference.locked()
         finally:
             release.set()

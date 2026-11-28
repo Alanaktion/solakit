@@ -6,15 +6,20 @@ from typing import Any
 import httpx2
 import pytest
 
+from solakit.adapters.model import ModelResult
 from solakit.config import EffectiveProfile
+from solakit.engine.prompts import PreparedPrompt
 from solakit.engine.run_loop import QueueFull, project_run, records, render_receipt, requested_tools
 from solakit.records import (
     ErrorCode,
+    Message,
     ModelStep,
     Origin,
     RecoveryNote,
+    Run,
     RunState,
     SessionMode,
+    ToolCall,
     ToolReceipt,
     new_id,
 )
@@ -365,7 +370,12 @@ def test_cancellation_and_uncertainty(profile: EffectiveProfile, after_effect: b
             )
             await asyncio.wait_for(entered.wait(), 3)
             queued = context.runs.submit(
-                session.id, profile=context.profile, content="queued", request_id=new_id()
+                session.id,
+                profile=context.profile,
+                content="queued",
+                request_id=new_id(),
+                document_ids=(new_id(),),
+                documents=(("queue.txt", b"fixture"),),
             )
             assert context.runs.cancel(queued.id).state == RunState.CANCELLED
             context.runs.cancel(run.id)
@@ -403,6 +413,206 @@ def test_uncertain_response_cannot_complete(profile: EffectiveProfile) -> None:
             assert result.state == RunState.FAILED and len(requests) == 1
         finally:
             await context.stop()
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("uncertain", [False, True])
+def test_steering_waits_for_the_tool_receipt(profile: EffectiveProfile, uncertain: bool) -> None:
+    async def scenario() -> None:
+        entered, release = asyncio.Event(), asyncio.Event()
+
+        async def wait_for_release(context: ToolContext, args: ToolArguments) -> ToolResult:
+            if uncertain:
+                context.begin_effect(())
+            entered.set()
+            await release.wait()
+            return ToolResult(data="Finished the running tool")
+
+        app, requests = harness(
+            profile,
+            [reply(calls=[call("test.block"), call("files.write")]), reply("Redirected.")],
+            (Tool("test.block", "Wait", ToolArguments, wait_for_release, uncertain),),
+        )
+        await app.start()
+        assert app.store and app.runs
+        try:
+            topic = app.store.create_session()
+            first = app.runs.submit(
+                topic.id,
+                profile=app.profile,
+                content="Write ok to output.txt.",
+                request_id=new_id(),
+            )
+            await asyncio.wait_for(entered.wait(), 3)
+            steering = ["Skip the file.", "Just report the result."]
+            for content in steering:
+                key = new_id()
+                for _ in range(2):
+                    accepted = app.runs.submit(
+                        topic.id, profile=app.profile, content=content, request_id=key
+                    )
+                    assert accepted.id == first.id and accepted.state == RunState.RUNNING
+            assert app.store.tool_attempts(first.id) == 1 and len(requests) == 1
+            release.set()
+            outcome = await app.runs.wait(first.id, timeout=3)
+            evidence = records(app.store, first.id)
+            assert [r.name for r in evidence if isinstance(r, ToolCall)] == ["test.block"]
+            assert [
+                r.content for r in evidence if isinstance(r, Message) and r.steering_request_id
+            ] == (steering)
+            receipt = next(r for r in evidence if isinstance(r, ToolReceipt))
+            if uncertain:
+                assert receipt.status == "uncertain" and len(requests) == 1
+                assert outcome.reason and outcome.reason.code == ErrorCode.EFFECT_UNCERTAIN
+                assert not app.runs.retryable(topic.id)
+            else:
+                assert receipt.status == "succeeded" and outcome.state == RunState.COMPLETED
+                assistant, tool_result, *messages = requests[1]["messages"][-4:]
+                assert [c["function"]["name"] for c in assistant["tool_calls"]] == ["test.block"]
+                assert tool_result["role"] == "tool"
+                assert "Finished the running tool" in tool_result["content"]
+                assert [m["content"] for m in messages] == steering
+        finally:
+            release.set()
+            await app.stop()
+
+    asyncio.run(scenario())
+
+
+def test_steering_refreshes_prompt_waiting_for_inference(
+    profile: EffectiveProfile, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def scenario() -> None:
+        short = profile.model_copy(
+            update={"budgets": profile.budgets.model_copy(update={"model_calls": 1})}
+        )
+        app, requests = harness(short, [reply("Final.")])
+        assert app.model and app.runs and app.store
+        reached = asyncio.Event()
+        complete = app.model.complete
+
+        async def waiting(
+            prompt: PreparedPrompt,
+            run: Run,
+            index: int,
+            *,
+            refresh_prompt: Callable[[PreparedPrompt], PreparedPrompt] | None = None,
+        ) -> ModelResult:
+            assert b"New direction" not in prompt.body
+            reached.set()
+            return await complete(prompt, run, index, refresh_prompt=refresh_prompt)
+
+        monkeypatch.setattr(app.model, "complete", waiting)
+        await app.start()
+        try:
+            async with app.inference:
+                topic = app.store.create_session()
+                first = app.runs.submit(
+                    topic.id, profile=app.profile, content="Start here", request_id=new_id()
+                )
+                await asyncio.wait_for(reached.wait(), 3)
+                assert app.store.model_index(first.id) == 0
+                steered = app.runs.submit(
+                    topic.id, profile=app.profile, content="New direction", request_id=new_id()
+                )
+                assert steered.id == first.id
+            assert (await app.runs.wait(first.id, timeout=3)).state == RunState.COMPLETED
+            assert len(requests) == 1 and app.store.model_index(first.id) == 1
+            assert requests[0]["messages"][-1]["content"] == "New direction"
+        finally:
+            await app.stop()
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize(
+    "situation", ["draft", "proposal", "last_call", "profile", "recovery", "retry"]
+)
+def test_steering_during_inference(profile: EffectiveProfile, situation: str) -> None:
+    async def scenario() -> None:
+        entered, release = asyncio.Event(), asyncio.Event()
+        short = profile.model_copy(
+            update={"budgets": profile.budgets.model_copy(update={"model_calls": 1})}
+        )
+
+        async def respond(body: dict[str, Any]) -> bytes:
+            if len(requests) == 1 and situation == "recovery":
+                return wire(reply("I will write the file."))
+            if len(requests) == (2 if situation == "recovery" else 1):
+                entered.set()
+                await release.wait()
+                if situation == "proposal":
+                    return wire(reply("Old proposal", calls=[call("files.write")]))
+                return wire(reply("Old draft"))
+            if situation == "retry" and len(requests) == 2:
+                return b"invalid fixture response"
+            return wire(reply("New answer"))
+
+        app, requests = harness(short if situation == "last_call" else profile, respond)
+        requested_profile = app.profile
+        if situation == "profile":
+            assert app.tools and app.memory
+            current = app.tools.current
+
+            def resolve(admitted: EffectiveProfile) -> EffectiveProfile:
+                base = current(admitted.model_copy(update={"name": profile.name}))
+                return base.model_copy(update={"name": admitted.name})
+
+            app.tools.current = app.memory.current = resolve
+            requested_profile = app.profile.model_copy(update={"name": "alternate"})
+        await app.start()
+        assert app.store and app.runs
+        try:
+            topic = app.store.create_session()
+            first = app.runs.submit(
+                topic.id,
+                profile=app.profile,
+                content="Write ok to output.txt." if situation == "recovery" else "Start here",
+                request_id=new_id(),
+            )
+            await asyncio.wait_for(entered.wait(), 3)
+            second = app.runs.submit(
+                topic.id, profile=requested_profile, content="New direction", request_id=new_id()
+            )
+            queued = situation in ("last_call", "profile")
+            if queued:
+                assert second.id != first.id and second.state == RunState.QUEUED
+            else:
+                assert second.id == first.id
+            release.set()
+            if situation == "retry":
+                assert (await app.runs.wait(first.id, timeout=3)).state == RunState.FAILED
+                second = app.runs.retry(first.id)
+            assert (await app.runs.wait(second.id, timeout=3)).state == RunState.COMPLETED
+            assert len(requests) == (3 if situation in ("retry", "recovery") else 2)
+            assert requests[-1]["messages"][-1]["content"] == "New direction"
+            evidence = records(app.store, first.id)
+            assert not any(isinstance(r, ToolCall) for r in evidence)
+            assert any(isinstance(r, ModelStep) and r.content.startswith("Old ") for r in evidence)
+            saved = [
+                r.content for r in evidence if isinstance(r, Message) and r.role == "assistant"
+            ]
+            assert (
+                saved
+                == {
+                    "last_call": ["Old draft"],
+                    "profile": ["Old draft"],
+                    "recovery": ["New answer"],
+                    "retry": [],
+                    "draft": ["New answer"],
+                    "proposal": ["New answer"],
+                }[situation]
+            )
+            if not queued:
+                assert "Old draft" not in canonical(requests[1:]).decode()
+                assert "Old proposal" not in canonical(requests[1:]).decode()
+            if situation == "recovery":
+                assert "Requested work remains unattempted" in canonical(requests[1]).decode()
+                assert "Requested work remains unattempted" not in canonical(requests[2]).decode()
+        finally:
+            release.set()
+            await app.stop()
 
     asyncio.run(scenario())
 
@@ -446,7 +656,12 @@ def test_fairness_queue_bound_wait_disconnect_and_tool_permit(profile: Effective
                 await waiter
             app.runs.max_pending = 1
             second = app.runs.submit(
-                session.id, profile=app.profile, content="later", request_id=new_id()
+                session.id,
+                profile=app.profile,
+                content="later",
+                request_id=new_id(),
+                document_ids=(new_id(),),
+                documents=(("queue.txt", b"fixture"),),
             )
             with pytest.raises(QueueFull):
                 app.runs.submit(
@@ -490,8 +705,18 @@ def test_restart_resumes_queued_only_and_revalidates(profile: EffectiveProfile) 
             session.id, profile=app.profile, content="active", request_id=new_id()
         )
         await asyncio.wait_for(entered.wait(), 3)
+        key = new_id()
+        steering = app.runs.submit(
+            session.id, profile=app.profile, content="Steering before restart", request_id=key
+        )
+        assert steering.id == active.id
         queued = app.runs.submit(
-            session.id, profile=app.profile, content="queued", request_id=new_id()
+            session.id,
+            profile=app.profile,
+            content="queued",
+            request_id=new_id(),
+            document_ids=(new_id(),),
+            documents=(("queue.txt", b"fixture"),),
         )
         await app.stop()
         assert not app.runs.active and not app.runs.sessions
@@ -502,6 +727,14 @@ def test_restart_resumes_queued_only_and_revalidates(profile: EffectiveProfile) 
             result = await replacement.runs.wait(queued.id, timeout=3)
             assert result.state == RunState.COMPLETED
             assert replacement.store.run(active.id).state == RunState.INTERRUPTED
+            replay = replacement.runs.submit(
+                session.id,
+                profile=replacement.profile,
+                content="Steering before restart",
+                request_id=key,
+            )
+            assert replay.id == active.id and replay.state == RunState.INTERRUPTED
+            assert "Steering before restart" in canonical(requests).decode()
             assert len(requests) == 1
         finally:
             await replacement.stop()

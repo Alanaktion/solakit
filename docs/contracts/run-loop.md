@@ -21,6 +21,11 @@ with the same session/profile/origin/input returns the original run, even after
 configuration changes or terminal completion; changed input conflicts. A retry
 never gets a fresh authority ceiling through the same key. Low-level Store
 methods remain available to maintenance/tests; application callers use this service.
+Operator text-only submissions can join the active interactive reply in a shared
+or isolated topic when the same profile is selected, no earlier turn is queued,
+and the run still has an available model call. The message is committed to that
+run before acknowledging its own idempotency key. Other submissions use normal
+admission. Steering uses the owning run's authority, deadline and budgets.
 Scheduled/proactive admission requires the atomic occurrence claims supplied by
 `context.jobs`, rather than `runs.submit`; see the [job contract](jobs.md).
 Interactive parents with `delegate.run` can admit isolated workers through the
@@ -65,8 +70,8 @@ bytes and preserves whitespace such as a file's trailing newline. Full receipt a
 inspectable independently of that rendering.
 
 The next request projects assistant tool proposals and one matching provider-ID
-result for each proposal. Malformed, undisclosed or unexecuted proposals are labelled
-not executed; they are never represented as successful calls. Projected record IDs
+result for each retained proposal. Malformed, undisclosed or unexecuted proposals
+that remain in context are labelled as unexecuted. Projected record IDs
 are recorded in the manifest. Future queued user inputs never enter an active
 turn's context. Previous started turns in the same topic are projected in order;
 queued-cancelled turns are excluded. Ephemeral runs see only their own exchanges.
@@ -74,6 +79,14 @@ Compaction selects one active summary plus the later whole-turn tail, with two r
 turns preserved. Compaction happens under the same session owner before the first
 conversation step. Context that cannot fit still fails visibly without silent
 truncation; see the [context contract](context-compaction.md).
+
+The next conversation request includes accepted steering messages in submission
+order. When inference is waiting for its permit, the prompt can be refreshed
+before the request is recorded. Recorded inference and executing tools settle
+normally. The next prompt retains settled tool exchanges and steering text.
+Stale model responses and skipped proposals remain available in execution
+evidence. Uncertain effects still fail the run. An explicit reply retry carries
+forward steering messages recorded on earlier attempts.
 
 ## Bounded concurrency and waits
 
@@ -85,7 +98,7 @@ context at a time. Across sessions, the oldest eligible admission takes a free
 slot; blocked sessions do not stop independent sessions. Recovered admissions are
 retained even if an older installation admitted more than the current bound.
 
-Interactive and internal background callers use the same FIFO policy, without
+Queued interactive and internal background work uses the same FIFO policy, without
 priority or reserved capacity. The adapter uses the application's single asyncio
 inference semaphore; its waiters acquire in arrival order. A continuously active
 run rejoins behind already waiting calls on its next model step. Tools and waits

@@ -760,7 +760,7 @@ def test_pending_bound_active_and_interactive_fairness(profile: EffectiveProfile
                 autonomous -= 1
             return wire(reply("NO_ACTION"))
 
-        app, _ = harness(profile, respond)
+        app, requests = harness(profile, respond)
         assert app.jobs
         app.jobs.clock = clock
         await app.start()
@@ -772,6 +772,14 @@ def test_pending_bound_active_and_interactive_fairness(profile: EffectiveProfile
             assert len(occurrences(app)) == 4
             await asyncio.wait_for(entered.wait(), 2)
             assert len(app.runs.active) == 1
+            running = app.store.run(next(iter(app.runs.active)))
+            same_topic = app.runs.submit(
+                running.session_id,
+                profile=app.profile,
+                content="Operator input during wake",
+                request_id=new_id(),
+            )
+            assert same_topic.id != running.id and same_topic.state == RunState.QUEUED
             topic = app.store.create_session()
             interactive = app.runs.submit(
                 topic.id, profile=app.profile, content="Interactive", request_id=new_id()
@@ -781,6 +789,8 @@ def test_pending_bound_active_and_interactive_fairness(profile: EffectiveProfile
             assert app.store.run(interactive.id).state == RunState.RUNNING
             release.set()
             assert (await app.runs.wait(interactive.id, timeout=3)).state == RunState.COMPLETED
+            assert (await app.runs.wait(same_topic.id, timeout=3)).state == RunState.COMPLETED
+            assert "Operator input during wake" not in str(requests[0]["messages"])
             for occurrence in occurrences(app):
                 assert occurrence.run_id
                 await app.runs.wait(occurrence.run_id, timeout=3)

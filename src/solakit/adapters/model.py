@@ -443,35 +443,44 @@ class ModelAdapter:
         except ValueError:
             raise ModelError("The model API did not return readable document text") from None
 
-    async def complete(self, prompt: PreparedPrompt, run: Run, index: int) -> ModelResult:
-        inspected = inspect_prompt(prompt)
-        request = inspected["request"]
-        manifest = inspected["manifest"]
-        if (
-            not isinstance(request, dict)
-            or request.get("model") != self.profile.model_pin
-            or type(request.get("stream")) is not bool
-            or not isinstance(manifest, dict)
-            or manifest.get("session_id") != run.session_id
-            or manifest.get("run_id") != run.id
-            or manifest.get("origin") != run.origin
-            or manifest.get("endpoint")
-            != self.profile.model_base_url.rstrip("/") + "/chat/completions"
-            or manifest.get("timeouts")
-            != {
-                "connect_seconds": self.profile.model_connect_timeout_seconds,
-                "generation_seconds": self.profile.model_generation_timeout_seconds,
-            }
-        ):
-            raise ModelError(
-                "Request differs from pinned model configuration", ErrorCode.CONFIGURATION
-            )
+    async def complete(
+        self,
+        prompt: PreparedPrompt,
+        run: Run,
+        index: int,
+        *,
+        refresh_prompt: Callable[[PreparedPrompt], PreparedPrompt] | None = None,
+    ) -> ModelResult:
         if self.client is None:
             raise ModelError("Model client is not started", ErrorCode.MODEL_UNAVAILABLE)
-        purpose = manifest.get("purpose")
-        vision = purpose == "vision"
-        cap = VISION_RESPONSE_BYTES if vision else MAX_RESPONSE_BYTES
         async with self.inference:
+            if refresh_prompt is not None:
+                prompt = refresh_prompt(prompt)
+            inspected = inspect_prompt(prompt)
+            request = inspected["request"]
+            manifest = inspected["manifest"]
+            if (
+                not isinstance(request, dict)
+                or request.get("model") != self.profile.model_pin
+                or type(request.get("stream")) is not bool
+                or not isinstance(manifest, dict)
+                or manifest.get("session_id") != run.session_id
+                or manifest.get("run_id") != run.id
+                or manifest.get("origin") != run.origin
+                or manifest.get("endpoint")
+                != self.profile.model_base_url.rstrip("/") + "/chat/completions"
+                or manifest.get("timeouts")
+                != {
+                    "connect_seconds": self.profile.model_connect_timeout_seconds,
+                    "generation_seconds": self.profile.model_generation_timeout_seconds,
+                }
+            ):
+                raise ModelError(
+                    "Request differs from pinned model configuration", ErrorCode.CONFIGURATION
+                )
+            purpose = manifest.get("purpose")
+            vision = purpose == "vision"
+            cap = VISION_RESPONSE_BYTES if vision else MAX_RESPONSE_BYTES
             recorded = ModelRequest(
                 origin=run.origin,
                 session_id=run.session_id,

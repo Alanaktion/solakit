@@ -14,7 +14,7 @@ from solakit.adapters.model import ModelAdapter, ModelError
 from solakit.config import ConfigError, EffectiveProfile, restrict_to_admission
 from solakit.engine.compaction import Compactor, select
 from solakit.engine.lineage import current_run, deny_autonomous_successor
-from solakit.engine.prompts import ContextLimit, PromptInput, PromptTurn, assemble
+from solakit.engine.prompts import ContextLimit, PreparedPrompt, PromptInput, PromptTurn, assemble
 from solakit.records import (
     DELEGATION_TOOLS,
     DOCUMENT_TEXT_BYTES,
@@ -24,6 +24,7 @@ from solakit.records import (
     ErrorCode,
     Failure,
     Message,
+    ModelRequest,
     ModelStep,
     Origin,
     Record,
@@ -235,8 +236,18 @@ def project_run(
         for r in source
         if isinstance(r, ToolReceipt)
     }
+    steered_requests: set[str] = set()
+    request_id = None
+    last_steering = -1
+    for position, record in enumerate(source):
+        if isinstance(record, ModelRequest) and record.purpose == "conversation":
+            request_id = record.id
+        elif isinstance(record, Message) and record.steering_request_id:
+            last_steering = position
+            if request_id:
+                steered_requests.add(request_id)
     turns = []
-    for record in source:
+    for position, record in enumerate(source):
         if isinstance(record, Message) and record.role == "user":
             turns.append(
                 PromptTurn(
@@ -265,11 +276,13 @@ def project_run(
                     )
                 continue
             proposals = record.tool_calls
-            if superseded:
+            # Results stay paired with their proposal even when the message arrived mid-call.
+            discard_unsettled = superseded or record.request_id in steered_requests
+            if discard_unsettled:
                 proposals = tuple(
                     p for p in proposals if (record.id, p.provider_tool_call_id) in receipts
                 )
-            if not proposals and (superseded or not record.content):
+            if not proposals and (discard_unsettled or not record.content):
                 continue
             turns.append(
                 PromptTurn(
@@ -296,7 +309,12 @@ def project_run(
                         else "Not executed. Inspect the recovery evidence and correct the call.",
                     )
                 )
-        elif isinstance(record, RecoveryNote) and not superseded and not store.imported_run(run_id):
+        elif (
+            isinstance(record, RecoveryNote)
+            and position > last_steering
+            and not superseded
+            and not store.imported_run(run_id)
+        ):
             turns.append(
                 PromptTurn(
                     source_id=record.id,
@@ -404,14 +422,35 @@ class RunLoop:
         if not self.accepting or self.failure is not None:
             raise RuntimeError("run service unavailable")
         existing = self.store.request(request_id)
+        text_only = (
+            image is None
+            and image_source is None
+            and upload_id is None
+            and upload is None
+            and not document_ids
+            and not documents
+            and new_topic is None
+        )
+        target = None
         if existing is not None:
+            if existing.request_id != request_id:
+                message = self.store.steering_message(request_id)
+                if (
+                    message is None
+                    or message.content != content
+                    or existing.session_id != session_id
+                    or existing.profile != profile.name
+                    or profile.origin != Origin.INTERACTIVE
+                    or not text_only
+                ):
+                    raise ValueError("idempotency key reused with different steering input")
+                return existing
             admission = self.store.admission_profile(existing.id)
         else:
-            if len(self.store.queued_runs()) >= self.max_pending:
-                raise QueueFull("pending admission limit reached")
+            topic = new_topic or self.store.session(session_id)
             if (
                 profile.data_dir != self.store.root
-                or profile.mode != (new_topic or self.store.session(session_id)).mode
+                or profile.mode != topic.mode
                 or (profile.model_pin, profile.model_base_url)
                 != (self.model.profile.model_pin, self.model.profile.model_base_url)
             ):
@@ -421,23 +460,40 @@ class RunLoop:
                 effective.vision or effective.model_image_inputs
             ):
                 raise ConfigError("image inputs are unavailable at admission")
+            queued = self.store.queued_runs()
+            if (
+                text_only
+                and not topic.archived
+                and topic.mode != SessionMode.EPHEMERAL
+                and profile.origin == Origin.INTERACTIVE
+                and current_run.get() is None
+                and session_id in self.sessions
+                and all(run.session_id != session_id for run in queued)
+            ):
+                target = self._steering_target(session_id, profile.name)
+            if target is None and len(queued) >= self.max_pending:
+                raise QueueFull("pending admission limit reached")
             admission = effective.model_dump(mode="json")
         try:
-            run = self.store.admit(
-                session_id,
-                request_id=request_id,
-                content=content,
-                profile=profile.name,
-                admission=admission,
-                origin=profile.origin,
-                image=image,
-                image_source=image_source,
-                upload_id=upload_id,
-                upload=upload,
-                document_ids=document_ids,
-                documents=documents,
-                new_topic=new_topic,
-            )
+            if target is not None:
+                self.store.steer(target, request_id, content)
+                run = target
+            else:
+                run = self.store.admit(
+                    session_id,
+                    request_id=request_id,
+                    content=content,
+                    profile=profile.name,
+                    admission=admission,
+                    origin=profile.origin,
+                    image=image,
+                    image_source=image_source,
+                    upload_id=upload_id,
+                    upload=upload,
+                    document_ids=document_ids,
+                    documents=documents,
+                    new_topic=new_topic,
+                )
         except BaseException as error:
             if self.store.failed:
                 self._fault(error)
@@ -449,6 +505,26 @@ class RunLoop:
             for identity in document_ids:
                 self.document_uploads.discard(session_id, identity)
         return run
+
+    def _steering_target(self, session_id: str, name: str) -> Run | None:
+        for identity in self.active:
+            run = self.store.run(identity)
+            if (
+                run.session_id != session_id
+                or run.profile != name
+                or run.state != RunState.RUNNING
+                or run.origin != Origin.INTERACTIVE
+                or run.parent_tool_call_id is not None
+                or identity in self.cancelling
+            ):
+                continue
+            try:
+                profile = self.dispatcher.profile(run, self.store.admitted_profile(identity))
+            except ConfigError:
+                return None
+            used = self.store.model_index(identity) + self.store.child_attempts(identity, "request")
+            return run if used < profile.budgets.model_calls else None
+        return None
 
     def _retry_admission(self, run: Run) -> dict[str, object]:
         """The frozen admission of a failed reply that may be retried, or ValueError."""
@@ -865,11 +941,19 @@ class RunLoop:
         settled: dict[bytes, ToolReceipt] = {}
         analyzed = False
         done: set[str] = set()
+        prior_steering = None
         for attempt in chain[:-1]:
             earlier = records(self.store, attempt.id)
             calls = {r.id: r for r in earlier if isinstance(r, ToolCall)}
+            current_calls: set[str] = set()
             for record in earlier:
-                if isinstance(record, ModelStep):
+                if isinstance(record, Message) and record.steering_request_id:
+                    prior_steering = record
+                    current_calls.clear()
+                    done.clear()
+                elif isinstance(record, ToolCall):
+                    current_calls.add(record.id)
+                elif isinstance(record, ModelStep):
                     analyzed |= record.purpose == "vision" and not record.failure
                 elif isinstance(record, ToolReceipt) and (
                     record.status == "succeeded" or record.effect == "confirmed"
@@ -877,7 +961,8 @@ class RunLoop:
                     call_made = calls[record.tool_call_id]
                     key = canonical([call_made.name, call_made.arguments])
                     settled.setdefault(key, record)
-                    done.add(call_made.name)
+                    if call_made.id in current_calls:
+                        done.add(call_made.name)
         first_index = 1
         if user.image_route == "vision" and not analyzed:
             await self._observe(run, admitted, user)
@@ -921,15 +1006,8 @@ class RunLoop:
             and bool(named_tools(user.content, ("feeds.items", "feeds.acknowledge")))
             and self.dispatcher.feed_digest_allowed(run)
         )
-        if digest_job:
-            # A digest task can use "publish" to request the job's own topic delivery.
-            requested = named_tools(user.content, tool_names)
-        else:
-            requested = requested_tools(user.content, tool_names)
-            if not requested:
-                requested = requested_tools(
-                    user.content, ("files.read", "files.write", "images.generate", "publish_note")
-                )
+        steerable = run.origin == Origin.INTERACTIVE and admitted.mode != SessionMode.EPHEMERAL
+        steering: Message | None = None
         counts = {"argument_repair": 0, "schema_disclosure": 0, "narration": 0}
         sticky: Failure | None = None
         unrepaired: set[str] = set()
@@ -951,8 +1029,20 @@ class RunLoop:
             )
             self.store.append(note)
 
-        index = first_index
-        while index <= admitted.budgets.model_calls:
+        def latest_steering() -> Message | None:
+            return self.store.latest_steering(run.id) if steerable else None
+
+        def advance_steering() -> bool:
+            nonlocal steering
+            latest = latest_steering()
+            if steering == latest:
+                return False
+            steering = latest
+            attempted.clear()
+            unrepaired.clear()
+            return True
+
+        def model_profile() -> tuple[EffectiveProfile, bool]:
             profile = current(admitted)
             child_calls = self.store.child_attempts(run.id, "request")
             if (
@@ -961,9 +1051,15 @@ class RunLoop:
             ):
                 raise RunFailure(ErrorCode.BUDGET_EXCEEDED, "Run budget exhausted")
             report_only = child_calls > 0 and index + child_calls == profile.budgets.model_calls
+            return profile, report_only
+
+        def freeze(profile: EffectiveProfile, report_only: bool) -> PromptInput:
+            nonlocal selection
+            if selection and selection.result_cap != profile.budgets.tool_result_bytes:
+                selection = select(self.store, run, profile.budgets.tool_result_bytes)
             projected = project(profile.budgets.tool_result_bytes)
             eligible = frozenset() if report_only else tools.eligible()
-            frozen = PromptInput(
+            return PromptInput(
                 at=utc_now(),
                 input=user,
                 continuation=projected[1:],
@@ -973,8 +1069,25 @@ class RunLoop:
                 tool_catalog=tuple(sorted(hidden & eligible)),
                 disclosure="deferred-experiment-v1" if self.deferred else "eager-v1",
             )
-            if selection and selection.result_cap != profile.budgets.tool_result_bytes:
-                selection = select(self.store, run, profile.budgets.tool_result_bytes)
+
+        def fit(profile: EffectiveProfile, frozen: PromptInput) -> PreparedPrompt:
+            older_cap = profile.budgets.tool_result_bytes
+            while True:
+                try:
+                    return assemble(profile, selection.apply(frozen) if selection else frozen)
+                except ContextLimit:
+                    # Shrink earlier results in this run before failing; evidence is unchanged.
+                    older_cap //= 2
+                    if older_cap < MIN_PROJECTED_RESULT_BYTES:
+                        raise
+                    shrunk = project(profile.budgets.tool_result_bytes, older_cap)
+                    frozen = frozen.model_copy(update={"continuation": shrunk[1:]})
+
+        index = first_index
+        while index <= admitted.budgets.model_calls:
+            advance_steering()
+            profile, report_only = model_profile()
+            frozen = freeze(profile, report_only)
             if index == first_index and selection and selection.runs:
                 prompt, index, selection = await Compactor(self.store, self.model, current).prepare(
                     profile, run, frozen, index, selection
@@ -983,24 +1096,36 @@ class RunLoop:
                     # Summary inference yielded control. Recheck grants and budgets before chat.
                     continue
             else:
-                older_cap = profile.budgets.tool_result_bytes
-                while True:
-                    try:
-                        prompt = assemble(profile, selection.apply(frozen) if selection else frozen)
-                        break
-                    except ContextLimit:
-                        # Shrink earlier results in this run before failing; evidence is unchanged.
-                        older_cap //= 2
-                        if older_cap < MIN_PROJECTED_RESULT_BYTES:
-                            raise
-                        shrunk = project(profile.budgets.tool_result_bytes, older_cap)
-                        frozen = frozen.model_copy(update={"continuation": shrunk[1:]})
-            async with asyncio.timeout(
-                profile.budgets.active_seconds - (asyncio.get_running_loop().time() - started)
-            ):
-                result = await self.model.complete(prompt, run, index)
+                prompt = fit(profile, frozen)
+
+            refreshed = False
+
+            def refresh_prompt(prepared: PreparedPrompt) -> PreparedPrompt:
+                nonlocal profile, report_only, refreshed
+                if not advance_steering():
+                    return prepared
+                refreshed = True
+                profile, report_only = model_profile()
+                return fit(profile, freeze(profile, report_only))
+
+            try:
+                async with asyncio.timeout(
+                    profile.budgets.active_seconds - (asyncio.get_running_loop().time() - started)
+                ):
+                    result = await self.model.complete(
+                        prompt, run, index, refresh_prompt=refresh_prompt if steerable else None
+                    )
+            except ContextLimit:
+                if refreshed and index == first_index and selection and selection.runs:
+                    # Compaction can take inference too, so retry outside the permit.
+                    continue
+                raise
             index += 1
             step = result.step
+            if latest_steering() != steering and (
+                step.failure is None or step.failure.code == ErrorCode.INVALID_MODEL_RESPONSE
+            ):
+                continue
             if step.failure:
                 if step.tool_calls and step.failure.code == ErrorCode.INVALID_MODEL_RESPONSE:
                     unrepaired.update(call.name for call in step.tool_calls)
@@ -1031,6 +1156,8 @@ class RunLoop:
                 invalid = False
                 delegated = False
                 for proposed in result.calls:
+                    if latest_steering() != steering:
+                        break
                     profile = current(admitted)
                     if (
                         self.store.tool_attempts(run.id) + self.store.child_attempts(run.id, "tool")
@@ -1061,6 +1188,8 @@ class RunLoop:
                         and call.name in tools.eligible()
                     ):
                         await self.jobs.wait_for_effect(run, call.name)
+                        if latest_steering() != steering:
+                            break
                     if prior is None:
                         receipt = await tools.dispatch(call)
                     else:
@@ -1096,11 +1225,19 @@ class RunLoop:
                             sticky = receipt.failure
                     elif receipt.status == "succeeded":
                         unrepaired.discard(call.name)
-                if invalid:
+                if invalid and latest_steering() == steering:
                     recover(
                         step, "argument_repair", "Correct rejected arguments using the schemas."
                     )
             else:
+                text = (steering or prior_steering or user).content
+                if digest_job:
+                    # A digest task can use "publish" to request the job's own topic delivery.
+                    requested = named_tools(text, tool_names)
+                else:
+                    requested = requested_tools(text, tool_names) or requested_tools(
+                        text, ("files.read", "files.write", "images.generate", "publish_note")
+                    )
                 pending = requested - attempted
                 if digest_job and step.content.strip() == "NO_ACTION":
                     pending.discard("feeds.acknowledge")

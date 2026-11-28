@@ -55,6 +55,8 @@ def record_view(sequence: int, record: Record) -> dict[str, Any]:
         }
         if isinstance(record, Message):
             body.update(role=record.role, tool_call_id=record.tool_call_id)
+            if record.steering_request_id is not None:
+                body["steering_request_id"] = record.steering_request_id
             if record.documents:
                 body["documents"] = [doc.model_dump(mode="json") for doc in record.documents]
         if isinstance(record, CompactionBoundary):
@@ -141,10 +143,16 @@ class ClientService:
         name = self.context.profile.name if name is None else name
         if not content.strip() or len(content.encode()) > 32768:
             raise RequestError(422, "invalid_input", "Content must contain 1–32768 UTF-8 bytes")
+        existing = self.store.request(request_id)
+        if (
+            existing is not None
+            and existing.request_id != request_id
+            and (existing.session_id != session_id or image or upload_id or document_ids)
+        ):
+            raise RequestError(409, "conflict", "Idempotency key belongs to another submission")
         topic = self.store.session(session_id)
         if topic.parent_session_id is not None or topic.origin == Origin.DELEGATED:
             raise RequestError(409, "conflict", "Delegated topics require delegation")
-        existing = self.store.request(request_id)
         if existing is not None:
             if existing.profile != name or existing.origin != Origin.INTERACTIVE:
                 raise RequestError(409, "conflict", "Idempotency key belongs to another submission")

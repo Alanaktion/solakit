@@ -24,6 +24,7 @@ legacy files byte for byte. `search.db` is disposable and contains no authority.
 | --- | --- | --- |
 | Create/title/archive/restore session | Latest metadata + outbox | Session snapshot; return after append/fsync and delivered mark |
 | Admit run | Unique request key + queued run + frozen admission details + input message + allocated sequences + outbox | Run admission and input entries drained together before returning; retry same key/payload returns same run, different payload fails |
+| Steer run | User message keyed by its request ID + allocated sequence + outbox | Message is durable before returning the owning run. Replay resolves through the same message after restart. |
 | Start/terminal run | Validate prior lifecycle + latest snapshot + sequence + outbox | Started/terminal event durable before return; immutable terminal state |
 | Message/model/tool/receipt/compaction | Check parent identities + insert immutable record + sequence + outbox | Record/event durable before return; tool intent return precedes any future effect |
 | Delivery/memory transition | Validate lifecycle + latest state + sequence + outbox | New snapshot/event durable before return; no success inferred from missing state |

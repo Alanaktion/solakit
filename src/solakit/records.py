@@ -140,6 +140,9 @@ class Message(Record):
     run_id: RecordID
     role: Literal["user", "assistant", "tool"]
     content: str
+    steering_request_id: RecordID | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
     tool_call_id: RecordID | None = None
     image: Artifact | None = None
     image_route: Literal["vision"] | None = None
@@ -156,6 +159,16 @@ class Message(Record):
             or sum(document.length for document in self.documents) > DOCUMENT_TEXT_BYTES
         ):
             raise ValueError("documents require a user message and must fit the text budget")
+        if self.steering_request_id is not None and (
+            self.role != "user"
+            or self.origin != Origin.INTERACTIVE
+            or self.image is not None
+            or self.image_route is not None
+            or self.documents
+            or not self.content.strip()
+            or len(self.content.encode()) > 32768
+        ):
+            raise ValueError("steering requires interactive text of 1–32768 UTF-8 bytes")
         return self
 
 

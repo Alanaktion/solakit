@@ -726,7 +726,7 @@ LINK_FIELDS = {
         "parent_tool_call_id",
         "continued_from_run_id",
     ),
-    "message": ("tool_call_id",),
+    "message": ("tool_call_id", "steering_request_id"),
     "model": ("request_id",),
     "tool": ("model_step_id",),
     "receipt": ("tool_call_id",),
